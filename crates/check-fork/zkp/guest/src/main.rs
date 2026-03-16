@@ -1,6 +1,4 @@
-#![forbid(unsafe_code)]
-
-use check_fork::{CheckForkArgs, check_fork};
+use check_fork::{CheckForkArgs, build_check_fork_journal_from_args, check_fork};
 use risc0_zkvm::guest::env;
 
 fn main() {
@@ -9,16 +7,17 @@ fn main() {
 
     let output = check_fork(&args_des);
 
-    let result = match output {
+    let accepted = match output {
         Ok(effort) => {
             println!("Guest output: ACCEPT, check_fork effort: {effort}");
-            0
+            true
         }
         Err(e) => {
             println!("Guest output: REJECT, check_fork error: {e}");
-            1
+            false
         }
     };
 
-    env::commit(&result);
+    let journal = build_check_fork_journal_from_args(&args_des, accepted).to_bytes();
+    env::commit_slice(&journal);
 }

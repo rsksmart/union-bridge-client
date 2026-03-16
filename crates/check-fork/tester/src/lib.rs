@@ -1,8 +1,8 @@
-#![forbid(unsafe_code)]
-
 use std::error::Error;
+use std::fmt::Write as _;
+use std::fs;
+use std::path::Path;
 use std::str::FromStr;
-use std::string::ToString;
 
 use bitcoin::blockdata::block::Header;
 use bitcoin::consensus::encode::deserialize as btc_deserialize;
@@ -11,14 +11,13 @@ use check_fork::block_header::{
     deserialize_hex_u64, deserialize_hex_u256, deserialize_hex_u256_option,
     deserialize_vec_hex_h256,
 };
-use check_fork::{BridgeEvent, RskBlock};
+use check_fork::{CheckForkArgs, RskBlock, build_check_fork_journal_from_args, compute_pegout_id};
 use primitive_types::{H256, U256};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 const RSK_RPC_URL: &str = "https://public-node.rsk.co";
-
 const SUPERBLOCK_THRESHOLD_FACTOR: u64 = 20;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -68,6 +67,7 @@ pub struct TesterRskBlockHeader {
 impl From<&TesterRskBlockHeader> for RskBlockHeader {
     fn from(t: &TesterRskBlockHeader) -> Self {
         RskBlockHeader {
+            version: 1,
             number: t.number,
             hash: t.hash,
             parent: t.parent,
@@ -86,18 +86,18 @@ impl From<&TesterRskBlockHeader> for RskBlockHeader {
             minimum_gas_price: t.minimum_gas_price,
             uncles: t.uncles.clone(),
             rsk_pte_edges: t.rsk_pte_edges.clone(),
+            base_event: None,
             bitcoin_merged_mining_header: t.bitcoin_merged_mining_header.clone(),
         }
     }
 }
 
-// used mainly for deserialization and also to avoid adding
-// dependencies (bitcoin) to the check_fork crate
+// Used mainly for deserialization and also to avoid adding
+// bitcoin-specific RPC dependencies to the `check-fork` crate.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TesterRskBlock {
     #[serde(flatten)]
     header: TesterRskBlockHeader,
-    bridge_event: Option<BridgeEvent>,
     #[serde(skip)]
     uncles: Vec<TesterRskBlock>, // this field should be filled later
 }
@@ -112,7 +112,6 @@ where
 impl From<&TesterRskBlock> for RskBlock {
     fn from(tester_block: &TesterRskBlock) -> Self {
         RskBlock {
-            bridge_event: tester_block.bridge_event.clone(),
             uncles: tester_block.uncles.iter().map(RskBlock::from).collect(),
             pow: tester_block.pow().expect("pow is not valid"),
             header: RskBlockHeader::from(&tester_block.header),
@@ -132,8 +131,7 @@ impl TesterRskBlock {
                     self.header.bitcoin_merged_mining_header
                 )
             })?;
-        let hash = H256::from_str(&btc_header.block_hash().to_string())?;
-        Ok(hash)
+        Ok(H256::from_str(&btc_header.block_hash().to_string())?)
     }
 
     fn add_uncle(&mut self, uncle: TesterRskBlock) {
@@ -141,40 +139,92 @@ impl TesterRskBlock {
     }
 }
 
-///
-/// # Errors
-///
-/// Returns an error if the HTTP request fails, JSON parsing fails, or block deserialization fails.
-///
-/// # Panics
-///
-/// This function may panic if `result.unwrap()` is called on a `None` value when processing block results.
 pub async fn get_blocks(
     start_block_number: u64,
     num_of_blocks: u32,
     log_super_block: bool,
-    has_bridge_event: bool,
 ) -> Result<Vec<RskBlock>, Box<dyn Error>> {
-    let client = Client::new();
+    // Disable system proxy autodetection: on macOS runners this can panic before the RPC call.
+    let client = Client::builder().no_proxy().build()?;
     let mut blocks = vec![];
 
     for i in 0..num_of_blocks {
         fetch_block_by_num(start_block_number, log_super_block, &client, &mut blocks, i).await?;
     }
 
-    if has_bridge_event {
-        let result: Vec<RskBlock> = add_bridge_event(&blocks);
-        return Ok(result);
-    }
-
-    let mut blocks_with_uncles = Vec::new();
+    let mut blocks_with_uncles = Vec::with_capacity(blocks.len());
     for block in blocks {
         let uncles_hashes = block.header.uncles.clone();
         let fetched = fetch_uncles(&client, uncles_hashes, block).await;
         blocks_with_uncles.push(fetched);
     }
-    let result = blocks_with_uncles.iter().map(RskBlock::from).collect();
-    Ok(result)
+
+    Ok(blocks_with_uncles.iter().map(RskBlock::from).collect())
+}
+
+pub fn parse_operator_id_hex(value: &str) -> Result<[u8; 32], Box<dyn Error>> {
+    let trimmed = value.strip_prefix("0x").unwrap_or(value);
+    let bytes = hex::decode(trimmed)?;
+    if bytes.len() != 32 {
+        return Err(format!("operator_id must be exactly 32 bytes, got {}", bytes.len()).into());
+    }
+
+    let mut operator_id = [0u8; 32];
+    operator_id.copy_from_slice(&bytes);
+    Ok(operator_id)
+}
+
+pub fn apply_a2_base_event(blocks: &mut [RskBlock], pegout_id: H256) -> Result<(), Box<dyn Error>> {
+    if blocks.len() < 2 {
+        return Err("A2 requires at least two blocks".into());
+    }
+
+    for block in blocks.iter_mut() {
+        block.uncles.clear();
+    }
+
+    for index in 0..blocks.len() {
+        if index >= 2 {
+            blocks[index].header.version = 2;
+            blocks[index].header.base_event = Some(pegout_id.as_bytes().to_vec());
+            blocks[index].header.parent = blocks[index - 1].header.hash;
+            blocks[index].header.hash =
+                blocks[index].header.calculate_block_hash().map_err(std::io::Error::other)?;
+        } else {
+            blocks[index].header.version = 1;
+            blocks[index].header.base_event = None;
+        }
+    }
+
+    Ok(())
+}
+
+pub fn calculate_total_effort(blocks: &[RskBlock]) -> Result<U256, Box<dyn Error>> {
+    let mut total = U256::zero();
+    for block in blocks {
+        total = add_block_effort(total, block)?;
+        for uncle in &block.uncles {
+            total = add_block_effort(total, uncle)?;
+        }
+    }
+    Ok(total)
+}
+
+pub fn write_a2_artifacts(output_dir: &Path, args: &CheckForkArgs) -> Result<(), Box<dyn Error>> {
+    fs::create_dir_all(output_dir)?;
+
+    let pegout_id = compute_pegout_id(args);
+    let expected_journal = build_check_fork_journal_from_args(args, true).to_bytes();
+    fs::write(output_dir.join("expected_journal.bin"), expected_journal)?;
+    fs::write(output_dir.join("expected_journal.hex"), hex::encode(expected_journal))?;
+    fs::write(
+        output_dir.join("expected_journal.csv"),
+        expected_journal.iter().map(u8::to_string).collect::<Vec<_>>().join(","),
+    )?;
+    fs::write(output_dir.join("computed_pegout_id.hex"), hex::encode(pegout_id.as_bytes()))?;
+    fs::write(output_dir.join("fixture_summary.txt"), build_summary(args, pegout_id))?;
+
+    Ok(())
 }
 
 async fn fetch_uncles(
@@ -186,7 +236,7 @@ async fn fetch_uncles(
         let uncle = fetch_block_by_hash(uncle_hash, client).await.expect("Failed to fetch uncle");
         block.add_uncle(uncle);
     }
-    block.clone()
+    block
 }
 
 async fn fetch_block_by_hash(
@@ -202,17 +252,13 @@ async fn fetch_block_by_hash(
     });
     let response = client.post(RSK_RPC_URL).json(&request_body).send().await?;
     let response_json: Value = response.json().await?;
-    let error = response_json.get("error");
-    let result = response_json.get("result");
-    if error.is_some() {
-        // todo(fede) print error
+    if response_json.get("error").is_some() {
         return Err(format!("Error fetching block by hash {hash_hex}: {response_json:?}").into());
     }
-    let Some(result) = result else {
+    let Some(result) = response_json.get("result") else {
         return Err(format!("No result for block hash {hash_hex}").into());
     };
-    let block: TesterRskBlock = serde_json::from_str(&result.to_string())?;
-    Ok(block)
+    Ok(serde_json::from_str(&result.to_string())?)
 }
 
 async fn fetch_block_by_num(
@@ -231,15 +277,13 @@ async fn fetch_block_by_num(
     });
     let response = client.post(RSK_RPC_URL).json(&request_body).send().await?;
     let response_json: Value = response.json().await?;
-    let error = response_json.get("error");
-    let result = response_json.get("result");
-    if error.is_some() {
+    if response_json.get("error").is_some() {
         println!(
             "Error fetching block {}: {:?}",
             start_block_number + u64::from(num),
             response_json
         );
-    } else if let Some(result) = result {
+    } else if let Some(result) = response_json.get("result") {
         let block: TesterRskBlock = serde_json::from_str(&result.to_string())?;
         if log_super_block {
             log_if_superblock(&block)?;
@@ -249,39 +293,17 @@ async fn fetch_block_by_num(
     Ok(())
 }
 
-fn add_bridge_event(blocks: &[TesterRskBlock]) -> Vec<RskBlock> {
-    blocks
-        .iter()
-        .enumerate()
-        .map(|(i, b)| {
-            let mut input_block = RskBlock::from(b);
-            if i == 0 {
-                input_block.bridge_event = Some(BridgeEvent {
-                    utxo_id: "FAKE_UTXO_ID".to_string(),         // tmp
-                    pegout_id: "FAKE_PEGOUT_ID".to_string(),     // tmp
-                    operator_id: "FAKE_OPERATOR_ID".to_string(), // tmp
-                });
-            }
-            input_block
-        })
-        .collect()
-}
-
 fn log_if_superblock(block: &TesterRskBlock) -> Result<(), Box<dyn Error>> {
-    // parse the block's actual PoW (from bitcoinMergedMiningHeader field) to decimal
+    // Parse the block's actual PoW from `bitcoinMergedMiningHeader`.
     let actual_block_pow =
         U256::from_big_endian(block.header.bitcoin_merged_mining_header.as_slice());
-
-    // compute the PoW target from difficulty by inversion
-    // U256::MAX, the "difficulty 1" target, represents the easiest possible target
-    // this conversion allows comparing target difficulty with the actual block PoW
+    // Compute the PoW target from difficulty by inversion. `difficulty 1` maps to `U256::MAX`.
     let target_block_pow =
         U256::MAX.checked_div(block.header.difficulty).ok_or("0 division on log_if_superblock")?;
-
-    // define a superblock as one whose PoW is at least N times harder than the required target
+    // Define a superblock as one whose PoW is at least N times harder than the required target.
     let superblock_pow = target_block_pow / SUPERBLOCK_THRESHOLD_FACTOR;
 
-    // if the actual block PoW is lower (i.e., harder) than the SuperBlock threshold, we found a SuperBlock
+    // If the actual block PoW is lower (i.e. harder) than the superblock threshold, we found one.
     if actual_block_pow < superblock_pow {
         let timestamp_i64 = i64::try_from(block.header.timestamp).unwrap_or(i64::MAX);
         let formatted_time =
@@ -297,4 +319,26 @@ fn log_if_superblock(block: &TesterRskBlock) -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
+}
+
+fn add_block_effort(total: U256, block: &RskBlock) -> Result<U256, Box<dyn Error>> {
+    let pow = U256::from_big_endian(block.pow.as_bytes());
+    let effort = U256::MAX.checked_div(pow).ok_or("division by zero on block effort")?;
+    total.checked_add(effort).ok_or_else(|| "effort overflow".into())
+}
+
+fn build_summary(args: &CheckForkArgs, pegout_id: H256) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "version={}", args.version);
+    let _ = writeln!(out, "seq_id={}", args.seq_id);
+    let _ = writeln!(out, "rand=0x{:08x}", args.rand);
+    let _ = writeln!(out, "stream_id={}", args.stream_id);
+    let _ = writeln!(out, "packet_id={}", args.packet_id);
+    let _ = writeln!(out, "utxo_id={}", args.utxo_id);
+    let _ = writeln!(out, "operator_id=0x{}", hex::encode(args.operator_id));
+    let _ = writeln!(out, "pegout_id=0x{}", hex::encode(pegout_id.as_bytes()));
+    let _ = writeln!(out, "block_count={}", args.block_list.len());
+    let _ = writeln!(out, "required_num_blocks={}", args.required_num_blocks);
+    let _ = writeln!(out, "required_effort={}", args.required_effort);
+    out
 }

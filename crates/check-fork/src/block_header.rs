@@ -9,34 +9,40 @@ use sha3::{Digest, Keccak256};
 use crate::rlp::{encode_coin_value, encode_signed_coin_value_as_byte};
 
 const RSK_HEADER_EXTENSION_TYPE_V1: u8 = 1_u8;
+const RSK_HEADER_EXTENSION_TYPE_V2: u8 = 2_u8;
 const MAX_RSK_PTE_EDGES: usize = 0; // for the moment is better to keep zero because parallel tx is not fully activated
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct RskBlockHeader {
-    pub number: u64,                           // Block height (genesis = 0)
-    pub hash: H256,                            // Keccak-256 of the encoded header
-    pub parent: H256,                          // Keccak-256 hash of the parent block
-    pub difficulty: U256,                      // Target difficulty for this block
-    pub timestamp: u64,                        // Unix time (seconds) when the block was created
-    pub uncles_hash: H256,                     // SHA3-256 hash of the uncles list
-    pub coinbase: [u8; 20],                    // 160-bit address (RskAddress) - miner's address
-    pub state_root: H256,                      // SHA3-256 hash of the root node of the state trie
-    pub tx_trie_root: H256, // SHA3-256 hash of the root node of the transaction trie
-    pub receipt_trie_root: H256, // SHA3-256 hash of the root node of the receipt trie
-    pub extension_data: Vec<u8>, // RPC logsBloom bytes (expanded format only)
-    pub gas_limit: Vec<u8>, // Current limit of gas expenditure per block
-    pub gas_used: u64,      // Total gas used in transactions in this block
-    pub extra_data: Vec<u8>, // Arbitrary byte array (max 32 bytes, except genesis)
-    pub paid_fees: U256,    // Total paid fees in transactions (Coin, RLP encoded)
+    // Local header version used by check-fork hashing. Version 2 enables base_event in the extension.
+    pub version: u8,
+    pub number: u64,                     // Block height (genesis = 0)
+    pub hash: H256,                      // Keccak-256 of the encoded header
+    pub parent: H256,                    // Keccak-256 hash of the parent block
+    pub difficulty: U256,                // Target difficulty for this block
+    pub timestamp: u64,                  // Unix time (seconds) when the block was created
+    pub uncles_hash: H256,               // SHA3-256 hash of the uncles list
+    pub coinbase: [u8; 20],              // 160-bit address (RskAddress) - miner's address
+    pub state_root: H256,                // SHA3-256 hash of the root node of the state trie
+    pub tx_trie_root: H256,              // SHA3-256 hash of the root node of the transaction trie
+    pub receipt_trie_root: H256,         // SHA3-256 hash of the root node of the receipt trie
+    pub extension_data: Vec<u8>,         // RPC logsBloom bytes (expanded format only)
+    pub gas_limit: Vec<u8>,              // Current limit of gas expenditure per block
+    pub gas_used: u64,                   // Total gas used in transactions in this block
+    pub extra_data: Vec<u8>,             // Arbitrary byte array (max 32 bytes, except genesis)
+    pub paid_fees: U256,                 // Total paid fees in transactions (Coin, RLP encoded)
     pub minimum_gas_price: Option<U256>, // Minimum gas price for a tx to be included
-    pub uncles: Vec<H256>,  // Hashes of uncle blocks
+    pub uncles: Vec<H256>,               // Hashes of uncle blocks
     pub rsk_pte_edges: Option<Vec<u16>>, // None: omit field in hash input, Some([]): include empty field
+    // Opaque A2 payload. Today we only compare it against the computed PegOutID.
+    pub base_event: Option<Vec<u8>>,
     pub bitcoin_merged_mining_header: Vec<u8>, // 80-byte Bitcoin block header for merged mining
 }
 
 impl Default for RskBlockHeader {
     fn default() -> Self {
         Self {
+            version: 1,
             number: 0,
             hash: H256::zero(),
             parent: H256::zero(),
@@ -55,6 +61,7 @@ impl Default for RskBlockHeader {
             minimum_gas_price: Some(U256::zero()),
             uncles: Vec::new(),
             rsk_pte_edges: None,
+            base_event: None,
             bitcoin_merged_mining_header: vec![0u8; 80],
         }
     }
@@ -74,10 +81,11 @@ impl RskBlockHeader {
             return Err("minimum_gas_price is None");
         };
 
-        let extension_field = if self.rsk_pte_edges.is_some() {
-            self.compressed_extension_data_v1()?
-        } else {
-            self.logs_bloom_v0()?.to_vec()
+        // TODO: remove this branchiness when REED810 is activated in mainnet.
+        let extension_field = match self.version {
+            2 => self.compressed_extension_data_v2()?,
+            1 if self.rsk_pte_edges.is_some() => self.compressed_extension_data_v1()?,
+            _ => self.logs_bloom_v0()?.to_vec(),
         };
 
         let encoded_fields: Vec<Vec<u8>> = vec![
@@ -117,19 +125,8 @@ impl RskBlockHeader {
         let logs_bloom_hash = Keccak256::digest(logs_bloom);
         let mut extension_for_hash_fields = vec![alloy_rlp::encode(logs_bloom_hash.as_slice())];
 
-        if let Some(edges) = &self.rsk_pte_edges {
-            let edge_bytes_len = edges
-                .len()
-                .checked_mul(std::mem::size_of::<u16>())
-                .ok_or("rsk_pte_edges byte length overflow")?;
-            if edge_bytes_len > MAX_RSK_PTE_EDGES {
-                return Err("rsk_pte_edges exceeds maximum allowed length");
-            }
-            let mut edges_little_endian = Vec::with_capacity(edge_bytes_len);
-            for edge in edges {
-                edges_little_endian.extend_from_slice(&edge.to_le_bytes());
-            }
-            extension_for_hash_fields.push(alloy_rlp::encode(edges_little_endian.as_slice()));
+        if let Some(edges_field) = self.encoded_rsk_pte_edges()? {
+            extension_for_hash_fields.push(edges_field);
         }
 
         let extension_for_hash = encode_list(extension_for_hash_fields);
@@ -139,6 +136,48 @@ impl RskBlockHeader {
             alloy_rlp::encode(RSK_HEADER_EXTENSION_TYPE_V1),
             alloy_rlp::encode(extension_hash.as_slice()),
         ]))
+    }
+
+    fn compressed_extension_data_v2(&self) -> Result<Vec<u8>, &'static str> {
+        let logs_bloom = self.logs_bloom_v0()?;
+        let logs_bloom_hash = Keccak256::digest(logs_bloom);
+        let mut extension_for_hash_fields = vec![alloy_rlp::encode(logs_bloom_hash.as_slice())];
+
+        let base_event = self.base_event.as_deref().unwrap_or_default();
+        extension_for_hash_fields.push(alloy_rlp::encode(base_event));
+
+        if let Some(edges_field) = self.encoded_rsk_pte_edges()? {
+            extension_for_hash_fields.push(edges_field);
+        }
+
+        let extension_for_hash = encode_list(extension_for_hash_fields);
+        let extension_hash = Keccak256::digest(&extension_for_hash);
+
+        Ok(encode_list(vec![
+            alloy_rlp::encode(RSK_HEADER_EXTENSION_TYPE_V2),
+            alloy_rlp::encode(extension_hash.as_slice()),
+        ]))
+    }
+
+    fn encoded_rsk_pte_edges(&self) -> Result<Option<Vec<u8>>, &'static str> {
+        let Some(edges) = &self.rsk_pte_edges else {
+            return Ok(None);
+        };
+
+        let edge_bytes_len = edges
+            .len()
+            .checked_mul(std::mem::size_of::<u16>())
+            .ok_or("rsk_pte_edges byte length overflow")?;
+        if edge_bytes_len > MAX_RSK_PTE_EDGES {
+            return Err("rsk_pte_edges exceeds maximum allowed length");
+        }
+
+        let mut edges_little_endian = Vec::with_capacity(edge_bytes_len);
+        for edge in edges {
+            edges_little_endian.extend_from_slice(&edge.to_le_bytes());
+        }
+
+        Ok(Some(alloy_rlp::encode(edges_little_endian.as_slice())))
     }
 
     #[must_use]
@@ -265,34 +304,28 @@ where
 
 impl fmt::Debug for RskBlockHeader {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let short = |h: &H256| {
-            let hex = hex::encode(h);
-            format!("0x{}…{}", &hex[..8], &hex[hex.len().saturating_sub(4)..])
-        };
-
-        write!(
-            f,
-            "RskBlockHeader {{ number: {}, hash: {}, parent: {}, diff: {}, ts: {}, uncles_hash: {}, coinbase: 0x{}, state_root: {}, tx_root: {}, receipt_root: {}, extension_data: {} bytes, rsk_pte_edges: {:?}, gas_limit: 0x{}, gas_used: {}, extra_data: {} bytes, paid_fees: {}, min_gas_price: {:?}, uncle_count: {}, umm_root: {:?}, mm_header: {} bytes }}",
-            self.number,
-            short(&self.hash),
-            short(&self.parent),
-            self.difficulty,
-            self.timestamp,
-            short(&self.uncles_hash),
-            hex::encode(self.coinbase),
-            short(&self.state_root),
-            short(&self.tx_trie_root),
-            short(&self.receipt_trie_root),
-            self.extension_data.len(),
-            &self.rsk_pte_edges,
-            hex::encode(&self.gas_limit),
-            self.gas_used,
-            self.extra_data.len(),
-            self.paid_fees,
-            self.minimum_gas_price,
-            self.uncles.len(),
-            self.umm_root(),
-            self.bitcoin_merged_mining_header.len(),
-        )
+        f.debug_struct("RskBlockHeader")
+            .field("version", &self.version)
+            .field("number", &self.number)
+            .field("hash", &format_args!("{:#x}", self.hash))
+            .field("parent", &format_args!("{:#x}", self.parent))
+            .field("difficulty", &self.difficulty)
+            .field("timestamp", &self.timestamp)
+            .field("uncles_hash", &format_args!("{:#x}", self.uncles_hash))
+            .field("coinbase", &hex::encode(self.coinbase))
+            .field("state_root", &format_args!("{:#x}", self.state_root))
+            .field("tx_trie_root", &format_args!("{:#x}", self.tx_trie_root))
+            .field("receipt_trie_root", &format_args!("{:#x}", self.receipt_trie_root))
+            .field("extension_data_len", &self.extension_data.len())
+            .field("gas_limit", &hex::encode(&self.gas_limit))
+            .field("gas_used", &self.gas_used)
+            .field("extra_data", &hex::encode(&self.extra_data))
+            .field("paid_fees", &self.paid_fees)
+            .field("minimum_gas_price", &self.minimum_gas_price)
+            .field("uncles", &self.uncles)
+            .field("rsk_pte_edges", &self.rsk_pte_edges)
+            .field("base_event", &self.base_event.as_ref().map(hex::encode))
+            .field("bitcoin_merged_mining_header_len", &self.bitcoin_merged_mining_header.len())
+            .finish()
     }
 }
