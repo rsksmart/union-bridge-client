@@ -118,16 +118,26 @@ pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
     let required_effort = *required_effort;
     let required_num_blocks = *required_num_blocks;
 
+    //
+    // 1. validate block list shape
+    //
     validate_block_list(required_num_blocks, block_list)?;
 
+    //
+    // 2. validate first block
+    //
     let first_block = &block_list[0];
     validate_first_block(first_block, init_block_time, init_block_number, &pegout_id)?;
     validate_block_hash(&first_block.header)?;
 
     let mut cumulative_effort = accumulate_effort(U256::zero(), first_block)?;
 
-    for (index, block) in block_list.iter().enumerate().skip(1) {
-        let prev_block = &block_list[index - 1];
+    //
+    // 3. validate consecutive blocks
+    //
+    for i in 1..block_list.len() {
+        let block = &block_list[i];
+        let prev_block = &block_list[i - 1];
 
         validate_consecutive_block(block, prev_block)?;
         validate_block_hash(&block.header)?;
@@ -138,11 +148,14 @@ pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
             cumulative_effort = accumulate_effort(cumulative_effort, uncle)?;
         }
 
-        if index >= 2 {
+        if i >= 2 {
             validate_required_pegout_event(block, &pegout_id)?;
         }
     }
 
+    //
+    // 4. validate enough cumulative PoW
+    //
     if cumulative_effort < required_effort {
         return Err("Cumulative PoW does not meet the required threshold");
     }
@@ -165,7 +178,7 @@ fn validate_block_list(
     }
 
     if block_list.len() < 2 {
-        return Err("A2 requires at least two blocks");
+        return Err("Check-fork requires at least two blocks");
     }
 
     if block_list.len() < required_num_blocks as usize {
@@ -181,12 +194,12 @@ fn validate_first_block(
     init_block_number: u64,
     pegout_id: &H256,
 ) -> Result<(), &'static str> {
-    if block.header.timestamp <= init_block_time {
-        return Err("First block timestamp must be greater than expected");
+    if block.header.timestamp < init_block_time {
+        return Err("First block timestamp lower than expected");
     }
 
-    if block.header.number <= init_block_number {
-        return Err("First block number must be greater than expected");
+    if block.header.number < init_block_number {
+        return Err("First block number lower than expected");
     }
 
     validate_enough_effort_superblock(block, "first")?;
@@ -203,7 +216,7 @@ fn validate_required_pegout_event(block: &RskBlock, pegout_id: &H256) -> Result<
         return Ok(());
     }
 
-    Err("A2 continuation block is missing the expected PegOutID base event")
+    Err("Continuation block is missing the expected PegOutID base event")
 }
 
 fn contains_matching_pegout_event(block: &RskBlock, pegout_id: &H256) -> bool {
@@ -265,9 +278,25 @@ fn validate_enough_effort_superblock(
         .ok_or("Overflow occurred multiplying difficulty by times")?;
     let actual_effort = calculate_block_effort(block)?;
 
+    // dbg!((
+    //     block.number,
+    //     &block.pow,
+    //     expected_effort,
+    //     actual_effort,
+    //     _block_type
+    // ));
+
     if actual_effort >= expected_effort {
         return Ok(());
     }
+
+    // TODO tmp, do not err if not super block for now (until Superchain), just log
+    // match _block_type {
+    //     "first" => Err("First block's PoW is less than the required difficulty"),
+    //     "consecutive" => Err("Consecutive Block's PoW is less than the required difficulty"),
+    //     "uncle" => Err("Uncle's Block PoW is less than the required difficulty"),
+    //     _ => panic!("Invalid block type"),
+    // }
 
     Ok(())
 }
@@ -276,6 +305,9 @@ fn validate_difficulty_in_bounds(
     block: &RskBlock,
     prev_block: &RskBlock,
 ) -> Result<(), &'static str> {
+    // check these RSKj lines:
+    // - https://github.com/rsksmart/rskj/blob/3cd3401a9c6cfd3dfa63120304d0f26f691ae6e7/rskj-core/src/main/java/co/rsk/core/DifficultyCalculator.java#L64
+    // - https://github.com/rsksmart/rskj/blob/master/rskj-core/src/main/java/org/ethereum/config/Constants.java#L150
     let max_delta = prev_block.header.difficulty / 400;
 
     let lower_bound = prev_block.header.difficulty.saturating_sub(max_delta);
@@ -287,6 +319,8 @@ fn validate_difficulty_in_bounds(
 
 fn calculate_block_effort(block: &RskBlock) -> Result<U256, &'static str> {
     let pow = U256::from_big_endian(block.pow.as_bytes());
+    // compute the effort by inverting the pow
+    // U256::MAX, the "difficulty 1" target, represents the easiest possible target
     U256::MAX.checked_div(pow).ok_or("0 division on calculate_block_effort")
 }
 
@@ -297,6 +331,7 @@ fn validate_block_hash(header: &RskBlockHeader) -> Result<(), &'static str> {
 
     let actual_hash = header.calculate_block_hash()?;
     if header.hash != actual_hash {
+        println!("Block number: {}", header.number);
         return Err("Block header hash is not matching");
     }
     Ok(())
