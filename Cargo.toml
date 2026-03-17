@@ -60,8 +60,6 @@ serde_json = "1.0"
 serde_yaml = "0.9.33"
 sha2 = "0.10.9"
 storage-backend = { package = "rust-bitvmx-storage-backend", git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-storage-backend.git", rev = "16a01bfe316266bdac080828e260cd191fcb3cde" }
-strum = { version = "0.26" }
-strum_macros = { version = "0.26" }
 
 #dev-dependencies
 tempfile = "3.16.0"

@@ -98,7 +98,7 @@ checksum = "bf01dd83a1ca5e4807d0ca0223c9615e211ce5db0a9fd1443c2778cacf89b546"
 dependencies = [
  "alloy-primitives",
  "num_enum",
- "strum 0.27.2",
+ "strum",
 ]
 
 [[package]]
@@ -519,7 +519,7 @@ dependencies = [
  "jsonwebtoken",
  "rand 0.8.5",
  "serde",
- "strum 0.27.2",
+ "strum",
 ]
 
 [[package]]
@@ -1544,8 +1544,8 @@ dependencies = [
  "hex",
  "serde",
  "serde_json",
- "strum 0.27.2",
- "strum_macros 0.27.2",
+ "strum",
+ "strum_macros",
  "thiserror 2.0.17",
 ]
 
@@ -1997,7 +1997,6 @@ dependencies = [
  "anyhow",
  "bitcoin",
  "bitvmx-broker",
- "bitvmx-cpu-definitions",
  "config",
  "emulator",
  "hex",
@@ -2012,8 +2011,6 @@ dependencies = [
  "serde_yaml",
  "sha3",
  "signal-hook",
- "strum 0.26.3",
- "strum_macros 0.26.4",
  "thiserror 2.0.17",
  "tokio",
  "uuid 1.18.1",
@@ -2699,8 +2696,8 @@ dependencies = [
  "serde",
  "serde-big-array",
  "serde_json",
- "strum 0.27.2",
- "strum_macros 0.27.2",
+ "strum",
+ "strum_macros",
  "thiserror 1.0.69",
  "tracing",
  "tracing-subscriber",
@@ -5578,7 +5575,7 @@ dependencies = [
  "serde",
  "serde_with",
  "sha2 0.10.9",
- "strum 0.27.2",
+ "strum",
  "tempfile",
  "thiserror 2.0.17",
  "toml 0.8.23",
@@ -6148,30 +6145,11 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "strum"
-version = "0.26.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fec0f0aef304996cf250b31b5a10dee7980c85da9d759361292b8bca5a18f06"
-
-[[package]]
-name = "strum"
 version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af23d6f6c1a224baef9d3f61e287d2761385a5b88fdab4eb4c6f11aeb54c4bcf"
 dependencies = [
- "strum_macros 0.27.2",
-]
-
-[[package]]
-name = "strum_macros"
-version = "0.26.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c6bee85a5a24955dc440386795aa378cd9cf82acd5f764469152d2270e581be"
-dependencies = [
- "heck",
- "proc-macro2",
- "quote",
- "rustversion",
- "syn 2.0.106",
+ "strum_macros",
 ]
 
 [[package]]
