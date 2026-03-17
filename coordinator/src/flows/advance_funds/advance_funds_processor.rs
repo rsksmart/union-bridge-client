@@ -655,8 +655,8 @@ mod tests {
     use crate::flows::advance_funds::test_utils::create_fake_block;
     use crate::types::EventWithBlock;
 
-    type BitVmxMock = MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
-    type TestProcessor = AdvanceFundsProcessor<MockRskContractsGatewayApi, BitVmxMock>;
+    type MockBitVmxBroker = MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
+    type TestProcessor = AdvanceFundsProcessor<MockRskContractsGatewayApi, MockBitVmxBroker>;
 
     /// Test constant for required confirmations (matches production default)
     const REQUIRED_CONFIRMATIONS: u32 = 5;
@@ -689,7 +689,7 @@ mod tests {
     }
 
     fn create_processor_reaching_checkfork_dispatch(
-        bitvmx_broker: BitVmxMock,
+        bitvmx_broker: MockBitVmxBroker,
         pegout_id: &str,
     ) -> (TestProcessor, BlockNumber, U256) {
         let mut processor = AdvanceFundsProcessor::new_for_test(
@@ -766,7 +766,7 @@ mod tests {
     fn test_new_processor_initial_state_is_clear() {
         let processor = AdvanceFundsProcessor::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
-            Rc::new(BitVmxMock::new()),
+            Rc::new(MockBitVmxBroker::new()),
             REQUIRED_CONFIRMATIONS,
         );
         assert!(processor.first_block_to_process.is_none());
@@ -780,7 +780,7 @@ mod tests {
     fn test_process_new_event_request_advance_funds_keeps_events() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
-            Rc::new(BitVmxMock::new()),
+            Rc::new(MockBitVmxBroker::new()),
             REQUIRED_CONFIRMATIONS,
         );
 
@@ -826,7 +826,7 @@ mod tests {
     fn test_process_new_event_advance_funds_creates_checker_when_one_request_exists() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
-            Rc::new(BitVmxMock::new()),
+            Rc::new(MockBitVmxBroker::new()),
             REQUIRED_CONFIRMATIONS,
         );
         let request_block =
@@ -900,7 +900,7 @@ mod tests {
      {
         let mut processor = AdvanceFundsProcessor::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
-            Rc::new(BitVmxMock::new()),
+            Rc::new(MockBitVmxBroker::new()),
             REQUIRED_CONFIRMATIONS,
         );
         let request_block_1 =
@@ -987,7 +987,7 @@ mod tests {
     fn test_process_new_event_advance_funds_advance_funds_exits_when_no_requests() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
-            Rc::new(BitVmxMock::new()),
+            Rc::new(MockBitVmxBroker::new()),
             REQUIRED_CONFIRMATIONS,
         );
         let advance_funds_block = create_fake_block(110.into(), U256::from(51));
@@ -1014,7 +1014,7 @@ mod tests {
     fn test_process_new_event_advance_funds_accumulator_exits_when_no_matching_request() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
-            Rc::new(BitVmxMock::new()),
+            Rc::new(MockBitVmxBroker::new()),
             REQUIRED_CONFIRMATIONS,
         );
         let request_block =
@@ -1177,7 +1177,7 @@ mod tests {
     #[test]
     #[allow(clippy::too_many_lines)]
     fn test_process_advance_funds_block_after_event_accumulates_effort_and_closes_advance_funds() {
-        let mut bitvmx_broker = BitVmxMock::new();
+        let mut bitvmx_broker = MockBitVmxBroker::new();
         expect_zkp_bitvmx(&mut bitvmx_broker);
 
         let pegout_id = "peg123";
@@ -1312,7 +1312,7 @@ mod tests {
     #[test]
     #[allow(clippy::too_many_lines)]
     fn test_process_advance_funds_block_before_event_accumulates_effort_and_closes_advance_funds() {
-        let mut bitvmx_broker = BitVmxMock::new();
+        let mut bitvmx_broker = MockBitVmxBroker::new();
         expect_zkp_bitvmx(&mut bitvmx_broker);
 
         let pegout_id = "peg123";
@@ -1452,7 +1452,7 @@ mod tests {
     fn test_process_advance_funds_event_without_blocks_early_exits() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
-            Rc::new(BitVmxMock::new()),
+            Rc::new(MockBitVmxBroker::new()),
             REQUIRED_CONFIRMATIONS,
         );
 
@@ -1496,7 +1496,7 @@ mod tests {
     fn test_process_old_block_early_exits() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
-            Rc::new(BitVmxMock::new()),
+            Rc::new(MockBitVmxBroker::new()),
             REQUIRED_CONFIRMATIONS,
         );
 
@@ -1526,7 +1526,7 @@ mod tests {
     fn test_shutdown_with_active_advance_funds_works() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
-            Rc::new(BitVmxMock::new()),
+            Rc::new(MockBitVmxBroker::new()),
             REQUIRED_CONFIRMATIONS,
         );
 
@@ -1583,7 +1583,7 @@ mod tests {
     fn test_remove_request_advance_funds_event_removes_it() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
-            Rc::new(BitVmxMock::new()),
+            Rc::new(MockBitVmxBroker::new()),
             REQUIRED_CONFIRMATIONS,
         );
 
@@ -1646,7 +1646,7 @@ mod tests {
     fn test_remove_request_advance_funds_block_removes_it() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
-            Rc::new(BitVmxMock::new()),
+            Rc::new(MockBitVmxBroker::new()),
             REQUIRED_CONFIRMATIONS,
         );
 
@@ -1687,7 +1687,7 @@ mod tests {
     fn test_remove_advance_funds_advance_funds_block_removes_it() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
-            Rc::new(BitVmxMock::new()),
+            Rc::new(MockBitVmxBroker::new()),
             REQUIRED_CONFIRMATIONS,
         );
         let advance_block =
@@ -1730,7 +1730,7 @@ mod tests {
     fn test_remove_advance_funds_advance_funds_event_stops_advance_funds() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
-            Rc::new(BitVmxMock::new()),
+            Rc::new(MockBitVmxBroker::new()),
             REQUIRED_CONFIRMATIONS,
         );
         let request_block =
@@ -1788,7 +1788,7 @@ mod tests {
     #[test]
     #[allow(clippy::too_many_lines)]
     fn test_process_blocks_handles_reorg_after_kickoff() {
-        let mut bitvmx_broker = BitVmxMock::new();
+        let mut bitvmx_broker = MockBitVmxBroker::new();
         expect_zkp_bitvmx(&mut bitvmx_broker);
 
         let pegout_id = "peg123";
@@ -1981,7 +1981,7 @@ mod tests {
     fn test_process_blocks_handles_deep_reorg_before_kickoff() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
-            Rc::new(BitVmxMock::new()),
+            Rc::new(MockBitVmxBroker::new()),
             REQUIRED_CONFIRMATIONS,
         );
         let pegout_id = "peg123";
@@ -2099,7 +2099,7 @@ mod tests {
     #[test]
     #[allow(clippy::too_many_lines)]
     fn test_process_blocks_reorg_during_confirmations_period() {
-        let mut bitvmx_broker = BitVmxMock::new();
+        let mut bitvmx_broker = MockBitVmxBroker::new();
         expect_zkp_bitvmx(&mut bitvmx_broker);
 
         let pegout_id = "peg123";
@@ -2297,7 +2297,7 @@ mod tests {
     fn test_advance_funds_with_active_accumulator_closes_existing_and_returns() {
         let mut processor = AdvanceFundsProcessor::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
-            Rc::new(BitVmxMock::new()),
+            Rc::new(MockBitVmxBroker::new()),
             REQUIRED_CONFIRMATIONS,
         );
         let request_block_1 =

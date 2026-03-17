@@ -919,7 +919,7 @@ mod tests {
     use super::*;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
 
-    type BitVmxMock = MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
+    type MockBitVmxBroker = MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
 
     fn test_trigger_data(committee_id: Uuid, slot_index: usize) -> OperatorTakeTriggerData {
         OperatorTakeTriggerData {
@@ -954,7 +954,7 @@ mod tests {
     fn buffers_reimbursement_kickoff_spv_while_waiting_for_advance_funds_confirmation() {
         let committee_id = Uuid::new_v4();
         let slot_index = 3;
-        let flow_id = AdvanceFundsFlowProcessor::<MockRskContractsGatewayApi, BitVmxMock>::get_advance_funds_pid(
+        let flow_id = AdvanceFundsFlowProcessor::<MockRskContractsGatewayApi, MockBitVmxBroker>::get_advance_funds_pid(
             committee_id,
             slot_index,
         )
@@ -963,7 +963,7 @@ mod tests {
 
         let flow = AdvanceFundsFlow::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
-            Rc::new(BitVmxMock::new()),
+            Rc::new(MockBitVmxBroker::new()),
             flow_id,
             trigger_data,
             Steps::RegisterAdvanceFunds,
@@ -971,7 +971,7 @@ mod tests {
 
         let mut processor = AdvanceFundsFlowProcessor::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
-            Rc::new(BitVmxMock::new()),
+            Rc::new(MockBitVmxBroker::new()),
             GlobalContext::new(),
         );
         processor.flows.insert(flow_id, flow);
@@ -1011,7 +1011,7 @@ mod tests {
 
         let flow = AdvanceFundsFlow::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
-            Rc::new(BitVmxMock::new()),
+            Rc::new(MockBitVmxBroker::new()),
             flow_id,
             trigger_data.clone(),
             Steps::SetupAdvanceFundsProtocol,
@@ -1019,7 +1019,7 @@ mod tests {
 
         let mut processor = AdvanceFundsFlowProcessor::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
-            Rc::new(BitVmxMock::new()),
+            Rc::new(MockBitVmxBroker::new()),
             GlobalContext::new(),
         );
         processor.flows.insert(flow_id, flow);

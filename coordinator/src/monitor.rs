@@ -441,12 +441,12 @@ mod tests {
     use super::*;
 
     // Type aliases for cleaner test code
-    type UnionMock = MockBrokerClientApi<ToServer, FromServer>;
-    type BitVmxMock = MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
+    type MockUnionBroker = MockBrokerClientApi<ToServer, FromServer>;
+    type MockBitVmxBroker = MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
 
     #[test]
     fn test_try_block_handles_wrong_order_blocks() {
-        let mut block_broker = UnionMock::new();
+        let mut block_broker = MockUnionBroker::new();
         let template_block1 = get_first_default_rsk_block();
         let template_block2 = get_second_default_rsk_block();
         let template_block3 = get_third_default_rsk_block();
@@ -488,10 +488,10 @@ mod tests {
         });
 
         let mut monitor = Monitor::new(
-            UnionMock::new(),
+            MockUnionBroker::new(),
             block_broker,
-            UnionMock::new(),
-            Rc::new(BitVmxMock::new()),
+            MockUnionBroker::new(),
+            Rc::new(MockBitVmxBroker::new()),
             vec![get_fake_address_1()],
         );
         monitor.block_monitoring_active = true;
@@ -517,7 +517,7 @@ mod tests {
         let address_1 = get_fake_address_1();
         let address_2 = get_fake_address_2();
 
-        let mut log_broker = UnionMock::new();
+        let mut log_broker = MockUnionBroker::new();
         expect_unsubscribe_logs(&mut log_broker, address_1);
         expect_unsubscribe_logs(&mut log_broker, address_2);
         expect_subscribe_logs(&mut log_broker, address_1);
@@ -525,9 +525,9 @@ mod tests {
 
         let mut monitor = Monitor::new(
             log_broker,
-            UnionMock::new(),
-            UnionMock::new(),
-            Rc::new(BitVmxMock::new()),
+            MockUnionBroker::new(),
+            MockUnionBroker::new(),
+            Rc::new(MockBitVmxBroker::new()),
             vec![address_1, address_2],
         );
 
@@ -539,7 +539,7 @@ mod tests {
     fn test_start_event_monitoring_fails_on_broker_error() {
         let address_1 = get_fake_address_1();
 
-        let mut log_broker = UnionMock::new();
+        let mut log_broker = MockUnionBroker::new();
         expect_unsubscribe_logs(&mut log_broker, address_1);
 
         log_broker
@@ -551,9 +551,9 @@ mod tests {
 
         let mut monitor = Monitor::new(
             log_broker,
-            UnionMock::new(),
-            UnionMock::new(),
-            Rc::new(BitVmxMock::new()),
+            MockUnionBroker::new(),
+            MockUnionBroker::new(),
+            Rc::new(MockBitVmxBroker::new()),
             vec![address_1],
         );
         let err = monitor.start_event_monitoring();
@@ -564,10 +564,10 @@ mod tests {
     #[test]
     fn test_start_event_monitoring_fails_if_already_active() {
         let mut monitor = Monitor::new(
-            UnionMock::new(),
-            UnionMock::new(),
-            UnionMock::new(),
-            Rc::new(BitVmxMock::new()),
+            MockUnionBroker::new(),
+            MockUnionBroker::new(),
+            MockUnionBroker::new(),
+            Rc::new(MockBitVmxBroker::new()),
             vec![get_fake_address_1()],
         );
         monitor.log_monitoring_active = true;
@@ -578,15 +578,15 @@ mod tests {
 
     #[test]
     fn test_start_block_monitoring_success() {
-        let mut block_broker = UnionMock::new();
+        let mut block_broker = MockUnionBroker::new();
         expect_unsubscribe_blocks(&mut block_broker, 1);
         expect_subscribe_blocks(&mut block_broker, 1);
 
         let mut monitor = Monitor::new(
-            UnionMock::new(),
+            MockUnionBroker::new(),
             block_broker,
-            UnionMock::new(),
-            Rc::new(BitVmxMock::new()),
+            MockUnionBroker::new(),
+            Rc::new(MockBitVmxBroker::new()),
             vec![get_fake_address_1()],
         );
         assert!(monitor.start_block_monitoring().is_ok());
@@ -595,7 +595,7 @@ mod tests {
 
     #[test]
     fn test_start_block_monitoring_fails_on_broker_error() {
-        let mut block_broker = UnionMock::new();
+        let mut block_broker = MockUnionBroker::new();
         expect_unsubscribe_blocks(&mut block_broker, 1);
 
         block_broker
@@ -604,10 +604,10 @@ mod tests {
             .return_once(|_| Err(BrokerError::UnknownError(anyhow!("fake error"))));
 
         let mut monitor = Monitor::new(
-            UnionMock::new(),
+            MockUnionBroker::new(),
             block_broker,
-            UnionMock::new(),
-            Rc::new(BitVmxMock::new()),
+            MockUnionBroker::new(),
+            Rc::new(MockBitVmxBroker::new()),
             vec![get_fake_address_1()],
         );
         let err = monitor.start_block_monitoring();
@@ -618,10 +618,10 @@ mod tests {
     #[test]
     fn test_start_block_monitoring_fails_if_already_active() {
         let mut monitor = Monitor::new(
-            UnionMock::new(),
-            UnionMock::new(),
-            UnionMock::new(),
-            Rc::new(BitVmxMock::new()),
+            MockUnionBroker::new(),
+            MockUnionBroker::new(),
+            MockUnionBroker::new(),
+            Rc::new(MockBitVmxBroker::new()),
             vec![get_fake_address_1()],
         );
         monitor.block_monitoring_active = true;
@@ -632,10 +632,10 @@ mod tests {
     #[test]
     fn test_start_bitvmx_monitoring_fails_if_already_active() {
         let mut monitor = Monitor::new(
-            UnionMock::new(),
-            UnionMock::new(),
-            UnionMock::new(),
-            Rc::new(BitVmxMock::new()),
+            MockUnionBroker::new(),
+            MockUnionBroker::new(),
+            MockUnionBroker::new(),
+            Rc::new(MockBitVmxBroker::new()),
             vec![get_fake_address_1()],
         );
         monitor.bitvmx_monitoring_active = true;
@@ -652,14 +652,14 @@ mod tests {
         let decode_result = EventDecoder::decode(&log);
         assert_eq!(decode_result, RskPegManagerEvents::UnknownEvent);
 
-        let mut log_broker = UnionMock::new();
+        let mut log_broker = MockUnionBroker::new();
         log_broker.expect_try_recv().return_once(move || Ok(Some(FromServer::Log(log))));
 
         let mut monitor = Monitor::new(
             log_broker,
-            UnionMock::new(),
-            UnionMock::new(),
-            Rc::new(BitVmxMock::new()),
+            MockUnionBroker::new(),
+            MockUnionBroker::new(),
+            Rc::new(MockBitVmxBroker::new()),
             vec![get_fake_address_1()],
         );
         monitor.log_monitoring_active = true;
@@ -671,14 +671,14 @@ mod tests {
 
     #[test]
     fn test_try_event_returns_none() {
-        let mut log_broker = UnionMock::new();
+        let mut log_broker = MockUnionBroker::new();
         log_broker.expect_try_recv().return_once(move || Ok(None));
 
         let mut monitor = Monitor::new(
             log_broker,
-            UnionMock::new(),
-            UnionMock::new(),
-            Rc::new(BitVmxMock::new()),
+            MockUnionBroker::new(),
+            MockUnionBroker::new(),
+            Rc::new(MockBitVmxBroker::new()),
             vec![get_fake_address_1()],
         );
         monitor.log_monitoring_active = true;
@@ -689,7 +689,7 @@ mod tests {
 
     #[test]
     fn test_try_block_returns_some() {
-        let mut block_broker = UnionMock::new();
+        let mut block_broker = MockUnionBroker::new();
 
         let (expected_block_1, expected_uncle_1, _) = create_block_and_uncles();
 
@@ -700,10 +700,10 @@ mod tests {
         });
 
         let mut monitor = Monitor::new(
-            UnionMock::new(),
+            MockUnionBroker::new(),
             block_broker,
-            UnionMock::new(),
-            Rc::new(BitVmxMock::new()),
+            MockUnionBroker::new(),
+            Rc::new(MockBitVmxBroker::new()),
             vec![get_fake_address_1()],
         );
         monitor.block_monitoring_active = true;
@@ -714,14 +714,14 @@ mod tests {
 
     #[test]
     fn test_try_block_returns_none() {
-        let mut block_broker = UnionMock::new();
+        let mut block_broker = MockUnionBroker::new();
         block_broker.expect_try_recv().return_once(move || Ok(None));
 
         let mut monitor = Monitor::new(
-            UnionMock::new(),
+            MockUnionBroker::new(),
             block_broker,
-            UnionMock::new(),
-            Rc::new(BitVmxMock::new()),
+            MockUnionBroker::new(),
+            Rc::new(MockBitVmxBroker::new()),
             vec![get_fake_address_1()],
         );
         monitor.block_monitoring_active = true;
@@ -739,9 +739,9 @@ mod tests {
         bitvmx_broker.expect_try_recv().return_once(move || Ok(Some(mock_value)));
 
         let mut monitor = Monitor::new(
-            UnionMock::new(),
-            UnionMock::new(),
-            UnionMock::new(),
+            MockUnionBroker::new(),
+            MockUnionBroker::new(),
+            MockUnionBroker::new(),
             Rc::new(bitvmx_broker),
             vec![get_fake_address_1()],
         );
@@ -753,13 +753,13 @@ mod tests {
 
     #[test]
     fn test_try_bitvmx_event_returns_none() {
-        let mut bitvmx_broker = BitVmxMock::new();
+        let mut bitvmx_broker = MockBitVmxBroker::new();
         bitvmx_broker.expect_try_recv().return_once(move || Ok(None));
 
         let mut monitor = Monitor::new(
-            UnionMock::new(),
-            UnionMock::new(),
-            UnionMock::new(),
+            MockUnionBroker::new(),
+            MockUnionBroker::new(),
+            MockUnionBroker::new(),
             Rc::new(bitvmx_broker),
             vec![get_fake_address_1()],
         );
@@ -774,15 +774,15 @@ mod tests {
         let address_1 = get_fake_address_1();
         let address_2 = get_fake_address_2();
 
-        let mut log_broker = UnionMock::new();
+        let mut log_broker = MockUnionBroker::new();
         expect_unsubscribe_logs(&mut log_broker, address_1);
         expect_unsubscribe_logs(&mut log_broker, address_2);
 
         let mut monitor = Monitor::new(
             log_broker,
-            UnionMock::new(),
-            UnionMock::new(),
-            Rc::new(BitVmxMock::new()),
+            MockUnionBroker::new(),
+            MockUnionBroker::new(),
+            Rc::new(MockBitVmxBroker::new()),
             vec![address_1, address_2],
         );
         monitor.log_monitoring_active = true;
@@ -793,14 +793,14 @@ mod tests {
 
     #[test]
     fn test_cancel_block_monitoring_success() {
-        let mut block_broker = UnionMock::new();
+        let mut block_broker = MockUnionBroker::new();
         expect_unsubscribe_blocks(&mut block_broker, 1);
 
         let mut monitor = Monitor::new(
-            UnionMock::new(),
+            MockUnionBroker::new(),
             block_broker,
-            UnionMock::new(),
-            Rc::new(BitVmxMock::new()),
+            MockUnionBroker::new(),
+            Rc::new(MockBitVmxBroker::new()),
             vec![get_fake_address_1()],
         );
         monitor.block_monitoring_active = true;
@@ -811,12 +811,12 @@ mod tests {
 
     #[test]
     fn test_cancel_bitvmx_monitoring_success() {
-        let bitvmx_broker = BitVmxMock::new();
+        let bitvmx_broker = MockBitVmxBroker::new();
 
         let mut monitor = Monitor::new(
-            UnionMock::new(),
-            UnionMock::new(),
-            UnionMock::new(),
+            MockUnionBroker::new(),
+            MockUnionBroker::new(),
+            MockUnionBroker::new(),
             Rc::new(bitvmx_broker),
             vec![get_fake_address_1()],
         );
