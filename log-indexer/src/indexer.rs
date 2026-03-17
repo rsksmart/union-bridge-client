@@ -264,7 +264,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                     continue;
                 }
                 Err(RskSubscriptionError::Lagged(err)) => {
-                    // TODO(Jira) trigger backward sync in scope of https://rsklabs.atlassian.net/browse/UB-45
+                    // TODO(UB-45): trigger backward sync when needed
                     error!(
                         "[subscribe_logs] Subscription lagged, a backward_sync will be needed: {err:?}"
                     );
@@ -301,7 +301,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
             }
 
             self.store.save_log(&new_log).context("Saving new log")?;
-            // TODO(Jira) avoid double writes for sync checkpoint in log indexer listener: https://rsklabs.atlassian.net/browse/UB-111
+            // TODO(UB-111): avoid double writes for sync checkpoint in log indexer listener
             self.store.set_sync_checkpoint(&new_log).context("Setting new log checkpoint")?;
 
             #[allow(clippy::collapsible_if)]

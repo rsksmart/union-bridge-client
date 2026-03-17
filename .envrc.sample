@@ -1,8 +1,9 @@
 ############################################################
 # Local Github Actions (Act)
 ############################################################
-export FAIRGATE_GITHUB_TOKEN="<ask_your_colleagues>"
-export UNION_CONTRACTS_GITHUB_TOKEN="<ask_your_colleagues>"
+# Tokens for private dependency repositories (GitHub PAT with repo access)
+export FAIRGATE_GITHUB_TOKEN="<your_github_token>"
+export UNION_CONTRACTS_GITHUB_TOKEN="<your_contracts_github_token>"
 
 ############################################################
 # For GitHub Container Registry

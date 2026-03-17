@@ -13,7 +13,7 @@ print_help() {
 Usage: $0 [-r|--ref <branch-or-tag>] [-s|--ssh] [-h|--help]
 
 Options:
-  -r, --ref <ref>   Branch or tag of FairgateLabs/docker-bitvmx to use (default: main)
+  -r, --ref <ref>   Branch or tag of BitVMX upstream docker-bitvmx repo to use (default: main)
   -s, --ssh         Use SSH URL for cloning instead of HTTPS
   -h, --help        Show this help and exit
 EOF

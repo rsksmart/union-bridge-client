@@ -3,9 +3,9 @@
 # required for Risc0 toolchain to work locally
 --container-architecture linux/amd64
 
-# needed for now to access Fairgate private repositories used as dependencies
--s FAIRGATE_GITHUB_TOKEN=<ask_your_colleagues>
--s UNION_CONTRACTS_GITHUB_TOKEN=<ask_your_colleagues>
+# Tokens for private dependency repositories (used by act when running workflows)
+-s FAIRGATE_GITHUB_TOKEN=<your_github_token>
+-s UNION_CONTRACTS_GITHUB_TOKEN=<your_contracts_github_token>
 
 # needed for transaction-dispatcher
 -s KEY_STORE_PASSWORD=<key_password>

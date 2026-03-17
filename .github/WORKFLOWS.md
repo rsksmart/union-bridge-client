@@ -11,7 +11,7 @@ created.
 
 **Required Secrets**:
 
-- `FAIRGATE_GITHUB_TOKEN`: GitHub token for accessing FairgateLabs repositories
+- `FAIRGATE_GITHUB_TOKEN`: GitHub token for accessing private dependency repositories (e.g. BitVMX)
 - `UNION_CONTRACTS_GITHUB_TOKEN`: GitHub token for accessing temp-rsk contracts repository
 - `REGISTRY_TOKEN`: Personal Access Token with `write:packages` scope for GHCR authentication
 
@@ -134,7 +134,7 @@ especially for private repository access.
 The Docker build process requires access to private repositories using GitHub tokens (same as other workflows in this
 project):
 
-1. **FAIRGATE_GITHUB_TOKEN**: Already configured for FairgateLabs repositories
+1. **FAIRGATE_GITHUB_TOKEN**: Already configured for private dependency repositories
 2. **UNION_CONTRACTS_GITHUB_TOKEN**: Already configured for temp-rsk contracts repository
 
 These tokens are already set up and used by other workflows in the project.
@@ -151,7 +151,7 @@ scope. The token should be configured as a repository secret.
 - **Authentication issues**: Verify `FAIRGATE_GITHUB_TOKEN` and `UNION_CONTRACTS_GITHUB_TOKEN` are properly configured
 - **Dependency issues**: Check that all dependencies are properly specified in `Cargo.toml`
 - **Docker build issues**: Check GitHub Actions logs for specific error messages
-- **Private repository access**: Ensure tokens have access to `FairgateLabs` and `temp-rsk` repositories
+- **Private repository access**: Ensure tokens have access to the required private dependency repositories
 
 ### Permission Issues
 

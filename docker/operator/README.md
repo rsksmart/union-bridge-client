@@ -22,7 +22,7 @@ echo "$GITHUB_REGISTRY_TOKEN" | docker login ghcr.io -u "user" --password-stdin.
 Use this script whenever you need to fetch the latest BitVMX compose from upstream and compare it with your working
 file. Typical times to run it:
 
-- After a new `FairgateLabs/docker-bitvmx` release to see what's changed.
+- After a new BitVMX upstream `docker-bitvmx` release to see what's changed.
 - Anytime you want to verify your `docker/bitvmx-client/docker-compose.yml` is aligned with upstream.
 
 Run the script:
@@ -31,7 +31,7 @@ Run the script:
 ./check_bitvmx_updates.sh
 ```
 
-Optionally select a specific branch or tag of `FairgateLabs/docker-bitvmx`:
+Optionally select a specific branch or tag of the BitVMX upstream `docker-bitvmx` repository:
 
 ```bash
 ./check_bitvmx_updates.sh --ref <branch-or-tag>
@@ -39,7 +39,7 @@ Optionally select a specific branch or tag of `FairgateLabs/docker-bitvmx`:
 ./check_bitvmx_updates.sh -r <branch-or-tag>
 ```
 
-The script clones `FairgateLabs/docker-bitvmx` at the chosen ref, saves the fetched compose as
+The script clones the BitVMX upstream `docker-bitvmx` repo at the chosen ref, saves the fetched compose as
 `docker/bitvmx-client/docker-compose.fetched.yml`, and prints a unified diff against your working
 `docker/bitvmx-client/docker-compose.yml`. It is safe to re-run at any time.
 

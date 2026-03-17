@@ -7,7 +7,7 @@
 - Point out when you think my approach might be overcomplicating things, even if I didn’t ask explicitly
 
 ## Team conventions
-- Every new TODO included should come with a Jira ticket
+- New TODOs should be descriptive; include ticket IDs (e.g. UB-xxx, UBC-xxx) for context when tracking work, but do not add full Jira/Atlassian URLs
 
 # Rust
 

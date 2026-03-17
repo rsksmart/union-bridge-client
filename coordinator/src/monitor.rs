@@ -146,7 +146,7 @@ where
 
     // TODO should all these methods be public?
 
-    // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - retries, reconnects, etc
+    // TODO(UB-132): improve retries and reconnects
     /// # Errors
     /// Returns an error if monitoring is already active or if broker communication fails.
     pub fn start_event_monitoring(&mut self) -> Result<()> {
@@ -261,7 +261,7 @@ where
             bail!("Block monitoring is not active");
         }
 
-        // TODO(Jira) do not simply fail on broker error, do some retries - https://rsklabs.atlassian.net/browse/UB-132
+        // TODO(UB-132): do not simply fail on broker error; add retries
         match self.block_broker.try_recv()? {
             Some(FromServer::Block(bau)) => {
                 trace!("Received new Block {bau:?}");
@@ -369,7 +369,7 @@ where
     /// Returns an error if broker communication fails or if deserialization fails.
     pub fn try_user_request(&self) -> Result<Option<UserRequests>> {
         match self.user_broker.try_recv()? {
-            // TODO(Jira) this should not be needed after https://rsklabs.atlassian.net/browse/UB-213
+            // TODO(UB-213): remove after broker response type is unified
             Some(FromServer::UserRequest(req)) => {
                 match serde_json::from_value::<UserRequests>(req) {
                     Ok(ur) => {
@@ -382,7 +382,7 @@ where
                     }
                 }
             }
-            // TODO(Jira) this should not be needed after https://rsklabs.atlassian.net/browse/UB-213
+            // TODO(UB-213): remove after broker response type is unified
             Some(FromServer::MemberRequest) => Ok(Some(UserRequests::GetBitVMXFundingAddress)),
             Some(br) => {
                 bail!("Unexpected request from User {br:?}")

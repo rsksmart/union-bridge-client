@@ -256,7 +256,7 @@ fn add_bridge_event(blocks: &[TesterRskBlock]) -> Vec<RskBlock> {
         .map(|(i, b)| {
             let mut input_block = RskBlock::from(b);
             if i == 0 {
-                // TODO(Jira): https://rsklabs.atlassian.net/browse/UB-10
+                // TODO(UB-10): refactor when API is stable
                 input_block.bridge_event = Some(BridgeEvent {
                     utxo_id: "FAKE_UTXO_ID".to_string(),         // tmp
                     pegout_id: "FAKE_PEGOUT_ID".to_string(),     // tmp

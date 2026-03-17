@@ -78,7 +78,7 @@ pub struct RootstockConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ContractConfig {
-    // TODO(Jira-RethinkContractHandling) convert into a map
+    // TODO: convert into a map for contract handling
     pub name: String,
     pub address: String,
 }

@@ -8,7 +8,7 @@ use rand::rngs::OsRng;
 use rand::thread_rng;
 
 pub struct KeyManager {
-    // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-86
+    // TODO(UB-86): improve error reporting when keystore path is invalid
 }
 
 impl KeyManager {

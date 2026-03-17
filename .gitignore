@@ -1,4 +1,8 @@
 **/.env
+**/.env.*
+!**/.env.sample
+!**/.env.example
+!docker/local-infra/.env.local
 **/.envrc
 **/.actrc
 **/app.log*
@@ -20,3 +24,27 @@ docs/
 .junie/memory
 .union_bridge/
 broker/
+
+# Private keys and certificates
+**/*.key
+**/*.pem
+**/*.cert
+**/*.p12
+**/*.pfx
+
+# Keystore and secrets
+**/config/keys/
+
+# Docker volumes
+**/volumes/
+
+# Fetched comparison files
+**/docker-compose.fetched.yml
+
+# BitVMX client configs for remote environments (contain deployment-specific secrets)
+docker/bitvmx-client/config/testnet/
+docker/bitvmx-client/config/alphanet/
+docker/bitvmx-client/config/regtest/
+
+# BitVMX local config (operator YAMLs, keys, broker config — machine-specific, restore via scripts/restore-untracked-configs.sh)
+docker/bitvmx-client/config/local/

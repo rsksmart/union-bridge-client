@@ -65,7 +65,7 @@ pub fn send_bitvmx_msg<BC: BitVmxBrokerClientApi>(
         .send(msg)
         .map(|_| ())
         .map_err(|e| {
-            // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132
+            // TODO(UB-132): improve broker reconnection handling
             error!("Failed to send msg to BitVMX: {e:?}");
             anyhow::Error::from(e)
         })

@@ -6,7 +6,7 @@ use crate::contracts::stream_manager::StreamManagerContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{PeginAddressInput, PeginAddressOutput};
 
-// TODO(Jira): generate Try_From for the input struct like in the other cases - https://rsklabs.atlassian.net/browse/UB-108
+// TODO(UB-108): generate TryFrom for the input struct like in other interaction modules
 
 #[derive(Clone)]
 pub(crate) struct GetTemporaryPeginAddressCall<
