@@ -99,12 +99,9 @@ RSK_ADDRESS="0x$(openssl rand -hex 20)" # random address each run
 VALUE=100000
 COMMITTEE_REGISTRY_ADDRESS="0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82"
 
-# Dockerized BitVMX setup is slower and can take longer to emit the final
-# committee completion marker in all operators.
-COMMITTEE_SETUP_MAX_BLOCKS=50
-if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
-    COMMITTEE_SETUP_MAX_BLOCKS=70
-fi
+# Committee setup can take longer to emit completion markers in all operators.
+# Committee setup can take longer in mixed (local client + docker BitVMX) and full-docker flows.
+COMMITTEE_SETUP_MAX_BLOCKS=120
 
 # colors
 GREEN='\033[0;32m'
