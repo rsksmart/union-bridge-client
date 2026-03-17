@@ -442,7 +442,8 @@ mod tests {
 
     // Type aliases for cleaner test code
     type MockUnionBroker = MockBrokerClientApi<ToServer, FromServer>;
-    type MockBitVmxBroker = MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
+    type MockBitVmxBroker =
+        MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
 
     #[test]
     fn test_try_block_handles_wrong_order_blocks() {

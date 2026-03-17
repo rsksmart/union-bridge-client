@@ -655,7 +655,8 @@ mod tests {
     use crate::flows::advance_funds::test_utils::create_fake_block;
     use crate::types::EventWithBlock;
 
-    type MockBitVmxBroker = MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
+    type MockBitVmxBroker =
+        MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
     type TestProcessor = AdvanceFundsProcessor<MockRskContractsGatewayApi, MockBitVmxBroker>;
 
     /// Test constant for required confirmations (matches production default)

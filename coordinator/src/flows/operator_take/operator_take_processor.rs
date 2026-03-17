@@ -919,7 +919,8 @@ mod tests {
     use super::*;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
 
-    type MockBitVmxBroker = MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
+    type MockBitVmxBroker =
+        MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
 
     fn test_trigger_data(committee_id: Uuid, slot_index: usize) -> OperatorTakeTriggerData {
         OperatorTakeTriggerData {
