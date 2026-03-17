@@ -6,7 +6,7 @@ use log::{error, info};
 use mockall::automock;
 use union_contracts::bindings::challenge_manager::ChallengeManager::{
     self, BtcTransaction, BtcTxIn, BtcTxOut, BtcTxSPVProof, ChallengeManagerErrors,
-    ChallengeManagerInstance, ChallengeTempInfo,
+    ChallengeManagerInstance,
 };
 
 use crate::contracts::bitcoin_manager::ParseFieldError;
@@ -31,11 +31,6 @@ pub trait ChallengeManagerContractApi {
         input_revealed: BtcTxSPVProof,
         gas_bumps: u8,
     ) -> alloy_contract::Result<TxHash>;
-
-    async fn call_get_challenge_temp_info(
-        &self,
-        accept_pegin_txid: FixedBytes<32>,
-    ) -> alloy_contract::Result<ChallengeTempInfo>;
 }
 
 #[derive(Clone)]
@@ -81,13 +76,6 @@ impl<P: Provider> ChallengeManagerContractApi for ChallengeManagerContract<P> {
             gas_bumps,
         )
         .await
-    }
-
-    async fn call_get_challenge_temp_info(
-        &self,
-        accept_pegin_txid: FixedBytes<32>,
-    ) -> alloy_contract::Result<ChallengeTempInfo> {
-        self.contract_instance.getChallengeTempInfo(accept_pegin_txid).call().await
     }
 }
 
