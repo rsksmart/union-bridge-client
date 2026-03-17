@@ -11,6 +11,7 @@ use crate::contracts::types::Address;
 use crate::rsk_gateway::DomainErrors;
 
 #[cfg_attr(test, automock)]
+#[allow(clippy::struct_field_names)]
 pub trait StreamManagerContractApi {
     async fn call_get_minimum_deposit(
         &self,

@@ -1,4 +1,3 @@
-use std::ops::Sub;
 use std::rc::Rc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -193,7 +192,8 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
 
         self.monitor.start_user_monitoring().context("Failed to start User request monitoring")?;
 
-        let mut bitvmx_last_msg = Instant::now().sub(self.bitvmx_ping_after_silence);
+        let mut bitvmx_last_msg =
+            Instant::now().checked_sub(self.bitvmx_ping_after_silence).unwrap_or_else(Instant::now);
         let mut bitvmx_ping: Option<Instant> = None;
 
         // TODO we will need to think what happens if we accumulate messages of a certain type
