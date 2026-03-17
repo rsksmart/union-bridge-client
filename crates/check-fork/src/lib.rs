@@ -52,12 +52,23 @@ impl CheckForkJournal {
     #[must_use]
     pub fn to_bytes(self) -> [u8; CHECK_FORK_JOURNAL_LEN] {
         let mut out = [0u8; CHECK_FORK_JOURNAL_LEN];
-        out[..JOURNAL_OPERATOR_ID_LEN].copy_from_slice(&self.operator_id);
-        out[JOURNAL_OPERATOR_ID_LEN..JOURNAL_OPERATOR_ID_LEN + PEGOUT_ID_LEN]
-            .copy_from_slice(&self.pegout_id);
-        out[65..69].copy_from_slice(&self.utxo_id);
-        out[69] = self.accepted;
-        out[70..72].copy_from_slice(&self.version);
+        let mut rest = out.as_mut_slice();
+
+        let (operator_dst, next) = rest.split_at_mut(self.operator_id.len());
+        operator_dst.copy_from_slice(&self.operator_id);
+        rest = next;
+
+        let (pegout_dst, next) = rest.split_at_mut(self.pegout_id.len());
+        pegout_dst.copy_from_slice(&self.pegout_id);
+        rest = next;
+
+        let (utxo_dst, next) = rest.split_at_mut(self.utxo_id.len());
+        utxo_dst.copy_from_slice(&self.utxo_id);
+        rest = next;
+
+        let (accepted_dst, version_dst) = rest.split_at_mut(1);
+        accepted_dst[0] = self.accepted;
+        version_dst.copy_from_slice(&self.version);
         out
     }
 }
@@ -82,7 +93,8 @@ pub fn build_check_fork_journal_from_args(
 ) -> CheckForkJournal {
     let pegout_id = compute_pegout_id(args);
     let mut operator_id = [0u8; JOURNAL_OPERATOR_ID_LEN];
-    operator_id[..32].copy_from_slice(&args.operator_id);
+    let (operator_prefix, _) = operator_id.split_at_mut(args.operator_id.len());
+    operator_prefix.copy_from_slice(&args.operator_id);
 
     let mut pegout_id_bytes = [0u8; PEGOUT_ID_LEN];
     pegout_id_bytes.copy_from_slice(pegout_id.as_bytes());
