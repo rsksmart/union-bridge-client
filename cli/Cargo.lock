@@ -1259,7 +1259,7 @@ dependencies = [
 [[package]]
 name = "bitcoin-script-riscv"
 version = "0.5.1"
-source = "git+https://github.com/FairgateLabs/BitVMX-CPU?tag=v0.5.1#a18a0310e711a10e7518f9f07fbb18441f7a5f50"
+source = "git+ssh://git@github.com/FairgateLabs/BitVMX-CPU.git?tag=v0.5.11#cb7f9b9b7c8ec9be3ff56b7fcd1c5dd76ff9f08a"
 dependencies = [
  "bitcoin 0.32.6",
  "bitcoin-script",
@@ -1422,7 +1422,7 @@ dependencies = [
 [[package]]
 name = "bitvmx-cpu-definitions"
 version = "0.5.1"
-source = "git+https://github.com/FairgateLabs/BitVMX-CPU?tag=v0.5.1#a18a0310e711a10e7518f9f07fbb18441f7a5f50"
+source = "git+ssh://git@github.com/FairgateLabs/BitVMX-CPU.git?tag=v0.5.11#cb7f9b9b7c8ec9be3ff56b7fcd1c5dd76ff9f08a"
 dependencies = [
  "blake3",
  "config",
@@ -2375,7 +2375,7 @@ dependencies = [
 [[package]]
 name = "emulator"
 version = "0.5.1"
-source = "git+https://github.com/FairgateLabs/BitVMX-CPU?tag=v0.5.1#a18a0310e711a10e7518f9f07fbb18441f7a5f50"
+source = "git+ssh://git@github.com/FairgateLabs/BitVMX-CPU.git?tag=v0.5.11#cb7f9b9b7c8ec9be3ff56b7fcd1c5dd76ff9f08a"
 dependencies = [
  "bitcoin-script-riscv",
  "bitvmx-cpu-definitions",
