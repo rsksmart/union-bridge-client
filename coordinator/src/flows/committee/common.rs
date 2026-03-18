@@ -1,14 +1,57 @@
 use anyhow::{Context, Result};
 use bitcoin::PublicKey;
-use common::msg_broker::bitvmx_types::IncomingBitVMXApiMessages;
+use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, PartialUtxo};
 use common::msg_broker::broker::BitVmxBrokerClientApi;
+use common::types::CommitteeId;
 use log::{debug, error};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use union_contracts::bindings::committee_registry::CommitteeRegistry::Committee;
 use uuid::Uuid;
+
+use crate::types::MemberOfCommittee;
 
 pub const DISPUTE_CORE_SUFFIX: &str = "dispute_core";
 pub const DISPUTE_CHANNEL_SUFFIX: &str = "dispute_channel";
 pub const UUID_BYTES_LEN: usize = 16;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct FundingUtxos {
+    pub speedup: PartialUtxo,
+    pub protocol_funding: PartialUtxo,
+    pub advance_funds: PartialUtxo,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct CommitteeData {
+    pub committee_id: CommitteeId,
+    pub committee: Committee,
+    pub members: Vec<MemberOfCommittee>,
+}
+
+impl CommitteeData {
+    /// Converts the `CommitteeId` to a Uuid.
+    /// This is a common operation that's repeated multiple times across the codebase.
+    pub fn committee_uuid(&self) -> Uuid {
+        Uuid::from_u128(*self.committee_id)
+    }
+
+    /// Gets the dispute core protocol ID for a member by their take key.
+    /// This is a common operation that's repeated multiple times across the codebase.
+    pub fn get_dispute_core_pid_for_key(&self, pubkey: &PublicKey) -> Result<Uuid> {
+        get_dispute_core_pid(self.committee_uuid(), pubkey)
+    }
+
+    /// Gets the dispute core protocol ID for a member by their index.
+    /// This is a common operation that's repeated multiple times across the codebase.
+    pub fn get_dispute_core_pid_for_index(&self, member_index: usize) -> Result<Uuid> {
+        let member = self
+            .members
+            .get(member_index)
+            .context(format!("Member index {member_index} out of bounds"))?;
+        self.get_dispute_core_pid_for_key(&member.take_key)
+    }
+}
 
 /// Sends a message to `BitVMX` broker with proper error handling and logging.
 /// Returns Result to allow error propagation.

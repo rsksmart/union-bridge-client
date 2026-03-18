@@ -13,8 +13,8 @@ use common::msg_broker::config::{ConfigResult, ConfigResults, DisputeConfigurati
 use log::{debug, info};
 use uuid::Uuid;
 
-use crate::flows::committee::common::{get_dispute_channel_pid, send_bitvmx_msg};
-use crate::flows::committee::setup_committee_flow::{CommitteeData, NO_LEADER_IDX};
+use crate::flows::committee::common::{CommitteeData, get_dispute_channel_pid, send_bitvmx_msg};
+use crate::flows::committee::setup_committee_flow::NO_LEADER_IDX;
 use crate::types::MemberOfCommittee;
 
 const DRP_TIMELOCK_BLOCKS: u16 = 15; // TODO: move to config?
@@ -470,7 +470,7 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
-    use crate::flows::committee::setup_committee_flow::CommitteeData;
+    use crate::flows::committee::common::CommitteeData;
     use crate::types::MemberOfCommittee;
 
     // Helper to create a test public key

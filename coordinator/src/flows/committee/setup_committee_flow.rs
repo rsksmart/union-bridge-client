@@ -33,7 +33,9 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
 use uuid::Uuid;
 
 use crate::config::CommitteeConfig;
-use crate::flows::committee::common::{get_dispute_core_pid, get_dispute_pair_aggregated_key_pid};
+use crate::flows::committee::common::{
+    CommitteeData, FundingUtxos, get_dispute_pair_aggregated_key_pid,
+};
 use crate::flows::committee::dispute_channel_setup::{
     DisputeChannelSetup, DisputeChannelSetupRequest,
 };
@@ -116,43 +118,6 @@ type SendFundsReq = Option<(Uuid, Option<Txid>)>; // request id, funding utxo, s
 type PairwiseKeyReq = Vec<(Uuid, usize, usize, Vec<types::Address>, Option<PublicKey>)>;
 type DisputeChannelReq = Vec<DisputeChannelSetupRequest>;
 type SetupChannelReq = Vec<(Uuid, bool)>; // dispute channel program id, setup completed
-
-pub(crate) struct FundingUtxos {
-    pub speedup: PartialUtxo,
-    pub protocol_funding: PartialUtxo,
-    pub advance_funds: PartialUtxo,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct CommitteeData {
-    pub committee_id: CommitteeId,
-    pub committee: Committee,
-    pub members: Vec<MemberOfCommittee>,
-}
-
-impl CommitteeData {
-    /// Converts the `CommitteeId` to a Uuid.
-    /// This is a common operation that's repeated multiple times across the codebase.
-    pub fn committee_uuid(&self) -> Uuid {
-        Uuid::from_u128(*self.committee_id)
-    }
-
-    /// Gets the dispute core protocol ID for a member by their take key.
-    /// This is a common operation that's repeated multiple times across the codebase.
-    pub fn get_dispute_core_pid_for_key(&self, pubkey: &PublicKey) -> Result<Uuid> {
-        get_dispute_core_pid(self.committee_uuid(), pubkey)
-    }
-
-    /// Gets the dispute core protocol ID for a member by their index.
-    /// This is a common operation that's repeated multiple times across the codebase.
-    pub fn get_dispute_core_pid_for_index(&self, member_index: usize) -> Result<Uuid> {
-        let member = self
-            .members
-            .get(member_index)
-            .context(format!("Member index {member_index} out of bounds"))?;
-        self.get_dispute_core_pid_for_key(&member.take_key)
-    }
-}
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 struct FlowContext {

@@ -10,8 +10,8 @@ use common::msg_broker::broker::BitVmxBrokerClientApi;
 use log::{debug, info};
 use uuid::Uuid;
 
-use crate::flows::committee::common::send_bitvmx_msg;
-use crate::flows::committee::setup_committee_flow::{CommitteeData, NO_LEADER_IDX};
+use crate::flows::committee::common::{CommitteeData, send_bitvmx_msg};
+use crate::flows::committee::setup_committee_flow::NO_LEADER_IDX;
 
 const PROGRAM_TYPE_DISPUTE_CORE: &str = "dispute_core";
 
@@ -157,7 +157,7 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
-    use crate::flows::committee::setup_committee_flow::CommitteeData;
+    use crate::flows::committee::common::CommitteeData;
     use crate::types::MemberOfCommittee;
 
     // Helper to create a test public key

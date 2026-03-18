@@ -53,6 +53,8 @@ services:
       - RPC_URL=${ANVIL_RPC_URL}
       - MNEMONIC=${MNEMONIC}
       - DEPLOYER_INDEX=${DEPLOYER_INDEX}
+    # deploy-local.sh reads LOCAL_RPC from .env. We inject RPC_URL at runtime so we don't rely on
+    # the image's .env (especially with registry vs local-build contract images).
     command:
       - "sed -i \"s|LOCAL_RPC=.*|LOCAL_RPC=$$RPC_URL|\" .env && bash shell/script/deploy/deploy-local.sh"
     depends_on:

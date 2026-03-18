@@ -1,5 +1,7 @@
 # 4 BitVMX clients for local development (union-client runs locally with cargo)
 # Usage: docker compose -f docker-compose.bitvmx.yml up -d
+# Volume ../../tests -> /app/drp: DRP program definition (e.g. hello-world.yaml) lives in tests/;
+# coordinator config uses /app/drp/hello-world.yaml.
 
 services:
   bitvmx-client-1:

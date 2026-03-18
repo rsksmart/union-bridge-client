@@ -32,7 +32,7 @@ broker:
 
 components:
   l2:
-    pubkey_hash: 5ea6c0133cfff7a1c10b657107946358f22c1f33496ea688453bbac7bf682703
+    pubkey_hash: 2d482b4664d941239cc23ca63db4858e896dfe1cb019db3d164ee297e39bcad6
     id: 0
   bitvmx:
     pubkey_hash: 1d10fa43ebbf6674d74caa3e9032711ade09d98ea7d20f89459f61152bebda1e

@@ -119,6 +119,10 @@ impl Wallet {
             wallet.enabler_amount = enabler_amount;
         }
 
+        if let Some(sats_per_byte) = config.sats_per_byte {
+            wallet.set_sats_per_byte(sats_per_byte);
+        }
+
 
         if let Some(ref wif) = config.private_key_wif {
             let address = wallet.import_private_key(wif)?;

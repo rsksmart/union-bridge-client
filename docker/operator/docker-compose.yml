@@ -12,6 +12,9 @@ services:
       # RUST_LOG: debug
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # Startup order only (keystore): block-indexer runs key-setup first and populates
+    # broker.key + broker.pubkey_hash in the shared keystore; bitvmx-client entrypoint
+    # reads broker.pubkey_hash to patch op_*.yaml. No domain coupling.
     depends_on:
       block-indexer:
         condition: service_healthy
@@ -20,7 +23,8 @@ services:
       - db-bitvmx:/tmp
       - ../../tests:/app/drp:ro
       - keystore:/keystore:ro
-    entrypoint: ["sh", "-c", "set -e; H=; [ -f /keystore/broker.pubkey_hash ] && H=$(cat /keystore/broker.pubkey_hash); if [ -n \"$$H\" ]; then for F in /app/config/op_*.yaml; do [ -f \"$$F\" ] && awk -v h=\"$$H\" '/pubkey_hash:/ && ++n<=1 {sub(/pubkey_hash: .*/, \"pubkey_hash: \" h);} 1' \"$$F\" > \"$$F.tmp\" && mv \"$$F.tmp\" \"$$F\" || true; done; fi; exec ./run.sh"]
+      - ./patch_bitvmx_op_pubkey_hash.sh:/app/patch_bitvmx_op_pubkey_hash.sh:ro
+    entrypoint: ["sh", "-c", "set -e; sh /app/patch_bitvmx_op_pubkey_hash.sh; exec ./run.sh"]
     extends:
       file: ../bitvmx-client/docker-compose.yml
       service: bitvmx-client
