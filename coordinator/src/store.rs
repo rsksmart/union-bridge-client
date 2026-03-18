@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::hash::BuildHasher;
 
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use common::msg_broker::bitvmx_types::{ParticipantRole, SignedPublicKey};
 use common::types::CommitteeId;
 use log::{debug, error, info};
@@ -119,15 +119,9 @@ impl PersistentGlobalContext {
 }
 
 #[cfg(test)]
-use mockall::automock;
+use mockall::mock;
 
-// Minimal trait to allow mocking the coordinator store in tests
-#[cfg_attr(test, automock)]
-pub trait CoordinatorStoreApi {
-    /// # Errors
-    /// Returns an error if storage access fails or if deserialization fails.
-    fn load_context(&self) -> Result<Option<GlobalContext>>;
-
+pub trait CoordinatorStoreWriteApi {
     /// # Errors
     /// Returns an error if storage access fails or if serialization fails.
     fn save_context(&self, context: &GlobalContext) -> Result<()>;
@@ -137,12 +131,19 @@ pub trait CoordinatorStoreApi {
     fn save_flow<T: Serialize + 'static>(&self, key: &StoreKey, flow_state: T) -> Result<()>;
 
     /// # Errors
-    /// Returns an error if storage access fails or if deserialization fails.
-    fn load_flow<T: DeserializeOwned + 'static>(&self, key: &StoreKey) -> Result<Option<T>>;
-
-    /// # Errors
     /// Returns an error if storage access fails.
     fn delete_flow(&self, key: &StoreKey) -> Result<()>;
+}
+
+// Minimal trait to allow mocking the coordinator store in tests
+pub trait CoordinatorStoreApi: CoordinatorStoreWriteApi {
+    /// # Errors
+    /// Returns an error if storage access fails or if deserialization fails.
+    fn load_context(&self) -> Result<Option<GlobalContext>>;
+
+    /// # Errors
+    /// Returns an error if storage access fails or if deserialization fails.
+    fn load_flow<T: DeserializeOwned + 'static>(&self, key: &StoreKey) -> Result<Option<T>>;
 
     /// # Errors
     /// Returns an error if storage access fails or if deserialization fails.
@@ -152,8 +153,54 @@ pub trait CoordinatorStoreApi {
     ) -> Result<HashMap<Uuid, T>>;
 }
 
+#[cfg(test)]
+mock! {
+    pub CoordinatorStoreApi {}
+
+    impl CoordinatorStoreWriteApi for CoordinatorStoreApi {
+        fn save_context(&self, context: &GlobalContext) -> Result<()>;
+        fn save_flow<T: Serialize + 'static>(&self, key: &StoreKey, flow_state: T) -> Result<()>;
+        fn delete_flow(&self, key: &StoreKey) -> Result<()>;
+    }
+
+    #[allow(clippy::struct_field_names)]
+    impl CoordinatorStoreApi for CoordinatorStoreApi {
+        fn load_context(&self) -> Result<Option<GlobalContext>>;
+        fn load_flow<T: DeserializeOwned + 'static>(&self, key: &StoreKey) -> Result<Option<T>>;
+        fn load_all_flows<T: DeserializeOwned + 'static>(
+            &self,
+            prefix: StorePrefix,
+        ) -> Result<HashMap<Uuid, T>>;
+    }
+}
+
+pub trait CoordinatorStoreTransactional {
+    type Transaction<'a>: CoordinatorStoreWriteApi
+    where
+        Self: 'a;
+
+    /// Executes several store operations atomically within a scoped transaction.
+    ///
+    /// # Errors
+    /// Returns an error if any operation fails, if committing fails, or if rollback fails after an
+    /// operation error.
+    fn transaction<T, F>(&self, run_ops: F) -> Result<T>
+    where
+        F: for<'a> FnOnce(&Self::Transaction<'a>) -> Result<T>;
+}
+
 pub struct CoordinatorStore {
     db: Storage,
+}
+
+/// Scoped transaction handle for coordinator persistence operations.
+///
+/// This type is intentionally created through `CoordinatorStoreTransactional::transaction` so
+/// callers keep the transactional work bounded to a single closure. If it is dropped before being
+/// committed, it rolls back the underlying storage transaction.
+pub struct CoordinatorStoreTransaction<'a> {
+    store: &'a CoordinatorStore,
+    transaction_id: Option<Uuid>,
 }
 
 impl CoordinatorStore {
@@ -165,40 +212,137 @@ impl CoordinatorStore {
         Ok(Self { db })
     }
 
-    fn set<T: serde::Serialize>(&self, key: &str, value: &T) -> Result<()> {
-        Ok(self.db.set(key, value, None)?)
+    fn persist_context(&self, context: &GlobalContext, transaction_id: Option<Uuid>) -> Result<()> {
+        let dto = PersistentGlobalContext::from_memory(context);
+        Ok(self.db.set(StoreKey::GlobalContext.value(), &dto, transaction_id)?)
     }
 
-    fn get<T: serde::de::DeserializeOwned>(&self, key: &str) -> Result<Option<T>> {
-        Ok(self.db.get(key)?)
+    fn persist_flow<T: Serialize + 'static>(
+        &self,
+        key: &StoreKey,
+        flow_state: T,
+        transaction_id: Option<Uuid>,
+    ) -> Result<()> {
+        Ok(self.db.set(key.value(), &flow_state, transaction_id)?)
     }
 
-    fn delete(&self, key: &str) -> Result<()> {
-        Ok(self.db.delete(key)?)
+    fn remove_flow(&self, key: &StoreKey, transaction_id: Option<Uuid>) -> Result<()> {
+        match transaction_id {
+            Some(transaction_id) => {
+                Ok(self.db.transactional_delete(&key.value(), transaction_id)?)
+            }
+            None => Ok(self.db.delete(&key.value())?),
+        }
+    }
+}
+
+impl CoordinatorStoreTransactional for CoordinatorStore {
+    type Transaction<'a>
+        = CoordinatorStoreTransaction<'a>
+    where
+        Self: 'a;
+
+    fn transaction<T, F>(&self, run_ops: F) -> Result<T>
+    where
+        F: for<'a> FnOnce(&Self::Transaction<'a>) -> Result<T>,
+    {
+        let mut transaction = CoordinatorStoreTransaction::new(self);
+
+        match run_ops(&transaction) {
+            Ok(result) => {
+                transaction.commit()?;
+                Ok(result)
+            }
+            Err(ops_err) => {
+                if let Err(rb_err) = transaction.rollback() {
+                    return Err(ops_err.context(format!(
+                        "failed to rollback coordinator store transaction: {rb_err}"
+                    )));
+                }
+                Err(ops_err)
+            }
+        }
+    }
+}
+
+impl<'a> CoordinatorStoreTransaction<'a> {
+    fn new(store: &'a CoordinatorStore) -> CoordinatorStoreTransaction<'a> {
+        Self { store, transaction_id: Some(store.db.begin_transaction()) }
+    }
+
+    fn transaction_id(&self) -> Result<Uuid> {
+        self.transaction_id.context("coordinator store transaction is no longer active")
+    }
+
+    fn commit(&mut self) -> Result<()> {
+        // `commit_transaction` consumes the backend transaction even if the commit fails, so the
+        // handle must be cleared before delegating to storage.
+        let transaction_id = self
+            .transaction_id
+            .take()
+            .context("coordinator store transaction is no longer active")?;
+        self.store.db.commit_transaction(transaction_id)?;
+        Ok(())
+    }
+
+    fn rollback(&mut self) -> Result<()> {
+        // Keep the handle until rollback succeeds, so `Drop` can still attempt cleanup if storage
+        // returns an error here.
+        let transaction_id =
+            self.transaction_id.context("coordinator store transaction is no longer active")?;
+        self.store.db.rollback_transaction(transaction_id)?;
+        self.transaction_id = None;
+        Ok(())
+    }
+}
+
+impl CoordinatorStoreWriteApi for CoordinatorStoreTransaction<'_> {
+    fn save_context(&self, context: &GlobalContext) -> Result<()> {
+        self.store.persist_context(context, Some(self.transaction_id()?))
+    }
+
+    fn save_flow<T: Serialize + 'static>(&self, key: &StoreKey, flow_state: T) -> Result<()> {
+        self.store.persist_flow(key, flow_state, Some(self.transaction_id()?))
+    }
+
+    fn delete_flow(&self, key: &StoreKey) -> Result<()> {
+        self.store.remove_flow(key, Some(self.transaction_id()?))
+    }
+}
+
+impl Drop for CoordinatorStoreTransaction<'_> {
+    fn drop(&mut self) {
+        if let Some(transaction_id) = self.transaction_id.take()
+            && let Err(err) = self.store.db.rollback_transaction(transaction_id)
+        {
+            error!("Failed to rollback coordinator store transaction on drop: {err}");
+        }
+    }
+}
+
+impl CoordinatorStoreWriteApi for CoordinatorStore {
+    fn save_context(&self, context: &GlobalContext) -> Result<()> {
+        self.persist_context(context, None)
+    }
+
+    fn save_flow<T: Serialize + 'static>(&self, key: &StoreKey, flow_state: T) -> Result<()> {
+        self.persist_flow(key, flow_state, None)
+    }
+
+    fn delete_flow(&self, key: &StoreKey) -> Result<()> {
+        self.remove_flow(key, None)
     }
 }
 
 impl CoordinatorStoreApi for CoordinatorStore {
     fn load_context(&self) -> Result<Option<GlobalContext>> {
-        let maybe: Option<PersistentGlobalContext> = self.get(&StoreKey::GlobalContext.value())?;
+        let maybe: Option<PersistentGlobalContext> =
+            self.db.get(StoreKey::GlobalContext.value())?;
         Ok(maybe.map(PersistentGlobalContext::load))
     }
 
-    fn save_context(&self, context: &GlobalContext) -> Result<()> {
-        let dto = PersistentGlobalContext::from_memory(context);
-        self.set(&StoreKey::GlobalContext.value(), &dto)
-    }
-
-    fn save_flow<T: Serialize + 'static>(&self, key: &StoreKey, flow_state: T) -> Result<()> {
-        self.set(&key.value(), &flow_state)
-    }
-
     fn load_flow<T: DeserializeOwned + 'static>(&self, key: &StoreKey) -> Result<Option<T>> {
-        self.get(&key.value())
-    }
-
-    fn delete_flow(&self, key: &StoreKey) -> Result<()> {
-        self.delete(&key.value())
+        Ok(self.db.get(key.value())?)
     }
 
     fn load_all_flows<T: DeserializeOwned + 'static>(
@@ -270,5 +414,181 @@ pub fn cleanup_completed_flows<Store, Flow, IsDone, H>(
         if let Err(err) = store.delete_flow(&prefix.as_store_key(flow_id)) {
             error!("Failed to remove completed {prefix:?} flow {flow_id} from persistence: {err}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use anyhow::bail;
+    use serde::{Deserialize, Serialize};
+    use tempfile::TempDir;
+
+    use super::*;
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    struct TestFlowState {
+        name: String,
+        step: u8,
+    }
+
+    fn test_store() -> Result<(TempDir, CoordinatorStore)> {
+        let dir = TempDir::new()?;
+        let path = dir.path().to_string_lossy().into_owned();
+        let store = CoordinatorStore::new(&path)?;
+        Ok((dir, store))
+    }
+
+    #[test]
+    fn transaction_commits_several_flow_operations() -> Result<()> {
+        let (_dir, store) = test_store()?;
+        let deleted_flow_id = Uuid::new_v4();
+        let saved_flow_id = Uuid::new_v4();
+        let second_saved_flow_id = Uuid::new_v4();
+
+        store.save_flow(
+            &StoreKey::PegoutFlow(deleted_flow_id),
+            TestFlowState { name: "obsolete".to_string(), step: 1 },
+        )?;
+
+        store.transaction(|tx_store| {
+            tx_store.save_flow(
+                &StoreKey::PeginFlow(saved_flow_id),
+                TestFlowState { name: "pegin".to_string(), step: 2 },
+            )?;
+            tx_store.save_flow(
+                &StoreKey::PegoutFlow(second_saved_flow_id),
+                TestFlowState { name: "pegout".to_string(), step: 3 },
+            )?;
+            tx_store.delete_flow(&StoreKey::PegoutFlow(deleted_flow_id))?;
+            Ok(())
+        })?;
+
+        assert_eq!(
+            store.load_flow::<TestFlowState>(&StoreKey::PeginFlow(saved_flow_id))?,
+            Some(TestFlowState { name: "pegin".to_string(), step: 2 })
+        );
+        assert_eq!(
+            store.load_flow::<TestFlowState>(&StoreKey::PegoutFlow(second_saved_flow_id))?,
+            Some(TestFlowState { name: "pegout".to_string(), step: 3 })
+        );
+        assert_eq!(store.load_flow::<TestFlowState>(&StoreKey::PegoutFlow(deleted_flow_id))?, None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn transaction_rolls_back_all_operations_when_closure_fails() -> Result<()> {
+        let (_dir, store) = test_store()?;
+        let kept_flow_id = Uuid::new_v4();
+        let transient_flow_id = Uuid::new_v4();
+
+        store.save_flow(
+            &StoreKey::SetupCommitteeFlow(kept_flow_id),
+            TestFlowState { name: "kept".to_string(), step: 4 },
+        )?;
+
+        let err = store
+            .transaction(|tx_store| -> Result<()> {
+                tx_store.save_flow(
+                    &StoreKey::PeginFlow(transient_flow_id),
+                    TestFlowState { name: "transient".to_string(), step: 5 },
+                )?;
+                tx_store.delete_flow(&StoreKey::SetupCommitteeFlow(kept_flow_id))?;
+                bail!("force rollback");
+            })
+            .expect_err("transaction should fail");
+
+        assert_eq!(err.to_string(), "force rollback");
+        assert_eq!(
+            store.load_flow::<TestFlowState>(&StoreKey::SetupCommitteeFlow(kept_flow_id))?,
+            Some(TestFlowState { name: "kept".to_string(), step: 4 })
+        );
+        assert_eq!(
+            store.load_flow::<TestFlowState>(&StoreKey::PeginFlow(transient_flow_id))?,
+            None
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn transaction_can_commit_context_and_flows_together() -> Result<()> {
+        let (_dir, store) = test_store()?;
+        let flow_id = Uuid::new_v4();
+        let context = GlobalContext::new();
+
+        store.transaction(|tx_store| {
+            tx_store.save_context(&context)?;
+            tx_store.save_flow(
+                &StoreKey::SetupCommitteeFlow(flow_id),
+                TestFlowState { name: "with-context".to_string(), step: 6 },
+            )?;
+            Ok(())
+        })?;
+
+        assert!(store.load_context()?.is_some());
+        assert_eq!(
+            store.load_flow::<TestFlowState>(&StoreKey::SetupCommitteeFlow(flow_id))?,
+            Some(TestFlowState { name: "with-context".to_string(), step: 6 })
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn transaction_trait_supports_generic_atomic_writes() -> Result<()> {
+        fn persist_flow<Store: CoordinatorStoreTransactional>(
+            store: &Store,
+            flow_id: Uuid,
+        ) -> Result<()> {
+            store.transaction(|tx_store| {
+                tx_store.save_flow(
+                    &StoreKey::PegoutFlow(flow_id),
+                    TestFlowState { name: "generic".to_string(), step: 8 },
+                )?;
+                Ok(())
+            })
+        }
+
+        let (_dir, store) = test_store()?;
+        let flow_id = Uuid::new_v4();
+
+        persist_flow(&store, flow_id)?;
+
+        assert_eq!(
+            store.load_flow::<TestFlowState>(&StoreKey::PegoutFlow(flow_id))?,
+            Some(TestFlowState { name: "generic".to_string(), step: 8 })
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn transaction_supports_extracted_helper_logic() -> Result<()> {
+        fn persist_flow_and_fail(
+            tx: &CoordinatorStoreTransaction<'_>,
+            flow_id: Uuid,
+        ) -> Result<()> {
+            tx.save_flow(
+                &StoreKey::PegoutFlow(flow_id),
+                TestFlowState { name: "hidden".to_string(), step: 7 },
+            )?;
+            Err(anyhow::anyhow!("logic failed"))
+        }
+
+        let (_dir, store) = test_store()?;
+        let flow_id = Uuid::new_v4();
+
+        let err = store
+            .transaction(|tx| {
+                persist_flow_and_fail(tx, flow_id)?;
+                Ok(())
+            })
+            .expect_err("transaction should fail");
+
+        assert_eq!(err.to_string(), "logic failed");
+        assert_eq!(store.load_flow::<TestFlowState>(&StoreKey::PegoutFlow(flow_id))?, None);
+
+        Ok(())
     }
 }
