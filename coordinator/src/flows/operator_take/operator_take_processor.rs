@@ -934,6 +934,10 @@ mod tests {
             )
             .expect("valid test pubkey"),
             take_operator_address: Address::from(H160::from_low_u64_be(33)),
+            operator_take_pubkey: PublicKey::from_str(
+                "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            )
+            .expect("valid operator take pubkey"),
         }
     }
 

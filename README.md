@@ -238,14 +238,14 @@ The repository ships sample files under `tests/`:
 
    ```toml
    # config/base.toml  (or your environment override file)
-   [coordinator]
+   [bridge.committee]
    drp_program_definition = "/path/accessible/by/bitvmx/hello-world.yaml"
    ```
 
    Alternatively, export the corresponding environment variable:
 
    ```bash
-   export UB__COORDINATOR__DRP_PROGRAM_DEFINITION="/path/accessible/by/bitvmx/hello-world.yaml"
+   export UB__BRIDGE__COMMITTEE__DRP_PROGRAM_DEFINITION="/path/accessible/by/bitvmx/hello-world.yaml"
    ```
 
 

@@ -14,12 +14,11 @@ use common::types::{Address, CommitteeId, Hash256};
 use log::{debug, info, trace};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{
-    GetMemberPublicKeysInput, RegisterAdvanceFundsInput, RequestPeginInput,
+    RegisterAdvanceFundsInput, RequestPeginInput,
 };
 use union_contracts::bindings::pegout_manager::PegoutManager::PegoutRegistered;
 use uuid::Uuid;
 
-use crate::flows::common::TAKE_KEY_INDEX;
 use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
 use crate::types::OperatorTakeTriggeredEvent;
 
@@ -68,6 +67,7 @@ pub struct OperatorTakeTriggerData {
     pub slot_index: usize,
     pub user_pubkey: PublicKey,
     pub take_operator_address: Address,
+    pub operator_take_pubkey: PublicKey,
 }
 
 impl OperatorTakeTriggerData {
@@ -81,7 +81,8 @@ impl OperatorTakeTriggerData {
             .context("Failed to convert slot id from event into usize for slot index")?;
         let user_pubkey = PublicKey::from_slice(inner.pegoutInfo.userPubKey.as_ref())?;
         let take_operator_address = Address::from(inner.pegoutInfo.takeOperatorAddress);
-
+        let operator_take_pubkey =
+        xonly_to_compressed_pubkey(inner.pegoutInfo.operatorTakePubKey.as_ref())?;
         Ok(Self {
             pegout_txid,
             pegout_id,
@@ -90,6 +91,7 @@ impl OperatorTakeTriggerData {
             slot_index,
             user_pubkey,
             take_operator_address,
+            operator_take_pubkey,
         })
     }
 }
@@ -378,7 +380,7 @@ where
         let slot_index = self.state.trigger_data.slot_index;
         let operator_address = self.state.trigger_data.take_operator_address;
 
-        let operator_pubkey = self.get_operator_take_pubkey()?;
+        let operator_pubkey = self.state.trigger_data.operator_take_pubkey;
         let var_name = format!("{SELECTED_OPERATOR_PUBKEY_VAR_PREFIX}{slot_index}");
         let committee_id_uuid = Uuid::from_u128(*committee_id);
         debug!(
@@ -518,22 +520,6 @@ where
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo(req_id))
     }
 
-    fn get_operator_take_pubkey(&self) -> Result<PublicKey> {
-        log::info!(
-            "Getting operator take public key for address: {:?}",
-            self.state.trigger_data.take_operator_address
-        );
-        let keys = self.get_member_public_keys(self.state.trigger_data.take_operator_address)?;
-        let raw_hex: &_ = keys
-            .get(TAKE_KEY_INDEX)
-            .context("Operator take public key missing from registry response")?;
-
-        let key_bytes =
-            hex::decode(raw_hex.trim_start_matches("0x")).context("Invalid operator pubkey hex")?;
-
-        xonly_to_compressed_pubkey(&key_bytes)
-    }
-
     fn build_advance_funds_request(&self, operator_pubkey: PublicKey) -> Result<String> {
         let pegout_id = self.state.trigger_data.pegout_id.value().as_bytes().to_vec();
 
@@ -549,15 +535,6 @@ where
 
         serde_json::to_string(&payload)
             .context("Failed to encode advance funds request payload to JSON")
-    }
-
-    fn get_member_public_keys(&self, member_address: Address) -> Result<Vec<String>> {
-        let input = GetMemberPublicKeysInput { member_address: member_address.into() };
-        let response = self
-            .rt_sync
-            .run(async { self.contracts.get_member_public_keys(input).await })
-            .context("Failed to obtain operator public keys")?;
-        Ok(response.public_keys)
     }
 
     fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) -> Result<()> {
@@ -646,6 +623,10 @@ mod tests {
             )
             .expect("valid test pubkey"),
             take_operator_address: Address::from(H160::from_low_u64_be(33)),
+            operator_take_pubkey: PublicKey::from_str(
+                "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            )
+            .expect("valid operator take pubkey"),
         }
     }
 

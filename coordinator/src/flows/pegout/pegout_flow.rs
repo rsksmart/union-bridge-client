@@ -473,12 +473,7 @@ where
 
         let take_aggregated_key = Self::build_take_aggregated_key(committee_output)?;
 
-        // Convert fixed-size hashes and ids to Vec<u8>
-        // Note: v0.2.0 contracts merged pegoutSignatureHash and pegoutSignatureMessage into pegoutSignatureData struct
-        //TODO verify if this is the correct field to use
         let pegout_sighash: Vec<u8> = event.pegoutSignatureData.signatureHash.to_vec();
-        // TODO(UBC-827): v0.4.0-alpha removed pegoutId from PegoutRequested event.
-        // Determine how pegout_id should be derived in the new contract version.
         let pegout_id: Vec<u8> = event.pegoutSignatureData.txid.to_vec();
 
         let slot_index =

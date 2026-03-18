@@ -2,3 +2,6 @@
 
 # Start from current provider tip in local runs; base initial_block_hash is ignored.
 start_from = "best"
+
+[bridge.pegout]
+advance_funds_timeout_secs = 30
