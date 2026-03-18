@@ -149,7 +149,7 @@ enum OperatorCommands {
     },
     /// Whitelist member addresses on the CommitteeRegistry contract
     Whitelist {
-        /// Environment to target (local, local-docker, alphanet, testnet)
+        /// Environment to target (local, local-docker, regtest, alphanet, testnet)
         #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local)]
         env: Environment,
 
@@ -157,9 +157,14 @@ enum OperatorCommands {
         #[arg(long = "contract-address", value_name = "ADDRESS")]
         contract_address: String,
 
-        /// Private key or address of the whitelister account.
-        /// Local: defaults to anvil account 0 (--from, unlocked). Remote: prompted if not provided.
-        #[arg(long = "private-key", value_name = "KEY")]
+        /// Sender address to use with `cast send --from ... --unlocked` in local/local-docker.
+        /// Defaults to the local anvil account if not provided.
+        #[arg(long = "from", value_name = "ADDRESS", conflicts_with = "private_key")]
+        from_address: Option<String>,
+
+        /// Private key to use in regtest/alphanet/testnet.
+        /// If omitted in remote environments, it is prompted interactively.
+        #[arg(long = "private-key", value_name = "HEX_KEY", conflicts_with = "from_address")]
         private_key: Option<String>,
     },
     /// Apply operator to a stream for committee setup
@@ -262,8 +267,18 @@ async fn main() -> Result<()> {
                 println!("=== Funding Bitcoin addresses ===");
                 bitcoin_wallet::handle_bitcoin_funding(env, execute, fund_amount).await?;
             }
-            OperatorCommands::Whitelist { env, contract_address, private_key } => {
-                rsk_wallet::handle_whitelist(env, &contract_address, private_key.as_deref())?;
+            OperatorCommands::Whitelist {
+                env,
+                contract_address,
+                from_address,
+                private_key,
+            } => {
+                rsk_wallet::handle_whitelist(
+                    env,
+                    &contract_address,
+                    from_address.as_deref(),
+                    private_key.as_deref(),
+                )?;
             }
             OperatorCommands::ApplyToStream { stream_id, env, operator_id, role } => {
                 committee::run_committee_setup(stream_id, env, operator_id, role).await?;
