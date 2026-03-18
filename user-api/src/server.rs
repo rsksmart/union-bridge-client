@@ -201,7 +201,6 @@ impl Server {
             }
         }
     }
-
 }
 
 /// Validates a 32-byte X-only public key with 0x prefix

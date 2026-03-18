@@ -37,4 +37,4 @@ broker_key_path = "/keystore/broker.key"    # shared broker identity key, genera
 # ═══════════════════════════════════════════════════════
 
 [bridge.committee]
-drp_program_definition = "/app/drp/hello-world.yaml"
+drp_program_definition = "/app/resources/hello-world.yaml"

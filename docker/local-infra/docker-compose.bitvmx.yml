@@ -1,7 +1,7 @@
 # 4 BitVMX clients for local development (union-client runs locally with cargo)
 # Usage: docker compose -f docker-compose.bitvmx.yml up -d
-# Volume ../../tests -> /app/drp: DRP program definition (e.g. hello-world.yaml) lives in tests/;
-# coordinator config uses /app/drp/hello-world.yaml.
+# Volume ../../resources -> /app/resources: DRP program definition (e.g. hello-world.yaml) lives in resources/;
+# coordinator config uses /app/resources/hello-world.yaml.
 
 services:
   bitvmx-client-1:
@@ -18,7 +18,7 @@ services:
       - "22222:22222"
     volumes:
       - ../bitvmx-client/config/local/client/config:/app/config
-      - ../../tests:/app/drp:ro
+      - ../../resources:/app/resources:ro
       - db-bitvmx-1:/tmp
     networks:
       bitvmx-shared-network:
@@ -38,7 +38,7 @@ services:
       - "33333:33333"
     volumes:
       - ../bitvmx-client/config/local/client/config:/app/config
-      - ../../tests:/app/drp:ro
+      - ../../resources:/app/resources:ro
       - db-bitvmx-2:/tmp
     networks:
       bitvmx-shared-network:
@@ -58,7 +58,7 @@ services:
       - "44444:44444"
     volumes:
       - ../bitvmx-client/config/local/client/config:/app/config
-      - ../../tests:/app/drp:ro
+      - ../../resources:/app/resources:ro
       - db-bitvmx-3:/tmp
     networks:
       bitvmx-shared-network:
@@ -78,7 +78,7 @@ services:
       - "55554:55554"
     volumes:
       - ../bitvmx-client/config/local/client/config:/app/config
-      - ../../tests:/app/drp:ro
+      - ../../resources:/app/resources:ro
       - db-bitvmx-4:/tmp
     networks:
       bitvmx-shared-network:

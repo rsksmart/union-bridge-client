@@ -13,9 +13,7 @@ use common::runtime_sync::RuntimeSync;
 use common::types::{Address, CommitteeId, Hash256};
 use log::{debug, info, trace};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
-use transaction_dispatcher::types::{
-    RegisterAdvanceFundsInput, RequestPeginInput,
-};
+use transaction_dispatcher::types::{RegisterAdvanceFundsInput, RequestPeginInput};
 use union_contracts::bindings::pegout_manager::PegoutManager::PegoutRegistered;
 use uuid::Uuid;
 
@@ -82,7 +80,7 @@ impl OperatorTakeTriggerData {
         let user_pubkey = PublicKey::from_slice(inner.pegoutInfo.userPubKey.as_ref())?;
         let take_operator_address = Address::from(inner.pegoutInfo.takeOperatorAddress);
         let operator_take_pubkey =
-        xonly_to_compressed_pubkey(inner.pegoutInfo.operatorTakePubKey.as_ref())?;
+            xonly_to_compressed_pubkey(inner.pegoutInfo.operatorTakePubKey.as_ref())?;
         Ok(Self {
             pegout_txid,
             pegout_id,

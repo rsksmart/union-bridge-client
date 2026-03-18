@@ -224,12 +224,12 @@ coordinator.
 Before running the committee setup, you must make the DRP program files accessible to the BitVMX client. These files
 define the program that BitVMX will execute during the dispute resolution protocol.
 
-The repository ships sample files under `tests/`:
+The repository ships sample files under `resources/`:
 
 | File | Description |
 |---|---|
-| `tests/hello-world.elf` | RISC-V ELF binary executed by the BitVMX CPU |
-| `tests/hello-world.yaml` | Program definition consumed by the BitVMX client |
+| `resources/hello-world.elf` | RISC-V ELF binary executed by the BitVMX CPU |
+| `resources/hello-world.yaml` | Program definition consumed by the BitVMX client |
 
 **Steps:**
 

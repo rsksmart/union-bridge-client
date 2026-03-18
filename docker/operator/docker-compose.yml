@@ -21,7 +21,7 @@ services:
     volumes:
       - ../bitvmx-client/config/${ENVIRONMENT:-local}/client/config:/app/config
       - db-bitvmx:/tmp
-      - ../../tests:/app/drp:ro
+      - ../../resources:/app/resources:ro
       - keystore:/keystore:ro
       - ./patch_bitvmx_op_pubkey_hash.sh:/app/patch_bitvmx_op_pubkey_hash.sh:ro
     entrypoint: ["sh", "-c", "set -e; sh /app/patch_bitvmx_op_pubkey_hash.sh; exec ./run.sh"]

@@ -136,7 +136,7 @@ min_funding_balance = 20002000
 # Minimum RSK balance (wei) - approx 1 RBTC + fees
 min_rsk_balance = 1000000000500000
 # Path to the DRP program definition YAML file
-drp_program_definition = "../BitVMX-CPU/docker-riscv32/riscv32/build/hello-world.yaml"
+drp_program_definition = "resources/hello-world.yaml"
 
 [bridge.native_bridge]
 # Minimum confirmations from native bridge

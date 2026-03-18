@@ -77,6 +77,8 @@ COPY --from=builder /app/target/release/${CRATE} /app/${CRATE}
 # copy key-manager always, even if only a couple of crates require it
 COPY --from=builder /app/target/release/key-manager /app/key-manager
 
+WORKDIR /app
+
 # set environment variables
 ENV RUST_BACKTRACE=1
 ENV RUST_LOG=debug

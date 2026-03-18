@@ -322,10 +322,7 @@ mod tests {
             "/app/config/check-fork-guest.bin",
             config.coordinator.advance_funds.check_fork_guest_elf_path
         );
-        assert_eq!(
-            "../BitVMX-CPU/docker-riscv32/riscv32/build/hello-world.yaml",
-            config.bridge.committee.drp_program_definition
-        );
+        assert_eq!("resources/hello-world.yaml", config.bridge.committee.drp_program_definition);
         assert_eq!(99_999_999, config.coordinator.advance_funds.max_zkp_status_retries);
         assert_eq!("regtest", config.bitcoin_network);
         assert_eq!(11, config.contracts.len());

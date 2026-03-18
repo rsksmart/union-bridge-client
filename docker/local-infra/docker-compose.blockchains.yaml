@@ -42,6 +42,7 @@ services:
 
   # Deploy smart contracts
   deploy-contracts:
+    image: ${CONTRACTS_IMAGE_BASE}:${CONTRACTS_IMAGE_TAG:-local-build}
     platform: linux/amd64
     build:
       context: ${CONTRACTS_CONTEXT_PATH}

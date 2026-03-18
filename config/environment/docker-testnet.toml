@@ -49,6 +49,9 @@ blocks.host = "block-indexer"
 logs.host = "log-indexer"
 user.host = "user-api"
 
+[bridge.committee]
+drp_program_definition = "/app/resources/hello-world.yaml"
+
 # ═══════════════════════════════════════════════════════
 # Transaction Dispatcher
 # ═══════════════════════════════════════════════════════
