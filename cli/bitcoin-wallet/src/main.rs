@@ -38,7 +38,10 @@ fn main() -> Result<()> {
 
         if is_lock_error {
             let network = config.network.unwrap_or(Network::Regtest);
-            let network_suffix_str = network_suffix(network);
+            let network_suffix_str = match network_suffix(network) {
+                Ok(s) => s,
+                Err(e) => return e,
+            };
             let mode_name = config.mode.to_string();
             let utxo_db_path = config.db_path.join(&mode_name).join(network_suffix_str).join("utxo_db");
             let pending_tx_db_path = config.db_path.join(&mode_name).join(network_suffix_str).join("pending_tx_db");
@@ -80,18 +83,8 @@ fn main() -> Result<()> {
             eprintln!();
             eprintln!("Reason: Programmatic access is restricted to regtest for safety.");
             eprintln!("For testnet/mainnet operations, please use interactive mode:");
-            eprintln!(
-                "  ./cli-bitcoin-wallet.sh {} --env {}",
-                config.mode,
-                match wallet.network() {
-                    Network::Bitcoin => "bitcoin",
-                    Network::Testnet => "testnet",
-                    Network::Testnet4 => "testnet4",
-                    Network::Signet => "signet",
-                    Network::Regtest => "regtest",
-                    _ => "unknown",
-                }
-            );
+            let env_name = network_suffix(wallet.network())?;
+            eprintln!("  ./cli-bitcoin-wallet.sh {} --env {}", config.mode, env_name);
             bail!("Command mode not allowed on network: {:?}", wallet.network());
         }
 
@@ -108,8 +101,8 @@ fn main() -> Result<()> {
     // interactive mode
     // store history file in mode/network directory
     let network = config.network.unwrap_or(Network::Regtest);
+    let network_name = network_suffix(network)?;
     let mode_name = config.mode.to_string();
-    let network_name = network_suffix(network);
     let history_path = &config.db_path.join(&mode_name).join(network_name).join("cli_history");
     let mut editor = setup_editor(history_path)?;
 
@@ -120,7 +113,7 @@ fn main() -> Result<()> {
     );
 
     loop {
-        let prompt = prompt_for(&config.mode, wallet.network());
+        let prompt = prompt_for(&config.mode, network_name);
         match editor.readline(&prompt) {
             Ok(line) => {
                 let trimmed = line.trim();
@@ -679,22 +672,10 @@ fn handle_command(wallet: &mut Wallet, line: &str, mode: &WalletMode) -> Result<
     }
 }
 
-fn prompt_for(mode: &WalletMode, network: Network) -> String {
-    let name = network_name(network);
+fn prompt_for(mode: &WalletMode, network_name: &str) -> String {
     let prompt_color = "\x1b[36m";
     let reset = "\x1b[0m";
-    format!("{prompt_color}{mode}@{name}>{reset} ",)
-}
-
-fn network_name(network: Network) -> &'static str {
-    match network {
-        Network::Bitcoin => "bitcoin",
-        Network::Testnet => "testnet",
-        Network::Testnet4 => "testnet4",
-        Network::Signet => "signet",
-        Network::Regtest => "regtest",
-        _ => "unknown",
-    }
+    format!("{prompt_color}{mode}@{network_name}>{reset} ",)
 }
 
 fn print_active_address_utxos(wallet: &mut Wallet) -> Result<(), anyhow::Error> {

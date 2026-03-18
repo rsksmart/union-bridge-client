@@ -1034,7 +1034,7 @@ fn open_network_store(
         )
     })?;
 
-    let path = utxo_db_path(root, network, mode);
+    let path = utxo_db_path(root, network, mode)?;
     fs::create_dir_all(&path).with_context(|| {
         format!(
             "failed to create UTXO database directory {}",
@@ -1059,7 +1059,7 @@ fn open_pending_tx_store(
         )
     })?;
 
-    let path = pending_tx_db_path(root, network, mode);
+    let path = pending_tx_db_path(root, network, mode)?;
     fs::create_dir_all(&path).with_context(|| {
         format!(
             "failed to create pending transaction database directory {}",
@@ -1070,28 +1070,31 @@ fn open_pending_tx_store(
     PendingTransactionStore::open(&path)
 }
 
-fn utxo_db_path(root: &Path, network: Network, mode: &crate::cli::WalletMode) -> PathBuf {
+fn utxo_db_path(root: &Path, network: Network, mode: &crate::cli::WalletMode) -> Result<PathBuf> {
     let mode_name = mode.to_string();
-    let network_name = network_suffix(network);
-    root.join(mode_name).join(network_name).join("utxo_db")
+    let network_name = network_suffix(network)?;
+    Ok(root.join(mode_name).join(network_name).join("utxo_db"))
 }
 
-fn pending_tx_db_path(root: &Path, network: Network, mode: &crate::cli::WalletMode) -> PathBuf {
+fn pending_tx_db_path(root: &Path, network: Network, mode: &crate::cli::WalletMode) -> Result<PathBuf> {
     let mode_name = mode.to_string();
-    let network_name = network_suffix(network);
-    root.join(mode_name)
+    let network_name = network_suffix(network)?;
+    Ok(root
+        .join(mode_name)
         .join(network_name)
-        .join("pending_tx_db")
+        .join("pending_tx_db"))
 }
 
-pub fn network_suffix(network: Network) -> &'static str {
+/// Returns the canonical path/env suffix for a supported network.
+/// Bails on unsupported `bitcoin::Network` variants so we never create wrong local folders.
+pub fn network_suffix(network: Network) -> Result<&'static str> {
     match network {
-        Network::Bitcoin => "bitcoin",
-        Network::Testnet => "testnet",
-        Network::Testnet4 => "testnet4",
-        Network::Signet => "signet",
-        Network::Regtest => "regtest",
-        _ => "unknown",
+        Network::Bitcoin => Ok("bitcoin"),
+        Network::Testnet => Ok("testnet"),
+        Network::Testnet4 => Ok("testnet4"),
+        Network::Signet => Ok("signet"),
+        Network::Regtest => Ok("regtest"),
+        _ => bail!("Unsupported network: {:?}", network),
     }
 }
 
