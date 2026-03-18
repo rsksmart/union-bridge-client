@@ -277,51 +277,6 @@ pub struct CommsAddress {
     pub pubkey_hash: PubKeyHash,
 }
 
-/// Custom serde for `HashMap<CommsAddress, PublicKey>`.
-/// Needed because serde only supports `String` keys in JSON maps,
-/// so we serialize `CommsAddress` to/from its JSON string representation.
-pub mod comms_address_map_serde {
-    use std::collections::HashMap;
-
-    use anyhow::Context;
-    use bitcoin::PublicKey;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    use super::CommsAddress;
-
-    pub fn serialize<S>(
-        value: &HashMap<CommsAddress, PublicKey>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut mapped: HashMap<String, PublicKey> = HashMap::with_capacity(value.len());
-        for (addr, key) in value {
-            let addr_key = serde_json::to_string(addr).map_err(serde::ser::Error::custom)?;
-            mapped.insert(addr_key, *key);
-        }
-        mapped.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(
-        deserializer: D,
-    ) -> Result<HashMap<CommsAddress, PublicKey>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let mapped: HashMap<String, PublicKey> = HashMap::deserialize(deserializer)?;
-        let mut out = HashMap::with_capacity(mapped.len());
-        for (addr_key, key) in mapped {
-            let addr: CommsAddress = serde_json::from_str(&addr_key)
-                .with_context(|| format!("Invalid CommsAddress key: {addr_key}"))
-                .map_err(serde::de::Error::custom)?;
-            out.insert(addr, key);
-        }
-        Ok(out)
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BtcTxSPVProof {
     pub block_hash: String,

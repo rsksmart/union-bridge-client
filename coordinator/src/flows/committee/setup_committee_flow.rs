@@ -132,8 +132,8 @@ struct FlowContext {
     agg_take_key_req: AggKeyReq,
     agg_dispute_key_req: AggKeyReq,
     pairwise_keys_req: PairwiseKeyReq,
-    #[serde(with = "common::msg_broker::bitvmx_types::comms_address_map_serde")]
-    pairwise_keys: HashMap<CommsAddress, PublicKey>, // partner_address -> aggregated_key
+    /// Partner address as JSON string -> aggregated key (JSON keys for serde compatibility).
+    pairwise_keys: HashMap<String, PublicKey>,
     setup_core_req: SetupCoreReq,
     setup_channel_req: DisputeChannelReq,
     setup_channel_setup_req: SetupChannelReq,
@@ -1248,7 +1248,9 @@ where
             .clone();
 
         let pairwise_key = pubkey;
-        self.ctx_mut().pairwise_keys.insert(partner_address, pairwise_key);
+        let key = serde_json::to_string(&partner_address)
+            .context("Serialize CommsAddress for pairwise_keys key")?;
+        self.ctx_mut().pairwise_keys.insert(key, pairwise_key);
 
         let committee_id_uuid = self.ctx().get_committee_data()?.committee_uuid();
         let var_name = get_dispute_pair_key_name(my_index, partner_index);

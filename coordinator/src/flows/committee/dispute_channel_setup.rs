@@ -199,7 +199,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeChannelSetup<BC> {
         committee_data: &CommitteeData,
         my_index: usize,
         p2p_addresses: &[CommsAddress],
-        pairwise_keys: &HashMap<CommsAddress, PublicKey>,
+        pairwise_keys: &HashMap<String, PublicKey>,
         dispute_core_data: &[DisputeChannelSetupRequest],
     ) -> Result<Vec<Uuid>> {
         info!(
@@ -252,7 +252,9 @@ impl<BC: BitVmxBrokerClientApi> DisputeChannelSetup<BC> {
                 "partner_index {partner_index} is out of bounds for p2p_addresses array"
             ))?;
 
-            let pair_key = pairwise_keys.get(partner_address).copied().context(format!(
+            let key = serde_json::to_string(partner_address)
+                .context("Serialize CommsAddress for pairwise_keys lookup")?;
+            let pair_key = pairwise_keys.get(&key).copied().context(format!(
                 "Pairwise key missing for partner address at index {partner_index}"
             ))?;
 
