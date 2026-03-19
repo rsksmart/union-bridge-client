@@ -477,6 +477,11 @@ fn build_env_for_client(
                 format!("{}/.union_bridge/keystore/{}", base_storage_path, value)
             } else if base_key == "UB__KEY_STORE__USER_PATH" {
                 format!("{}/.union_bridge/keystore/{}", base_storage_path, value)
+            } else if base_key == "UB__BLOCK_INDEXER__NOTIFIER__BROKER_STORAGE_PATH"
+                || base_key == "UB__LOG_INDEXER__NOTIFIER__BROKER_STORAGE_PATH"
+                || base_key == "UB__USER_API__NOTIFIER__BROKER_STORAGE_PATH"
+            {
+                format!("{}/.union_bridge/database/{}", base_storage_path, value)
             } else {
                 value.clone()
             };
