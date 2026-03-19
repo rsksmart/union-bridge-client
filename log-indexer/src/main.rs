@@ -76,6 +76,7 @@ fn main() -> Result<()> {
         BrokerServer::new(
             config.log_indexer_config.notifier.port,
             &config.key_store.broker_key_path,
+            &config.log_indexer_config.notifier.broker_storage_path,
         )
         .expect("Failed to create BrokerServer"),
         monitored_addresses,

@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv4Addr, ToSocketAddrs};
 use std::sync::{Arc, Mutex};
 
 use log::{debug, trace};
-use message_broker::broker_memstorage::MemStorage;
+use message_broker::broker_storage::BrokerStorage;
 use message_broker::channel::channel::{DualChannel, LocalChannel};
 // Re-export for convenience - these are used in the public API
 pub use message_broker::identification::allow_list::AllowList;
@@ -14,6 +14,8 @@ pub use message_broker::rpc::tls_helper::Cert;
 use mockall::automock;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use storage_backend::storage::Storage;
+use storage_backend::storage_config::StorageConfig;
 use thiserror::Error;
 
 use crate::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
@@ -53,7 +55,7 @@ pub trait BrokerClientApi<S: Serialize, C: DeserializeOwned> {
 /// Union-specific broker server implementation
 pub struct BrokerServer {
     broker: BrokerSync,
-    channel: LocalChannel<MemStorage>,
+    channel: LocalChannel<BrokerStorage>,
 }
 
 /// "Alias" for `BrokerServerApi<ToServer, FromServer>`
@@ -71,12 +73,12 @@ impl BrokerServer {
     /// # Arguments
     /// * `port` - Port to listen on
     /// * `key_path` - Path to PEM file containing the private key for deterministic identity
+    /// * `storage_path` - Path for disk-based broker message storage
     ///
     /// # Errors
     ///
     /// Returns an error if certificate loading fails or broker initialization fails.
-    pub fn new(port: u16, key_path: &str) -> Result<Self, BrokerError> {
-        // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - change to disk storage (broker feature)
+    pub fn new(port: u16, key_path: &str, storage_path: &str) -> Result<Self, BrokerError> {
         debug!("Starting BrokerServer on port {port}");
 
         let cert = Cert::from_key_file(key_path)?;
@@ -84,7 +86,11 @@ impl BrokerServer {
 
         debug!("BrokerServer identity: pubkey_hash={pubk_hash}");
 
-        let broker_storage = Arc::new(Mutex::new(MemStorage::new()));
+        let config = StorageConfig::new(storage_path.to_string(), None);
+        let storage = Storage::new(&config)
+            .map_err(|e| BrokerError::UnknownError(anyhow::anyhow!("Storage init failed: {e}")))?;
+        let broker_storage =
+            Arc::new(Mutex::new(BrokerStorage::new(Arc::new(Mutex::new(storage)))));
         let broker_config =
             BrokerConfig::new(port, Some(IpAddr::from(Ipv4Addr::UNSPECIFIED)), pubk_hash.clone());
         let broker = BrokerSync::new_simple(&broker_config, broker_storage.clone(), cert)?;
@@ -220,7 +226,7 @@ impl<T> BitVmxBrokerClientApi for T where
 /// BitVMX-specific broker server implementation
 pub struct BitVmxBrokerServer {
     broker: BrokerSync,
-    channel: LocalChannel<MemStorage>,
+    channel: LocalChannel<BrokerStorage>,
 }
 
 impl BitVmxBrokerServer {
@@ -236,11 +242,16 @@ impl BitVmxBrokerServer {
         cert: Cert,
         allow_list: Arc<Mutex<AllowList>>,
         routing: Arc<Mutex<RoutingTable>>,
+        storage_path: &str,
     ) -> Result<Self, BrokerError> {
         debug!("Starting BitVmxBrokerServer on port {port}");
 
         let pubk_hash = cert.get_pubk_hash()?;
-        let broker_storage = Arc::new(Mutex::new(MemStorage::new()));
+        let config = StorageConfig::new(storage_path.to_string(), None);
+        let storage = Storage::new(&config)
+            .map_err(|e| BrokerError::UnknownError(anyhow::anyhow!("Storage init failed: {e}")))?;
+        let broker_storage =
+            Arc::new(Mutex::new(BrokerStorage::new(Arc::new(Mutex::new(storage)))));
         let broker_config =
             BrokerConfig::new(port, Some(IpAddr::from(Ipv4Addr::UNSPECIFIED)), pubk_hash.clone());
         let broker =

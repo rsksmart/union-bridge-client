@@ -25,6 +25,7 @@ log4rs = { workspace = true }
 lru = "0.13.0"
 message-broker = { workspace = true }
 mockall = { workspace = true }
+storage-backend = { workspace = true }
 musig2 = { workspace = true }
 primitive-types = { workspace = true }
 serde = { workspace = true }
