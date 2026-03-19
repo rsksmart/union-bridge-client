@@ -178,17 +178,6 @@ if [[ "${FRESH}" == true ]]; then
   eval "$cmd"
 fi
 
-# When using local-build + fresh + up: rebuild deploy-contracts with --no-cache so COPY . . picks up
-# current contracts (e.g. deploy-common.sh). Otherwise Docker may reuse a cached layer and the image
-# won't have the latest shell scripts.
-if [[ "${FRESH}" == true && "${IS_UP_COMMAND}" == true && "${CONTRACTS_IMAGE_TAG}" == "${CONTRACTS_TAG_LOCAL_BUILD}" ]]; then
-  echo "Rebuilding deploy-contracts image (no cache) so it includes current contracts repo..."
-  if ! docker compose -p blockchains --env-file "$ENV_PATH" -f "$COMPOSE_FILE" build --no-cache deploy-contracts; then
-    echo "Error: Failed to build deploy-contracts image."
-    exit 1
-  fi
-fi
-
 BITCOIND_CONTAINER="bitcoind"
 RUNNING_COUNT=$(docker compose -p blockchains --env-file "$ENV_PATH" -f "$COMPOSE_FILE" --profile local ps --status running -q ${BITCOIND_CONTAINER} anvil | wc -l | tr -d ' ')
 
