@@ -141,18 +141,18 @@ pub fn build_communication_data(
     }
 
     let mut comms_addresses = vec![];
-    for i in 0..committee_addresses.len() {
-        let mut addr = committee_addresses[i].clone();
+    for (committee_address, committee_pubkey_hash) in
+        committee_addresses.iter().zip(committee_pubkey_hashes.iter())
+    {
+        let mut addr = committee_address.clone();
         // contracts require zeroed communication data for my own address on deposit, so we have to tweak it here
         if addr.is_empty() {
             addr = my_p2p_address.to_string();
         }
 
-        let pubkey_hash = committee_pubkey_hashes[i].clone();
-
         comms_addresses.push(CommsAddress {
             address: addr.parse().map_err(|e| anyhow::anyhow!("Invalid address: {e}"))?,
-            pubkey_hash,
+            pubkey_hash: committee_pubkey_hash.clone(),
         });
     }
 

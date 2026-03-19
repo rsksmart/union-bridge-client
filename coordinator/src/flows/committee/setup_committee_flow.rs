@@ -1980,7 +1980,7 @@ where
                 committee_data.committee_uuid(),
                 my_index,
                 partner_index,
-            );
+            )?;
 
             info!(
                 "Creating pairwise key request: aggregation_id={}, indices=({}, {}), participants=[{}, {}]",

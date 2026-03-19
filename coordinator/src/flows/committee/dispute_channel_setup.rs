@@ -378,7 +378,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeChannelSetup<BC> {
 
     fn setup_one(&self, i: SetupOneInput<'_>) -> Result<Uuid> {
         let committee_uuid = i.committee_data.committee_uuid();
-        let drp_id = get_dispute_channel_pid(committee_uuid, i.op_index, i.wt_index);
+        let drp_id = get_dispute_channel_pid(committee_uuid, i.op_index, i.wt_index)?;
         let dispute_core_pid = i.committee_data.get_dispute_core_pid_for_key(i.wt_takekey)?;
         let participants: Vec<CommsAddress> = vec![i.operator.clone(), i.watchtower.clone()];
 

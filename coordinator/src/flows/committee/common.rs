@@ -81,15 +81,18 @@ pub fn get_dispute_core_pid(committee_id: Uuid, pubkey: &PublicKey) -> Result<Uu
     hasher.update(DISPUTE_CORE_SUFFIX);
 
     let hash = hasher.finalize();
-    // Sha256 always produces 32 bytes, so taking the first 16 bytes is always safe
-    let bytes = hash[0..UUID_BYTES_LEN].try_into().context("UUID slice conversion failed")?;
+    let bytes = extract_uuid_bytes(hash.as_ref())?;
 
     Ok(Uuid::from_bytes(bytes))
 }
 
 /// Generates the `DisputeChannel` protocol ID for a given committee and operator/watchtower pair.
 /// This is a deterministic UUID derived from `committee_id`, `op_index`, `wt_index`, and `dispute_channel` suffix.
-pub fn get_dispute_channel_pid(committee_id: Uuid, op_index: usize, wt_index: usize) -> Uuid {
+pub fn get_dispute_channel_pid(
+    committee_id: Uuid,
+    op_index: usize,
+    wt_index: usize,
+) -> Result<Uuid> {
     let mut hasher = Sha256::new();
 
     hasher.update(committee_id.as_bytes());
@@ -98,12 +101,8 @@ pub fn get_dispute_channel_pid(committee_id: Uuid, op_index: usize, wt_index: us
     hasher.update(DISPUTE_CHANNEL_SUFFIX);
 
     let hash = hasher.finalize();
-    // Sha256 always produces 32 bytes, so taking the first 16 bytes is always safe
-    Uuid::from_bytes(
-        hash[0..UUID_BYTES_LEN]
-            .try_into()
-            .expect("Sha256 hash is always 32 bytes, so first 16 bytes slice is valid"),
-    )
+    let bytes = extract_uuid_bytes(hash.as_ref())?;
+    Ok(Uuid::from_bytes(bytes))
 }
 
 const PAIRWISE_AGGREGATED_KEY_SUFFIX: &str = "pairwise_aggregated_key";
@@ -111,7 +110,11 @@ const PAIRWISE_AGGREGATED_KEY_SUFFIX: &str = "pairwise_aggregated_key";
 /// Generates a deterministic UUID for a pairwise aggregated key between two committee members.
 /// The UUID is derived from the `committee_id` and the ordered pair of member indices.
 /// Both members will derive the same ID regardless of who initiates.
-pub fn get_dispute_pair_aggregated_key_pid(committee_id: Uuid, idx_a: usize, idx_b: usize) -> Uuid {
+pub fn get_dispute_pair_aggregated_key_pid(
+    committee_id: Uuid,
+    idx_a: usize,
+    idx_b: usize,
+) -> Result<Uuid> {
     let mut hasher = Sha256::new();
     // Ensure canonical ordering (min, max) so both parties derive the same id.
     let (min_i, max_i) = if idx_a <= idx_b { (idx_a, idx_b) } else { (idx_b, idx_a) };
@@ -122,12 +125,17 @@ pub fn get_dispute_pair_aggregated_key_pid(committee_id: Uuid, idx_a: usize, idx
     hasher.update(PAIRWISE_AGGREGATED_KEY_SUFFIX);
 
     let hash = hasher.finalize();
-    // Sha256 always produces 32 bytes, so taking the first 16 bytes is always safe
-    Uuid::from_bytes(
-        hash[0..UUID_BYTES_LEN]
-            .try_into()
-            .expect("Sha256 hash is always 32 bytes, so first 16 bytes slice is valid"),
-    )
+    let bytes = extract_uuid_bytes(hash.as_ref())?;
+    Ok(Uuid::from_bytes(bytes))
+}
+
+fn extract_uuid_bytes(hash: &[u8]) -> Result<[u8; UUID_BYTES_LEN]> {
+    hash.get(..UUID_BYTES_LEN)
+        .ok_or_else(|| {
+            anyhow::anyhow!("Invalid hash length: expected at least {UUID_BYTES_LEN} bytes")
+        })?
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("Invalid hash length: failed to convert into UUID bytes"))
 }
 
 #[cfg(test)]
@@ -166,41 +174,41 @@ mod tests {
     #[test]
     fn get_dispute_channel_pid_is_deterministic() {
         let committee_id = Uuid::nil();
-        let pid1 = get_dispute_channel_pid(committee_id, 0, 1);
-        let pid2 = get_dispute_channel_pid(committee_id, 0, 1);
+        let pid1 = get_dispute_channel_pid(committee_id, 0, 1).unwrap();
+        let pid2 = get_dispute_channel_pid(committee_id, 0, 1).unwrap();
         assert_eq!(pid1, pid2);
     }
 
     #[test]
     fn get_dispute_channel_pid_order_matters() {
         let committee_id = Uuid::nil();
-        let pid_0_1 = get_dispute_channel_pid(committee_id, 0, 1);
-        let pid_1_0 = get_dispute_channel_pid(committee_id, 1, 0);
+        let pid_0_1 = get_dispute_channel_pid(committee_id, 0, 1).unwrap();
+        let pid_1_0 = get_dispute_channel_pid(committee_id, 1, 0).unwrap();
         assert_ne!(pid_0_1, pid_1_0);
     }
 
     #[test]
     fn get_dispute_pair_aggregated_key_pid_symmetric() {
         let committee_id = Uuid::nil();
-        let pid_a_b = get_dispute_pair_aggregated_key_pid(committee_id, 0, 1);
-        let pid_b_a = get_dispute_pair_aggregated_key_pid(committee_id, 1, 0);
+        let pid_a_b = get_dispute_pair_aggregated_key_pid(committee_id, 0, 1).unwrap();
+        let pid_b_a = get_dispute_pair_aggregated_key_pid(committee_id, 1, 0).unwrap();
         assert_eq!(pid_a_b, pid_b_a, "both parties must derive the same ID");
     }
 
     #[test]
     fn get_dispute_pair_aggregated_key_pid_deterministic() {
         let committee_id = Uuid::nil();
-        let pid1 = get_dispute_pair_aggregated_key_pid(committee_id, 2, 3);
-        let pid2 = get_dispute_pair_aggregated_key_pid(committee_id, 2, 3);
+        let pid1 = get_dispute_pair_aggregated_key_pid(committee_id, 2, 3).unwrap();
+        let pid2 = get_dispute_pair_aggregated_key_pid(committee_id, 2, 3).unwrap();
         assert_eq!(pid1, pid2);
     }
 
     #[test]
     fn get_dispute_pair_aggregated_key_pid_different_pairs_different_ids() {
         let committee_id = Uuid::nil();
-        let pid_0_1 = get_dispute_pair_aggregated_key_pid(committee_id, 0, 1);
-        let pid_0_2 = get_dispute_pair_aggregated_key_pid(committee_id, 0, 2);
-        let pid_1_2 = get_dispute_pair_aggregated_key_pid(committee_id, 1, 2);
+        let pid_0_1 = get_dispute_pair_aggregated_key_pid(committee_id, 0, 1).unwrap();
+        let pid_0_2 = get_dispute_pair_aggregated_key_pid(committee_id, 0, 2).unwrap();
+        let pid_1_2 = get_dispute_pair_aggregated_key_pid(committee_id, 1, 2).unwrap();
         assert_ne!(pid_0_1, pid_0_2);
         assert_ne!(pid_0_1, pid_1_2);
         assert_ne!(pid_0_2, pid_1_2);

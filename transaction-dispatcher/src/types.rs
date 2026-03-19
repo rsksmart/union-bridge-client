@@ -403,11 +403,6 @@ impl P2PAddressParser {
         Self::addr_to_contracts(&multiaddr_str)
     }
 
-    /// # Panics
-    ///
-    /// Panics if the validated 32-byte slice cannot be converted to a fixed array
-    /// (should not happen after length validation).
-    ///
     /// # Errors
     ///
     /// Returns an error if the hex decoding fails or the hash is not 32 bytes.
@@ -420,7 +415,14 @@ impl P2PAddressParser {
             bail!("pubkey_hash must be 32 bytes (SHA-256), got {} bytes", pubkey_hash_bytes.len());
         }
         let mut data: [FixedBytes<32>; 10] = [FixedBytes([0u8; 32]); 10];
-        data[0] = FixedBytes::<32>(pubkey_hash_bytes.try_into().unwrap());
+        let pubkey_hash_array: [u8; 32] = pubkey_hash_bytes
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("pubkey_hash must be exactly 32 bytes"))?;
+        let first_slot = data
+            .get_mut(0)
+            .ok_or_else(|| anyhow::anyhow!("RSAPublicKey slot 0 missing in fixed-size array"))?;
+        *first_slot = FixedBytes::<32>(pubkey_hash_array);
         Ok(RSAPublicKey { rsaPublicKey: data })
     }
 
