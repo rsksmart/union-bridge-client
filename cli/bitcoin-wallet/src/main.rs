@@ -17,7 +17,7 @@ use serde_json::json;
 use ub_wallet::bitcoin::utils::find_vout_for_address;
 use ub_wallet::cli::{CliOpts, WalletMode, setup_editor};
 use ub_wallet::config::Config;
-use ub_wallet::wallet::{CreatedTransaction, Wallet, network_suffix};
+use ub_wallet::wallet::{CreatedTransaction, Wallet, network_name};
 
 fn main() -> Result<()> {
     let opts = CliOpts::parse();
@@ -38,7 +38,7 @@ fn main() -> Result<()> {
 
         if is_lock_error {
             let network = config.network.unwrap_or(Network::Regtest);
-            let network_suffix_str = match network_suffix(network) {
+            let network_suffix_str = match network_name(network) {
                 Ok(s) => s,
                 Err(e) => return e,
             };
@@ -83,7 +83,7 @@ fn main() -> Result<()> {
             eprintln!();
             eprintln!("Reason: Programmatic access is restricted to regtest for safety.");
             eprintln!("For testnet/mainnet operations, please use interactive mode:");
-            let env_name = network_suffix(wallet.network())?;
+            let env_name = network_name(wallet.network())?;
             eprintln!("  ./cli-bitcoin-wallet.sh {} --env {}", config.mode, env_name);
             bail!("Command mode not allowed on network: {:?}", wallet.network());
         }
@@ -101,7 +101,7 @@ fn main() -> Result<()> {
     // interactive mode
     // store history file in mode/network directory
     let network = config.network.unwrap_or(Network::Regtest);
-    let network_name = network_suffix(network)?;
+    let network_name = network_name(network)?;
     let mode_name = config.mode.to_string();
     let history_path = &config.db_path.join(&mode_name).join(network_name).join("cli_history");
     let mut editor = setup_editor(history_path)?;

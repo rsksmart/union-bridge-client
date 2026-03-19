@@ -1072,22 +1072,22 @@ fn open_pending_tx_store(
 
 fn utxo_db_path(root: &Path, network: Network, mode: &crate::cli::WalletMode) -> Result<PathBuf> {
     let mode_name = mode.to_string();
-    let network_name = network_suffix(network)?;
+    let network_name = network_name(network)?;
     Ok(root.join(mode_name).join(network_name).join("utxo_db"))
 }
 
 fn pending_tx_db_path(root: &Path, network: Network, mode: &crate::cli::WalletMode) -> Result<PathBuf> {
     let mode_name = mode.to_string();
-    let network_name = network_suffix(network)?;
+    let network_name = network_name(network)?;
     Ok(root
         .join(mode_name)
         .join(network_name)
         .join("pending_tx_db"))
 }
 
-/// Returns the canonical path/env suffix for a supported network.
+/// Returns the canonical path/env name for a supported network.
 /// Bails on unsupported `bitcoin::Network` variants so we never create wrong local folders.
-pub fn network_suffix(network: Network) -> Result<&'static str> {
+pub fn network_name(network: Network) -> Result<&'static str> {
     match network {
         Network::Bitcoin => Ok("bitcoin"),
         Network::Testnet => Ok("testnet"),
