@@ -52,8 +52,7 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       - NETWORK=local
-      - LOCAL_RPC=${ANVIL_RPC_URL}
-      - RPC=${ANVIL_RPC_URL}
+      - RPC=${ANVIL_URL}
       - CHAIN_ID=31337
       - MNEMONIC=${MNEMONIC}
       - DEPLOYER_INDEX=${DEPLOYER_INDEX}
