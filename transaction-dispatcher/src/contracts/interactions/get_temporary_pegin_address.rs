@@ -1,20 +1,25 @@
 use alloy_primitives::{Address, FixedBytes};
 use log::debug;
 
-use crate::contracts::peg_manager::PegManagerContractApi;
+use crate::contracts::pegin_manager::PeginManagerContractApi;
+use crate::contracts::stream_manager::StreamManagerContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{PeginAddressInput, PeginAddressOutput};
 
 // TODO(Jira): generate Try_From for the input struct like in the other cases - https://rsklabs.atlassian.net/browse/UB-108
 
 #[derive(Clone)]
-pub(crate) struct GetTemporaryPeginAddressCall<C: PegManagerContractApi> {
-    contract: C,
+pub(crate) struct GetTemporaryPeginAddressCall<
+    C: PeginManagerContractApi,
+    S: StreamManagerContractApi,
+> {
+    pegin_contract: C,
+    stream_contract: S,
 }
 
-impl<C: PegManagerContractApi> GetTemporaryPeginAddressCall<C> {
-    pub(crate) fn new(contract: C) -> Self {
-        GetTemporaryPeginAddressCall { contract }
+impl<C: PeginManagerContractApi, S: StreamManagerContractApi> GetTemporaryPeginAddressCall<C, S> {
+    pub(crate) fn new(pegin_contract: C, stream_contract: S) -> Self {
+        GetTemporaryPeginAddressCall { pegin_contract, stream_contract }
     }
 
     pub(crate) async fn run(
@@ -37,51 +42,98 @@ impl<C: PegManagerContractApi> GetTemporaryPeginAddressCall<C> {
                 ))
             })?;
 
-        let address = self
-            .contract
-            .call_get_temporary_pegin_address(
+        let pegin_data = self
+            .pegin_contract
+            .call_get_request_pegin_data(
                 rootstock_deposit_address,
                 value,
                 btc_reimbursement_pub_key,
             )
             .await?;
 
-        debug!("GetTemporaryPeginAddress successful, deposit address: {address:?}");
+        debug!(
+            "getRequestPeginData returned address={}, packetNumber={}",
+            pegin_data.bitcoin_deposit_address, pegin_data.packet_number
+        );
 
-        Ok(PeginAddressOutput { address })
+        let stream = self.stream_contract.call_get_stream(value).await?;
+
+        let enabler_script = self
+            .stream_contract
+            .call_get_enabler_script_pubkey(stream.streamId, pegin_data.packet_number)
+            .await?;
+
+        let enabler_script_hex = format!("0x{}", hex::encode(&enabler_script));
+        debug!("enablerScriptPubKey: {enabler_script_hex}");
+
+        Ok(PeginAddressOutput {
+            address: pegin_data.bitcoin_deposit_address,
+            packet_number: pegin_data.packet_number,
+            enabler_script_pubkey: enabler_script_hex,
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use alloy_primitives::{Address, FixedBytes};
+    use alloy_primitives::{Address, Bytes, FixedBytes};
     use mockall::predicate::{always, eq};
     use union_contracts::bindings::bitcoin_manager::BitcoinManager::{
         BitcoinManagerErrors, InvalidAddress, InvalidPublicKey,
     };
-    use union_contracts::bindings::peg_manager::PegManager::getTemporaryPeginAddressReturn;
+    use union_contracts::bindings::stream_manager::StreamManager::{Stream, TimelockSettings};
 
     use crate::contracts::common::tests::generate_contract_revert_error;
     use crate::contracts::interactions::get_temporary_pegin_address::{
         GetTemporaryPeginAddressCall, PeginAddressInput,
     };
-    use crate::contracts::peg_manager::MockPegManagerContractApi;
+    use crate::contracts::pegin_manager::{MockPeginManagerContractApi, RequestPeginData};
+    use crate::contracts::stream_manager::MockStreamManagerContractApi;
     use crate::rsk_gateway::DomainErrors;
 
     const VALID_ADDRESS: &str = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
     const VALID_PUB_KEY: &str =
         "0xc72a9f6fc8e57f1de528a48b6c4ad7a6db30b24a7bbf8cdd74b0a3b248b6f7f1";
     const VALID_VALUE: u64 = 1000;
+    const FAKE_STREAM_ID: u64 = 1;
+    const FAKE_PACKET_NUMBER: u64 = 0;
 
-    impl GetTemporaryPeginAddressCall<MockPegManagerContractApi> {
-        pub(crate) fn new_for_tests(contract: MockPegManagerContractApi) -> Self {
-            GetTemporaryPeginAddressCall { contract }
+    impl GetTemporaryPeginAddressCall<MockPeginManagerContractApi, MockStreamManagerContractApi> {
+        pub(crate) fn new_for_tests(
+            pegin_contract: MockPeginManagerContractApi,
+            stream_contract: MockStreamManagerContractApi,
+        ) -> Self {
+            GetTemporaryPeginAddressCall { pegin_contract, stream_contract }
         }
+    }
+
+    fn make_fake_stream(stream_id: u64) -> Stream {
+        Stream {
+            streamId: stream_id,
+            denomination: VALID_VALUE,
+            peginPacketPointer: FAKE_PACKET_NUMBER,
+            peginConfirmations: 6,
+            pegoutConfirmations: 6,
+            timelockSettings: TimelockSettings::default(),
+        }
+    }
+
+    fn setup_stream_mock(mock: &mut MockStreamManagerContractApi) {
+        mock.expect_call_get_stream()
+            .with(eq(VALID_VALUE))
+            .returning(|_| Ok(make_fake_stream(FAKE_STREAM_ID)))
+            .times(1);
+
+        mock.expect_call_get_enabler_script_pubkey()
+            .with(eq(FAKE_STREAM_ID), eq(FAKE_PACKET_NUMBER))
+            .returning(|_, _| Ok(Bytes::from(vec![0x51, 0x20, 0xaa, 0xbb])))
+            .times(1);
     }
 
     #[tokio::test]
     async fn test_get_temporary_pegin_address_success() {
-        let mut mock_instance = MockPegManagerContractApi::new();
+        let mut mock_pegin = MockPeginManagerContractApi::new();
+        let mut mock_stream = MockStreamManagerContractApi::new();
 
         let input = PeginAddressInput {
             rootstock_deposit_address: VALID_ADDRESS.to_string(),
@@ -89,30 +141,43 @@ mod tests {
             btc_reimbursement_pub_key: VALID_PUB_KEY.to_string(),
         };
         let expected_deposit_address = "0xfake0deposit0address".to_string();
-        let output = getTemporaryPeginAddressReturn {
-            bitcoinDepositAddress: expected_deposit_address.clone(),
-        };
 
-        mock_instance
-            .expect_call_get_temporary_pegin_address()
+        mock_pegin
+            .expect_call_get_request_pegin_data()
             .with(
                 eq(VALID_ADDRESS.parse::<Address>().unwrap()),
                 eq(VALID_VALUE),
                 eq(VALID_PUB_KEY.parse::<FixedBytes<32>>().unwrap()),
             )
-            .returning(move |_, _, _| Ok(output.bitcoinDepositAddress.clone()))
+            .returning({
+                let addr = expected_deposit_address.clone();
+                move |_, _, _| {
+                    Ok(RequestPeginData {
+                        bitcoin_deposit_address: addr.clone(),
+                        packet_number: FAKE_PACKET_NUMBER,
+                        _member_dispute_keys: vec![],
+                        _available_slots: 5,
+                    })
+                }
+            })
             .times(1);
 
-        let interaction = GetTemporaryPeginAddressCall::new_for_tests(mock_instance);
+        setup_stream_mock(&mut mock_stream);
+
+        let interaction = GetTemporaryPeginAddressCall::new_for_tests(mock_pegin, mock_stream);
 
         let result = interaction.run(input).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().address, expected_deposit_address);
+        let output = result.unwrap();
+        assert_eq!(output.address, expected_deposit_address);
+        assert_eq!(output.packet_number, FAKE_PACKET_NUMBER);
+        assert_eq!(output.enabler_script_pubkey, "0x5120aabb");
     }
 
     #[tokio::test]
     async fn test_get_temporary_pegin_address_invalid_address_preliminary_validation() {
-        let mock_instance = MockPegManagerContractApi::new();
+        let mock_pegin = MockPeginManagerContractApi::new();
+        let mock_stream = MockStreamManagerContractApi::new();
 
         let input = PeginAddressInput {
             rootstock_deposit_address: "0xinvalid_address".to_string(),
@@ -120,7 +185,7 @@ mod tests {
             btc_reimbursement_pub_key: VALID_PUB_KEY.to_string(),
         };
 
-        let interaction = GetTemporaryPeginAddressCall::new_for_tests(mock_instance);
+        let interaction = GetTemporaryPeginAddressCall::new_for_tests(mock_pegin, mock_stream);
 
         let result = interaction.run(input).await;
         assert!(result.is_err());
@@ -129,17 +194,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_temporary_pegin_address_invalid_address_smart_contract_raised() {
-        let mut mock_instance = MockPegManagerContractApi::new();
+        let mut mock_pegin = MockPeginManagerContractApi::new();
+        let mock_stream = MockStreamManagerContractApi::new();
 
         let input = PeginAddressInput {
-            // it has to be valid here in order to pass the preliminary validation (non SC)
             rootstock_deposit_address: VALID_ADDRESS.to_string(),
             value: VALID_VALUE,
             btc_reimbursement_pub_key: VALID_PUB_KEY.to_string(),
         };
 
-        mock_instance
-            .expect_call_get_temporary_pegin_address()
+        mock_pegin
+            .expect_call_get_request_pegin_data()
             .with(always(), eq(VALID_VALUE), eq(VALID_PUB_KEY.parse::<FixedBytes<32>>().unwrap()))
             .returning(move |_, _, _| {
                 let expected_err = BitcoinManagerErrors::InvalidAddress(InvalidAddress {
@@ -149,7 +214,7 @@ mod tests {
             })
             .times(1);
 
-        let interaction = GetTemporaryPeginAddressCall::new_for_tests(mock_instance);
+        let interaction = GetTemporaryPeginAddressCall::new_for_tests(mock_pegin, mock_stream);
 
         let result = interaction.run(input).await;
         assert!(result.is_err());
@@ -158,7 +223,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_temporary_pegin_address_invalid_public_key_preliminary_validation() {
-        let mock_instance = MockPegManagerContractApi::new();
+        let mock_pegin = MockPeginManagerContractApi::new();
+        let mock_stream = MockStreamManagerContractApi::new();
 
         let input = PeginAddressInput {
             rootstock_deposit_address: VALID_ADDRESS.to_string(),
@@ -166,27 +232,26 @@ mod tests {
             btc_reimbursement_pub_key: "0xinvalid_pub_key".to_string(),
         };
 
-        let interaction = GetTemporaryPeginAddressCall::new_for_tests(mock_instance);
+        let interaction = GetTemporaryPeginAddressCall::new_for_tests(mock_pegin, mock_stream);
 
         let result = interaction.run(input).await;
         assert!(result.is_err());
         matches!(result.err().unwrap(), DomainErrors::InvalidCompressedPubKey(_));
     }
 
-    // there are more errors that could be raised by the smart contract, but those are tested either on peg_manager.rs or bitcoin_manager.rs
     #[tokio::test]
     async fn test_get_temporary_pegin_address_revert() {
-        let mut mock_instance = MockPegManagerContractApi::new();
+        let mut mock_pegin = MockPeginManagerContractApi::new();
+        let mock_stream = MockStreamManagerContractApi::new();
 
         let input = PeginAddressInput {
             rootstock_deposit_address: VALID_ADDRESS.to_string(),
             value: VALID_VALUE,
-            // it has to be valid here in order to pass the preliminary validation (non SC)
             btc_reimbursement_pub_key: VALID_PUB_KEY.to_string(),
         };
 
-        mock_instance
-            .expect_call_get_temporary_pegin_address()
+        mock_pegin
+            .expect_call_get_request_pegin_data()
             .with(eq(VALID_ADDRESS.parse::<Address>().unwrap()), eq(VALID_VALUE), always())
             .returning(move |_, _, _| {
                 let expected_err = BitcoinManagerErrors::InvalidPublicKey(InvalidPublicKey {
@@ -196,7 +261,7 @@ mod tests {
             })
             .times(1);
 
-        let call = GetTemporaryPeginAddressCall::new_for_tests(mock_instance);
+        let call = GetTemporaryPeginAddressCall::new_for_tests(mock_pegin, mock_stream);
 
         let result = call.run(input).await;
         assert!(result.is_err());

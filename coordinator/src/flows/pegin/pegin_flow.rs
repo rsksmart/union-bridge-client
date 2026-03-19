@@ -5,10 +5,10 @@ use bitcoin::secp256k1::Parity::Even;
 use bitcoin::secp256k1::XOnlyPublicKey;
 use bitcoin::{PublicKey, Txid};
 use common::msg_broker::bitvmx_types::{
-    ACCEPT_PEGIN_TX, BtcTxSPVProof, IncomingBitVMXApiMessages, P2PAddress, ParticipantRole, PeerId,
-    PeginAcceptedMessage, TransactionStatus, VariableTypes,
+    ACCEPT_PEGIN_TX, BtcTxSPVProof, CommsAddress, IncomingBitVMXApiMessages, ParticipantRole,
+    PeginAcceptedMessage, PubKeyHash, TransactionStatus, VariableTypes,
 };
-use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
+use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::{CommitteeId, TxIdParser};
 use log::{debug, info, trace};
@@ -18,7 +18,7 @@ use transaction_dispatcher::types::{
     GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,
     P2PAddressParser, RequestPeginInput,
 };
-use union_contracts::bindings::peg_manager::PegManager::{PeginAccepted, PeginRequested};
+use union_contracts::bindings::pegin_manager::PeginManager::{PeginAccepted, PeginRequested};
 use uuid::Uuid;
 
 use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
@@ -70,7 +70,7 @@ pub enum StepData {
     // Pegin requested
     PeginRequested(PeginRequested),
     // Communication info
-    CommInfo(P2PAddress),
+    CommInfo(CommsAddress),
     // BitVMX pegin accepted
     BitvmxPeginAccepted(PeginAcceptedMessage),
     // Operator take hash added
@@ -115,7 +115,7 @@ pub struct FlowContext {
     pub request_pegin_btc_tx_status: Option<TransactionStatus>,
     pub request_pegin_spv_proof: Option<BtcTxSPVProof>,
     pub pegin_requested: Option<PeginRequested>,
-    pub my_p2p_address: Option<P2PAddress>,
+    pub my_p2p_address: Option<CommsAddress>,
     pub committee_output: Option<GetCommitteeOutput>,
     pub bitvmx_pegin_accepted: Option<PeginAcceptedMessage>,
     pub accept_pegin_spv_proof: Option<BtcTxSPVProof>,
@@ -255,6 +255,8 @@ where
             }
             Steps::ConfirmAcceptPeginTransaction => {
                 self.dispatch_transaction()?;
+                // Transaction status will be polled via TickScheduler in the processor
+                // to ensure the transaction has time to be broadcast before querying
                 info!(
                     "Waiting for AcceptPegin Bitcoin confirmations for flow_id: {} and tx_id: {:?}",
                     self.state.flow_id,
@@ -423,7 +425,9 @@ where
             .pegin_requested
             .as_ref()
             .ok_or_else(|| anyhow!("PeginRequested data not available"))?;
-        let pegin_request = Self::build_pegin_request_message(pegin_requested, &committee_output)?;
+        let amount = self.extract_pegin_amount()?;
+        let pegin_request =
+            Self::build_pegin_request_message(pegin_requested, &committee_output, amount)?;
 
         let msg = IncomingBitVMXApiMessages::SetVar(
             self.state.flow_id,
@@ -439,24 +443,25 @@ where
         debug!("Sending setup to BitVMX with flow_id: {}", self.state.flow_id);
 
         let committee_addresses = self.get_committee_addresses(committee_id)?;
-        let committee_peer_ids = self.get_committee_peer_ids(committee_id)?;
+        let committee_pubkey_hashes = self.get_committee_pubkey_hashes(committee_id)?;
 
-        let p2p_addresses = build_communication_data(
+        let comms_addresses = build_communication_data(
             &self
                 .state
                 .ctx
                 .my_p2p_address
                 .as_ref()
                 .ok_or_else(|| anyhow!("P2P address not available for setup"))?
-                .address,
+                .address
+                .to_string(),
             &committee_addresses,
-            &committee_peer_ids,
+            &committee_pubkey_hashes,
         )?;
 
         let msg = IncomingBitVMXApiMessages::Setup(
             self.state.flow_id,
             PROGRAM_TYPE_ACCEPT_PEGIN.to_string(),
-            p2p_addresses,
+            comms_addresses,
             0, // No leader
         );
         self.send_bitvmx_msg(msg)?;
@@ -479,9 +484,18 @@ where
             self.state.flow_id, pegin_accepted.accept_pegin_txid
         );
 
+        let take_tx_hash = pegin_accepted.operator_take_txid.ok_or_else(|| {
+            anyhow!("operator_take_txid missing for prover in PeginAcceptedMessage")
+        })?;
+
+        let won_tx_hash = pegin_accepted.operator_won_txid.ok_or_else(|| {
+            anyhow!("operator_won_txid missing for prover in PeginAcceptedMessage")
+        })?;
+
         let input = transaction_dispatcher::types::AddOperatorTakeTxHashInput {
             accept_pegin_tx_hash: pegin_accepted.accept_pegin_txid,
-            take_tx_hash: pegin_accepted.operator_take_sighash.clone(),
+            take_tx_hash,
+            won_tx_hash,
         };
 
         self.rt_sync.run(async { self.contracts.add_operator_take_tx_hash(input).await })?;
@@ -558,6 +572,22 @@ where
         self.send_bitvmx_msg(msg)
     }
 
+    fn extract_pegin_amount(&self) -> Result<u64> {
+        let spv_proof = self
+            .state
+            .ctx
+            .request_pegin_spv_proof
+            .as_ref()
+            .ok_or_else(|| anyhow!("Request pegin SPV proof not available"))?;
+
+        spv_proof
+            .tx
+            .output
+            .first()
+            .map(|o| o.value.to_sat())
+            .ok_or_else(|| anyhow!("Request pegin BTC transaction has no outputs"))
+    }
+
     fn request_pegin_spv_proof(&self) -> Result<()> {
         let btc_tx_id = self
             .state
@@ -602,6 +632,7 @@ where
     fn build_pegin_request_message(
         event: &PeginRequested,
         committee_output: &GetCommitteeOutput,
+        amount: u64,
     ) -> Result<PeginRequestMessage> {
         debug!("Building PeginRequestMessage for BitVMX from PeginRequested event");
 
@@ -622,7 +653,7 @@ where
 
         Ok(PeginRequestMessage {
             txid,
-            amount: event.prevoutData.value,
+            amount,
             accept_pegin_sighash,
             take_aggregated_key,
             operator_indexes,
@@ -679,7 +710,8 @@ where
             .communication_data
             .into_iter()
             .map(|comm_data| {
-                P2PAddressParser::addr_from_contracts(&comm_data)
+                P2PAddressParser::socket_addr_from_contracts(&comm_data)
+                    .map(|opt_addr| opt_addr.map(|addr| addr.to_string()).unwrap_or_default())
                     .context("Failed to convert communication data to P2P address")
             })
             .collect::<Result<Vec<_>>>()?;
@@ -687,12 +719,12 @@ where
         Ok(committee_addresses)
     }
 
-    fn get_committee_peer_ids(&self, committee_id: &CommitteeId) -> Result<Vec<PeerId>> {
+    fn get_committee_pubkey_hashes(&self, committee_id: &CommitteeId) -> Result<Vec<PubKeyHash>> {
         let committee_input = GetCommitteeInput { committee_id: committee_id.clone() };
         let committee_response =
             self.rt_sync.run(async { self.contracts.get_committee(committee_input).await })?;
 
-        let mut peer_ids = Vec::new();
+        let mut pubkey_hashes = Vec::new();
 
         for member in committee_response.committee.members {
             let keys_input = GetMemberPublicKeysInput { member_address: member.memberAddress };
@@ -705,21 +737,25 @@ where
                 format!("Communication key not found for member {}", member.memberAddress)
             })?;
 
-            debug!("Member PeerId: address={}, peer_id={:?}", member.memberAddress, key_str);
-            peer_ids.push(PeerId(key_str.clone()));
+            debug!(
+                "Member pubkey_hash: address={}, pubkey_hash={:?}",
+                member.memberAddress, key_str
+            );
+            pubkey_hashes.push(key_str.clone());
         }
 
-        Ok(peer_ids)
+        Ok(pubkey_hashes)
     }
 
     fn request_bitvmx_comm_info(&self) -> Result<()> {
         info!("Requesting BitVMX comm info for flow_id: {}", self.state.flow_id);
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo())
+        let req_id = Uuid::new_v4();
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo(req_id))
     }
 
     fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) -> Result<()> {
         trace!("Sending message to BitVMX: {msg:?}");
-        self.bitvmx_broker.send(BROKER_SERVER_ID, msg)?;
+        self.bitvmx_broker.send(msg)?;
         Ok(())
     }
 
@@ -872,8 +908,8 @@ mod tests {
             accept_pegin_nonce: default_pub_nonce(),
             accept_pegin_signature: MaybeScalar::Zero,
             accept_pegin_sighash: vec![],
-            operator_take_sighash: vec![1, 2, 3, 4],
-            operator_won_sighash: vec![],
+            operator_take_txid: Some(test_txid([1u8; 32])),
+            operator_won_txid: Some(test_txid([2u8; 32])),
             committee_id: Uuid::new_v4(),
         }
     }
@@ -996,7 +1032,8 @@ mod tests {
 
         let expected_input = transaction_dispatcher::types::AddOperatorTakeTxHashInput {
             accept_pegin_tx_hash: btc_tx_id,
-            take_tx_hash: vec![1, 2, 3, 4],
+            take_tx_hash: test_txid([1u8; 32]),
+            won_tx_hash: test_txid([2u8; 32]),
         };
 
         mock_contracts

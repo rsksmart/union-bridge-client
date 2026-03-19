@@ -186,7 +186,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
             debug!("Fetching logs from block {from} to {to}");
             let logs = self.rsk_provider.get_logs(from, to, addrs)?;
-            debug!("Fetched {} logs from {} to {}", logs.len(), from, to);
+            debug!("Fetched {} logs from {from} to {to}", logs.len());
 
             self.save_logs_and_checkpoint(&logs)?;
 
@@ -195,10 +195,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                 let new_best_block = self.rsk_provider.get_best_block()?;
                 if end < new_best_block.number() {
                     info!(
-                        "[Attempt {}/{}] New blocks appeared during sync: previous best = {}, current best = {}. Continuing...",
-                        attempt,
-                        max_attempts,
-                        end,
+                        "[Attempt {attempt}/{max_attempts}] New blocks appeared during sync: previous best = {end}, current best = {}. Continuing...",
                         new_best_block.number()
                     );
                     end = new_best_block.number();

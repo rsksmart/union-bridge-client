@@ -2,17 +2,17 @@ use alloy_primitives::FixedBytes;
 use anyhow::Result;
 use log::info;
 
-use crate::contracts::peg_manager::PegManagerContractApi;
+use crate::contracts::pegout_manager::PegoutManagerContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{TriggerOperatorTakeInput, TriggerOperatorTakeOutput};
 
 #[derive(Clone)]
-pub(crate) struct TriggerOperatorTakeInvoke<C: PegManagerContractApi> {
+pub(crate) struct TriggerOperatorTakeInvoke<C: PegoutManagerContractApi> {
     contract: C,
     gas_bumps: u8,
 }
 
-impl<C: PegManagerContractApi> TriggerOperatorTakeInvoke<C> {
+impl<C: PegoutManagerContractApi> TriggerOperatorTakeInvoke<C> {
     pub(crate) fn new(contract: C, gas_bumps: u8) -> Self {
         Self { contract, gas_bumps }
     }
@@ -40,32 +40,33 @@ mod tests {
     use std::str::FromStr;
 
     use alloy_primitives::{FixedBytes, TxHash};
-    use union_contracts::bindings::peg_manager::PegManager::{
-        PegManagerErrors, PegoutTxidNotFound,
+    use union_contracts::bindings::pegout_manager::PegoutManager::{
+        PegoutManagerErrors, PegoutTxidNotFound,
     };
 
     use super::*;
     use crate::contracts::common::tests::generate_contract_revert_error;
-    use crate::contracts::peg_manager::MockPegManagerContractApi;
+    use crate::contracts::pegout_manager::MockPegoutManagerContractApi;
 
-    impl TriggerOperatorTakeInvoke<MockPegManagerContractApi> {
-        fn new_for_tests(contract: MockPegManagerContractApi) -> Self {
+    impl TriggerOperatorTakeInvoke<MockPegoutManagerContractApi> {
+        fn new_for_tests(contract: MockPegoutManagerContractApi) -> Self {
             Self { contract, gas_bumps: 3 }
         }
     }
 
     #[tokio::test]
     async fn test_run_successful() {
-        let mut mock = MockPegManagerContractApi::new();
+        let mut mock = MockPegoutManagerContractApi::new();
         let input = base_input();
         let expected_txid = input.pegout_txid.parse::<FixedBytes<32>>().unwrap();
-        let expected_tx_hash =
-            TxHash::from_str("0xfeedfacecafebeef000000000000000000000000000000000000000000000000")
-                .expect("invalid tx hash");
+        let expected_tx_hash_str =
+            "0xfeedfacecafebeef000000000000000000000000000000000000000000000000";
 
         mock.expect_invoke_trigger_operator_take()
             .withf(move |hash, _| hash == &expected_txid)
-            .returning(move |_, _| Ok(expected_tx_hash))
+            .returning(move |_, _| {
+                Ok(TxHash::from_str(expected_tx_hash_str).expect("Failed to parse tx hash"))
+            })
             .times(1);
 
         let invoke = TriggerOperatorTakeInvoke::new_for_tests(mock);
@@ -74,19 +75,19 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(
             result.unwrap(),
-            TriggerOperatorTakeOutput { transaction_hash: expected_tx_hash.to_string() }
+            TriggerOperatorTakeOutput { transaction_hash: expected_tx_hash_str.to_string() }
         );
     }
 
     #[tokio::test]
     async fn test_run_failure() {
-        let mut mock = MockPegManagerContractApi::new();
+        let mut mock = MockPegoutManagerContractApi::new();
 
         let expected_tx_id = "0x6b8f74fe9c66c9c3a6c3d0b7111d9b6aaac0ea3db1bdbd6a38eb0e7d8b8bba3e";
 
         mock.expect_invoke_trigger_operator_take()
             .returning(move |_, _| {
-                let expected_err = PegManagerErrors::PegoutTxidNotFound(PegoutTxidNotFound {
+                let expected_err = PegoutManagerErrors::PegoutTxidNotFound(PegoutTxidNotFound {
                     pegoutTxid: expected_tx_id.parse().expect("Failed to parse tx hash"),
                 });
                 Err(generate_contract_revert_error(&expected_err))
@@ -107,7 +108,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_invalid_hash() {
-        let mut mock = MockPegManagerContractApi::new();
+        let mut mock = MockPegoutManagerContractApi::new();
         mock.expect_invoke_trigger_operator_take().times(0);
 
         let invoke = TriggerOperatorTakeInvoke::new_for_tests(mock);

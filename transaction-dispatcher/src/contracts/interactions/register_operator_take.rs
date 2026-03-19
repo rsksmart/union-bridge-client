@@ -1,17 +1,17 @@
 use log::info;
-use union_contracts::bindings::peg_manager::PegManager::BtcTxSPVProof;
+use union_contracts::bindings::pegout_manager::PegoutManager::BtcTxSPVProof;
 
-use crate::contracts::peg_manager::PegManagerContractApi;
+use crate::contracts::pegout_manager::PegoutManagerContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{RegisterOperatorTakeInput, RegisterOperatorTakeOutput};
 
 #[derive(Clone)]
-pub(crate) struct RegisterOperatorTakeInvoke<C: PegManagerContractApi> {
+pub(crate) struct RegisterOperatorTakeInvoke<C: PegoutManagerContractApi> {
     contract: C,
     gas_bumps: u8,
 }
 
-impl<C: PegManagerContractApi> RegisterOperatorTakeInvoke<C> {
+impl<C: PegoutManagerContractApi> RegisterOperatorTakeInvoke<C> {
     pub(crate) fn new(contract: C, gas_bumps: u8) -> Self {
         RegisterOperatorTakeInvoke { contract, gas_bumps }
     }

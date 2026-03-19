@@ -2,17 +2,17 @@ use alloy_primitives::FixedBytes;
 use anyhow::Result;
 use log::{debug, info};
 
-use crate::contracts::peg_manager::PegManagerContractApi;
+use crate::contracts::pegout_manager::PegoutManagerContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{RequestPegoutInput, RequestPegoutOutput};
 
 #[derive(Clone)]
-pub struct TryPegoutInvoke<C: PegManagerContractApi> {
+pub struct TryPegoutInvoke<C: PegoutManagerContractApi> {
     contract: C,
     gas_bumps: u8,
 }
 
-impl<C: PegManagerContractApi> TryPegoutInvoke<C> {
+impl<C: PegoutManagerContractApi> TryPegoutInvoke<C> {
     pub fn new(contract: C, gas_bumps: u8) -> Self {
         Self { contract, gas_bumps }
     }
@@ -31,12 +31,12 @@ impl<C: PegManagerContractApi> TryPegoutInvoke<C> {
             })?;
 
         debug!(
-            "Calling invoke_request_pegout: value = {msg_value}, usr_pub_key = {usr_pub_key:?}, gas_bumps = {}",
+            "Calling invoke_try_pegout: value = {msg_value}, usr_pub_key = {usr_pub_key:?}, gas_bumps = {}",
             self.gas_bumps
         );
 
         let tx_hash =
-            self.contract.invoke_request_pegout(msg_value, usr_pub_key, self.gas_bumps).await?;
+            self.contract.invoke_try_pegout(msg_value, usr_pub_key, self.gas_bumps).await?;
 
         info!("Pegout Request successful at tx {tx_hash}");
         Ok(RequestPegoutOutput { transaction_hash: tx_hash.to_string() })
@@ -52,18 +52,18 @@ mod tests {
     use crate::contracts::interactions::request_pegout::{
         RequestPegoutInput, RequestPegoutOutput, TryPegoutInvoke,
     };
-    use crate::contracts::peg_manager::MockPegManagerContractApi;
+    use crate::contracts::pegout_manager::MockPegoutManagerContractApi;
     use crate::rsk_gateway::DomainErrors;
 
-    impl TryPegoutInvoke<MockPegManagerContractApi> {
-        fn new_for_tests(contract: MockPegManagerContractApi) -> Self {
+    impl TryPegoutInvoke<MockPegoutManagerContractApi> {
+        fn new_for_tests(contract: MockPegoutManagerContractApi) -> Self {
             TryPegoutInvoke { contract, gas_bumps: 3 }
         }
     }
 
     #[tokio::test]
     async fn test_run_successful() {
-        let mut mock = MockPegManagerContractApi::new();
+        let mut mock = MockPegoutManagerContractApi::new();
         let input = get_base_input();
         let expected = RequestPegoutOutput {
             transaction_hash: "0xfeedfacecafebeef000000000000000000000000000000000000000000000000"
@@ -71,11 +71,8 @@ mod tests {
         };
         let receipt_return = expected.clone();
 
-        mock.expect_invoke_request_pegout()
-            .returning(move |_, _, _| {
-                Ok(TxHash::from_str(&receipt_return.transaction_hash)
-                    .expect("Failed to parse tx hash"))
-            })
+        mock.expect_invoke_try_pegout()
+            .returning(move |_, _, _| Ok(parse_tx_hash(&receipt_return.transaction_hash)))
             .times(1);
 
         let invoke = TryPegoutInvoke::new_for_tests(mock);
@@ -86,29 +83,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_run_fail_no_revert() {
-        let mut mock = MockPegManagerContractApi::new();
+    async fn test_run_success_returns_tx_hash() {
+        let mut mock = MockPegoutManagerContractApi::new();
         let input = get_base_input();
 
-        mock.expect_invoke_request_pegout()
-            .returning(move |_, _, _| {
-                Err(alloy_contract::Error::TransportError(
-                    alloy_transport::TransportError::local_usage_str("transaction failed"),
-                ))
-            })
+        let expected_tx_hash = "0xdeadbeefdeadbeef000000000000000000000000000000000000000000000000";
+        let expected = RequestPegoutOutput { transaction_hash: expected_tx_hash.to_string() };
+
+        mock.expect_invoke_try_pegout()
+            .returning(move |_, _, _| Ok(parse_tx_hash(expected_tx_hash)))
             .times(1);
 
         let invoke = TryPegoutInvoke::new_for_tests(mock);
         let result = invoke.run(input).await;
 
-        assert!(result.is_err());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), expected);
     }
 
     #[tokio::test]
     async fn test_run_invalid_pub_key_length() {
-        let mut mock = MockPegManagerContractApi::new();
+        let mut mock = MockPegoutManagerContractApi::new();
         // should never hit the contract if parse fails
-        mock.expect_invoke_request_pegout().times(0);
+        mock.expect_invoke_try_pegout().times(0);
 
         let invoke = TryPegoutInvoke::new_for_tests(mock);
         let bad_input =
@@ -126,5 +123,9 @@ mod tests {
     fn get_base_input() -> RequestPegoutInput {
         let usr_pub_key = format!("0x{}", "01".repeat(33));
         RequestPegoutInput { amount_in_wei: 1_234_567, usr_pub_key }
+    }
+
+    fn parse_tx_hash(tx_hash_str: &str) -> TxHash {
+        TxHash::from_str(tx_hash_str).expect("Failed to parse tx hash")
     }
 }

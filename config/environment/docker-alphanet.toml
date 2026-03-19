@@ -11,24 +11,28 @@ name = "FakePegManager"
 address = "0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f"
 
 [[contracts]]
-name = "PegManager"
-address = "0xE4D1835c12bDb88186929BC9e8DFd831914847C4"
+name = "PeginManager"
+address = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
+
+[[contracts]]
+name = "PegoutManager"
+address = "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"
 
 [[contracts]]
 name = "SignatureManager"
-address = "0x9eA8B0f84c5079d13159be3454e1A191459985BF"
+address = "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1"
 
 [[contracts]]
 name = "CommitteeRegistry"
-address = "0x01bef9d2e307ccE31F1a976E16478f9f0F824A7d"
+address = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9"
 
 [[contracts]]
 name = "MemberRegistry"
-address = "0xfE9Bbef10a49426Ca9B1B8d78D7d57B9b4dA4Ca8"
+address = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
 
 [[contracts]]
 name = "StreamManager"
-address = "0x71260e163CE80566e82B26934Ea98A1C194340d3"
+address = "0x9A676e781A523b5d0C0e43731313A708CB607508"
 
 [[contracts]]
 name = "NativeBridge"
@@ -49,6 +53,9 @@ storage_path = "/app/db/" # This should match the volume mount in docker-compose
 blocks.host = "block-indexer"
 logs.host = "log-indexer"
 user.host = "user-api"
+
+[bridge.committee]
+drp_program_definition = "/app/resources/hello-world.yaml"
 
 # ═══════════════════════════════════════════════════════
 # Transaction Dispatcher

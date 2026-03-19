@@ -1,4 +1,3 @@
-use std::ops::Sub;
 use std::rc::Rc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -6,7 +5,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 use bitcoin::Network;
 use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
-use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
+use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::shutdown_flag::ShutdownFlag;
 use log::{debug, error, warn};
@@ -15,9 +14,8 @@ use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use crate::config::{BridgeConfig, CoordinatorAdvanceFundsConfig};
 use crate::event_processor::EventProcessor;
 use crate::flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor;
-use crate::flows::committee::setup_committee_flow::{
-    SetupCommitteeFlowFactory, SetupCommitteeProcessor,
-};
+use crate::flows::committee::setup_committee_flow::SetupCommitteeFlowFactory;
+use crate::flows::committee::setup_committee_processor::SetupCommitteeProcessor;
 use crate::flows::common::GlobalContext;
 use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
 use crate::flows::fund_bitvmx_flow::FundBitvmxProcessor;
@@ -132,15 +130,15 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                 rt_sync.clone(),
                 bitvmx_broker.clone(),
                 global_context.clone(),
-                native_bridge_verifier,
-                bridge_config.advance_funds.clone(),
                 bridge_config.coordinator.required_confirmations,
-                env_name,
+                native_bridge_verifier.clone(),
+                bridge_config.advance_funds.clone(),
             )),
             Box::new(SetupCommitteeProcessor::new(
                 setup_committee_flow_factory,
                 global_context.clone(),
                 &store_rc,
+                bitvmx_broker.as_ref(),
                 bridge_config.coordinator.required_confirmations,
             )),
             Box::new(FundBitvmxProcessor::new(bitvmx_broker.clone(), bitcoin_network)),
@@ -194,7 +192,8 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
 
         self.monitor.start_user_monitoring().context("Failed to start User request monitoring")?;
 
-        let mut bitvmx_last_msg = Instant::now().sub(self.bitvmx_ping_after_silence);
+        let mut bitvmx_last_msg =
+            Instant::now().checked_sub(self.bitvmx_ping_after_silence).unwrap_or_else(Instant::now);
         let mut bitvmx_ping: Option<Instant> = None;
 
         // TODO we will need to think what happens if we accumulate messages of a certain type
@@ -314,9 +313,10 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
     }
 
     fn send_bitvmx_ping(&self) {
-        debug!("Sending Ping to BitVMX");
+        let ping_id = uuid::Uuid::new_v4();
+        debug!("Sending Ping to BitVMX with uuid: {ping_id}");
 
-        let result = self.bitvmx_broker.send(BROKER_SERVER_ID, IncomingBitVMXApiMessages::Ping());
+        let result = self.bitvmx_broker.send(IncomingBitVMXApiMessages::Ping(ping_id));
 
         if result.is_err() {
             // TODO we need to handle this situation properly
@@ -326,8 +326,8 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
 
     fn check_bitvmx_pong(event: &OutgoingBitVMXApiMessages) -> bool {
         match event {
-            OutgoingBitVMXApiMessages::Pong() => {
-                debug!("Received Pong from BitVMX");
+            OutgoingBitVMXApiMessages::Pong(uuid) => {
+                debug!("Received Pong from BitVMX with uuid: {uuid}");
                 true
             }
             _ => false,
@@ -347,7 +347,7 @@ pub(crate) mod tests {
     use alloy_primitives::U256;
     use common::mocks::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
-    use common::msg_broker::broker::{BROKER_SERVER_ID, MockBrokerClientApi};
+    use common::msg_broker::broker::MockBrokerClientApi;
     use common::shutdown_flag::ShutdownFlag;
     use common::test_utils::rsk_block_generator::{
         create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
@@ -355,7 +355,7 @@ pub(crate) mod tests {
     use common::types;
     use common::types::{RskBlockAndUncles, TxHash};
     use mockall::mock;
-    use mockall::predicate::{always, eq, function};
+    use mockall::predicate::{always, function};
     use primitive_types::H256;
     use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
     use transaction_dispatcher::types::{
@@ -363,13 +363,18 @@ pub(crate) mod tests {
         AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput,
         AddOperatorTakeTxHashOutput, ApplyToStreamInput, ApplyToStreamOutput,
         DepositAggregatedKeyInput, DepositAggregatedKeyOutput, DepositCommunicationDataInput,
-        DepositCommunicationDataOutput, GetBtcTransactionConfirmationsInput,
-        GetBtcTransactionConfirmationsOutput, GetCommitteeInput, GetCommitteeOutput,
-        GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberPublicKeysInput,
-        GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput,
-        RegisterOperatorTakeInput, RegisterOperatorTakeOutput, RegisterPegoutInput,
-        RegisterPegoutOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
-        RequestPegoutOutput, TriggerOperatorTakeInput, TriggerOperatorTakeOutput,
+        DepositCommunicationDataOutput, GetAcceptPeginTxidInput, GetAcceptPeginTxidOutput,
+        GetBtcTransactionConfirmationsInput, GetBtcTransactionConfirmationsOutput,
+        GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput,
+        GetCommunicationDataOutput, GetMemberPublicKeysInput, GetMemberPublicKeysOutput,
+        PeginAddressInput, PeginAddressOutput, RegisterAdvanceFundsInput,
+        RegisterAdvanceFundsOutput, RegisterChallengeInput, RegisterChallengeOutput,
+        RegisterInputRevealedInput, RegisterInputRevealedOutput, RegisterOperatorTakeInput,
+        RegisterOperatorTakeOutput, RegisterOperatorWonInput, RegisterOperatorWonOutput,
+        RegisterPegoutInput, RegisterPegoutOutput, RegisterReimbursementKickoffInput,
+        RegisterReimbursementKickoffOutput, RequestPeginInput, RequestPeginOutput,
+        RequestPegoutInput, RequestPegoutOutput, TriggerOperatorTakeInput,
+        TriggerOperatorTakeOutput,
     };
 
     use crate::coordinator::Coordinator;
@@ -413,7 +418,7 @@ pub(crate) mod tests {
             tx_hash: TxHash::from(H256::from_low_u64_be(block_2.number().value())),
         });
 
-        let bitvmx_event = OutgoingBitVMXApiMessages::Pong();
+        let bitvmx_event = OutgoingBitVMXApiMessages::Pong(uuid::Uuid::new_v4());
 
         mock_monitor.expect_start_event_monitoring().return_once(|| Ok(()));
 
@@ -446,16 +451,14 @@ pub(crate) mod tests {
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
 
-        let mut bitvmx_broker = MockBrokerClientApi::new();
+        let mut bitvmx_broker =
+            MockBrokerClientApi::<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>::new();
         bitvmx_broker
             .expect_send()
-            .with(
-                eq(BROKER_SERVER_ID),
-                function(|req: &IncomingBitVMXApiMessages| {
-                    matches!(req, IncomingBitVMXApiMessages::Ping())
-                }),
-            )
-            .return_once(|_, _| Ok(true));
+            .with(function(|req: &IncomingBitVMXApiMessages| {
+                matches!(req, IncomingBitVMXApiMessages::Ping(_))
+            }))
+            .return_once(|_| Ok(true));
 
         let mut mock_store = MockCoordinatorStoreApi::new();
         mock_store.expect_save_context().with(always()).returning(|_| Ok(()));
@@ -513,7 +516,7 @@ pub(crate) mod tests {
             &mut mock_monitor,
         );
 
-        let bitvmx_event = OutgoingBitVMXApiMessages::Pong();
+        let bitvmx_event = OutgoingBitVMXApiMessages::Pong(uuid::Uuid::new_v4());
 
         mock_monitor.expect_try_bitvmx_event().returning(move || Ok(Some(bitvmx_event.clone())));
 
@@ -524,16 +527,14 @@ pub(crate) mod tests {
         let shutdown_flag = ShutdownFlag::init();
         handle_shutdown(shutdown_flag.clone());
 
-        let mut bitvmx_broker = MockBrokerClientApi::new();
+        let mut bitvmx_broker =
+            MockBrokerClientApi::<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>::new();
         bitvmx_broker
             .expect_send()
-            .with(
-                eq(BROKER_SERVER_ID),
-                function(|req: &IncomingBitVMXApiMessages| {
-                    matches!(req, IncomingBitVMXApiMessages::Ping())
-                }),
-            )
-            .return_once(|_, _| Ok(true));
+            .with(function(|req: &IncomingBitVMXApiMessages| {
+                matches!(req, IncomingBitVMXApiMessages::Ping(_))
+            }))
+            .return_once(|_| Ok(true));
 
         let mut mock_store = MockCoordinatorStoreApi::new();
         mock_store.expect_save_context().with(always()).returning(|_| Ok(()));
@@ -696,6 +697,38 @@ pub(crate) mod tests {
                 &self,
                 input: GetBtcTransactionConfirmationsInput,
             ) -> Result<GetBtcTransactionConfirmationsOutput, DomainErrors>;
+
+            async fn register_challenge(
+                &self,
+                input: RegisterChallengeInput,
+            ) -> Result<RegisterChallengeOutput, DomainErrors>;
+
+            async fn register_input_revealed(
+                &self,
+                input: RegisterInputRevealedInput,
+            ) -> Result<RegisterInputRevealedOutput, DomainErrors>;
+
+            async fn register_operator_won(
+                &self,
+                input: RegisterOperatorWonInput,
+            ) -> Result<RegisterOperatorWonOutput, DomainErrors>;
+
+            async fn register_advance_funds(
+                &self,
+                input: RegisterAdvanceFundsInput,
+            ) -> Result<RegisterAdvanceFundsOutput, DomainErrors>;
+
+            async fn get_accept_pegin_txid(
+                &self,
+                input: GetAcceptPeginTxidInput,
+            ) -> Result<GetAcceptPeginTxidOutput, DomainErrors>;
+
+            async fn register_reimbursement_kickoff(
+                &self,
+                input: RegisterReimbursementKickoffInput,
+            ) -> Result<RegisterReimbursementKickoffOutput, DomainErrors>;
+
+            async fn is_whitelisted(&self) -> Result<bool, DomainErrors>;
         }
     }
 }

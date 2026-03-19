@@ -16,6 +16,7 @@ pub(crate) use crate::contracts::interactions::deposit_aggregated_key::DepositAg
 pub(crate) use crate::contracts::interactions::deposit_communication_data::DepositCommunicationDataInvoke;
 pub(crate) use crate::contracts::interactions::get_committee::GetCommitteeCall;
 pub(crate) use crate::contracts::interactions::get_member_communication_data::GetMemberCommunicationDataCall;
+pub(crate) use crate::contracts::interactions::is_whitelisted::IsWhitelistedCall;
 use crate::contracts::types::Address;
 use crate::rsk_gateway::DomainErrors;
 
@@ -55,6 +56,8 @@ pub trait CommitteeRegistryContractApi {
         aggregated_key: alloy_primitives::Bytes,
         gas_bumps: u8,
     ) -> alloy_contract::Result<TxHash>;
+
+    async fn call_is_whitelisted(&self, address: Address) -> alloy_contract::Result<bool>;
 }
 
 #[derive(Clone)]
@@ -142,6 +145,10 @@ impl<P: Provider> CommitteeRegistryContractApi for CommitteeRegistryContract<P> 
             gas_bumps,
         )
         .await
+    }
+
+    async fn call_is_whitelisted(&self, address: Address) -> alloy_contract::Result<bool> {
+        self.contract_instance.isWhitelisted(address).call().await
     }
 }
 

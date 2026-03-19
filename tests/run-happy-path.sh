@@ -97,6 +97,11 @@ fi
 STREAM_ID=0
 RSK_ADDRESS="0x$(openssl rand -hex 20)" # random address each run
 VALUE=100000
+COMMITTEE_REGISTRY_ADDRESS="0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82"
+
+# Committee setup can take longer to emit completion markers in all operators.
+# Committee setup can take longer in mixed (local client + docker BitVMX) and full-docker flows.
+COMMITTEE_SETUP_MAX_BLOCKS=120
 
 # colors
 GREEN='\033[0;32m'
@@ -422,6 +427,86 @@ wait_for_log_with_block_timeout() {
     done
 }
 
+wait_for_log_in_all_operators() {
+    local pattern="$1"
+    local max_blocks=$2
+    local operator_count=${3:-$NUM_OPERATORS}
+
+    local start_height=$(get_current_bitcoin_height)
+    local target_height=$((start_height + max_blocks))
+
+    log "Waiting for log pattern in all $operator_count operators: $pattern (max $max_blocks blocks)..."
+
+    declare -A found_operators=()
+
+    while true; do
+        local current_height=$(get_current_bitcoin_height)
+        local blocks_mined=$((current_height - start_height))
+
+        if [ $blocks_mined -lt 0 ]; then
+            sleep 1
+            continue
+        fi
+
+        local found_count="${#found_operators[@]}"
+        echo -ne "\r  Blocks mined: $blocks_mined/$max_blocks | Operators matched: $found_count/$operator_count  "
+
+        if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
+            for op_id in $(seq 1 $operator_count); do
+                [[ -n "${found_operators[$op_id]:-}" ]] && continue
+                local project="op_${op_id}"
+                local line
+                line=$(docker compose -p "$project" logs coordinator 2>/dev/null | grep -E "$pattern" | tail -1)
+                if [ -n "$line" ]; then
+                    found_operators[$op_id]="$line"
+                    echo ""
+                    success "Pattern found in $project"
+                    echo "  $line"
+                fi
+            done
+        else
+            local min_ts
+            min_ts=$(date -v-1M "+%Y-%m-%d %H:%M:%S" 2>/dev/null || date -d "1 minute ago" "+%Y-%m-%d %H:%M:%S")
+
+            for op_id in $(seq 1 $operator_count); do
+                [[ -n "${found_operators[$op_id]:-}" ]] && continue
+                local log_file="logs/coordinator-${op_id}.log"
+                [[ -f "$log_file" ]] || continue
+                local found_line
+                found_line=$(awk -v pattern="$pattern" -v min_ts="$min_ts" '
+                    $0 ~ pattern && substr($0, 1, 19) >= min_ts { print; exit }
+                ' "$log_file")
+                if [ -n "$found_line" ]; then
+                    found_operators[$op_id]="$found_line"
+                    echo ""
+                    success "Pattern found in coordinator-${op_id}"
+                    echo "  $found_line"
+                fi
+            done
+        fi
+
+        if [ ${#found_operators[@]} -ge $operator_count ]; then
+            echo ""
+            success "Log pattern found in all $operator_count operators after $blocks_mined blocks!"
+            return 0
+        fi
+
+        if [ $current_height -ge $target_height ]; then
+            echo ""
+            warn "Log pattern not found in all operators after $max_blocks blocks (height: $start_height -> $current_height)"
+            warn "Missing operators:"
+            for op_id in $(seq 1 $operator_count); do
+                if [[ -z "${found_operators[$op_id]:-}" ]]; then
+                    warn "  - operator $op_id"
+                fi
+            done
+            return 1
+        fi
+
+        sleep 1
+    done
+}
+
 cleanup() {
     rm -f /tmp/apply-operators-$$ /tmp/pegout-$$
 }
@@ -477,8 +562,20 @@ fi
 echo ""
 success "Operator wallets funded (including BitVMX)"
 
-# step 2: apply operators
-step "Step 2: Apply Operators to Stream"
+# step 2: whitelist member addresses on CommitteeRegistry
+step "Step 2: Whitelist Member Addresses"
+log "Command: bash cli-operations.sh operator whitelist --env $SCRIPT_ENV --contract-address $COMMITTEE_REGISTRY_ADDRESS"
+echo ""
+if ! bash cli-operations.sh operator whitelist --env "$SCRIPT_ENV" \
+    --contract-address "$COMMITTEE_REGISTRY_ADDRESS"; then
+    warn "Whitelist command failed!"
+    exit 1
+fi
+success "Member addresses whitelisted"
+echo ""
+
+# step 3: apply operators
+step "Step 3: Apply Operators to Stream"
 log "Command: bash cli-operations.sh operator apply-stream -s $STREAM_ID --env $SCRIPT_ENV"
 echo ""
 if ! bash cli-operations.sh operator apply-stream -s $STREAM_ID --env "$SCRIPT_ENV" > /tmp/apply-operators-$$ 2>&1; then
@@ -490,14 +587,14 @@ fi
 rm -f /tmp/apply-operators-$$
 success "Operators applied to stream $STREAM_ID"
 echo ""
-if ! wait_for_log_with_block_timeout "CommitteeSetupFlow Done" 15; then
-    warn "Committee setup complete log not found within timeout"
+if ! wait_for_log_in_all_operators "CommitteeSetupFlow Done:" "$COMMITTEE_SETUP_MAX_BLOCKS"; then
+    warn "Committee setup not completed by all operators within timeout"
     exit 1
 fi
 echo ""
 
-# step 3: request pegin
-step "Step 3: Request Pegin"
+# step 4: request pegin
+step "Step 4: Request Pegin"
 
 # Derive x-only public key for pegin (32 bytes with 0x prefix)
 USER_XONLY_PUBKEY=$(user_xonly_pubkey_from_wif)
@@ -508,11 +605,10 @@ fi
 
 log "RSK Address: $RSK_ADDRESS"
 log "Amount: $VALUE sats"
-log "Stream ID: $STREAM_ID"
 log "BTC Pub Key: $USER_XONLY_PUBKEY"
-log "Command: bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -s $STREAM_ID -k $USER_XONLY_PUBKEY --env $SCRIPT_ENV --execute"
+log "Command: bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -k $USER_XONLY_PUBKEY --env $SCRIPT_ENV --execute"
 echo ""
-if ! bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -s $STREAM_ID -k "$USER_XONLY_PUBKEY" --env "$SCRIPT_ENV" --execute; then
+if ! bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -k "$USER_XONLY_PUBKEY" --env "$SCRIPT_ENV" --execute; then
     warn "Command failed!"
     exit 1
 fi
@@ -524,7 +620,8 @@ if ! wait_for_log_with_block_timeout "PeginFlow Done" 15; then
 fi
 echo ""
 
-step "Step 4: Request Pegout"
+# step 5: request pegout
+step "Step 5: Request Pegout"
 
 # Derive compressed public key for pegout (33 bytes with 0x prefix)
 USER_COMPRESSED_PUBKEY=$(user_compressed_pubkey_from_wif)
@@ -554,8 +651,8 @@ if ! wait_for_log_with_block_timeout "PegoutFlow Done" 15; then
 fi
 echo ""
 
-# step 5: verify pegout completion
-step "Step 5: Verify Pegout Completion"
+# step 6: verify pegout completion
+step "Step 6: Verify Pegout Completion"
 # Note: PegoutFlow completion is already checked in the wait_for_log_with_block_timeout call above
 # This step is kept for consistency but the verification already happened
 success "PegoutFlow completion verified"

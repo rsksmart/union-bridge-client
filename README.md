@@ -171,10 +171,83 @@ first.
 Under the directory specified in the `BASE_STORAGE_PATH` env, run the following command to create the base directory:
 
 ```bash
-mkdir -p .union_bridge
+mkdir -p .union_bridge/keystore
 ```
 
-Note: The `keystore` subdirectory will be created automatically when you create wallets.
+#### Generating the Broker Key
+
+The Union Bridge Client uses TLS for secure communication between components. You need to generate a broker key that
+will be used for deterministic identity in broker communications.
+
+Generate the broker key:
+
+```bash
+openssl genpkey -algorithm RSA -out ${BASE_STORAGE_PATH}/.union_bridge/keystore/broker.key -pkeyopt rsa_keygen_bits:2048
+```
+
+This key is used by:
+- The coordinator to authenticate with the block-indexer, log-indexer, and user-api brokers
+- The coordinator to connect to the BitVMX client broker
+
+**Important**: The broker key determines the client's `pubkey_hash` identity. You'll need this value to configure the
+BitVMX client (see [Configuring BitVMX Client](#configuring-bitvmx-client) below).
+
+#### Configuring BitVMX Client
+
+The BitVMX client needs to know where to send messages back to the Union Bridge Client. You must configure the
+`components.l2.pubkey_hash` in the BitVMX client config files to match your Union Bridge Client's broker identity.
+
+**1. Find your broker's pubkey_hash**
+
+When you start the coordinator, it logs its identity:
+```
+BitVmxBrokerClient identity: pubkey_hash=a4f99c4236e46608bd558ef135df0122535d8dd4db073bc87e4b852a9a0afafd
+```
+
+**2. Update BitVMX client config files**
+
+In your `rust-bitvmx-workspace/rust-bitvmx-client/config/` directory, update the `components.l2.pubkey_hash` in all
+relevant config files (`op_1.yaml`, `op_2.yaml`, `op_3.yaml`, `op_4.yaml`, `development.yaml`, etc.):
+
+```yaml
+components:
+  l2:
+    pubkey_hash: <your-broker-pubkey-hash>  # Must match Union Bridge Client's broker identity
+    id: 0
+```
+
+This ensures that messages from the BitVMX client are correctly routed back to the
+coordinator.
+
+#### DRP Program Files
+
+Before running the committee setup, you must make the DRP program files accessible to the BitVMX client. These files
+define the program that BitVMX will execute during the dispute resolution protocol.
+
+The repository ships sample files under `resources/`:
+
+| File | Description |
+|---|---|
+| `resources/hello-world.elf` | RISC-V ELF binary executed by the BitVMX CPU |
+| `resources/hello-world.yaml` | Program definition consumed by the BitVMX client |
+
+**Steps:**
+
+1. Copy (or symlink) both files to a path that is accessible by the BitVMX client process.
+2. Set the path to the `.yaml` file in the coordinator configuration:
+
+   ```toml
+   # config/base.toml  (or your environment override file)
+   [bridge.committee]
+   drp_program_definition = "/path/accessible/by/bitvmx/hello-world.yaml"
+   ```
+
+   Alternatively, export the corresponding environment variable:
+
+   ```bash
+   export UB__BRIDGE__COMMITTEE__DRP_PROGRAM_DEFINITION="/path/accessible/by/bitvmx/hello-world.yaml"
+   ```
+
 
 #### Configuring the Committee
 
@@ -222,7 +295,18 @@ Funds both Bitcoin addresses and Rootstock wallets for all operators.
 ./cli-operations.sh operator fund
 ```
 
-**3. Apply to Stream (committee setup)**
+**3. Whitelist Member Addresses**
+
+Before operators can apply to a stream, their member addresses must be whitelisted on the `CommitteeRegistry` contract.
+This is required by the contract to control which addresses are allowed to participate in committees.
+
+```bash
+./cli-operations.sh operator whitelist --contract-address <COMMITTEE_REGISTRY_ADDRESS>
+```
+
+The `CommitteeRegistry` contract address can be found in `config/base.toml` under the `CommitteeRegistry` entry.
+
+**4. Apply to Stream (committee setup)**
 
 Applies all 4 operators to a stream to form the committee. The clients must be running before executing this command.
 
@@ -342,10 +426,13 @@ bash ./shell/script/deploy/deploy-local.sh
 ./cli-operations.sh setup create-rootstock-wallets
 ./cli-operations.sh operator fund
 
-# 5. Run the 4 clients
+# 5. Whitelist member addresses (uses CommitteeRegistry address from config/base.toml)
+./cli-operations.sh operator whitelist --contract-address <COMMITTEE_REGISTRY_ADDRESS>
+
+# 6. Run the 4 clients
 ./cli-run.sh --fresh
 
-# 6. Apply operators to stream (requires clients to be running)
+# 7. Apply operators to stream (requires clients to be running)
 ./cli-operations.sh operator apply-stream -s 0
 ```
 
@@ -377,10 +464,11 @@ This test will automatically:
 
 1. Prepare wallets (clear databases, mine initial UTXOs)
 2. Fund operator wallets (Bitcoin + Rootstock)
-3. Apply operators to stream
-4. Execute a pegin transaction (Bitcoin → Rootstock) with derived x-only public key
-5. Execute a pegout transaction (Rootstock → Bitcoin) with derived compressed public key
-6. Verify pegout completion in coordinator logs
+3. Whitelist member addresses on CommitteeRegistry
+4. Apply operators to stream
+5. Execute a pegin transaction (Bitcoin → Rootstock) with derived x-only public key
+6. Execute a pegout transaction (Rootstock → Bitcoin) with derived compressed public key
+7. Verify pegout completion in coordinator logs
 
 The test includes comprehensive health checks to detect issues early.
 
@@ -458,7 +546,6 @@ non-production environments** (Local, LocalDocker, Regtest) and are automaticall
 | Flag | Description |
 |------|-------------|
 | `FORCE_ADVANCE` | Contains a Rootstock address. The targeted operator skips the signature sub-flow, simulating operator misbehavior. Since signatures never complete, the advance funds timeout triggers naturally. |
-| `FORCE_DISPUTE` | Overrides the `ReimbursementResult` challenge result to `OperatorWon`, simulating a successful dispute. |
 
 **Activation methods:**
 
@@ -466,16 +553,14 @@ non-production environments** (Local, LocalDocker, Regtest) and are automaticall
    ```bash
    # Enable flags
    echo "0xOPERATOR_ADDRESS" > /tmp/FORCE_ADVANCE
-   touch /tmp/FORCE_DISPUTE
 
    # Disable flags (remove files)
    rm /tmp/FORCE_ADVANCE
-   rm /tmp/FORCE_DISPUTE
    ```
 
 2. **Environment variables (set at startup):**
    ```bash
-   FORCE_ADVANCE=0xOPERATOR_ADDRESS FORCE_DISPUTE=true ./cli-run.sh
+   FORCE_ADVANCE=0xOPERATOR_ADDRESS ./cli-run.sh
    ```
 
 **Hot-reloading:** The file-based approach allows QA to toggle flags while the coordinator is running. New flows will

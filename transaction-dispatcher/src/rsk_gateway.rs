@@ -11,22 +11,26 @@ use mockall::automock;
 use thiserror::Error;
 
 use crate::config::TransactionConfig;
+use crate::contracts::challenge_manager::{
+    ChallengeManagerContract, RegisterChallengeInvoke, RegisterInputRevealedInvoke,
+};
 use crate::contracts::committee_registry::{
     ApplyToStreamInvoke, CommitteeRegistryContract, DepositAggregatedKeysInvoke,
     DepositCommunicationDataInvoke, GetCommitteeCall, GetMemberCommunicationDataCall,
+    IsWhitelistedCall,
 };
+use crate::contracts::interactions::get_btc_transaction_confirmations::GetBtcTransactionConfirmationsCall;
 use crate::contracts::member_registry::{GetMemberPublicKeysCall, MemberRegistryContract};
 use crate::contracts::native_bridge::NativeBridgeContract;
-use crate::contracts::native_bridge::get_btc_transaction_confirmations::GetBtcTransactionConfirmationsCall;
-use crate::contracts::peg_manager::accept_pegin::AcceptPeginInvoke;
-use crate::contracts::peg_manager::get_temporary_pegin_address::GetTemporaryPeginAddressCall;
-use crate::contracts::peg_manager::notify_check_fork_complete::NotifyCheckForkCompleteInvoke;
-use crate::contracts::peg_manager::register_operator_take::RegisterOperatorTakeInvoke;
-use crate::contracts::peg_manager::register_pegout::RegisterPegoutInvoke;
-use crate::contracts::peg_manager::request_pegin::RequestPeginInvoke;
-use crate::contracts::peg_manager::request_pegout::TryPegoutInvoke;
-use crate::contracts::peg_manager::trigger_operator_take::TriggerOperatorTakeInvoke;
-use crate::contracts::peg_manager::{FakePegManagerContract, PegManagerContract};
+use crate::contracts::peg_manager::{FakePegManagerContract, NotifyCheckForkCompleteInvoke};
+use crate::contracts::pegin_manager::{
+    AcceptPeginInvoke, GetTemporaryPeginAddressCall, PeginManagerContract, RequestPeginInvoke,
+};
+use crate::contracts::pegout_manager::{
+    GetAcceptPeginTxidCall, PegoutManagerContract, RegisterAdvanceFundsInvoke,
+    RegisterOperatorTakeInvoke, RegisterOperatorWonInvoke, RegisterPegoutInvoke,
+    RegisterReimbursementKickoffInvoke, TriggerOperatorTakeInvoke, TryPegoutInvoke,
+};
 use crate::contracts::signature_manager::{
     AddMemberNonceInvoke, AddMemberSignatureInvoke, AddOperatorTakeTxHashInvoke,
     SignatureManagerContract,
@@ -37,22 +41,28 @@ use crate::types::{
     AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput,
     AddOperatorTakeTxHashOutput, ApplyToStreamInput, ApplyToStreamOutput,
     DepositAggregatedKeyInput, DepositAggregatedKeyOutput, DepositCommunicationDataInput,
-    DepositCommunicationDataOutput, GetBtcTransactionConfirmationsInput,
-    GetBtcTransactionConfirmationsOutput, GetCommitteeInput, GetCommitteeOutput,
-    GetCommunicationDataInput, GetCommunicationDataOutput, GetMemberPublicKeysInput,
-    GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput, RegisterOperatorTakeInput,
-    RegisterOperatorTakeOutput, RegisterPegoutInput, RegisterPegoutOutput, RequestPeginInput,
+    DepositCommunicationDataOutput, GetAcceptPeginTxidInput, GetAcceptPeginTxidOutput,
+    GetBtcTransactionConfirmationsInput, GetBtcTransactionConfirmationsOutput, GetCommitteeInput,
+    GetCommitteeOutput, GetCommunicationDataInput, GetCommunicationDataOutput,
+    GetMemberPublicKeysInput, GetMemberPublicKeysOutput, PeginAddressInput, PeginAddressOutput,
+    RegisterAdvanceFundsInput, RegisterAdvanceFundsOutput, RegisterChallengeInput,
+    RegisterChallengeOutput, RegisterInputRevealedInput, RegisterInputRevealedOutput,
+    RegisterOperatorTakeInput, RegisterOperatorTakeOutput, RegisterOperatorWonInput,
+    RegisterOperatorWonOutput, RegisterPegoutInput, RegisterPegoutOutput,
+    RegisterReimbursementKickoffInput, RegisterReimbursementKickoffOutput, RequestPeginInput,
     RequestPeginOutput, RequestPegoutInput, RequestPegoutOutput, TriggerOperatorTakeInput,
     TriggerOperatorTakeOutput,
 };
 
 /// Must match the contract name in the config file
-const PEG_MANAGER_CONTRACT_NAME: &str = "PegManager";
+const PEGIN_MANAGER_CONTRACT_NAME: &str = "PeginManager";
+const PEGOUT_MANAGER_CONTRACT_NAME: &str = "PegoutManager";
 const FAKE_PEG_MANAGER_CONTRACT_NAME: &str = "FakePegManager";
 const SIGNATURE_MANAGER_CONTRACT_NAME: &str = "SignatureManager";
 const COMMITTEE_REGISTRY_CONTRACT_NAME: &str = "CommitteeRegistry";
 const MEMBER_REGISTRY_CONTRACT_NAME: &str = "MemberRegistry";
 const STREAM_MANAGER_CONTRACT_NAME: &str = "StreamManager";
+const CHALLENGE_MANAGER_CONTRACT_NAME: &str = "ChallengeManager";
 const NATIVE_BRIDGE_CONTRACT_NAME: &str = "NativeBridge";
 
 #[cfg_attr(test, automock)]
@@ -171,15 +181,48 @@ pub trait RskContractsGatewayApi {
         &self,
         input: DepositAggregatedKeyInput,
     ) -> impl Future<Output = Result<DepositAggregatedKeyOutput, DomainErrors>>;
+
+    fn register_challenge(
+        &self,
+        input: RegisterChallengeInput,
+    ) -> impl Future<Output = Result<RegisterChallengeOutput, DomainErrors>>;
+
+    fn register_input_revealed(
+        &self,
+        input: RegisterInputRevealedInput,
+    ) -> impl Future<Output = Result<RegisterInputRevealedOutput, DomainErrors>>;
+
+    fn register_operator_won(
+        &self,
+        input: RegisterOperatorWonInput,
+    ) -> impl Future<Output = Result<RegisterOperatorWonOutput, DomainErrors>>;
+
+    fn register_advance_funds(
+        &self,
+        input: RegisterAdvanceFundsInput,
+    ) -> impl Future<Output = Result<RegisterAdvanceFundsOutput, DomainErrors>>;
+
+    fn get_accept_pegin_txid(
+        &self,
+        input: GetAcceptPeginTxidInput,
+    ) -> impl Future<Output = Result<GetAcceptPeginTxidOutput, DomainErrors>>;
+
+    fn register_reimbursement_kickoff(
+        &self,
+        input: RegisterReimbursementKickoffInput,
+    ) -> impl Future<Output = Result<RegisterReimbursementKickoffOutput, DomainErrors>>;
+
+    fn is_whitelisted(&self) -> impl Future<Output = Result<bool, DomainErrors>>;
 }
 
 #[derive(Clone)]
 pub struct RskContractsGateway<P: Provider + Clone> {
     provider: P,
     member_address: Address,
-    get_temporary_pegin_address_call: GetTemporaryPeginAddressCall<PegManagerContract<P>>,
-    request_pegin_invoke: RequestPeginInvoke<PegManagerContract<P>>,
-    accept_pegin_invoke: AcceptPeginInvoke<PegManagerContract<P>>,
+    get_temporary_pegin_address_call:
+        GetTemporaryPeginAddressCall<PeginManagerContract<P>, StreamManagerContract<P>>,
+    request_pegin_invoke: RequestPeginInvoke<PeginManagerContract<P>>,
+    accept_pegin_invoke: AcceptPeginInvoke<PeginManagerContract<P>>,
     add_member_nonce_invoke: AddMemberNonceInvoke<SignatureManagerContract<P>>,
     add_member_signature_invoke: AddMemberSignatureInvoke<SignatureManagerContract<P>>,
     add_operator_take_tx_hash_invoke: AddOperatorTakeTxHashInvoke<SignatureManagerContract<P>>,
@@ -189,13 +232,21 @@ pub struct RskContractsGateway<P: Provider + Clone> {
         GetMemberCommunicationDataCall<CommitteeRegistryContract<P>>,
     apply_to_stream_invoke:
         ApplyToStreamInvoke<CommitteeRegistryContract<P>, StreamManagerContract<P>, P>,
-    request_pegout_invoke: TryPegoutInvoke<PegManagerContract<P>>,
-    register_pegout_invoke: RegisterPegoutInvoke<PegManagerContract<P>>,
-    register_operator_take_invoke: RegisterOperatorTakeInvoke<PegManagerContract<P>>,
-    trigger_operator_take_invoke: TriggerOperatorTakeInvoke<PegManagerContract<P>>,
+    request_pegout_invoke: TryPegoutInvoke<PegoutManagerContract<P>>,
+    register_pegout_invoke: RegisterPegoutInvoke<PegoutManagerContract<P>>,
+    register_operator_take_invoke: RegisterOperatorTakeInvoke<PegoutManagerContract<P>>,
+    trigger_operator_take_invoke: TriggerOperatorTakeInvoke<PegoutManagerContract<P>>,
+    register_operator_won_invoke: RegisterOperatorWonInvoke<PegoutManagerContract<P>>,
+    register_advance_funds_invoke: RegisterAdvanceFundsInvoke<PegoutManagerContract<P>>,
+    register_reimbursement_kickoff_invoke:
+        RegisterReimbursementKickoffInvoke<PegoutManagerContract<P>>,
+    get_accept_pegin_txid_call: GetAcceptPeginTxidCall<PegoutManagerContract<P>>,
+    register_challenge_invoke: RegisterChallengeInvoke<ChallengeManagerContract<P>>,
+    register_input_revealed_invoke: RegisterInputRevealedInvoke<ChallengeManagerContract<P>>,
     get_committee_call: GetCommitteeCall<CommitteeRegistryContract<P>>,
     deposit_communication_data_invoke: DepositCommunicationDataInvoke<CommitteeRegistryContract<P>>,
     deposit_aggregated_key_invoke: DepositAggregatedKeysInvoke<CommitteeRegistryContract<P>>,
+    is_whitelisted_call: IsWhitelistedCall<CommitteeRegistryContract<P>>,
     get_btc_confirmations_call: GetBtcTransactionConfirmationsCall<NativeBridgeContract<P>>,
 }
 
@@ -213,7 +264,10 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
         tx_config: &TransactionConfig,
         member_address: Address,
     ) -> Result<Self> {
-        let contract_address = Self::load_contract(PEG_MANAGER_CONTRACT_NAME, &managed_contracts)?;
+        let pegin_contract_address =
+            Self::load_contract(PEGIN_MANAGER_CONTRACT_NAME, &managed_contracts)?;
+        let pegout_contract_address =
+            Self::load_contract(PEGOUT_MANAGER_CONTRACT_NAME, &managed_contracts)?;
         let fake_contract_address =
             Self::load_contract(FAKE_PEG_MANAGER_CONTRACT_NAME, &managed_contracts)?;
         let signature_manager_address =
@@ -224,17 +278,21 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             Self::load_contract(MEMBER_REGISTRY_CONTRACT_NAME, &managed_contracts)?;
         let stream_manager_address =
             Self::load_contract(STREAM_MANAGER_CONTRACT_NAME, &managed_contracts)?;
+        let challenge_manager_address =
+            Self::load_contract(CHALLENGE_MANAGER_CONTRACT_NAME, &managed_contracts)?;
         let native_bridge_address =
             Self::load_contract(NATIVE_BRIDGE_CONTRACT_NAME, &managed_contracts)?;
 
         // Validate that all contract addresses have deployed code
         let addresses_to_validate = vec![
-            (PEG_MANAGER_CONTRACT_NAME, contract_address),
+            (PEGIN_MANAGER_CONTRACT_NAME, pegin_contract_address),
+            (PEGOUT_MANAGER_CONTRACT_NAME, pegout_contract_address),
             // intentionally not validating fake peg manager contract
             (SIGNATURE_MANAGER_CONTRACT_NAME, signature_manager_address),
             (COMMITTEE_REGISTRY_CONTRACT_NAME, committee_registry_address),
             (MEMBER_REGISTRY_CONTRACT_NAME, member_registry_address),
             (STREAM_MANAGER_CONTRACT_NAME, stream_manager_address),
+            (CHALLENGE_MANAGER_CONTRACT_NAME, challenge_manager_address),
         ];
 
         for (contract_name, address) in &addresses_to_validate {
@@ -252,8 +310,10 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
 
         // TODO make these contracts Rc so we avoid more expensive cloning
 
-        let peg_manager_contract =
-            PegManagerContract::new(provider.clone(), contract_address.into());
+        let pegin_manager_contract =
+            PeginManagerContract::new(provider.clone(), pegin_contract_address.into());
+        let pegout_manager_contract =
+            PegoutManagerContract::new(provider.clone(), pegout_contract_address.into());
         let fake_peg_manager_contract =
             FakePegManagerContract::new(provider.clone(), fake_contract_address.into());
         let signature_manager_contract =
@@ -264,6 +324,8 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             MemberRegistryContract::new(provider.clone(), member_registry_address.into());
         let stream_manager_contract =
             StreamManagerContract::new(provider.clone(), stream_manager_address.into());
+        let challenge_manager_contract =
+            ChallengeManagerContract::new(provider.clone(), challenge_manager_address.into());
         let native_bridge_contract =
             NativeBridgeContract::new(provider.clone(), native_bridge_address.into());
 
@@ -271,18 +333,19 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             provider: provider.clone(),
             member_address,
             get_temporary_pegin_address_call: GetTemporaryPeginAddressCall::new(
-                peg_manager_contract.clone(),
+                pegin_manager_contract.clone(),
+                stream_manager_contract.clone(),
             ),
             request_pegin_invoke: RequestPeginInvoke::new(
-                peg_manager_contract.clone(),
+                pegin_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
             accept_pegin_invoke: AcceptPeginInvoke::new(
-                peg_manager_contract.clone(),
+                pegin_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
             request_pegout_invoke: TryPegoutInvoke::new(
-                peg_manager_contract.clone(),
+                pegout_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
             notify_check_fork_completion_invoke: NotifyCheckForkCompleteInvoke::new(
@@ -290,15 +353,38 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
                 tx_config.gas_bumps_t1,
             ),
             register_pegout_invoke: RegisterPegoutInvoke::new(
-                peg_manager_contract.clone(),
+                pegout_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
             register_operator_take_invoke: RegisterOperatorTakeInvoke::new(
-                peg_manager_contract.clone(),
+                pegout_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
             trigger_operator_take_invoke: TriggerOperatorTakeInvoke::new(
-                peg_manager_contract.clone(),
+                pegout_manager_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
+            register_operator_won_invoke: RegisterOperatorWonInvoke::new(
+                pegout_manager_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
+            register_advance_funds_invoke: RegisterAdvanceFundsInvoke::new(
+                pegout_manager_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
+            register_reimbursement_kickoff_invoke: RegisterReimbursementKickoffInvoke::new(
+                pegout_manager_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
+            get_accept_pegin_txid_call: GetAcceptPeginTxidCall::new(
+                pegout_manager_contract.clone(),
+            ),
+            register_challenge_invoke: RegisterChallengeInvoke::new(
+                challenge_manager_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
+            register_input_revealed_invoke: RegisterInputRevealedInvoke::new(
+                challenge_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
             add_member_nonce_invoke: AddMemberNonceInvoke::new(
@@ -338,6 +424,7 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             get_btc_confirmations_call: GetBtcTransactionConfirmationsCall::new(
                 native_bridge_contract.clone(),
             ),
+            is_whitelisted_call: IsWhitelistedCall::new(committee_registry_contract.clone()),
         })
     }
 
@@ -377,6 +464,8 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: PeginAddressInput,
     ) -> Result<PeginAddressOutput, DomainErrors> {
+        info!("Interacting with PeginManager#getRequestPeginData",);
+
         self.get_temporary_pegin_address_call.run(input).await.map_err(|err| {
             error!("Error on get_temporary_pegin_address_call: {err}");
             err
@@ -387,6 +476,8 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: RequestPeginInput,
     ) -> Result<RequestPeginOutput, DomainErrors> {
+        info!("Interacting with PeginManager#requestPegin",);
+
         self.request_pegin_invoke.run(input).await.map_err(|err| {
             error!("Error on request_pegin_invoke: {err}");
             err
@@ -397,6 +488,8 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: AcceptPeginInput,
     ) -> Result<AcceptPeginOutput, DomainErrors> {
+        info!("Interacting with PeginManager#acceptPegin",);
+
         self.accept_pegin_invoke.run(input).await.map_err(|err| {
             error!("Error on accept_pegin_invoke: {err}");
             err
@@ -434,6 +527,8 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     }
 
     async fn notify_check_fork_completion(&self, input: &str) -> Result<(), DomainErrors> {
+        info!("Interacting with FakePegManager#notifyCheckForkCompletion",);
+
         self.notify_check_fork_completion_invoke.run(input).await.map_err(|err| {
             error!("Error on notify_check_fork_completion_invoke: {err}");
             err
@@ -444,6 +539,8 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: RequestPegoutInput,
     ) -> Result<RequestPegoutOutput, DomainErrors> {
+        info!("Interacting with PegoutManager#tryPegoutRequest",);
+
         self.request_pegout_invoke.run(input).await.map_err(|err| {
             error!("Error on try_pegout_invoke: {err}");
             err
@@ -454,6 +551,8 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: RegisterPegoutInput,
     ) -> Result<RegisterPegoutOutput, DomainErrors> {
+        info!("Interacting with PegoutManager#registerUserTake");
+
         self.register_pegout_invoke.run(input).await.map_err(|err| {
             error!("Error on register_pegout_invoke: {err}");
             err
@@ -464,6 +563,8 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: RegisterOperatorTakeInput,
     ) -> Result<RegisterOperatorTakeOutput, DomainErrors> {
+        info!("Interacting with PegoutManager#registerOperatorTake");
+
         self.register_operator_take_invoke.run(input).await.map_err(|err| {
             error!("Error on register_operator_take_invoke: {err}");
             err
@@ -474,6 +575,8 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: TriggerOperatorTakeInput,
     ) -> Result<TriggerOperatorTakeOutput, DomainErrors> {
+        info!("Interacting with PegoutManager#triggerOperatorTake");
+
         self.trigger_operator_take_invoke.run(input).await.map_err(|err| {
             error!("Error on trigger_operator_take_invoke: {err}");
             err
@@ -484,6 +587,8 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: GetMemberPublicKeysInput,
     ) -> Result<GetMemberPublicKeysOutput, DomainErrors> {
+        info!("Interacting with CommitteeRegistry#getMemberPublicKeys",);
+
         self.get_member_public_keys_call.run(input).await.map_err(|err| {
             error!("Error on get_member_public_keys_call: {err}");
             err
@@ -494,6 +599,8 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: ApplyToStreamInput,
     ) -> Result<ApplyToStreamOutput, DomainErrors> {
+        info!("Interacting with CommitteeRegistry#applyToStream",);
+
         self.apply_to_stream_invoke.run(input).await.map_err(|err| {
             error!("Error on apply_to_stream_invoke: {err}");
             err
@@ -536,6 +643,81 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<DepositAggregatedKeyOutput, DomainErrors> {
         self.deposit_aggregated_key_invoke.run(input).await.map_err(|err| {
             error!("Error on deposit_aggregated_key_invoke: {err}");
+            err
+        })
+    }
+
+    async fn register_challenge(
+        &self,
+        input: RegisterChallengeInput,
+    ) -> Result<RegisterChallengeOutput, DomainErrors> {
+        self.register_challenge_invoke.run(input).await.map_err(|err| {
+            error!("Error on register_challenge_invoke: {err}");
+            err
+        })
+    }
+
+    async fn register_input_revealed(
+        &self,
+        input: RegisterInputRevealedInput,
+    ) -> Result<RegisterInputRevealedOutput, DomainErrors> {
+        self.register_input_revealed_invoke.run(input).await.map_err(|err| {
+            error!("Error on register_input_revealed_invoke: {err}");
+            err
+        })
+    }
+
+    async fn register_operator_won(
+        &self,
+        input: RegisterOperatorWonInput,
+    ) -> Result<RegisterOperatorWonOutput, DomainErrors> {
+        self.register_operator_won_invoke.run(input).await.map_err(|err| {
+            error!("Error on register_operator_won_invoke: {err}");
+            err
+        })
+    }
+
+    async fn register_advance_funds(
+        &self,
+        input: RegisterAdvanceFundsInput,
+    ) -> Result<RegisterAdvanceFundsOutput, DomainErrors> {
+        info!("Interacting with PegoutManager#registerAdvanceFunds");
+
+        self.register_advance_funds_invoke.run(input).await.map_err(|err| {
+            error!("Error on register_advance_funds_invoke: {err}");
+            err
+        })
+    }
+
+    async fn get_accept_pegin_txid(
+        &self,
+        input: GetAcceptPeginTxidInput,
+    ) -> Result<GetAcceptPeginTxidOutput, DomainErrors> {
+        info!("Interacting with PegoutManager#getAcceptPeginTxid");
+
+        self.get_accept_pegin_txid_call.run(input).await.map_err(|err| {
+            error!("Error on get_accept_pegin_txid_call: {err}");
+            err
+        })
+    }
+
+    async fn register_reimbursement_kickoff(
+        &self,
+        input: RegisterReimbursementKickoffInput,
+    ) -> Result<RegisterReimbursementKickoffOutput, DomainErrors> {
+        info!("Interacting with PegoutManager#registerReimbursementKickoff");
+
+        self.register_reimbursement_kickoff_invoke.run(input).await.map_err(|err| {
+            error!("Error on register_reimbursement_kickoff_invoke: {err}");
+            err
+        })
+    }
+
+    async fn is_whitelisted(&self) -> Result<bool, DomainErrors> {
+        info!("Checking whitelist status for member address: {}", self.member_address);
+
+        self.is_whitelisted_call.run(self.member_address.into()).await.map_err(|err| {
+            error!("Error on is_whitelisted_call: {err}");
             err
         })
     }
@@ -584,6 +766,28 @@ pub enum DomainErrors {
     MissingConfirmationsOnNativeBridge(String),
     #[error("Invalid slot state: expected {expected}, actual {actual}")]
     InvalidSlotState { expected: u8, actual: u8 },
+
+    // ChallengeManager errors
+    #[error("Pegin not requested: {0}")]
+    PeginNotRequested(String),
+    #[error("Challenge txid mismatch: {0}")]
+    ChallengeTxidNotMatch(String),
+    #[error("Invalid challenge input count: {0}")]
+    InvalidChallengeInputCount(String),
+    #[error("Invalid revealed input count: {0}")]
+    InvalidRevealedInputCount(String),
+    #[error("Reimbursement kickoff txid mismatch: {0}")]
+    ReimbursementKickoffTxidNotMatch(String),
+    #[error("Invalid peg status: {0}")]
+    InvalidPegStatus(String),
+    #[error("Member not in committee: {0}")]
+    MemberNotInCommittee(String),
+
+    // SignatureManager errors
+    #[error("Accept pegin txid not found: {0}")]
+    AcceptPeginTxidNotFound(String),
+    #[error("Txid to sign not found: {0}")]
+    TxidToSignNotFound(String),
 
     // unhandled smart contract errors
     #[error("Unhandled Contract Error: {0}")]

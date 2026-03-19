@@ -142,7 +142,7 @@ if [[ "${IS_UP_COMMAND}" == true && "${CONTRACTS_IMAGE_TAG}" != "${CONTRACTS_TAG
     DIGEST_BEFORE=$(docker image inspect --format '{{index .RepoDigests 0}}' "$CONTRACTS_IMAGE" 2>/dev/null || true)
   fi
   echo "Pulling contracts image '$CONTRACTS_IMAGE'..."
-  if ! docker pull "$CONTRACTS_IMAGE"; then
+  if ! docker pull --platform linux/amd64 "$CONTRACTS_IMAGE" ; then
     echo "Error: Failed to pull contracts image '$CONTRACTS_IMAGE'."
     echo "  The image may not exist in the registry for this tag."
     echo "  To build from source instead, use --contracts-tag ${CONTRACTS_TAG_LOCAL_BUILD}"
@@ -191,6 +191,40 @@ fi
 if ! docker compose -p blockchains --env-file "$ENV_PATH" -f "$COMPOSE_FILE" --profile local "${DOCKER_COMPOSE_ARGS[@]}"; then
   echo "Error: docker compose command failed"
   exit 1
+fi
+
+# Wait for deploy-contracts to finish and verify success
+if [[ "${IS_UP_COMMAND}" == true ]]; then
+  echo "Waiting for contract deployment to complete..."
+  DEPLOY_CONTAINER="deploy-contracts"
+  DEPLOY_TIMEOUT=120
+  DEPLOY_ELAPSED=0
+  DEPLOY_INTERVAL=5
+
+  while [[ $DEPLOY_ELAPSED -lt $DEPLOY_TIMEOUT ]]; do
+    DEPLOY_STATUS=$(docker inspect -f '{{.State.Status}}' "$DEPLOY_CONTAINER" 2>/dev/null || echo "not_found")
+    if [[ "$DEPLOY_STATUS" == "exited" ]]; then
+      DEPLOY_EXIT_CODE=$(docker inspect -f '{{.State.ExitCode}}' "$DEPLOY_CONTAINER" 2>/dev/null)
+      if [[ "$DEPLOY_EXIT_CODE" -eq 0 ]]; then
+        echo "Contract deployment completed successfully."
+      else
+        echo "Error: Contract deployment failed with exit code $DEPLOY_EXIT_CODE"
+        echo "Last 20 lines from deploy-contracts:"
+        docker logs --tail 20 "$DEPLOY_CONTAINER"
+        exit 1
+      fi
+      break
+    fi
+    sleep "$DEPLOY_INTERVAL"
+    DEPLOY_ELAPSED=$((DEPLOY_ELAPSED + DEPLOY_INTERVAL))
+    echo "  Still deploying... (${DEPLOY_ELAPSED}s)"
+  done
+
+  if [[ $DEPLOY_ELAPSED -ge $DEPLOY_TIMEOUT ]]; then
+    echo "Error: Contract deployment timed out after ${DEPLOY_TIMEOUT}s"
+    docker logs --tail 20 "$DEPLOY_CONTAINER"
+    exit 1
+  fi
 fi
 
 # If using 'up' command after a fresh teardown, create the Bitcoin wallet and deploy contracts

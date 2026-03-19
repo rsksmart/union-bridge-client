@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use common::config::{CommonConfig, ContractConfig, IndexerConfig, NotifierConfig, ProviderConfig};
+use common::config::{
+    CommonConfig, ContractConfig, IndexerConfig, KeyStoreConfig, NotifierConfig, ProviderConfig,
+};
 use common::errors::ConfigError;
 use common::types::{Address, ContractInfo};
 use serde::Deserialize;
@@ -12,6 +14,7 @@ pub struct Config {
     pub indexer: IndexerConfig,
     pub provider: ProviderConfig,
     pub contracts: Vec<ContractConfig>,
+    pub key_store: KeyStoreConfig,
     #[serde(rename = "log_indexer")]
     pub log_indexer_config: LogIndexerConfig,
 }
@@ -86,7 +89,7 @@ mod tests {
         assert!(config.indexer.storage.path.ends_with("/.union_bridge/database/multi-client-1"));
         assert_eq!(1000, config.indexer.cache.size);
         assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
-        assert_eq!(9, config.contracts.len());
+        assert_eq!(11, config.contracts.len());
     }
 
     #[test]
@@ -95,7 +98,7 @@ mod tests {
             CommonConfig::load_config::<Config>(None).expect("Failed to load config");
         let contracts = config.load_managed_contracts();
 
-        assert_eq!(9, contracts.len());
+        assert_eq!(11, contracts.len());
     }
 
     #[test]

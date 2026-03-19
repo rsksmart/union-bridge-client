@@ -134,6 +134,28 @@ fn dust_change_is_added_to_fee() {
 }
 
 #[test]
+fn from_config_applies_sats_per_byte() {
+    let temp = tempdir().expect("temp dir");
+    let db_root = temp.path().join("utxo-db");
+
+    // Build a minimal Config without RPC so Wallet::from_config doesn't try to connect.
+    let cfg = ub_wallet::config::Config {
+        db_path: db_root,
+        sats_per_byte: Some(123),
+        network: Some(Network::Regtest),
+        mode: WalletMode::User,
+        private_key_wif: None,
+        rpc_url: None,
+        rpc_user: None,
+        rpc_password: None,
+        enabler_amount: None,
+    };
+
+    let wallet = Wallet::from_config(&cfg).expect("from_config");
+    assert_eq!(wallet.sats_per_byte(), 123);
+}
+
+#[test]
 fn switching_addresses_reloads_corresponding_utxos() {
     let temp = tempdir().expect("temp dir");
     let db_root = temp.path().join("utxo-db");

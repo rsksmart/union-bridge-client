@@ -1,12 +1,16 @@
 #![allow(clippy::pedantic)]
 #![allow(clippy::all)]
-
 use std::collections::HashMap;
+use std::net::SocketAddr;
 
 use anyhow::bail;
 use bitcoin::address::NetworkUnchecked;
 use bitcoin::{
     Address, Amount, BlockHash, PrivateKey, PublicKey, ScriptBuf, Transaction, Txid, XOnlyPublicKey,
+};
+pub use bitvmx_emulator::decision::challenge::{ForceChallenge, ForceCondition};
+pub use bitvmx_emulator::executor::utils::{
+    FailConfiguration, FailExecute, FailOpcode, FailRead, FailReads, FailSelectionBits, FailWrite,
 };
 use musig2::PubNonce;
 use musig2::secp::MaybeScalar;
@@ -15,30 +19,38 @@ use uuid::Uuid;
 
 pub const ACCEPT_PEGIN_TX: &str = "ACCEPT_PEGIN_TX";
 
+// DisputeChannel related constants and types
+pub const OP_COSIGN_UTXOS: &str = "OP_COSIGN_UTXOS";
+pub const WT_INIT_CHALLENGE_UTXOS: &str = "WT_INIT_CHALLENGE_UTXOS";
+pub const PROGRAM_TYPE_DISPUTE_CHANNEL: &str = "dispute_channel";
+pub const ADVANCE_FUNDS_INPUT: &str = "ADVANCE_FUNDS_INPUT";
+pub const PROGRAM_TYPE_DRP: &str = "drp";
+
 type ProgramId = Uuid;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum IncomingBitVMXApiMessages {
-    Ping(),
+    Ping(Uuid),
     SetVar(Uuid, String, VariableTypes),
     SetWitness(Uuid, String, WitnessTypes),
     SetFundingUtxo(Utxo),
     GetVar(Uuid, String),
     GetWitness(Uuid, String),
-    GetCommInfo(),
+    GetCommInfo(Uuid),
     GetTransaction(Uuid, Txid),
     GetTransactionInfoByName(Uuid, String),
     GetHashedMessage(Uuid, String, u32, u32),
-    Setup(ProgramId, String, Vec<P2PAddress>, u16),
+    Setup(ProgramId, String, Vec<CommsAddress>, u16),
     SubscribeToTransaction(Uuid, Txid),
-    SubscribeUTXO(),
+    SubscribeUTXO(Uuid),
     SubscribeToRskPegin(),
     GetSPVProof(Txid),
     DispatchTransaction(Uuid, Transaction),
     DispatchTransactionName(Uuid, String),
-    SetupKey(Uuid, Vec<P2PAddress>, Option<Vec<PublicKey>>, u16),
+    SetupKey(Uuid, Vec<CommsAddress>, Option<Vec<PublicKey>>, u16),
     GetAggregatedPubkey(Uuid),
     GetKeyPair(Uuid),
+    GetEvenPubKey(Uuid),
     GetPubKey(Uuid, bool),
     SignMessage(Uuid, Vec<u8>, PublicKey), // id, payload_to_sign, public_key_to_use
     GenerateZKP(Uuid, Vec<u8>, String),
@@ -59,7 +71,7 @@ pub struct SignedPublicKey {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum OutgoingBitVMXApiMessages {
-    Pong(),
+    Pong(Uuid),
     // response for transaction get and dispatch
     Transaction(Uuid, TransactionStatus, Option<String>),
     // Represents when pegin transactions is found
@@ -76,7 +88,7 @@ pub enum OutgoingBitVMXApiMessages {
     TransactionInfo(Uuid, String, Transaction),
     ZKPResult(Uuid, Vec<u8>, Vec<u8>),
     ExecutionResult(/* Add appropriate type */),
-    CommInfo(P2PAddress),
+    CommInfo(Uuid, CommsAddress),
     KeyPair(Uuid, PrivateKey, PublicKey),
     PubKey(Uuid, PublicKey),
     SignedMessage(Uuid, [u8; 32], [u8; 32], u8), // id, signature_r, signature_s, recovery_id
@@ -204,11 +216,25 @@ pub enum OutputType {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum StackItem {
+    /// Schnorr signature (64 bytes +1 if non-default sighash).
+    SchnorrSig { non_default_sighash: bool },
+    /// DER-encoded ECDSA signature (use 73B worst case) +1 if non-default sighash.
+    EcdsaSig { non_default_sighash: bool },
+    /// Winternitz signature (size depends on the key type).
+    WinternitzSig { size: usize },
+    /// Raw item of a known length (e.g., pubkeys, data pushes).
+    Raw { size: usize },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProtocolScript {
     script: ScriptBuf,
     keys: HashMap<String, ScriptKey>,
     verifying_key: Option<PublicKey>,
     sign_mode: SignMode,
+    #[serde(default)]
+    items: Vec<StackItem>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -243,19 +269,12 @@ pub enum SignMode {
     Aggregate,
 }
 
-#[derive(PartialEq, Clone, Serialize, Deserialize, Debug)]
-pub struct P2PAddress {
-    pub address: String,
-    pub peer_id: PeerId,
-}
+pub type PubKeyHash = String;
 
-#[derive(Clone, Hash, Default, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct PeerId(pub String);
-
-impl PeerId {
-    pub fn from_der(public_key_der: Vec<u8>) -> Self {
-        PeerId(hex::encode(public_key_der))
-    }
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Serialize, Deserialize, Debug)]
+pub struct CommsAddress {
+    pub address: SocketAddr,
+    pub pubkey_hash: PubKeyHash,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -276,22 +295,20 @@ pub struct PegOutAccepted {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+
 pub struct PegOutRequest {
     pub committee_id: Uuid,
-    pub stream_id: u64,
-    pub packet_number: u64,
     pub slot_index: usize,
     pub amount: u64,
     pub pegout_id: Vec<u8>,
-    pub pegout_signature_hash: Vec<u8>,
-    pub pegout_signature_message: Vec<u8>,
     pub user_pubkey: PublicKey,
+    pub pegout_sighash: Vec<u8>,
     pub take_aggregated_key: PublicKey,
 }
 
 impl PegOutRequest {
-    pub fn name() -> String {
-        "pegout_request".to_string()
+    pub fn name() -> &'static str {
+        "pegout_request"
     }
 }
 
@@ -306,8 +323,47 @@ pub struct AdvanceFundsRequest {
 }
 
 impl AdvanceFundsRequest {
-    pub fn name() -> String {
-        "advance_funds_request".to_string()
+    pub fn name() -> &'static str {
+        "advance_funds_request"
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FundsAdvanceSPV {
+    pub txid: Txid,
+    pub committee_id: Uuid,
+    pub slot_index: usize,
+    pub pegout_id: Vec<u8>,
+    pub spv_proof: BtcTxSPVProof,
+}
+
+impl FundsAdvanceSPV {
+    pub fn name() -> &'static str {
+        "funds_advance_spv"
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum UnionTxType {
+    ReimbursementKickoff,
+    OperatorTake,
+    OperatorWon,
+    Challenge,
+    RevealInput,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnionSPVNotification {
+    pub txid: Txid,
+    pub committee_id: Uuid,
+    pub slot_index: usize,
+    pub spv_proof: Option<BtcTxSPVProof>,
+    pub tx_type: UnionTxType,
+}
+
+impl UnionSPVNotification {
+    pub fn name() -> &'static str {
+        "union_spv_notification"
     }
 }
 
@@ -331,13 +387,13 @@ pub struct Committee {
     pub members: Vec<MemberData>,
     pub take_aggregated_key: PublicKey,
     pub dispute_aggregated_key: PublicKey,
-    pub operator_count: u32,
     pub packet_size: u32,
+    pub stream_denomination: u64,
 }
 
 impl Committee {
-    pub fn name() -> String {
-        "committee".to_string()
+    pub fn name() -> &'static str {
+        "committee"
     }
 
     pub fn indexes_map(&self) -> HashMap<PublicKey, usize> {
@@ -383,21 +439,20 @@ pub struct PeginAcceptedMessage {
     pub accept_pegin_sighash: Vec<u8>,
     pub accept_pegin_nonce: PubNonce,
     pub accept_pegin_signature: MaybeScalar,
-    pub operator_take_sighash: Vec<u8>,
-    pub operator_won_sighash: Vec<u8>,
+    pub operator_take_txid: Option<Txid>,
+    pub operator_won_txid: Option<Txid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DisputeCoreData {
     pub committee_id: Uuid,
-    pub operator_index: usize,
-    pub operator_utxo: PartialUtxo,
-    pub operator_take_pubkey: PublicKey,
+    pub member_index: usize,
+    pub funding_utxo: PartialUtxo,
 }
 
 impl DisputeCoreData {
-    pub fn name() -> String {
-        "dispute_core_data".to_string()
+    pub fn name() -> &'static str {
+        "dispute_core_data"
     }
 }
 
@@ -407,6 +462,73 @@ pub enum Destination {
     P2WPKH(PublicKey, u64), // (pubkey, amount in sats)
     Batch(Vec<Destination>),
     P2TR(XOnlyPublicKey, Vec<ProtocolScript>, u64), // (xpubkey, tap_leaves, amount in sats)
+}
+
+/// Global UUID used to store union-wide settings in BitVMX.
+/// This is a fixed UUID derived from the string "UNION_BRIDGE-000".
+pub const GLOBAL_SETTINGS_UUID: Uuid = Uuid::from_bytes(*b"UNION_BRIDGE-000");
+
+/// Per-stream timelock settings for Bitcoin transactions.
+/// These values are in Bitcoin block counts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamSettings {
+    /// Short timelock for quick dispute resolution
+    pub short_timelock: u16,
+    /// Long timelock for extended dispute periods
+    pub long_timelock: u16,
+    /// Timelock for operator won transactions
+    pub op_won_timelock: u16,
+    /// Timelock for claim gate
+    pub claim_gate_timelock: u16,
+    /// Timelock for input not revealed
+    pub input_not_revealed_timelock: u16,
+    /// Timelock for operator no cosign
+    pub op_no_cosign_timelock: u16,
+    /// Timelock for watchtower no challenge
+    pub wt_no_challenge_timelock: u16,
+    /// Timelock for request pegin
+    pub request_pegin_timelock: u16,
+}
+
+//TODO https://rsklabs.atlassian.net/browse/UBC-809 Review this default values
+impl Default for StreamSettings {
+    fn default() -> Self {
+        Self {
+            short_timelock: 6,
+            long_timelock: 12,
+            op_won_timelock: 150,
+            claim_gate_timelock: 6,
+            input_not_revealed_timelock: 8,
+            op_no_cosign_timelock: 12,
+            wt_no_challenge_timelock: 12,
+            request_pegin_timelock: 12,
+        }
+    }
+}
+
+/// Global union settings mapping stream denominations to their timelock configurations.
+/// Sent to BitVMX before dispute_core setup.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnionSettings {
+    /// Map of stream_denomination -> StreamSettings
+    pub settings: HashMap<u64, StreamSettings>,
+}
+
+impl UnionSettings {
+    pub fn name() -> &'static str {
+        "union_settings"
+    }
+
+    /// Create default settings with entries for stream denominations.
+    /// Keys are enum indexes matching StreamDenomination in contracts:
+    /// 0 = 0.001 BTC, 1 = 0.01 BTC, 2 = 0.1 BTC, 3 = 1 BTC, 4 = 10 BTC
+    pub fn with_defaults() -> Self {
+        let mut settings = HashMap::new();
+        for i in 0..5u64 {
+            settings.insert(i, StreamSettings::default());
+        }
+        Self { settings }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -424,7 +546,15 @@ pub struct ReimbursementResult {
 }
 
 impl ReimbursementResult {
-    pub fn name() -> String {
-        "reimbursement_result".to_string()
+    pub fn name() -> &'static str {
+        "reimbursement_result"
     }
+}
+
+/// Holds the UTXOs required for a watchtower to initiate a challenge.
+/// These are provided by the DisputeCore protocol.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WtInitChallengeUtxos {
+    pub wt_stopper: PartialUtxo,
+    pub op_stopper: PartialUtxo,
 }

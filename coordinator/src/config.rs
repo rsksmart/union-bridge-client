@@ -1,13 +1,13 @@
 use std::time::Duration;
 
-use common::config::{CommonConfig, ContractConfig};
+use common::config::{CommonConfig, ContractConfig, KeyStoreConfig};
 use common::errors::ConfigError;
 use common::types::Address;
 use serde::Deserialize;
 
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
-const PEG_MANAGER_CONTRACT_NAME: &str = "PegManager";
-const FAKE_PEG_MANAGER_CONTRACT_NAME: &str = "FakePegManager";
+const PEGIN_MANAGER_CONTRACT_NAME: &str = "PeginManager";
+const PEGOUT_MANAGER_CONTRACT_NAME: &str = "PegoutManager";
 const SIGNATURE_CONTRACT_NAME: &str = "SignatureManager";
 const COMMITTEE_REGISTRY_CONTRACT_NAME: &str = "CommitteeRegistry";
 const MEMBER_REGISTRY_CONTRACT_NAME: &str = "MemberRegistry";
@@ -17,6 +17,7 @@ const STREAM_MANAGER_CONTRACT_NAME: &str = "StreamManager";
 pub struct Config {
     pub contracts: Vec<ContractConfig>,
     pub bitcoin_network: String, // loaded from common.yaml
+    pub key_store: KeyStoreConfig,
     #[serde(rename = "coordinator")]
     pub coordinator: CoordinatorConfig,
     /// Bridge flow configuration with sensible defaults
@@ -32,7 +33,7 @@ pub struct CoordinatorConfig {
     pub logs: BrokerConfig,
     pub blocks: BrokerConfig,
     pub user: BrokerConfig,
-    pub bitvmx: BrokerConfig,
+    pub bitvmx: BitVmxBrokerConfig,
     pub broker: BrokerClientConfig,
     pub storage_path: String,
     pub advance_funds: CoordinatorAdvanceFundsConfig,
@@ -53,6 +54,15 @@ pub struct BrokerClientConfig {
 pub struct BrokerConfig {
     pub host: String,
     pub port: u16,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct BitVmxBrokerConfig {
+    pub host: String,
+    pub port: u16,
+    /// The `pubkey_hash` of the bitvmx broker server's message queue.
+    /// This should match the `components.bitvmx.pubkey_hash` in the bitvmx-client config.
+    pub pubkey_hash: String,
 }
 
 // ═══════════════════════════════════════════════════════
@@ -193,11 +203,17 @@ pub struct CommitteeConfig {
     pub min_funding_balance: u64,
     /// Minimum RSK balance in wei (default: `1_000_000_000_500_000` = ~1 RBTC + fees)
     pub min_rsk_balance: u64,
+    /// Path to the DRP program definition YAML file
+    pub drp_program_definition: String,
 }
 
 impl Default for CommitteeConfig {
     fn default() -> Self {
-        Self { min_funding_balance: 20_002_000, min_rsk_balance: 1_000_000_000_500_000 }
+        Self {
+            min_funding_balance: 20_002_000,
+            min_rsk_balance: 1_000_000_000_500_000,
+            drp_program_definition: String::new(),
+        }
     }
 }
 
@@ -233,7 +249,7 @@ impl Config {
     pub fn get_contract_addresses(&self) -> Vec<Address> {
         self.contracts
             .iter()
-            .filter(|contract| self.get_contracts_to_subscribe_to(contract))
+            .filter(|contract| Self::get_contracts_to_subscribe_to(contract))
             .map(|contract| contract.address.clone())
             .map(|address| {
                 Address::try_from(address.as_str()).expect("Invalid contract address on config")
@@ -241,9 +257,9 @@ impl Config {
             .collect::<Vec<Address>>()
     }
 
-    fn get_contracts_to_subscribe_to(&self, contract: &ContractConfig) -> bool {
-        contract.name == PEG_MANAGER_CONTRACT_NAME
-            || (contract.name == FAKE_PEG_MANAGER_CONTRACT_NAME && self.subscribe_fake_peg_manager)
+    fn get_contracts_to_subscribe_to(contract: &ContractConfig) -> bool {
+        contract.name == PEGIN_MANAGER_CONTRACT_NAME
+            || contract.name == PEGOUT_MANAGER_CONTRACT_NAME
             || contract.name == SIGNATURE_CONTRACT_NAME
             || contract.name == COMMITTEE_REGISTRY_CONTRACT_NAME
             || contract.name == MEMBER_REGISTRY_CONTRACT_NAME
@@ -271,7 +287,6 @@ mod tests {
 
     use bitcoin::Network;
     use common::config::CommonConfig;
-    use common::types::Address;
 
     use crate::config::{BridgeConfig, Config, CoordinatorFlowConfig};
 
@@ -294,6 +309,10 @@ mod tests {
         assert_eq!(30001, config.coordinator.user.port);
         assert_eq!("0.0.0.0", config.coordinator.bitvmx.host);
         assert_eq!(22222, config.coordinator.bitvmx.port);
+        assert_eq!(
+            "1d10fa43ebbf6674d74caa3e9032711ade09d98ea7d20f89459f61152bebda1e",
+            config.coordinator.bitvmx.pubkey_hash
+        );
         assert_eq!(101, config.coordinator.broker.client_id);
         assert!(!config.coordinator.storage_path.contains("{BASE_STORAGE_PATH}"));
         assert!(
@@ -303,9 +322,10 @@ mod tests {
             "/app/config/check-fork-guest.bin",
             config.coordinator.advance_funds.check_fork_guest_elf_path
         );
+        assert_eq!("resources/hello-world.yaml", config.bridge.committee.drp_program_definition);
         assert_eq!(99_999_999, config.coordinator.advance_funds.max_zkp_status_retries);
         assert_eq!("regtest", config.bitcoin_network);
-        assert_eq!(9, config.contracts.len());
+        assert_eq!(11, config.contracts.len());
     }
 
     #[test]
@@ -356,60 +376,5 @@ mod tests {
         assert_eq!(config.bridge.coordinator.required_confirmations, 5);
         assert_eq!(config.bridge.pegin.min_tx_confirmations, 1);
         assert_eq!(config.bridge.pegout.spv_proof_min_confirmations, 1);
-    }
-
-    #[test]
-    fn test_get_contract_addresses_excludes_fake_peg_manager_without_env() {
-        let config: Config = Config::load(None).expect("Failed to load base config");
-
-        let fake_address = config
-            .contracts
-            .iter()
-            .find(|contract| contract.name == "FakePegManager")
-            .expect("FakePegManager should be configured in base.toml")
-            .address
-            .as_str();
-        let fake_address =
-            Address::try_from(fake_address).expect("FakePegManager address should be valid");
-
-        let subscribed_addresses = config.get_contract_addresses();
-        assert!(!subscribed_addresses.contains(&fake_address));
-    }
-
-    #[test]
-    fn test_get_contract_addresses_includes_fake_peg_manager_for_regtest() {
-        let config: Config = Config::load(Some("regtest")).expect("Failed to load regtest config");
-
-        let fake_address = config
-            .contracts
-            .iter()
-            .find(|contract| contract.name == "FakePegManager")
-            .expect("FakePegManager should be configured in base.toml")
-            .address
-            .as_str();
-        let fake_address =
-            Address::try_from(fake_address).expect("FakePegManager address should be valid");
-
-        let subscribed_addresses = config.get_contract_addresses();
-        assert!(subscribed_addresses.contains(&fake_address));
-        assert_eq!(0, config.coordinator.advance_funds.max_zkp_status_retries);
-    }
-
-    #[test]
-    fn test_get_contract_addresses_excludes_fake_peg_manager_for_testnet() {
-        let config: Config = Config::load(Some("testnet")).expect("Failed to load testnet config");
-
-        let fake_address = config
-            .contracts
-            .iter()
-            .find(|contract| contract.name == "FakePegManager")
-            .expect("FakePegManager should be configured in base.toml")
-            .address
-            .as_str();
-        let fake_address =
-            Address::try_from(fake_address).expect("FakePegManager address should be valid");
-
-        let subscribed_addresses = config.get_contract_addresses();
-        assert!(!subscribed_addresses.contains(&fake_address));
     }
 }

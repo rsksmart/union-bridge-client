@@ -305,9 +305,7 @@ mod tests {
     use crate::coordinator::tests::MockRskContractsGatewayApi;
     use crate::types::RegisterSignaturesBitVmxData;
 
-    /// Test constant for required confirmations (matches production default)
     const REQUIRED_CONFIRMATIONS: u32 = 5;
-
     #[test]
     fn test_nonce_step_with_unset() {
         let (signature_input, mut flow, blockchain_view) =

@@ -13,7 +13,7 @@ use common::types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles, TxIdPa
 use log::{debug, error, info, trace, warn};
 use sha2::{Digest, Sha256};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
-use union_contracts::bindings::peg_manager::PegManager::{PegoutRegistered, PegoutRequested};
+use union_contracts::bindings::pegout_manager::PegoutManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
 
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
@@ -470,7 +470,6 @@ where
         Ok(())
     }
 
-    /// Schedule timeouts for flows that received `pegout_accepted` but didn't have block timestamp yet
     fn schedule_pending_timeouts(&mut self, block: &RskBlockAndUncles) {
         if self.flows_pending_timeout.is_empty() {
             return;
@@ -634,8 +633,8 @@ where
         trace!("Processing BitVMX event: {event:?}");
 
         match event {
-            OutgoingBitVMXApiMessages::CommInfo(comm_info) => {
-                trace!("Received CommInfo from BitVMX: {comm_info:?}");
+            OutgoingBitVMXApiMessages::CommInfo(req_id, comm_info) => {
+                trace!("Received CommInfo from BitVMX req_id: {req_id}, comm_info: {comm_info:?}");
                 //for any flow in flows having active step GetCommInfo, complete the step with the CommInfo
                 for (flow_id, flow) in &mut self.pegout_flows {
                     if flow.current_step() == Steps::GetCommInfo {
@@ -870,8 +869,8 @@ mod tests {
     use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
     use common::msg_broker::broker::MockBrokerClientApi;
     use primitive_types::U256 as RskU256;
-    use union_contracts::bindings::peg_manager::PegManager::{
-        BitcoinSignatureData, BtcTransaction, PegoutRequested,
+    use union_contracts::bindings::pegout_manager::PegoutManager::{
+        BitcoinSignatureData, BtcTransaction,
     };
 
     use super::*;
@@ -984,7 +983,6 @@ mod tests {
             packetNumber: 0,
             slotId: 0,
             amount: 100_000,
-            pegoutId: FixedBytes::default(),
         }
     }
 

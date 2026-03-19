@@ -8,12 +8,12 @@ use common::msg_broker::bitvmx_types::{
     BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PeginAcceptedMessage,
     TransactionStatus, VariableTypes,
 };
-use common::msg_broker::broker::{BROKER_SERVER_ID, BitVmxBrokerClientApi};
+use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles, TxIdParser};
 use log::{debug, error, info, trace, warn};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
-use union_contracts::bindings::peg_manager::PegManager::PeginRequested;
+use union_contracts::bindings::pegin_manager::PeginManager::PeginRequested;
 use uuid::Uuid;
 
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
@@ -623,7 +623,7 @@ where
     }
 
     fn subscribe_to_bitvmx_pegin_events(bitvmx_broker: &BC) -> Result<()> {
-        bitvmx_broker.send(BROKER_SERVER_ID, IncomingBitVMXApiMessages::SubscribeToRskPegin())?;
+        bitvmx_broker.send(IncomingBitVMXApiMessages::SubscribeToRskPegin())?;
         Ok(())
     }
 
@@ -797,8 +797,8 @@ where
                 }
             }
             // Handle CommInfo from BitVMX
-            OutgoingBitVMXApiMessages::CommInfo(comm_info) => {
-                trace!("Received CommInfo from BitVMX: {comm_info:?}");
+            OutgoingBitVMXApiMessages::CommInfo(req_id, comm_info) => {
+                trace!("Received CommInfo from BitVMX req_id: {req_id}, comm_info: {comm_info:?}");
                 // For any flow in GetCommInfo step, complete the step with the CommInfo
                 for (flow_id, flow) in &mut self.pegin_flows {
                     if flow.current_step() == Steps::GetCommInfo {

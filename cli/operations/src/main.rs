@@ -147,6 +147,26 @@ enum OperatorCommands {
         )]
         fund_amount: u64,
     },
+    /// Whitelist member addresses on the CommitteeRegistry contract
+    Whitelist {
+        /// Environment to target (local, local-docker, regtest, alphanet, testnet)
+        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local)]
+        env: Environment,
+
+        /// CommitteeRegistry contract address
+        #[arg(long = "contract-address", value_name = "ADDRESS")]
+        contract_address: String,
+
+        /// Sender address to use with `cast send --from ... --unlocked` in local/local-docker.
+        /// Defaults to the local anvil account if not provided.
+        #[arg(long = "from", value_name = "ADDRESS", conflicts_with = "private_key")]
+        from_address: Option<String>,
+
+        /// Private key to use in regtest/alphanet/testnet.
+        /// If omitted in remote environments, it is prompted interactively.
+        #[arg(long = "private-key", value_name = "HEX_KEY", conflicts_with = "from_address")]
+        private_key: Option<String>,
+    },
     /// Apply operator to a stream for committee setup
     #[command(name = "apply-stream")]
     ApplyToStream {
@@ -195,18 +215,6 @@ enum UserCommands {
         #[arg(short = 'v', long = "value", value_name = "VALUE")]
         value: u64,
 
-        /// Stream ID to query for the packet number (default: 0)
-        #[arg(short = 's', long = "stream-id", value_name = "STREAM_ID", default_value_t = 0u64)]
-        stream_id: u64,
-
-        /// Packet number override. If omitted, auto-calculated from the StreamManager contract.
-        #[arg(short = 'p', long = "packet-number", value_name = "PACKET_NUMBER")]
-        packet_number: Option<u64>,
-
-        /// StreamManager contract address override. If omitted, uses the default for the environment.
-        #[arg(long = "stream-manager-address", value_name = "ADDRESS")]
-        stream_manager_address: Option<String>,
-
         /// Bitcoin public key for reimbursement (32-byte x-only pubkey with 0x prefix)
         #[arg(short = 'k', long = "btc-pub-key", value_name = "BTC_PUB_KEY")]
         btc_pub_key: String,
@@ -229,13 +237,6 @@ enum UserCommands {
         #[arg(short = 'k', long = "usr-pub-key", value_name = "USR_PUB_KEY")]
         usr_pub_key: String,
     },
-}
-
-fn validate_1_4(value: u8, name: &str) -> Result<()> {
-    if !(1..=4).contains(&value) {
-        anyhow::bail!("{} must be between 1 and 4", name);
-    }
-    Ok(())
 }
 
 fn validate_1_10(value: u8, name: &str) -> Result<()> {
@@ -266,6 +267,19 @@ async fn main() -> Result<()> {
                 println!("=== Funding Bitcoin addresses ===");
                 bitcoin_wallet::handle_bitcoin_funding(env, execute, fund_amount).await?;
             }
+            OperatorCommands::Whitelist {
+                env,
+                contract_address,
+                from_address,
+                private_key,
+            } => {
+                rsk_wallet::handle_whitelist(
+                    env,
+                    &contract_address,
+                    from_address.as_deref(),
+                    private_key.as_deref(),
+                )?;
+            }
             OperatorCommands::ApplyToStream { stream_id, env, operator_id, role } => {
                 committee::run_committee_setup(stream_id, env, operator_id, role).await?;
             }
@@ -274,27 +288,8 @@ async fn main() -> Result<()> {
             UserCommands::Fund { env } => {
                 rsk_wallet::handle_user_funding(env)?;
             }
-            UserCommands::Pegin {
-                env,
-                rsk_address,
-                value,
-                stream_id,
-                packet_number,
-                stream_manager_address,
-                btc_pub_key,
-                execute,
-            } => {
-                pegin::create_pegin_tx(
-                    env,
-                    rsk_address,
-                    value,
-                    stream_id,
-                    packet_number,
-                    stream_manager_address,
-                    btc_pub_key,
-                    execute,
-                )
-                .await?;
+            UserCommands::Pegin { env, rsk_address, value, btc_pub_key, execute } => {
+                pegin::create_pegin_tx(env, rsk_address, value, btc_pub_key, execute).await?;
             }
             UserCommands::Pegout { env, value, usr_pub_key } => {
                 pegout::request_pegout(env, value, usr_pub_key).await?;

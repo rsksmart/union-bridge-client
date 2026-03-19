@@ -7,7 +7,7 @@ ARG JUST_CRATE
 
 # --- BUILDER STAGE ---
 
-FROM ghcr.io/rsksmart/union-client-builder:rust-1.86-v1 AS builder
+FROM ghcr.io/rsksmart/union-client-builder:rust-1.88-v1 AS builder
 ARG JUST_CRATE=""
 ARG FEATURES=""
 
@@ -68,6 +68,7 @@ RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         ca-certificates \
         procps \
+        openssl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -75,6 +76,8 @@ RUN apt-get update -y && \
 COPY --from=builder /app/target/release/${CRATE} /app/${CRATE}
 # copy key-manager always, even if only a couple of crates require it
 COPY --from=builder /app/target/release/key-manager /app/key-manager
+
+WORKDIR /app
 
 # set environment variables
 ENV RUST_BACKTRACE=1

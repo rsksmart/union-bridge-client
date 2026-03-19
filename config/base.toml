@@ -26,32 +26,51 @@ name = "TestContractCompiled"
 address = "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc"
 
 [[contracts]]
-name = "PegManager"
-address = "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6"
+name = "PeginManager"
+address = "0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE"
 
 [[contracts]]
-name = "SignatureManager"
-address = "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"
-
-[[contracts]]
-name = "CommitteeRegistry"
-address = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9"
-
-[[contracts]]
-name = "MemberRegistry"
-address = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
+name = "PegoutManager"
+address = "0x3Aa5ebB10DC797CAC828524e59A333d0A371443c"
 
 [[contracts]]
 name = "FakePegManager"
 address = "0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f"
 
 [[contracts]]
+name = "SignatureManager"
+address = "0x0B306BF915C4d645ff596e518fAf3F9669b97016"
+
+[[contracts]]
+name = "CommitteeRegistry"
+address = "0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82"
+
+[[contracts]]
+name = "MemberRegistry"
+address = "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e"
+
+[[contracts]]
 name = "StreamManager"
-address = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
+address = "0x0165878A594ca255338adfa4d48449f69242Eb8F"
+
+[[contracts]]
+name = "ChallengeManager"
+address = "0x59b670e9fA9D0A427751Af201D676719a970857b"
 
 [[contracts]]
 name = "NativeBridge"
 address = "0x0000000000000000000000000000000001000006"
+# ═══════════════════════════════════════════════════════
+# Key Store
+# ═══════════════════════════════════════════════════════
+
+[key_store]
+# Path to user keystore (for user role transactions)
+user_path = "/{BASE_STORAGE_PATH}/.union_bridge/keystore/multi-client-1-user"
+# Path to member keystore (for member role transactions)
+member_path = "/{BASE_STORAGE_PATH}/.union_bridge/keystore/multi-client-1-member"
+# Path to broker TLS key file (PEM format) for deterministic broker identity
+broker_key_path = "/{BASE_STORAGE_PATH}/.union_bridge/keystore/broker.key"
 
 # ═══════════════════════════════════════════════════════
 # Coordinator
@@ -67,6 +86,8 @@ user.host = "0.0.0.0"
 user.port = 30001
 bitvmx.host = "0.0.0.0"
 bitvmx.port = 22222
+# The pubkey_hash of the bitvmx broker server's message queue (components.bitvmx.pubkey_hash in bitvmx-client config)
+bitvmx.pubkey_hash = "1d10fa43ebbf6674d74caa3e9032711ade09d98ea7d20f89459f61152bebda1e"
 broker.client_id = 101
 storage_path = "/{BASE_STORAGE_PATH}/.union_bridge/database/multi-client-1"
 
@@ -114,6 +135,8 @@ blocks_delay_for_tx_check = 20
 min_funding_balance = 20002000
 # Minimum RSK balance (wei) - approx 1 RBTC + fees
 min_rsk_balance = 1000000000500000
+# Path to the DRP program definition YAML file
+drp_program_definition = "resources/hello-world.yaml"
 
 [bridge.native_bridge]
 # Minimum confirmations from native bridge
@@ -141,8 +164,6 @@ notifier.port = 20001
 
 [transaction_dispatcher]
 
-key_store.user_path = "/{BASE_STORAGE_PATH}/.union_bridge/keystore/multi-client-1-user"
-key_store.member_path = "/{BASE_STORAGE_PATH}/.union_bridge/keystore/multi-client-1-member"
 transaction.gas_bumps_t1 = 3
 
 # ═══════════════════════════════════════════════════════

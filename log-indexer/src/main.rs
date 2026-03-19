@@ -73,7 +73,11 @@ fn main() -> Result<()> {
 
     let mut notifier = Notifier::new(
         rx,
-        BrokerServer::new(config.log_indexer_config.notifier.port),
+        BrokerServer::new(
+            config.log_indexer_config.notifier.port,
+            &config.key_store.broker_key_path,
+        )
+        .expect("Failed to create BrokerServer"),
         monitored_addresses,
         shutdown_flag.clone(),
     );

@@ -4,7 +4,7 @@ use std::thread;
 
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
-use common::msg_broker::broker::BrokerServer;
+use common::msg_broker::broker::{BrokerServer, Cert, Identifier};
 use common::shutdown_flag::ShutdownFlag;
 use log::{error, info};
 use tokio::net::TcpListener;
@@ -76,7 +76,15 @@ async fn main() -> Result<()> {
     let shutdown_flag = ShutdownFlag::init();
 
     let broker_port = config.user_api_config.notifier.port;
-    let broker_drop_guard = BrokerDropGuard::new(Arc::new(BrokerServer::new(broker_port)));
+    let broker_key_path = config.key_store.broker_key_path.clone();
+
+    let broker_server =
+        tokio::task::spawn_blocking(move || BrokerServer::new(broker_port, &broker_key_path))
+            .await
+            .context("Failed to spawn blocking task")?
+            .context("Failed to create BrokerServer")?;
+
+    let broker_drop_guard = BrokerDropGuard::new(Arc::new(broker_server));
     info!("Broker Server started on {broker_port}");
 
     let http_addr = SocketAddr::from(([0, 0, 0, 0], config.user_api_config.http.port));
@@ -99,11 +107,23 @@ async fn main() -> Result<()> {
     )
     .await?;
 
+    // Derive the coordinator's pubkey_hash from the shared broker key file.
+    // Since all services use the same broker.key, they share the same pubkey_hash.
+    let broker_cert = Cert::from_key_file(&config.key_store.broker_key_path)
+        .context("Failed to load broker key file for identifier")?;
+    let coordinator_pubkey_hash =
+        broker_cert.get_pubk_hash().context("Failed to get pubkey_hash from broker cert")?;
+
+    let coordinator_client_id = Identifier::new(
+        coordinator_pubkey_hash,
+        config.user_api_config.coordinator.broker.client_id as u8,
+    );
+
     let server = Server::new(
         listener,
         broker_drop_guard.clone_arc().context("failed to clone broker server handle")?,
         shutdown_flag.clone(),
-        config.user_api_config.coordinator.broker.client_id,
+        coordinator_client_id,
         user_contracts_gateway,
         member_contracts_gateway,
     )

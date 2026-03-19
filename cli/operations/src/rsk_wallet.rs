@@ -18,6 +18,172 @@ const USER_LOG_MARKER: &str = "Got user signer with address";
 const USER_RSK_LOG_MARKER: &str = "Connected to Rootstock at";
 const USER_RSK_ADDRESS_MARKER: &str = "as User with address";
 
+/// whitelists member RSK addresses on the CommitteeRegistry contract.
+/// collects member signer addresses from coordinator logs, then calls
+/// `whitelistAddresses(address[])` via `cast send`.
+pub fn handle_whitelist(
+    env: Environment,
+    contract_address: &str,
+    from_address: Option<&str>,
+    private_key: Option<&str>,
+) -> Result<()> {
+    println!("\n=== Whitelisting member addresses ===\n");
+
+    let member_signers = match env {
+        Environment::Local => collect_local_signers_from_logs(MEMBER_LOG_MARKER)?,
+        Environment::LocalDocker => collect_local_signers(MEMBER_LOG_MARKER)?,
+        Environment::Alphanet | Environment::Testnet | Environment::Regtest => {
+            collect_remote_member_addresses(&env.hosts())?
+        }
+    };
+
+    let unique = unique_addresses(&member_signers);
+    let expected = operator_ids().len();
+    if unique.len() < expected {
+        bail!(
+            "expected {} member RSK address(es) but found {}. ensure all operator services are running and have emitted signer addresses.",
+            expected,
+            unique.len()
+        );
+    }
+
+    println!("Member addresses to whitelist:");
+    for addr in &unique {
+        println!("  {}", addr);
+    }
+    println!();
+
+    let addr_array = format!("[{}]", unique.join(","));
+    let rpc_url = env.rpc_url();
+
+    match env {
+        Environment::Local | Environment::LocalDocker => {
+            let from_address = resolve_local_whitelist_sender(from_address, private_key)?;
+            println!(
+                "Running: cast send --rpc-url {} --from {} {} \"whitelistAddresses(address[])\" \"{}\" --unlocked",
+                rpc_url, from_address, contract_address, addr_array
+            );
+
+            let output = Command::new("cast")
+                .arg("send")
+                .arg("--rpc-url")
+                .arg(&rpc_url)
+                .arg("--from")
+                .arg(from_address)
+                .arg(contract_address)
+                .arg("whitelistAddresses(address[])")
+                .arg(&addr_array)
+                .arg("--unlocked")
+                .output()
+                .context("failed to execute cast send for whitelistAddresses")?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                bail!("whitelistAddresses transaction failed: {}", stderr.trim());
+            }
+
+            println!("{}", String::from_utf8_lossy(&output.stdout));
+        }
+        Environment::Alphanet | Environment::Testnet | Environment::Regtest => {
+            let key = match resolve_remote_whitelist_private_key(from_address, private_key)? {
+                Some(key) => key,
+                None => {
+                    let prompted = prompt_password("Enter Whitelister Private Key: ")
+                        .context("failed to read private key")?
+                        .to_string();
+                    normalize_private_key(&prompted)
+                        .context("private key is required for remote environments")?
+                }
+            };
+
+            println!(
+                "Running: cast send {} \"whitelistAddresses(address[])\" \"{}\" --private-key <REDACTED> --rpc-url {}",
+                contract_address, addr_array, rpc_url
+            );
+
+            let output = Command::new("cast")
+                .arg("send")
+                .arg(contract_address)
+                .arg("whitelistAddresses(address[])")
+                .arg(&addr_array)
+                .arg("--private-key")
+                .arg(&key)
+                .arg("--rpc-url")
+                .arg(&rpc_url)
+                .output()
+                .context("failed to execute cast send for whitelistAddresses")?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                bail!("whitelistAddresses transaction failed: {}", stderr.trim());
+            }
+
+            println!("{}", String::from_utf8_lossy(&output.stdout));
+        }
+    }
+
+    println!("Done. Whitelisted {} member addresses on CommitteeRegistry.", unique.len());
+
+    Ok(())
+}
+
+fn resolve_local_whitelist_sender(
+    from_address: Option<&str>,
+    private_key: Option<&str>,
+) -> Result<String> {
+    if private_key.is_some() {
+        bail!(
+            "`--private-key` is not supported for `operator whitelist` in local/local-docker. Use `--from <address>` or rely on the default unlocked anvil account."
+        );
+    }
+
+    let sender = from_address.unwrap_or(LOCAL_ANVIL_ADDRESS).trim();
+    validate_address(sender).context("invalid `--from` address")?;
+    Ok(sender.to_string())
+}
+
+fn resolve_remote_whitelist_private_key(
+    from_address: Option<&str>,
+    private_key: Option<&str>,
+) -> Result<Option<String>> {
+    if from_address.is_some() {
+        bail!(
+            "`--from` is only supported for `operator whitelist` in local/local-docker. Use `--private-key <hex-key>` in regtest/alphanet/testnet."
+        );
+    }
+
+    private_key.map(normalize_private_key).transpose()
+}
+
+fn validate_address(address: &str) -> Result<()> {
+    if !has_prefixed_hex_len(address, 40) {
+        bail!("expected a 20-byte hex address with 0x prefix");
+    }
+    Ok(())
+}
+
+fn normalize_private_key(private_key: &str) -> Result<String> {
+    let trimmed = private_key.trim();
+    if trimmed.is_empty() {
+        bail!("private key cannot be empty");
+    }
+
+    let hex = trimmed.strip_prefix("0x").unwrap_or(trimmed);
+    if hex.len() != 64 || !hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        bail!("expected a 32-byte hex private key");
+    }
+
+    Ok(trimmed.to_string())
+}
+
+fn has_prefixed_hex_len(value: &str, hex_len: usize) -> bool {
+    let Some(hex) = value.strip_prefix("0x") else {
+        return false;
+    };
+
+    hex.len() == hex_len && hex.chars().all(|ch| ch.is_ascii_hexdigit())
+}
+
 /// handles creating local rootstock wallets for multi-client deployments
 pub fn handle_wallet_creation(num_wallets: u8, base_storage_path: Option<&str>) -> Result<()> {
     let base = require_base_storage_path(base_storage_path)?;
@@ -605,4 +771,73 @@ fn run_cast_send_local(address: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_whitelist_uses_default_unlocked_sender() {
+        let sender = resolve_local_whitelist_sender(None, None).unwrap();
+        assert_eq!(sender, LOCAL_ANVIL_ADDRESS);
+    }
+
+    #[test]
+    fn local_whitelist_rejects_private_key_flag() {
+        let err = resolve_local_whitelist_sender(
+            None,
+            Some("0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("`--private-key` is not supported"));
+    }
+
+    #[test]
+    fn local_whitelist_validates_from_address() {
+        let err = resolve_local_whitelist_sender(
+            Some("0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
+            None,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("invalid `--from` address"));
+    }
+
+    #[test]
+    fn remote_whitelist_rejects_from_flag() {
+        let err = resolve_remote_whitelist_private_key(
+            Some("0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc"),
+            None,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("`--from` is only supported"));
+    }
+
+    #[test]
+    fn remote_whitelist_accepts_private_key() {
+        let key = resolve_remote_whitelist_private_key(
+            None,
+            Some("0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            key.as_deref(),
+            Some("0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+        );
+    }
+
+    #[test]
+    fn remote_whitelist_validates_private_key_format() {
+        let err = resolve_remote_whitelist_private_key(
+            None,
+            Some("0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc"),
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("expected a 32-byte hex private key"));
+    }
 }

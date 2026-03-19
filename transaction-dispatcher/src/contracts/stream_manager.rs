@@ -1,22 +1,31 @@
-use alloy_primitives::U256;
+use alloy_primitives::{Bytes, U256};
 use alloy_provider::Provider;
 use log::info;
 #[cfg(test)]
 use mockall::automock;
 use union_contracts::bindings::stream_manager::StreamManager::{
-    self, Role, StreamDenomination, StreamManagerErrors, StreamManagerInstance,
+    self, Role, Stream, StreamDenomination, StreamManagerErrors, StreamManagerInstance,
 };
 
 use crate::contracts::types::Address;
 use crate::rsk_gateway::DomainErrors;
 
 #[cfg_attr(test, automock)]
+#[allow(clippy::struct_field_names)]
 pub trait StreamManagerContractApi {
     async fn call_get_minimum_deposit(
         &self,
         denomination: StreamDenomination,
         role: Role,
     ) -> alloy_contract::Result<U256>;
+
+    async fn call_get_stream(&self, denomination: u64) -> alloy_contract::Result<Stream>;
+
+    async fn call_get_enabler_script_pubkey(
+        &self,
+        stream_id: u64,
+        packet_number: u64,
+    ) -> alloy_contract::Result<Bytes>;
 }
 
 #[derive(Clone)]
@@ -42,6 +51,18 @@ impl<P: Provider> StreamManagerContractApi for StreamManagerContract<P> {
             .getMinimumDeposit(denomination.into_underlying(), role.into_underlying())
             .call()
             .await
+    }
+
+    async fn call_get_stream(&self, denomination: u64) -> alloy_contract::Result<Stream> {
+        self.contract_instance.getStream(denomination).call().await
+    }
+
+    async fn call_get_enabler_script_pubkey(
+        &self,
+        stream_id: u64,
+        packet_number: u64,
+    ) -> alloy_contract::Result<Bytes> {
+        self.contract_instance.getEnablerScriptPubKey(stream_id, packet_number).call().await
     }
 }
 

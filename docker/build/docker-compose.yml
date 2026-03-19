@@ -17,6 +17,7 @@ services:
       - ../../config/:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - db-blocks:/app/db/blocks
+      - keystore:/keystore
     environment:
       - ENV_NAME=${ENV_NAME:-dummy-env-name}
     restart: no
@@ -26,7 +27,8 @@ services:
       retries: 3
       start_period: 10s
       test: ["CMD", "pgrep", "-f", "block-indexer"] # TODO improve with health endpoint
-    entrypoint: ["sh", "-c", "/app/block-indexer --env $ENV_NAME"]
+    entrypoint: ["sh", "/app/key-setup.sh"]
+    command: ["sh", "-c", "/app/block-indexer --env $ENV_NAME"]
 
   log-indexer:
     platform: ${PLATFORM}
@@ -42,6 +44,7 @@ services:
       - ../../config/:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - db-logs:/app/db/logs
+      - keystore:/keystore
     environment:
       - ENV_NAME=${ENV_NAME:-dummy-env-name}
     restart: no
@@ -51,7 +54,8 @@ services:
       retries: 3
       start_period: 10s
       test: ["CMD", "pgrep", "-f", "log-indexer"] # TODO improve with health endpoint
-    entrypoint: ["sh", "-c", "/app/log-indexer --env $ENV_NAME"]
+    entrypoint: ["sh", "/app/key-setup.sh"]
+    command: ["sh", "-c", "/app/log-indexer --env $ENV_NAME"]
 
   coordinator:
     platform: ${PLATFORM}
@@ -67,12 +71,14 @@ services:
       - ../../config/:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - keystore:/keystore
+      - ../../resources:/app/resources:ro
       - db-coordinator:/app/db/coordinator
     restart: no
     environment:
       - UB__coordinator__bitvmx__host=${BITVMX_HOST:-dummy-bitvmx-host}
       - UB__coordinator__bitvmx__port=${BITVMX_PORT:-dummy-bitvmx-port}
       - UB__coordinator__advance_funds__check_fork_guest_elf_path=${UB__coordinator__advance_funds__check_fork_guest_elf_path:-} # TODO change this before productive release
+      - UB__BRIDGE__COMMITTEE__DRP_PROGRAM_DEFINITION=${UB__BRIDGE__COMMITTEE__DRP_PROGRAM_DEFINITION:-}
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
       - BITCOIN_NETWORK=${BITCOIN_NETWORK:-dummy-bitcoin-network}
       - ENV_NAME=${ENV_NAME:-dummy-env-name}

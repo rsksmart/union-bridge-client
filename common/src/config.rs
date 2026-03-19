@@ -82,6 +82,17 @@ pub struct ContractConfig {
     pub name: String,
     pub address: String,
 }
+/// Key store configuration shared by all services.
+/// Contains paths to keystores used for transaction signing and broker identity.
+#[derive(Debug, Deserialize, Clone)]
+pub struct KeyStoreConfig {
+    /// Path to user keystore (for user role transactions)
+    pub user_path: String,
+    /// Path to member keystore (for member role transactions)
+    pub member_path: String,
+    /// Path to broker TLS key file (PEM format) for deterministic broker identity
+    pub broker_key_path: String,
+}
 
 impl IndexerConfig {
     /// Resolves the initial block number based on the `start_from` configuration.
@@ -314,29 +325,33 @@ mod tests {
         assert_eq!(100, config.indexer.sync.batch_size);
         assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
         assert_eq!("regtest", config.bitcoin_network);
-        assert_eq!(9, config.contracts.len());
+        assert_eq!(11, config.contracts.len());
         let contract_names: Vec<&String> = config.contracts.iter().map(|c| &c.name).collect();
         let expected_names = vec![
             "TestContractDyn",
             "TestContractCompiled",
-            "PegManager",
+            "PeginManager",
+            "PegoutManager",
+            "FakePegManager",
             "SignatureManager",
             "CommitteeRegistry",
             "MemberRegistry",
-            "FakePegManager",
             "StreamManager",
+            "ChallengeManager",
             "NativeBridge",
         ];
         assert_eq!(expected_names, contract_names);
         assert_eq!("0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761", config.contracts[0].address);
         assert_eq!("0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc", config.contracts[1].address);
-        assert_eq!("0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6", config.contracts[2].address);
-        assert_eq!("0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0", config.contracts[3].address);
-        assert_eq!("0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9", config.contracts[4].address);
-        assert_eq!("0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0", config.contracts[5].address);
-        assert_eq!("0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f", config.contracts[6].address);
-        assert_eq!("0x610178dA211FEF7D417bC0e6FeD39F05609AD788", config.contracts[7].address);
-        assert_eq!("0x0000000000000000000000000000000001000006", config.contracts[8].address);
+        assert_eq!("0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE", config.contracts[2].address);
+        assert_eq!("0x3Aa5ebB10DC797CAC828524e59A333d0A371443c", config.contracts[3].address);
+        assert_eq!("0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f", config.contracts[4].address);
+        assert_eq!("0x0B306BF915C4d645ff596e518fAf3F9669b97016", config.contracts[5].address);
+        assert_eq!("0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82", config.contracts[6].address);
+        assert_eq!("0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e", config.contracts[7].address);
+        assert_eq!("0x0165878A594ca255338adfa4d48449f69242Eb8F", config.contracts[8].address);
+        assert_eq!("0x59b670e9fA9D0A427751Af201D676719a970857b", config.contracts[9].address);
+        assert_eq!("0x0000000000000000000000000000000001000006", config.contracts[10].address);
     }
 
     #[test]
@@ -356,7 +371,7 @@ mod tests {
         assert_eq!(1000, config.indexer.cache.size);
         assert_eq!("ws://host.docker.internal:8545", config.provider.rootstock.url);
         assert_eq!("regtest", config.bitcoin_network);
-        assert_eq!(9, config.contracts.len());
+        assert_eq!(11, config.contracts.len());
     }
 
     #[test]

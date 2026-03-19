@@ -24,9 +24,12 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     NewPendingCommittee,
 };
 use union_contracts::bindings::member_registry::MemberRegistry::MemberRegistryEvents;
-use union_contracts::bindings::peg_manager::PegManager::{
-    OperatorTakeTriggered, PegManagerEvents, PeginAccepted, PeginRequested, PegoutRegistered,
-    PegoutRequested,
+use union_contracts::bindings::pegin_manager::PeginManager::{
+    PeginAccepted, PeginManagerEvents, PeginRequested,
+};
+use union_contracts::bindings::pegout_manager::PegoutManager::{
+    AdvanceFundsRegistered, OperatorTakeTriggered, PegoutManagerEvents, PegoutRegistered,
+    PegoutRequested, ReimbursementKickoffRegistered,
 };
 #[cfg(test)]
 use union_contracts::bindings::signature_manager::SignatureManager::{
@@ -50,6 +53,8 @@ pub enum RskPegManagerEvents {
     PegoutRegistered(PegoutRegisteredEvent),
     PegoutRequested(PegoutRequestedEvent),
     OperatorTakeTriggered(OperatorTakeTriggeredEvent),
+    AdvanceFundsRegistered(AdvanceFundsRegisteredEvent),
+    ReimbursementKickoffRegistered(ReimbursementKickoffRegisteredEvent),
     RemoveRegisteredPeginRequest(PeginRequestedEvent),
     AllNoncesReady(AllNoncesReadyEvent),
     AllSignaturesReady(AllSignaturesReadyEvent),
@@ -78,6 +83,8 @@ pub type AllOperatorTakeTxidsAddedEvent = EventWithBlock<AllOperatorTakeTxidsAdd
 pub type PegoutRequestedEvent = EventWithBlock<PegoutRequested>;
 pub type PegoutRegisteredEvent = EventWithBlock<PegoutRegistered>;
 pub type OperatorTakeTriggeredEvent = EventWithBlock<OperatorTakeTriggered>;
+pub type AdvanceFundsRegisteredEvent = EventWithBlock<AdvanceFundsRegistered>;
+pub type ReimbursementKickoffRegisteredEvent = EventWithBlock<ReimbursementKickoffRegistered>;
 pub type NewCommitteePendingEvent = EventWithBlock<NewPendingCommittee>;
 pub type NewCommitteeReadyEvent = EventWithBlock<NewCommittee>;
 pub type AllCommunicationDataReadyEvent = EventWithBlock<AllCommunicationDataReady>;
@@ -136,7 +143,11 @@ impl EventDecoder {
             return event;
         }
 
-        if let Some(event) = Self::try_peg_manager_events(log) {
+        if let Some(event) = Self::try_pegin_manager_events(log) {
+            return event;
+        }
+
+        if let Some(event) = Self::try_pegout_manager_events(log) {
             return event;
         }
 
@@ -197,13 +208,26 @@ impl EventDecoder {
         None
     }
 
-    fn try_peg_manager_events(log: &RskLog) -> Option<RskPegManagerEvents> {
+    fn try_pegin_manager_events(log: &RskLog) -> Option<RskPegManagerEvents> {
         let (parsed_topics, data, block_num, block_hash, removed, tx_hash) =
             Self::extract_log_fields(log);
 
-        if let Ok(pm) = PegManagerEvents::decode_raw_log(&parsed_topics, &data) {
-            trace!("Decoded PegManagerEvents: {pm:?}");
-            return Some(Self::convert_peg_manager_event(
+        if let Ok(pm) = PeginManagerEvents::decode_raw_log(&parsed_topics, &data) {
+            trace!("Decoded PeginManagerEvents: {pm:?}");
+            return Some(Self::convert_pegin_manager_event(
+                pm, block_num, block_hash, removed, tx_hash,
+            ));
+        }
+        None
+    }
+
+    fn try_pegout_manager_events(log: &RskLog) -> Option<RskPegManagerEvents> {
+        let (parsed_topics, data, block_num, block_hash, removed, tx_hash) =
+            Self::extract_log_fields(log);
+
+        if let Ok(pm) = PegoutManagerEvents::decode_raw_log(&parsed_topics, &data) {
+            trace!("Decoded PegoutManagerEvents: {pm:?}");
+            return Some(Self::convert_pegout_manager_event(
                 pm, block_num, block_hash, removed, tx_hash,
             ));
         }
@@ -269,15 +293,15 @@ impl EventDecoder {
         None
     }
 
-    fn convert_peg_manager_event(
-        event: PegManagerEvents,
+    fn convert_pegin_manager_event(
+        event: PeginManagerEvents,
         block_num: BlockNumber,
         block_hash: BlockHash,
         removed: bool,
         tx_hash: TxHash,
     ) -> RskPegManagerEvents {
         match event {
-            PegManagerEvents::PeginRequested(inner) => {
+            PeginManagerEvents::PeginRequested(inner) => {
                 RskPegManagerEvents::PeginRequested(PeginRequestedEvent {
                     inner,
                     block_number: block_num,
@@ -286,7 +310,7 @@ impl EventDecoder {
                     tx_hash,
                 })
             }
-            PegManagerEvents::PeginAccepted(inner) => {
+            PeginManagerEvents::PeginAccepted(inner) => {
                 RskPegManagerEvents::PeginAccepted(PeginAcceptedEvent {
                     inner,
                     block_number: block_num,
@@ -295,7 +319,23 @@ impl EventDecoder {
                     tx_hash,
                 })
             }
-            PegManagerEvents::PegoutRegistered(inner) => {
+            _ => {
+                let variant = Self::event_variant_name(&event);
+                debug!("Ignored PeginManager event ({variant}): block={block_num}, tx={tx_hash}");
+                RskPegManagerEvents::IgnoredEvent
+            }
+        }
+    }
+
+    fn convert_pegout_manager_event(
+        event: PegoutManagerEvents,
+        block_num: BlockNumber,
+        block_hash: BlockHash,
+        removed: bool,
+        tx_hash: TxHash,
+    ) -> RskPegManagerEvents {
+        match event {
+            PegoutManagerEvents::PegoutRegistered(inner) => {
                 RskPegManagerEvents::PegoutRegistered(PegoutRegisteredEvent {
                     inner,
                     block_number: block_num,
@@ -304,7 +344,7 @@ impl EventDecoder {
                     tx_hash,
                 })
             }
-            PegManagerEvents::PegoutRequested(inner) => {
+            PegoutManagerEvents::PegoutRequested(inner) => {
                 RskPegManagerEvents::PegoutRequested(PegoutRequestedEvent {
                     inner,
                     block_number: block_num,
@@ -313,7 +353,7 @@ impl EventDecoder {
                     tx_hash,
                 })
             }
-            PegManagerEvents::OperatorTakeTriggered(inner) => {
+            PegoutManagerEvents::OperatorTakeTriggered(inner) => {
                 RskPegManagerEvents::OperatorTakeTriggered(OperatorTakeTriggeredEvent {
                     inner,
                     block_number: block_num,
@@ -322,9 +362,29 @@ impl EventDecoder {
                     tx_hash,
                 })
             }
+            PegoutManagerEvents::AdvanceFundsRegistered(inner) => {
+                RskPegManagerEvents::AdvanceFundsRegistered(AdvanceFundsRegisteredEvent {
+                    inner,
+                    block_number: block_num,
+                    block_hash,
+                    removed,
+                    tx_hash,
+                })
+            }
+            PegoutManagerEvents::ReimbursementKickoffRegistered(inner) => {
+                RskPegManagerEvents::ReimbursementKickoffRegistered(
+                    ReimbursementKickoffRegisteredEvent {
+                        inner,
+                        block_number: block_num,
+                        block_hash,
+                        removed,
+                        tx_hash,
+                    },
+                )
+            }
             event => {
                 let variant = Self::event_variant_name(&event);
-                debug!("Ignored PegManager event ({variant}): block={block_num}, tx={tx_hash}");
+                debug!("Ignored PegoutManager event ({variant}): block={block_num}, tx={tx_hash}");
                 RskPegManagerEvents::IgnoredEvent
             }
         }
@@ -440,7 +500,7 @@ impl EventDecoder {
         match event {
             SignatureManagerEvents::AllNoncesReady(inner) => {
                 RskPegManagerEvents::AllNoncesReady(AllNoncesReadyEvent {
-                    inner: Hash256::from(inner.hashToSign),
+                    inner: Hash256::from(inner.txid),
                     block_number: block_num,
                     block_hash,
                     removed,
@@ -449,7 +509,7 @@ impl EventDecoder {
             }
             SignatureManagerEvents::AllSignaturesReady(inner) => {
                 RskPegManagerEvents::AllSignaturesReady(AllSignaturesReadyEvent {
-                    inner: Hash256::from(inner.hashToSign),
+                    inner: Hash256::from(inner.txid),
                     block_number: block_num,
                     block_hash,
                     removed,
@@ -625,7 +685,6 @@ impl<K: Eq + Hash + Clone> TimeBasedScheduler<K> {
         self.pending.clear();
     }
 }
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Utxo {
     // temporarily omitted for Regtest stage
@@ -671,8 +730,8 @@ mod tests {
     use union_contracts::bindings::committee_registry::CommitteeRegistry::{
         Committee, CommitteeMember,
     };
-    use union_contracts::bindings::peg_manager::PegManager::{
-        PrevoutData, RequestPeginTempInfo, StreamPosition,
+    use union_contracts::bindings::pegin_manager::PeginManager::{
+        RequestPeginTempInfo, StreamPosition,
     };
     use uuid::Uuid;
 
@@ -733,7 +792,6 @@ mod tests {
                 .as_bytes()
                 .try_into()
                 .expect("Failed to decode acceptPeginTxid"),
-            vout: 1,
             streamPosition: StreamPosition {
                 streamId: 42,
                 packetNumber: 33,
@@ -752,10 +810,9 @@ mod tests {
                     .as_bytes()
                     .try_into()
                     .expect("Failed to decode hash"),
-            },
-            prevoutData: PrevoutData {
-                value: 1000,
-                scriptPubKey: alloy_primitives::Bytes::from("0x1234567890abcdef"),
+                btcBlockNumber: alloy_primitives::I256::ZERO,
+                userReimbursementTxid: FixedBytes::<32>::ZERO,
+                rejectPeginTxid: FixedBytes::<32>::ZERO,
             },
             acceptPeginSignatureMessage: alloy_primitives::Bytes::from("0xabcdef0123456789"),
         };
@@ -877,7 +934,6 @@ mod tests {
                 .as_bytes()
                 .try_into()
                 .expect("Failed to decode acceptPeginTxid"),
-            vout: 1,
             streamPosition: StreamPosition {
                 streamId: 42,
                 packetNumber: 33,
@@ -896,10 +952,9 @@ mod tests {
                     .as_bytes()
                     .try_into()
                     .expect("Failed to decode hash"),
-            },
-            prevoutData: PrevoutData {
-                value: 1000,
-                scriptPubKey: alloy_primitives::Bytes::from("0x1234567890abcdef"),
+                btcBlockNumber: alloy_primitives::I256::ZERO,
+                userReimbursementTxid: FixedBytes::<32>::ZERO,
+                rejectPeginTxid: FixedBytes::<32>::ZERO,
             },
             acceptPeginSignatureMessage: alloy_primitives::Bytes::from("0xabcdef0123456789"),
         };
@@ -933,7 +988,7 @@ mod tests {
         let expected_event = PeginAccepted {
             blockHash: FixedBytes::<32>::from_slice(H256::from_low_u64_be(1).as_bytes()),
             acceptPeginTxid: FixedBytes::<32>::from_slice(H256::from_low_u64_be(2).as_bytes()),
-            peginRequestTxid: FixedBytes::<32>::from_slice(H256::from_low_u64_be(3).as_bytes()),
+            requestPeginTxid: FixedBytes::<32>::from_slice(H256::from_low_u64_be(3).as_bytes()),
             vout: 0,
             streamPosition: StreamPosition {
                 streamId: 42,
@@ -978,10 +1033,7 @@ mod tests {
         let expected_hash_to_sign = H256::from_low_u64_be(789);
 
         let expected_event = AllNoncesReady {
-            hashToSign: expected_hash_to_sign
-                .as_bytes()
-                .try_into()
-                .expect("Failed to decode hashToSign"),
+            txid: expected_hash_to_sign.as_bytes().try_into().expect("Failed to decode txid"),
         };
 
         let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
@@ -1012,10 +1064,7 @@ mod tests {
         let expected_hash_to_sign = H256::from_low_u64_be(1111);
 
         let expected_event = AllSignaturesReady {
-            hashToSign: expected_hash_to_sign
-                .as_bytes()
-                .try_into()
-                .expect("Failed to decode hashToSign"),
+            txid: expected_hash_to_sign.as_bytes().try_into().expect("Failed to decode txid"),
         };
 
         let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
