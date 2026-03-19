@@ -18,6 +18,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub const ACCEPT_PEGIN_TX: &str = "ACCEPT_PEGIN_TX";
+pub const REJECT_PEGIN_TX: &str = "REJECT_PEGIN_TX";
+pub const PROGRAM_TYPE_REJECT_PEGIN: &str = "reject_pegin";
 
 // DisputeChannel related constants and types
 pub const OP_COSIGN_UTXOS: &str = "OP_COSIGN_UTXOS";
@@ -441,6 +443,19 @@ pub struct PeginAcceptedMessage {
     pub accept_pegin_signature: MaybeScalar,
     pub operator_take_txid: Option<Txid>,
     pub operator_won_txid: Option<Txid>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RejectPeginData {
+    pub committee_id: Uuid,
+    pub member_index: usize,
+    pub txid: Txid,
+}
+
+impl RejectPeginData {
+    pub fn name() -> &'static str {
+        "reject_pegin_data"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

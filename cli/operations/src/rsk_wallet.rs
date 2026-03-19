@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::constants::{
-    LOCAL_ANVIL_ADDRESS, ONE_OPERATOR_COMPOSE_PROJECT, REMOTE_SSH_USER, operator_ids,
+    operator_ids, LOCAL_ANVIL_ADDRESS, ONE_OPERATOR_COMPOSE_PROJECT, REMOTE_SSH_USER,
 };
 use crate::environments::*;
 use crate::utils::command_to_string;

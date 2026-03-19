@@ -105,6 +105,9 @@ export UC_OPERATOR_ROLE="prover"
 
 # User: Request pegout
 ./cli-operations.sh user pegout --value 1000000 --env local
+
+# User: Request reject pegin against member endpoint 1
+./cli-operations.sh user reject-pegin --committee-id 182376596843486060923694608664362585331 --member-index 1 --request-pegin-txid 0x4e80f8119c7299ae9d85adad5f0a45baa69831069046569ef4ba9574249ee471 --env local
 ```
 
 ### Command Structure
@@ -112,8 +115,9 @@ export UC_OPERATOR_ROLE="prover"
 - **`setup`**: Initial configuration (create wallets)
 - **`operator`**: Operator management (fund, apply-stream)
   - `fund`: Display bitcoin addresses and optionally execute wallet commands with `--execute`
-- **`user`**: User operations (pegin, pegout)
+- **`user`**: User operations (pegin, pegout, reject-pegin)
   - `pegin`: Display pegin command and optionally execute wallet command with `--execute`
+  - `reject-pegin`: Sends `RejectPeginRequest` to a member endpoint
 
 ### Supported Environments
 
@@ -145,6 +149,7 @@ cli/
     │   ├── committee.rs
     │   ├── pegin.rs
     │   ├── pegout.rs
+    │   ├── reject_pegin.rs
     │   ├── environments.rs
     │   ├── constants.rs
     │   └── utils.rs
@@ -195,6 +200,9 @@ The CLI workspace is independent from the main Union Bridge workspace, allowing 
 
 # Request pegout
 ./cli-operations.sh user pegout --value 1000000 --env alphanet
+
+# Request reject pegin on a specific remote operator
+./cli-operations.sh user reject-pegin --env alphanet --operator-id 1 --committee-id 182376596843486060923694608664362585331 --member-index 1 --request-pegin-txid 0x4e80f8119c7299ae9d85adad5f0a45baa69831069046569ef4ba9574249ee471
 ```
 
 ## Docker Integration
@@ -210,4 +218,3 @@ When using the `docker/operator` setup, you can use the `cli-operations.sh` tool
 ```
 
 See [docker/operator/README.md](../docker/operator/README.md) for more information on docker deployments.
-

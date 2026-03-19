@@ -33,7 +33,8 @@ use crate::store::{
 };
 use crate::types::{
     AllOperatorTakeTxidsAddedEvent, EventStatus, PeginAcceptedEvent, PeginRequestedEvent,
-    RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler, UserRequests,
+    RegisterSignaturesBitVmxData, RejectPeginRegisteredEvent, RskPegManagerEvents, TickScheduler,
+    UserRequests,
 };
 
 const PEGIN_ACCEPTED_INPUT_MSG: &str = "pegin_accepted";
@@ -230,6 +231,26 @@ where
         Ok(())
     }
 
+    fn handle_reject_pegin_registered(&mut self, event: &RejectPeginRegisteredEvent) -> Result<()> {
+        let request_pegin_txid = event.inner.request_pegin_txid;
+
+        let Some(flow) = self.pegin_flows.values_mut().find(|flow| {
+            !flow.is_done() && flow.get_request_pegin_txid() == Some(request_pegin_txid)
+        }) else {
+            trace!(
+                "PeginFlowProcessor ignoring RejectPeginRegistered for request_pegin_txid {request_pegin_txid} - no matching flow",
+            );
+            return Ok(());
+        };
+
+        info!(
+            "RejectPeginRegistered confirmed for request_pegin_txid {request_pegin_txid}; closing pegin flow {}",
+            flow.flow_id()
+        );
+        flow.complete_step(&StepData::RejectPeginRegistered(event.inner.clone()))?;
+        Ok(())
+    }
+
     /// Process confirmed RSK events
     fn process_confirmed_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         info!("Processing confirmed RSK event: {event:?}");
@@ -248,6 +269,9 @@ where
             }
             RskPegManagerEvents::PeginAccepted(pa) => {
                 self.handle_pegin_accepted(pa)?;
+            }
+            RskPegManagerEvents::RejectPeginRegistered(reject_pegin_registered) => {
+                self.handle_reject_pegin_registered(reject_pegin_registered)?;
             }
             RskPegManagerEvents::AllOperatorTakeTxidsAdded(aottah) => {
                 self.handle_all_operator_take_tx_hashes_added(aottah)?;
@@ -357,6 +381,25 @@ where
             event.block_number,
             RskPegManagerEvents::AllOperatorTakeTxidsAdded(event.clone()),
         )
+    }
+
+    fn build_reject_pegin_registered_event_info(
+        event: &RejectPeginRegisteredEvent,
+    ) -> (String, EventStatus, BlockNumber, RskPegManagerEvents) {
+        (
+            format!("reject-pegin-registered-{}", event.tx_hash),
+            event.removed,
+            event.block_number,
+            RskPegManagerEvents::RejectPeginRegistered(event.clone()),
+        )
+    }
+
+    fn has_flow_for_reject_pegin_registered(&self, event: &RejectPeginRegisteredEvent) -> bool {
+        let request_pegin_txid = event.inner.request_pegin_txid;
+
+        self.pegin_flows.values().any(|flow| {
+            !flow.is_done() && flow.get_request_pegin_txid() == Some(request_pegin_txid)
+        })
     }
 
     fn process_unhandled_confirmed_sig_flow_events(
@@ -875,6 +918,16 @@ where
         let (id, is_removal, block_num, managed_event) = match event {
             RskPegManagerEvents::PeginRequested(e) => Self::build_pegin_requested_event_info(e),
             RskPegManagerEvents::PeginAccepted(e) => Self::build_pegin_accepted_event_info(e),
+            RskPegManagerEvents::RejectPeginRegistered(e) => {
+                if !self.has_flow_for_reject_pegin_registered(e) {
+                    trace!(
+                        "Ignoring RejectPeginRegistered for request_pegin_txid {} - no matching flow",
+                        e.inner.request_pegin_txid
+                    );
+                    return Ok(());
+                }
+                Self::build_reject_pegin_registered_event_info(e)
+            }
             RskPegManagerEvents::AllOperatorTakeTxidsAdded(e) => {
                 Self::build_all_operator_take_tx_hashes_added_event_info(e)
             }
@@ -936,5 +989,134 @@ where
         self.unconfirmed_accept_pegin.clear();
         self.pegin_request_tracker.clear();
         self.signature_flows.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use common::msg_broker::broker::MockBrokerClientApi;
+    use common::runtime_sync::RuntimeSync;
+    use primitive_types::{H256, U256 as RskU256};
+    use uuid::Uuid;
+
+    use super::*;
+    use crate::coordinator::tests::MockRskContractsGatewayApi;
+    use crate::flows::advance_funds::test_utils::create_fake_block;
+    use crate::store::CoordinatorStore;
+    use crate::types::RejectPeginRegisteredData;
+
+    type BitVmxMock = MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
+    type TestProcessor = PeginFlowProcessor<
+        MockRskContractsGatewayApi,
+        BitVmxMock,
+        BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<MockRskContractsGatewayApi>>,
+        BtcSignatureSubFlowFactory<MockRskContractsGatewayApi>,
+        CoordinatorStore,
+    >;
+    type TestPeginFlow = PeginFlow<MockRskContractsGatewayApi, BitVmxMock, CoordinatorStore>;
+
+    fn test_store() -> Rc<CoordinatorStore> {
+        let path = std::env::temp_dir().join(format!("pegin-processor-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&path).expect("create temp store dir");
+        Rc::new(CoordinatorStore::new(path.to_str().expect("utf8 path")).expect("store"))
+    }
+
+    fn test_processor(required_confirmations: u32, bitvmx_broker: BitVmxMock) -> TestProcessor {
+        let store = test_store();
+        TestProcessor::new(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            RuntimeSync::new().expect("runtime"),
+            Rc::new(bitvmx_broker),
+            GlobalContext::new(),
+            &store,
+            NativeBridgeVerifier::Dummy,
+            PeginConfig::default(),
+            required_confirmations,
+        )
+    }
+
+    fn test_txid(hex_char: char) -> Txid {
+        std::iter::repeat_n(hex_char, 64).collect::<String>().parse().expect("valid txid")
+    }
+
+    fn create_test_flow(
+        processor: &TestProcessor,
+        request_pegin_txid: Txid,
+        step: Steps,
+    ) -> TestPeginFlow {
+        let mut flow = PeginFlow::new(
+            Rc::clone(&processor.contracts_gateway),
+            processor.rt_sync.clone(),
+            Rc::clone(&processor.bitvmx_broker),
+            request_pegin_txid,
+            Rc::clone(&processor.store),
+            processor.native_bridge_verifier.clone(),
+        );
+        flow.get_state_mut().ctx.step = step;
+        flow
+    }
+
+    fn test_reject_pegin_registered(request_pegin_txid: Txid) -> RejectPeginRegisteredEvent {
+        RejectPeginRegisteredEvent {
+            inner: RejectPeginRegisteredData {
+                reject_pegin_txid: test_txid('2'),
+                request_pegin_txid,
+                stream_id: 42,
+                packet_number: 33,
+                slot_id: 1,
+                peg_status: 2,
+            },
+            block_number: 100.into(),
+            block_hash: common::types::BlockHash::from(H256::from_low_u64_be(1)),
+            removed: false,
+            tx_hash: common::types::TxHash::from(H256::from_low_u64_be(2)),
+        }
+    }
+
+    #[test]
+    fn reject_pegin_registered_finishes_matching_flow_after_confirmation() {
+        let mut bitvmx_broker = BitVmxMock::new();
+        bitvmx_broker.expect_send().times(1).returning(|_| Ok(true));
+
+        let mut processor = test_processor(1, bitvmx_broker);
+        let request_pegin_txid = test_txid('1');
+        let flow = create_test_flow(&processor, request_pegin_txid, Steps::PreparePeginSetup);
+        let flow_id = flow.flow_id();
+        processor.pegin_flows.insert(flow_id, flow);
+
+        processor
+            .process_new_rsk_event(&RskPegManagerEvents::RejectPeginRegistered(
+                test_reject_pegin_registered(request_pegin_txid),
+            ))
+            .expect("RejectPeginRegistered event is queued for confirmation");
+
+        assert!(processor.pegin_flows.contains_key(&flow_id));
+        assert_eq!(processor.events_confirming.len(), 1);
+
+        let block =
+            RskBlockAndUncles::new_no_uncles(create_fake_block(101.into(), RskU256::from(50)));
+        processor.process_new_block(&block).expect("block confirmations are handled");
+
+        assert!(!processor.pegin_flows.contains_key(&flow_id));
+        assert!(processor.events_confirming.is_empty());
+    }
+
+    #[test]
+    fn reject_pegin_registered_is_ignored_without_matching_flow() {
+        let mut bitvmx_broker = BitVmxMock::new();
+        bitvmx_broker.expect_send().times(1).returning(|_| Ok(true));
+
+        let mut processor = test_processor(1, bitvmx_broker);
+
+        processor
+            .process_new_rsk_event(&RskPegManagerEvents::RejectPeginRegistered(
+                test_reject_pegin_registered(test_txid('1')),
+            ))
+            .expect("RejectPeginRegistered without matching flow is ignored");
+
+        assert!(processor.pegin_flows.is_empty());
+        assert!(processor.events_confirming.is_empty());
     }
 }

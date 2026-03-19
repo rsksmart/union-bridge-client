@@ -1518,7 +1518,8 @@ where
             }
             Steps::GetMyCommInfo => {
                 debug!("CommitteeSetupFlow complete GetMyCommInfo");
-                self.ctx_mut().my_comm_info = Some(data.into_comms_address()?);
+                let my_comm_info = data.into_comms_address()?;
+                self.ctx_mut().my_comm_info = Some(my_comm_info);
                 if self.global_context.my_keys().is_set() {
                     debug!("My Keys already set, jumping to FundMyBitVmxAccount step");
                     self.start_step(Steps::FundMyBitVmxAccount)?;

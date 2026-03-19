@@ -71,15 +71,13 @@ impl Environment {
     pub fn user_api_endpoints(&self) -> Vec<String> {
         let ports = user_api_ports();
         match self {
-            Environment::Local | Environment::LocalDocker => ports
-                .iter()
-                .map(|port| format!("{}:{}", LOCAL_HOST, port))
-                .collect(),
+            Environment::Local | Environment::LocalDocker => {
+                ports.iter().map(|port| format!("{}:{}", LOCAL_HOST, port)).collect()
+            }
 
-            Environment::Regtest => ports
-                .iter()
-                .map(|port| format!("{}:{}", REGTEST_HOST, port))
-                .collect(),
+            Environment::Regtest => {
+                ports.iter().map(|port| format!("{}:{}", REGTEST_HOST, port)).collect()
+            }
             Environment::Alphanet => ALPHANET_HOSTS
                 .iter()
                 .map(|host| format!("{}:{}", host, BASE_USER_API_PORT))
@@ -96,10 +94,7 @@ impl Environment {
 const BASE_USER_API_PORT: u16 = 40001;
 
 fn user_api_ports() -> Vec<u16> {
-    operator_ids()
-        .iter()
-        .map(|&id| BASE_USER_API_PORT + (id as u16) - 1)
-        .collect()
+    operator_ids().iter().map(|&id| BASE_USER_API_PORT + (id as u16) - 1).collect()
 }
 
 const LOCAL_HOST: &str = "localhost";

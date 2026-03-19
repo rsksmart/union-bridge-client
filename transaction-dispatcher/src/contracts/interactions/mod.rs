@@ -20,6 +20,7 @@ pub(crate) mod register_operator_take;
 pub(crate) mod register_operator_won;
 pub(crate) mod register_pegout;
 pub(crate) mod register_reimbursement_kickoff;
+pub(crate) mod reject_pegin;
 pub(crate) mod request_pegin;
 pub(crate) mod request_pegout;
 pub(crate) mod trigger_operator_take;

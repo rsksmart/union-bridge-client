@@ -123,7 +123,6 @@ impl Wallet {
             wallet.set_sats_per_byte(sats_per_byte);
         }
 
-
         if let Some(ref wif) = config.private_key_wif {
             let address = wallet.import_private_key(wif)?;
             wallet.active_address = Some(address.clone());
@@ -274,8 +273,7 @@ impl Wallet {
         // remove from in-memory available list based on outpoints (not indices, which may be stale)
         let spent_outpoints: Vec<OutPoint> =
             created.spent_utxos.iter().map(|u| u.outpoint).collect();
-        self.utxos
-            .retain(|u| !spent_outpoints.contains(&u.outpoint));
+        self.utxos.retain(|u| !spent_outpoints.contains(&u.outpoint));
 
         // add change output as available UTXO immediately (0-conf change is spendable)
         if created.change_value > 0 {
@@ -286,10 +284,7 @@ impl Wallet {
                 created.change_value,
                 &created.change_address,
             )?;
-            self.utxos.push(Utxo {
-                outpoint: change_outpoint,
-                value_sat: created.change_value,
-            });
+            self.utxos.push(Utxo { outpoint: change_outpoint, value_sat: created.change_value });
         }
 
         // track pending transaction in memory and persist to database
@@ -378,10 +373,8 @@ impl Wallet {
 
         // remove the old change UTXO if it exists (it's now invalid)
         if original.change_value > 0 {
-            let old_change_outpoint = OutPoint::new(
-                original_txid,
-                (original.transaction.output.len() - 1) as u32,
-            );
+            let old_change_outpoint =
+                OutPoint::new(original_txid, (original.transaction.output.len() - 1) as u32);
             // remove from database
             let _ = self.utxo_store.remove(&old_change_outpoint); // ignore error if not found
             // remove from in-memory list
@@ -437,10 +430,7 @@ impl Wallet {
             self.utxos = entries
                 .into_iter()
                 .filter(|(_, stored)| stored.state == UtxoState::Available)
-                .map(|(outpoint, stored)| Utxo {
-                    outpoint,
-                    value_sat: stored.value_sat,
-                })
+                .map(|(outpoint, stored)| Utxo { outpoint, value_sat: stored.value_sat })
                 .collect();
         } else {
             self.utxos.clear();
@@ -486,9 +476,7 @@ impl Wallet {
 
         for addr in self.private_keys.keys() {
             let address = parse_address(addr)?;
-            grouped
-                .entry(address.to_string())
-                .or_insert_with(|| (address, Vec::new()));
+            grouped.entry(address.to_string()).or_insert_with(|| (address, Vec::new()));
         }
 
         for (outpoint, stored) in self.utxo_store.load_all()? {
@@ -497,22 +485,13 @@ impl Wallet {
                 None => continue,
             };
             let address = parse_address(addr_str)?;
-            let entry = grouped
-                .entry(address.to_string())
-                .or_insert_with(|| (address.clone(), Vec::new()));
-            entry.1.push((
-                Utxo {
-                    outpoint,
-                    value_sat: stored.value_sat,
-                },
-                stored.timestamp,
-            ));
+            let entry =
+                grouped.entry(address.to_string()).or_insert_with(|| (address.clone(), Vec::new()));
+            entry.1.push((Utxo { outpoint, value_sat: stored.value_sat }, stored.timestamp));
         }
 
         for (_, entry) in grouped.iter_mut() {
-            entry
-                .1
-                .sort_by_key(|(_, timestamp)| std::cmp::Reverse(*timestamp));
+            entry.1.sort_by_key(|(_, timestamp)| std::cmp::Reverse(*timestamp));
         }
 
         let mut collected: Vec<(Address, Vec<(Utxo, u64)>)> =
@@ -537,10 +516,8 @@ impl Wallet {
         let new_pending_tx_store = open_pending_tx_store(&self.db_root, network, &self.mode)?;
 
         // load pending transactions for the new network
-        let pending_transactions: HashMap<Txid, CreatedTransaction> = new_pending_tx_store
-            .load_all(network)?
-            .into_iter()
-            .collect();
+        let pending_transactions: HashMap<Txid, CreatedTransaction> =
+            new_pending_tx_store.load_all(network)?.into_iter().collect();
 
         self.network = network;
         self.utxo_store = new_store;
@@ -586,10 +563,7 @@ impl Wallet {
         }
 
         self.utxo_store.insert(&outpoint, amount, address)?;
-        self.utxos.push(Utxo {
-            outpoint,
-            value_sat: amount,
-        });
+        self.utxos.push(Utxo { outpoint, value_sat: amount });
         Ok(())
     }
 
@@ -663,9 +637,7 @@ impl Wallet {
     }
 
     pub fn private_key(&self) -> Option<&PrivateKey> {
-        self.active_address
-            .as_ref()
-            .and_then(|addr| self.private_keys.get(&addr.to_string()))
+        self.active_address.as_ref().and_then(|addr| self.private_keys.get(&addr.to_string()))
     }
 
     fn create_transaction_once(
@@ -677,9 +649,8 @@ impl Wallet {
             bail!("at least one target script is required");
         }
         let outputs_count = target_scripts.len() as u64;
-        let total_amount = amount_sat
-            .checked_mul(outputs_count)
-            .context("total amount overflowed")?;
+        let total_amount =
+            amount_sat.checked_mul(outputs_count).context("total amount overflowed")?;
 
         let outputs: Vec<TxOut> = target_scripts
             .iter()
@@ -740,12 +711,10 @@ impl Wallet {
 
                 let signed = self.sign_transaction(tx, &selected_utxos, &pubkey, &change_script)?;
                 let vsize = signed.vsize() as u64;
-                let fee = vsize
-                    .checked_mul(self.sats_per_byte)
-                    .context("fee computation overflowed")?;
-                let total_required = total_output_amount
-                    .checked_add(fee)
-                    .context("amount plus fee overflowed")?;
+                let fee =
+                    vsize.checked_mul(self.sats_per_byte).context("fee computation overflowed")?;
+                let total_required =
+                    total_output_amount.checked_add(fee).context("amount plus fee overflowed")?;
 
                 if total_input < total_required {
                     required = total_required;
@@ -784,10 +753,7 @@ impl Wallet {
             let change_preview = if final_change > 0 {
                 let txid = signed_tx.compute_txid();
                 let change_vout = (signed_tx.output.len() - 1) as u32; // change is last output
-                Some(Utxo {
-                    outpoint: OutPoint::new(txid, change_vout),
-                    value_sat: final_change,
-                })
+                Some(Utxo { outpoint: OutPoint::new(txid, change_vout), value_sat: final_change })
             } else {
                 None
             };
@@ -826,13 +792,9 @@ impl Wallet {
 
             let msg = Message::from(sighash);
             let sig = self.secp.sign_ecdsa(&msg, &private_key.inner);
-            let signature = ecdsa::Signature {
-                signature: sig,
-                sighash_type,
-            };
-            *cache
-                .witness_mut(index)
-                .expect("witness for existing input") = Witness::p2wpkh(&signature, &pubkey.inner);
+            let signature = ecdsa::Signature { signature: sig, sighash_type };
+            *cache.witness_mut(index).expect("witness for existing input") =
+                Witness::p2wpkh(&signature, &pubkey.inner);
         }
 
         Ok(cache.into_transaction())
@@ -848,9 +810,7 @@ impl Wallet {
         for (index, utxo) in self.utxos.iter().enumerate() {
             indices.push(index);
             selected.push(utxo.clone());
-            total = total
-                .checked_add(utxo.value_sat)
-                .context("overflow selecting UTXOs")?;
+            total = total.checked_add(utxo.value_sat).context("overflow selecting UTXOs")?;
             if total >= required {
                 break;
             }
@@ -888,12 +848,8 @@ impl Wallet {
             let txid = signed_tx.compute_txid();
             let change_vout = (signed_tx.output.len() - 1) as u32;
             let change_outpoint = OutPoint::new(txid, change_vout);
-            self.utxo_store
-                .insert(&change_outpoint, change_value, address)?;
-            let change_utxo = Utxo {
-                outpoint: change_outpoint,
-                value_sat: change_value,
-            };
+            self.utxo_store.insert(&change_outpoint, change_value, address)?;
+            let change_utxo = Utxo { outpoint: change_outpoint, value_sat: change_value };
             self.utxos.push(change_utxo.clone());
             Ok(Some(change_utxo))
         } else {
@@ -902,9 +858,7 @@ impl Wallet {
     }
 
     fn require_active_address(&self) -> Result<&Address> {
-        self.active_address
-            .as_ref()
-            .ok_or_else(|| anyhow!("import a private key first"))
+        self.active_address.as_ref().ok_or_else(|| anyhow!("import a private key first"))
     }
 
     fn require_active_private_key(&self) -> Result<&PrivateKey> {
@@ -917,9 +871,7 @@ impl Wallet {
     }
 
     fn require_rpc_client(&self) -> Result<&Client> {
-        self.rpc_client
-            .as_ref()
-            .context("RPC client required but not configured")
+        self.rpc_client.as_ref().context("RPC client required but not configured")
     }
 
     fn load_utxos_for_address(&self, address: &Address) -> Result<Vec<(Utxo, u64)>> {
@@ -928,13 +880,7 @@ impl Wallet {
             .into_iter()
             .filter(|(_, stored)| stored.state == UtxoState::Available)
             .map(|(outpoint, stored)| {
-                (
-                    Utxo {
-                        outpoint,
-                        value_sat: stored.value_sat,
-                    },
-                    stored.timestamp,
-                )
+                (Utxo { outpoint, value_sat: stored.value_sat }, stored.timestamp)
             })
             .collect();
         utxos.sort_by_key(|(_, timestamp)| std::cmp::Reverse(*timestamp));
@@ -962,10 +908,7 @@ impl Wallet {
         let rsk_address_bytes =
             Vec::<u8>::from_hex(rsk_address_clean).context("invalid RSK address hex")?;
         if rsk_address_bytes.len() != 20 {
-            bail!(
-                "RSK address must be 20 bytes, got {}",
-                rsk_address_bytes.len()
-            );
+            bail!("RSK address must be 20 bytes, got {}", rsk_address_bytes.len());
         }
         let mut rsk_address = [0u8; 20];
         rsk_address.copy_from_slice(&rsk_address_bytes);
@@ -990,10 +933,7 @@ impl Wallet {
                 value: Amount::from_sat(0),
                 script_pubkey: Self::create_op_return_script(op_return_data)?,
             },
-            TxOut {
-                value: Amount::from_sat(self.enabler_amount),
-                script_pubkey: enabler_script,
-            },
+            TxOut { value: Amount::from_sat(self.enabler_amount), script_pubkey: enabler_script },
         ];
 
         self.build_transaction_with_outputs(outputs, total_value)
@@ -1014,10 +954,8 @@ impl Wallet {
 
     fn create_op_return_script(data: Vec<u8>) -> Result<ScriptBuf> {
         let push_bytes = PushBytesBuf::try_from(data).context("OP_RETURN data too large")?;
-        let script = ScriptBuilder::new()
-            .push_opcode(OP_RETURN)
-            .push_slice(push_bytes)
-            .into_script();
+        let script =
+            ScriptBuilder::new().push_opcode(OP_RETURN).push_slice(push_bytes).into_script();
         Ok(script)
     }
 }
@@ -1028,19 +966,12 @@ fn open_network_store(
     mode: &crate::cli::WalletMode,
 ) -> Result<UtxoStore> {
     fs::create_dir_all(root).with_context(|| {
-        format!(
-            "failed to create UTXO database root directory {}",
-            root.display()
-        )
+        format!("failed to create UTXO database root directory {}", root.display())
     })?;
 
     let path = utxo_db_path(root, network, mode)?;
-    fs::create_dir_all(&path).with_context(|| {
-        format!(
-            "failed to create UTXO database directory {}",
-            path.display()
-        )
-    })?;
+    fs::create_dir_all(&path)
+        .with_context(|| format!("failed to create UTXO database directory {}", path.display()))?;
 
     println!("Opening UTXO database at {} ", path.display());
 
@@ -1053,18 +984,12 @@ fn open_pending_tx_store(
     mode: &crate::cli::WalletMode,
 ) -> Result<PendingTransactionStore> {
     fs::create_dir_all(root).with_context(|| {
-        format!(
-            "failed to create pending transaction database root directory {}",
-            root.display()
-        )
+        format!("failed to create pending transaction database root directory {}", root.display())
     })?;
 
     let path = pending_tx_db_path(root, network, mode)?;
     fs::create_dir_all(&path).with_context(|| {
-        format!(
-            "failed to create pending transaction database directory {}",
-            path.display()
-        )
+        format!("failed to create pending transaction database directory {}", path.display())
     })?;
 
     PendingTransactionStore::open(&path)
@@ -1117,14 +1042,9 @@ mod tests {
             Some(generated.address.to_string())
         );
 
-        let private_key = wallet
-            .private_key()
-            .expect("generated key should be available");
+        let private_key = wallet.private_key().expect("generated key should be available");
         assert_eq!(private_key.to_wif(), generated.private_key_wif);
-        assert_eq!(
-            private_key.public_key(&wallet.secp).to_string(),
-            generated.public_key_hex
-        );
+        assert_eq!(private_key.public_key(&wallet.secp).to_string(), generated.public_key_hex);
 
         Ok(())
     }
@@ -1171,11 +1091,7 @@ mod tests {
             wallet.active_address().map(|addr| addr.to_string()),
             Some(imported_address.to_string())
         );
-        assert!(
-            wallet
-                .imported_addresses()
-                .contains(&generated.address.to_string())
-        );
+        assert!(wallet.imported_addresses().contains(&generated.address.to_string()));
 
         Ok(())
     }
@@ -1240,10 +1156,7 @@ mod tests {
 
         // verify replacement is using the same inputs
         assert_eq!(replacement.spent_utxos.len(), created.spent_utxos.len());
-        assert_eq!(
-            replacement.spent_utxos[0].outpoint,
-            created.spent_utxos[0].outpoint
-        );
+        assert_eq!(replacement.spent_utxos[0].outpoint, created.spent_utxos[0].outpoint);
 
         // simulate broadcasting the replacement
         wallet.commit_spend_pending(&replacement)?;
@@ -1254,10 +1167,7 @@ mod tests {
         assert!(wallet.get_pending_transaction(&replacement_txid).is_some());
 
         // verify change was added immediately after broadcast
-        assert_eq!(
-            wallet.utxos().len(),
-            if replacement.change_value > 0 { 1 } else { 0 }
-        );
+        assert_eq!(wallet.utxos().len(), if replacement.change_value > 0 { 1 } else { 0 });
 
         // confirm the replacement transaction
         wallet.confirm_transaction(replacement_txid)?;
@@ -1270,10 +1180,7 @@ mod tests {
         if replacement.change_value > 0 {
             // only change UTXO should remain
             assert_eq!(stored_entries.len(), 1);
-            assert_eq!(
-                stored_entries[0].1.state,
-                crate::utxo_store::UtxoState::Available
-            );
+            assert_eq!(stored_entries[0].1.state, crate::utxo_store::UtxoState::Available);
             assert_eq!(stored_entries[0].1.value_sat, replacement.change_value);
         } else {
             assert_eq!(stored_entries.len(), 0);

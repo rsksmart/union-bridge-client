@@ -589,11 +589,11 @@ success "Operators applied to stream $STREAM_ID"
 echo ""
 if ! wait_for_log_in_all_operators "CommitteeSetupFlow Done:" "$COMMITTEE_SETUP_MAX_BLOCKS"; then
     warn "Committee setup not completed by all operators within timeout"
-    exit 1
+    exit 1  
 fi
 echo ""
 
-# step 4: request pegin
+step 4: request pegin
 step "Step 4: Request Pegin"
 
 # Derive x-only public key for pegin (32 bytes with 0x prefix)

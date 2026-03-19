@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use bitcoin::secp256k1::Parity::Even;
 use bitcoin::secp256k1::XOnlyPublicKey;
 use bitcoin::{PublicKey, Txid};
@@ -25,6 +25,7 @@ use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_
 use crate::flows::common::{COMM_KEY_INDEX, build_communication_data};
 use crate::flows::pegin::utils::{get_accept_pegin_pid, get_temp_pegin_pid};
 use crate::store::{CoordinatorStoreApi, StoreKey};
+use crate::types::RejectPeginRegisteredData;
 
 const PEGIN_REQUEST: &str = "pegin_request";
 const PEGIN_ACCEPTED_VAR_NAME: &str = "PeginAccepted";
@@ -83,8 +84,16 @@ pub enum StepData {
     AcceptPeginSpvProof(BtcTxSPVProof),
     // Retry accept pegin without state transition
     RetryAcceptPegin,
+    // Reject pegin registered on RSK
+    RejectPeginRegistered(RejectPeginRegisteredData),
     // Pegin accepted
     PeginAccepted(PeginAccepted),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum FlowCompletion {
+    Accepted,
+    Rejected(RejectPeginRegisteredData),
 }
 
 /// Data structure used to send pegin request information to `BitVMX`
@@ -122,6 +131,7 @@ pub struct FlowContext {
     pub accept_pegin_tx_status: Option<TransactionStatus>,
     pub pegin_accepted: Option<PeginAccepted>,
     pub op_role: Option<ParticipantRole>,
+    completion: Option<FlowCompletion>,
 }
 
 /// Serializable state for persistence
@@ -185,6 +195,7 @@ where
                     accept_pegin_tx_status: None,
                     pegin_accepted: None,
                     op_role: None,
+                    completion: None,
                 },
             },
             store,
@@ -282,10 +293,25 @@ where
                     })?;
                 self.accept_pegin(spv_proof)?;
             }
-            Steps::Done => {
-                self.send_pegin_accepted_to_bitvmx()?;
-                info!("PeginFlow Done: {}", self.state.flow_id);
-            }
+            Steps::Done => match self.state.ctx.completion.as_ref() {
+                Some(FlowCompletion::Accepted) => {
+                    self.send_pegin_accepted_to_bitvmx()?;
+                    info!("PeginFlow Done: {} because pegin was accepted", self.state.flow_id);
+                }
+                Some(FlowCompletion::Rejected(reject_pegin_registered)) => {
+                    info!(
+                        "PeginFlow Finihsed: {} because pegin was rejected \
+                         (RejectPeginRegistered for request_pegin_txid {})",
+                        self.state.flow_id, reject_pegin_registered.request_pegin_txid
+                    );
+                }
+                None => {
+                    bail!(
+                        "PeginFlow {} reached Done without a completion outcome",
+                        self.state.flow_id
+                    );
+                }
+            },
         }
 
         // Persist state after successful step completion
@@ -386,14 +412,50 @@ where
                 info!("Retrying accept pegin for flow_id: {}", self.state.flow_id);
                 Ok(Steps::AcceptPegin)
             }
+            (_, StepData::RejectPeginRegistered(reject_pegin_registered))
+                if current_step != Steps::Done =>
+            {
+                self.validate_reject_pegin_registered(reject_pegin_registered)?;
+                info!(
+                    "PeginFlow {}: transitioning to Done because pegin was rejected for \
+                     request_pegin_txid {}",
+                    self.state.flow_id, reject_pegin_registered.request_pegin_txid
+                );
+                self.state.ctx.completion =
+                    Some(FlowCompletion::Rejected(reject_pegin_registered.clone()));
+                Ok(Steps::Done)
+            }
             (Steps::AcceptPegin, StepData::PeginAccepted(pegin_accepted)) => {
-                info!("PeginFlow Done: {}", self.state.flow_id);
+                info!(
+                    "PeginFlow {}: transitioning to Done because pegin was accepted",
+                    self.state.flow_id
+                );
                 trace!("PeginAccepted data: {pegin_accepted:?}");
                 self.state.ctx.pegin_accepted = Some(pegin_accepted.clone());
+                self.state.ctx.completion = Some(FlowCompletion::Accepted);
                 Ok(Steps::Done)
             }
             _ => Err(anyhow!("Invalid state transition: {current_step:?} with data {data:?}")),
         }
+    }
+
+    fn validate_reject_pegin_registered(
+        &self,
+        reject_pegin_registered: &RejectPeginRegisteredData,
+    ) -> Result<()> {
+        let expected_request_pegin_txid =
+            self.state.ctx.request_pegin_btc_tx_id.ok_or_else(|| {
+                anyhow!("Request pegin tx_id not available for flow_id {}", self.state.flow_id)
+            })?;
+
+        ensure!(
+            reject_pegin_registered.request_pegin_txid == expected_request_pegin_txid,
+            "RejectPeginRegistered request_pegin_txid mismatch: got {}, expected {}",
+            reject_pegin_registered.request_pegin_txid,
+            expected_request_pegin_txid
+        );
+
+        Ok(())
     }
 
     fn prepare_pegin_setup(&mut self) -> Result<()> {
@@ -807,6 +869,10 @@ where
         self.state.ctx.bitvmx_pegin_accepted.as_ref().map(|accepted| accepted.accept_pegin_txid)
     }
 
+    pub fn get_request_pegin_txid(&self) -> Option<Txid> {
+        self.state.ctx.request_pegin_btc_tx_id
+    }
+
     /// Check if the flow is completed
     pub fn is_done(&self) -> bool {
         self.state.ctx.step == Steps::Done
@@ -936,6 +1002,7 @@ mod tests {
             accept_pegin_tx_status: None,
             pegin_accepted: None,
             op_role,
+            completion: None,
         }
     }
 

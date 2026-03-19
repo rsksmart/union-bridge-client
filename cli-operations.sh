@@ -7,6 +7,7 @@
 #        ./cli-operations.sh user fund --env local
 #        ./cli-operations.sh user pegin -a 0x1234...cdef -v 100000
 #        ./cli-operations.sh user pegout -v 100000
+#        ./cli-operations.sh user reject-pegin --committee-id 182376596843486060923694608664362585331 --member-index 1 --request-pegin-txid 0x4e80f8119c7299ae9d85adad5f0a45baa69831069046569ef4ba9574249ee471
 #        ./cli-operations.sh --help
 
 set -euo pipefail
@@ -95,4 +96,3 @@ fi
 
 # forward all arguments to operations (using release binary directly)
 RUST_BACKTRACE=0 exec "$OPERATIONS_BIN" "$@"
-

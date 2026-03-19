@@ -19,6 +19,7 @@ pub enum StoreKey {
     SetupCommitteeFlow(Uuid),
     PeginFlow(Uuid),
     PegoutFlow(Uuid),
+    RejectPeginFlow(Uuid),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -26,6 +27,7 @@ pub enum StorePrefix {
     SetupCommitteeFlow,
     PeginFlow,
     PegoutFlow,
+    RejectPeginFlow,
 }
 
 impl StoreKey {
@@ -41,6 +43,9 @@ impl StoreKey {
             StoreKey::PegoutFlow(id) => {
                 format!("{}/{}", StorePrefix::PegoutFlow.value(), id)
             }
+            StoreKey::RejectPeginFlow(id) => {
+                format!("{}/{}", StorePrefix::RejectPeginFlow.value(), id)
+            }
         }
     }
 }
@@ -51,6 +56,7 @@ impl StorePrefix {
             StorePrefix::SetupCommitteeFlow => "setup_committee_flows".to_string(),
             StorePrefix::PeginFlow => "pegin_flows".to_string(),
             StorePrefix::PegoutFlow => "pegout_flows".to_string(),
+            StorePrefix::RejectPeginFlow => "reject_pegin_flows".to_string(),
         }
     }
 
@@ -72,6 +78,7 @@ impl StorePrefix {
             StorePrefix::SetupCommitteeFlow => StoreKey::SetupCommitteeFlow(flow_id),
             StorePrefix::PeginFlow => StoreKey::PeginFlow(flow_id),
             StorePrefix::PegoutFlow => StoreKey::PegoutFlow(flow_id),
+            StorePrefix::RejectPeginFlow => StoreKey::RejectPeginFlow(flow_id),
         }
     }
 }

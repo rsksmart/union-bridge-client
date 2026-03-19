@@ -78,6 +78,8 @@ pub struct BridgeConfig {
     pub coordinator: CoordinatorFlowConfig,
     /// Pegin flow settings
     pub pegin: PeginConfig,
+    /// Reject pegin flow settings
+    pub reject_pegin: RejectPeginConfig,
     /// Pegout flow settings
     pub pegout: PegoutConfig,
     /// Operator take / advance funds settings
@@ -146,6 +148,22 @@ pub struct PeginConfig {
 impl Default for PeginConfig {
     fn default() -> Self {
         Self { min_tx_confirmations: 1, blocks_delay_for_tx_check: 20 }
+    }
+}
+
+/// Reject pegin flow configuration
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct RejectPeginConfig {
+    /// Minimum BTC transaction confirmations for reject pegin (default: 1)
+    pub min_tx_confirmations: u32,
+    /// Blocks delay before rechecking transaction status (default: 20)
+    pub blocks_delay_for_tx_check: u32,
+}
+
+impl Default for RejectPeginConfig {
+    fn default() -> Self {
+        Self { min_tx_confirmations: 1, blocks_delay_for_tx_check: 6 }
     }
 }
 

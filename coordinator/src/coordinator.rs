@@ -22,6 +22,7 @@ use crate::flows::fund_bitvmx_flow::FundBitvmxProcessor;
 use crate::flows::operator_take::AdvanceFundsFlowProcessor;
 use crate::flows::pegin::pegin_processor::PeginFlowProcessor;
 use crate::flows::pegout::pegout_processor::PegoutFlowProcessor;
+use crate::flows::reject_pegin::RejectPeginProcessor;
 use crate::monitor::MonitorApi;
 use crate::store::CoordinatorStoreApi;
 
@@ -43,6 +44,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
     /// # Panics
     /// Panics if loading context from the database fails.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_lines)]
     pub fn new<CG: RskContractsGatewayApi + 'static>(
         rt_sync: &RuntimeSync,
         monitor: M,
@@ -140,6 +142,19 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                 &store_rc,
                 bitvmx_broker.as_ref(),
                 bridge_config.coordinator.required_confirmations,
+            )),
+            Box::new(RejectPeginProcessor::new(
+                bitvmx_broker.clone(),
+                Rc::clone(&contracts_arc),
+                rt_sync.clone(),
+                global_context.clone(),
+                &store_rc,
+                crate::flows::reject_pegin::RejectPeginProcessorConfig {
+                    min_tx_confirmations: bridge_config.reject_pegin.min_tx_confirmations,
+                    blocks_delay_for_tx_check: bridge_config.reject_pegin.blocks_delay_for_tx_check,
+                    required_confirmations: bridge_config.coordinator.required_confirmations,
+                },
+                native_bridge_verifier.clone(),
             )),
             Box::new(FundBitvmxProcessor::new(bitvmx_broker.clone(), bitcoin_network)),
         ];
@@ -372,8 +387,8 @@ pub(crate) mod tests {
         RegisterInputRevealedInput, RegisterInputRevealedOutput, RegisterOperatorTakeInput,
         RegisterOperatorTakeOutput, RegisterOperatorWonInput, RegisterOperatorWonOutput,
         RegisterPegoutInput, RegisterPegoutOutput, RegisterReimbursementKickoffInput,
-        RegisterReimbursementKickoffOutput, RequestPeginInput, RequestPeginOutput,
-        RequestPegoutInput, RequestPegoutOutput, TriggerOperatorTakeInput,
+        RegisterReimbursementKickoffOutput, RejectPeginInput, RejectPeginOutput, RequestPeginInput,
+        RequestPeginOutput, RequestPegoutInput, RequestPegoutOutput, TriggerOperatorTakeInput,
         TriggerOperatorTakeOutput,
     };
 
@@ -717,6 +732,11 @@ pub(crate) mod tests {
                 &self,
                 input: RegisterAdvanceFundsInput,
             ) -> Result<RegisterAdvanceFundsOutput, DomainErrors>;
+
+            async fn reject_pegin(
+                &self,
+                input: RejectPeginInput,
+            ) -> Result<RejectPeginOutput, DomainErrors>;
 
             async fn get_accept_pegin_txid(
                 &self,

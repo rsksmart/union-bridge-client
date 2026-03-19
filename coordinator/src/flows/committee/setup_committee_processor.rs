@@ -310,7 +310,7 @@ where
 
                 self.flows.insert(internal_id, flow);
             }
-            UserRequests::GetBitVMXFundingAddress => {
+            UserRequests::GetBitVMXFundingAddress | UserRequests::RejectPegin(_) => {
                 trace!("Ignoring user request: {req:?}");
             }
         }

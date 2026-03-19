@@ -6,9 +6,11 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
+use bitcoin::Txid;
 use common::msg_broker::broker::{BrokerServer, BrokerServerApi, Identifier};
 use common::msg_broker::types::FromServer;
 use common::shutdown_flag::ShutdownFlag;
+use common::types::CommitteeId;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -27,6 +29,15 @@ pub struct RequestPeginInput {
 pub struct UserRequestPegoutInput {
     pub amount_in_wei: u64,
     pub usr_pub_key: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RejectPeginInput {
+    #[serde(with = "common::types::committee_id_decimal_string")]
+    pub committee_id: CommitteeId,
+    pub member_index: usize,
+    #[serde(with = "common::types::txid_hex_string_optional_0x")]
+    pub request_pegin_txid: Txid,
 }
 
 pub struct Server {
@@ -74,6 +85,7 @@ impl Server {
             "/member",
             Router::new()
                 .route("/apply-stream", post(Self::apply_stream))
+                .route("/reject-pegin", post(Self::reject_pegin))
                 .route("/bitvmx-address", get(Self::bitvmx_address))
                 .layer(Extension(member_sync_gateway.clone())),
         );
@@ -124,6 +136,24 @@ impl Server {
 
         // TODO(Jira) send a proper type instead of Value in scope of https://rsklabs.atlassian.net/browse/UB-214
         let res = broker.send(&FromServer::UserRequest(payload), &destination);
+        match res {
+            Ok(_) => (StatusCode::OK, Json(json!({ "result": "ok" }))),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))),
+        }
+    }
+
+    async fn reject_pegin(
+        Extension(broker): Extension<Arc<BrokerServer>>,
+        Extension(destination): Extension<Identifier>,
+        Json(payload): Json<RejectPeginInput>,
+    ) -> impl IntoResponse {
+        info!(
+            "Received reject pegin request for destination: {} with payload: {:?}",
+            destination, payload
+        );
+
+        let res =
+            broker.send(&FromServer::UserRequest(json!({ "RejectPegin": payload })), &destination);
         match res {
             Ok(_) => (StatusCode::OK, Json(json!({ "result": "ok" }))),
             Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))),
