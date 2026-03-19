@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use alloy_primitives::{Address, Bytes, FixedBytes, U256};
+use alloy_primitives::{Address, Bytes, U256};
 use anyhow::{Context, Result, bail, ensure};
-use bitcoin::key::Parity::Even;
-use bitcoin::{Amount, Network, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
+use bitcoin::{Amount, Network, PublicKey, ScriptBuf, Txid};
 use common::msg_broker::bitvmx_types::{
     CommsAddress, Destination, IncomingBitVMXApiMessages, OP_COSIGN_UTXOS, OutputType, PartialUtxo,
     ParticipantRole, PubKeyHash, SignedPublicKey, Utxo, VariableTypes, WT_INIT_CHALLENGE_UTXOS,
@@ -41,7 +40,8 @@ use crate::flows::committee::dispute_channel_setup::{
 };
 use crate::flows::committee::dispute_core_setup::{AggregatedKeys, DisputeCoreSetup};
 use crate::flows::common::{
-    COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, TAKE_KEY_INDEX, build_communication_data,
+    COMM_KEY_INDEX, ContractPubKeyParser, DISPUTE_KEY_INDEX, GlobalContext, TAKE_KEY_INDEX,
+    build_communication_data,
 };
 use crate::flows::errors::{FailableFlow, FlowError, FlowResultExt};
 use crate::store::{CoordinatorStoreApi, StoreKey};
@@ -928,23 +928,12 @@ where
             "Parsing {key_type} key for member {member_addr} (len={}): {key_str}",
             key_str.len()
         );
-        let key_bytes: FixedBytes<32> = key_str.parse().with_context(|| {
+        ContractPubKeyParser::from_hex(key_str).with_context(|| {
             format!(
-                "Failed to parse {key_type} key to FixedBytes<32> for member {member_addr} (len={})",
+                "Failed to parse {key_type} key from committee registry for member {member_addr} (len={})",
                 key_str.len()
             )
-        })?;
-        let x_only_key = XOnlyPublicKey::from_slice(key_bytes.as_slice()).with_context(|| {
-            format!("Failed to parse {key_type} x-only key for member {member_addr}")
-        })?;
-
-        trace!("Got {key_type} key for member {member_addr}");
-
-        // BitVMX adjusts parity to Even, so we do the same here
-        let secp_key = x_only_key.public_key(Even);
-        let member_key = PublicKey::new(secp_key);
-
-        Ok(member_key)
+        })
     }
 
     fn build_member_funding_utxo(

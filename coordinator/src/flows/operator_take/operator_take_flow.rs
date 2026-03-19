@@ -2,8 +2,6 @@ use std::rc::Rc;
 
 use anyhow::{Context, Result, anyhow};
 use bitcoin::PublicKey;
-use bitcoin::key::Parity::Even;
-use bitcoin::secp256k1::XOnlyPublicKey;
 use common::msg_broker::bitvmx_types::{
     AdvanceFundsRequest, BtcTxSPVProof, CommsAddress, FundsAdvanceSPV, IncomingBitVMXApiMessages,
     VariableTypes,
@@ -17,6 +15,7 @@ use transaction_dispatcher::types::{RegisterAdvanceFundsInput, RequestPeginInput
 use union_contracts::bindings::pegout_manager::PegoutManager::PegoutRegistered;
 use uuid::Uuid;
 
+use crate::flows::common::ContractPubKeyParser;
 use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
 use crate::types::OperatorTakeTriggeredEvent;
 
@@ -80,7 +79,8 @@ impl OperatorTakeTriggerData {
         let user_pubkey = PublicKey::from_slice(inner.pegoutInfo.userPubKey.as_ref())?;
         let take_operator_address = Address::from(inner.pegoutInfo.takeOperatorAddress);
         let operator_take_pubkey =
-            xonly_to_compressed_pubkey(inner.pegoutInfo.operatorTakePubKey.as_ref())?;
+            ContractPubKeyParser::from_bytes(inner.pegoutInfo.operatorTakePubKey.as_ref())
+                .context("Failed to parse operator take public key from event")?;
         Ok(Self {
             pegout_txid,
             pegout_id,
@@ -575,13 +575,6 @@ fn format_step(step: Steps) -> &'static str {
         Steps::RegisterOperatorTake => "RegisterOperatorTake",
         Steps::Done => "Done",
     }
-}
-
-fn xonly_to_compressed_pubkey(bytes: &[u8]) -> Result<PublicKey> {
-    let xonly =
-        XOnlyPublicKey::from_slice(bytes).context("Failed to parse x-only public key bytes")?;
-    let secp_pubkey = xonly.public_key(Even);
-    Ok(PublicKey::new(secp_pubkey))
 }
 
 #[cfg(test)]

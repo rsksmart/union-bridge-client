@@ -1,8 +1,6 @@
 use std::rc::Rc;
 
 use anyhow::{Context, Result, anyhow, bail};
-use bitcoin::secp256k1::Parity::Even;
-use bitcoin::secp256k1::XOnlyPublicKey;
 use bitcoin::{PublicKey, Txid};
 use common::msg_broker::bitvmx_types::{
     ACCEPT_PEGIN_TX, BtcTxSPVProof, CommsAddress, IncomingBitVMXApiMessages, ParticipantRole,
@@ -22,7 +20,7 @@ use union_contracts::bindings::pegin_manager::PeginManager::{PeginAccepted, Pegi
 use uuid::Uuid;
 
 use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
-use crate::flows::common::{COMM_KEY_INDEX, build_communication_data};
+use crate::flows::common::{COMM_KEY_INDEX, ContractPubKeyParser, build_communication_data};
 use crate::flows::pegin::utils::{get_accept_pegin_pid, get_temp_pegin_pid};
 use crate::store::{CoordinatorStoreApi, StoreKey};
 
@@ -683,11 +681,8 @@ where
     }
 
     fn build_reimbursement_pubkey(event: &PeginRequested) -> Result<PublicKey> {
-        let reimbursement_xonly_key =
-            XOnlyPublicKey::from_slice(event.requestPeginInfo.btcReimbursementPubKey.as_slice())
-                .context("Failed to parse reimbursement public key from pegin event")?;
-        let reimbursement_secp_key = reimbursement_xonly_key.public_key(Even);
-        Ok(PublicKey::new(reimbursement_secp_key))
+        ContractPubKeyParser::from_bytes(event.requestPeginInfo.btcReimbursementPubKey.as_slice())
+            .context("Failed to parse reimbursement public key from pegin event")
     }
 
     fn get_committee_output(&mut self, committee_id: CommitteeId) -> Result<GetCommitteeOutput> {
