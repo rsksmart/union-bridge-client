@@ -142,7 +142,7 @@ if [[ "${IS_UP_COMMAND}" == true && "${CONTRACTS_IMAGE_TAG}" != "${CONTRACTS_TAG
     DIGEST_BEFORE=$(docker image inspect --format '{{index .RepoDigests 0}}' "$CONTRACTS_IMAGE" 2>/dev/null || true)
   fi
   echo "Pulling contracts image '$CONTRACTS_IMAGE'..."
-  if ! docker pull "$CONTRACTS_IMAGE" --platform linux/amd64; then
+  if ! docker pull --platform linux/amd64 "$CONTRACTS_IMAGE" ; then
     echo "Error: Failed to pull contracts image '$CONTRACTS_IMAGE'."
     echo "  The image may not exist in the registry for this tag."
     echo "  To build from source instead, use --contracts-tag ${CONTRACTS_TAG_LOCAL_BUILD}"
