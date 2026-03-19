@@ -77,12 +77,14 @@ async fn main() -> Result<()> {
 
     let broker_port = config.user_api_config.notifier.port;
     let broker_key_path = config.key_store.broker_key_path.clone();
+    let broker_storage_path = config.user_api_config.notifier.broker_storage_path.clone();
 
-    let broker_server =
-        tokio::task::spawn_blocking(move || BrokerServer::new(broker_port, &broker_key_path))
-            .await
-            .context("Failed to spawn blocking task")?
-            .context("Failed to create BrokerServer")?;
+    let broker_server = tokio::task::spawn_blocking(move || {
+        BrokerServer::new(broker_port, &broker_key_path, &broker_storage_path)
+    })
+    .await
+    .context("Failed to spawn blocking task")?
+    .context("Failed to create BrokerServer")?;
 
     let broker_drop_guard = BrokerDropGuard::new(Arc::new(broker_server));
     info!("Broker Server started on {broker_port}");

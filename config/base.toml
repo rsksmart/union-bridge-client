@@ -149,6 +149,7 @@ min_tx_confirmations = 2
 [block_indexer]
 
 notifier.port = 10001
+notifier.broker_storage_path = "/{BASE_STORAGE_PATH}/.union_bridge/database/multi-client-1/block_indexer_broker"
 
 # ═══════════════════════════════════════════════════════
 # Log Indexer
@@ -157,6 +158,7 @@ notifier.port = 10001
 [log_indexer]
 
 notifier.port = 20001
+notifier.broker_storage_path = "/{BASE_STORAGE_PATH}/.union_bridge/database/multi-client-1/log_indexer_broker"
 
 # ═══════════════════════════════════════════════════════
 # Transaction Dispatcher
@@ -174,4 +176,5 @@ transaction.gas_bumps_t1 = 3
 
 coordinator.broker.client_id = 101
 notifier.port = 30001
+notifier.broker_storage_path = "/{BASE_STORAGE_PATH}/.union_bridge/database/multi-client-1/user_api_broker"
 http.port = 40001
