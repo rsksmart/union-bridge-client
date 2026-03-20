@@ -733,3 +733,7 @@ The file [rusty-hook.toml](rusty-hook.toml) will be used for hook configuration.
 
 For information about the GitHub Actions workflows in this project, including how to test them locally with `act`, see
 [.github/WORKFLOWS.md](.github/WORKFLOWS.md).
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
