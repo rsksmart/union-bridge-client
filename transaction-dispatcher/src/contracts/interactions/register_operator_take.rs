@@ -40,29 +40,29 @@ mod tests {
     use std::str::FromStr;
 
     use alloy_primitives::TxHash;
-    use union_contracts::bindings::peg_manager::PegManager::{
-        PegManagerErrors, PeginAlreadyRequested,
+    use union_contracts::bindings::pegin_manager::PeginManager::{
+        PeginAlreadyRequested, PeginManagerErrors,
     };
 
     use crate::contracts::common::tests::generate_contract_revert_error;
     use crate::contracts::interactions::register_operator_take::{
         RegisterOperatorTakeInvoke, RegisterOperatorTakeOutput,
     };
-    use crate::contracts::peg_manager::MockPegManagerContractApi;
+    use crate::contracts::pegout_manager::MockPegoutManagerContractApi;
     use crate::rsk_gateway::DomainErrors;
     use crate::types::{
         BitcoinTransaction, BitcoinTransactionIn, BitcoinTransactionOut, RegisterOperatorTakeInput,
     };
 
-    impl RegisterOperatorTakeInvoke<MockPegManagerContractApi> {
-        fn new_for_tests(contract: MockPegManagerContractApi) -> Self {
+    impl RegisterOperatorTakeInvoke<MockPegoutManagerContractApi> {
+        fn new_for_tests(contract: MockPegoutManagerContractApi) -> Self {
             RegisterOperatorTakeInvoke { contract, gas_bumps: 3 }
         }
     }
 
     #[tokio::test]
     async fn test_run_successful() {
-        let mut mock = MockPegManagerContractApi::new();
+        let mut mock = MockPegoutManagerContractApi::new();
         let input = get_base_input();
 
         let expected = RegisterOperatorTakeOutput {
@@ -86,12 +86,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_fail_revert() {
-        let mut mock = MockPegManagerContractApi::new();
+        let mut mock = MockPegoutManagerContractApi::new();
         let input = get_base_input();
 
         mock.expect_invoke_register_operator_take()
             .returning(move |_, _| {
-                let err = PegManagerErrors::PeginAlreadyRequested(PeginAlreadyRequested {
+                let err = PeginManagerErrors::PeginAlreadyRequested(PeginAlreadyRequested {
                     btcTxid: "0x6b8f74fe9c66c9c3a6c3d0b7111d9b6aaac0ea3db1bdbd6a38eb0e7d8b8bba3e"
                         .parse()
                         .expect("Failed to parse tx hash"),
@@ -108,7 +108,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_fail_no_revert() {
-        let mut mock = MockPegManagerContractApi::new();
+        let mut mock = MockPegoutManagerContractApi::new();
         let input = get_base_input();
 
         mock.expect_invoke_register_operator_take()
@@ -130,7 +130,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_fail_parse() {
-        let mock = MockPegManagerContractApi::new();
+        let mock = MockPegoutManagerContractApi::new();
         let mut input = get_base_input();
         input.block_hash = "not_valid_hex".to_string();
 
