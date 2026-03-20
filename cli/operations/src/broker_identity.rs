@@ -42,7 +42,7 @@ fn provision_identity(
         format!("Failed to create broker identity directory {}", service_dir.display())
     })?;
 
-    let identity_name = format!("multi-client-{operator_id}");
+    let identity_name = format!("op_{operator_id}");
     let pem_path = service_dir.join(format!("{identity_name}.pem"));
     let pubkey_hash_path = service_dir.join(format!("{identity_name}.pubkey_hash"));
 

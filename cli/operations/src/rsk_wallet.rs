@@ -465,12 +465,12 @@ fn setup_wallets_create(num_wallets: u8, base_storage_path: &str) -> Result<()> 
 
     for i in 1..=num_wallets {
         // create member wallet
-        let member_name = format!("multi-client-{}-member", i);
+        let member_name = format!("op_{}-member", i);
         create_or_use_keystore(&keystore_base_path, &member_name, &password)
             .with_context(|| format!("failed to create member wallet for client {}", i))?;
 
         // create user wallet
-        let user_name = format!("multi-client-{}-user", i);
+        let user_name = format!("op_{}-user", i);
         create_or_use_keystore(&keystore_base_path, &user_name, &password)
             .with_context(|| format!("failed to create user wallet for client {}", i))?;
     }

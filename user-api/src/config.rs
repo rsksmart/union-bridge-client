@@ -69,7 +69,7 @@ mod tests {
         assert!(config
             .user_api_config
             .broker_key_path
-            .ends_with("/.union_bridge/broker/user-api/multi-client-1.pem"));
+            .ends_with("/.union_bridge/broker/user-api/op_1.pem"));
         assert_eq!(30001, config.user_api_config.notifier.port);
         assert_eq!(40001, config.user_api_config.http.port);
     }

@@ -515,10 +515,10 @@ fn fresh_cleanup(client_id: Option<u8>) -> Result<()> {
 
     let path_to_clean = if let Some(id) = client_id {
         // Clean only the specific client's paths
-        format!("{}/.union_bridge/database/multi-client/{}", base_storage_path, id)
+        format!("{}/.union_bridge/database/op_{}", base_storage_path, id)
     } else {
         // Clean the entire multi-client directory (all clients)
-        format!("{}/.union_bridge/database/multi-client", base_storage_path)
+        format!("{}/.union_bridge/database", base_storage_path)
     };
 
     if Path::new(&path_to_clean).exists() {
@@ -695,7 +695,7 @@ mod tests {
     fn test_build_env_for_client_reads_pubkey_hash_file_references() {
         let _guard = TEST_MUTEX.lock().expect("lock");
         let base_storage_path = make_temp_dir();
-        let hash_rel_path = ".union_bridge/broker/block-indexer/multi-client-1.pubkey_hash";
+        let hash_rel_path = ".union_bridge/broker/block-indexer/op_1.pubkey_hash";
         let hash_abs_path = base_storage_path.join(hash_rel_path);
         fs::create_dir_all(hash_abs_path.parent().expect("parent")).expect("mkdir");
         fs::write(&hash_abs_path, "abc123\n").expect("write hash file");
@@ -705,11 +705,11 @@ mod tests {
         let env_map = HashMap::from([
             (
                 "UB__COORDINATOR__BLOCKS__PUBKEY_HASH_FILE_1".to_string(),
-                ".union_bridge/broker/block-indexer/multi-client-1.pubkey_hash".to_string(),
+                ".union_bridge/broker/block-indexer/op_1.pubkey_hash".to_string(),
             ),
             (
                 "UB__BLOCK_INDEXER__BROKER_KEY_PATH_1".to_string(),
-                ".union_bridge/broker/block-indexer/multi-client-1.pem".to_string(),
+                ".union_bridge/broker/block-indexer/op_1.pem".to_string(),
             ),
         ]);
 
@@ -722,7 +722,7 @@ mod tests {
         assert!(envs.contains(&(
             "UB__BLOCK_INDEXER__BROKER_KEY_PATH".to_string(),
             base_storage_path
-                .join(".union_bridge/broker/block-indexer/multi-client-1.pem")
+                .join(".union_bridge/broker/block-indexer/op_1.pem")
                 .display()
                 .to_string(),
         )));

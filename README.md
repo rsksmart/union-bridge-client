@@ -190,11 +190,11 @@ broker identities for:
 
 This command creates or reuses stable files under `BASE_STORAGE_PATH`, for example:
 
-- `${BASE_STORAGE_PATH}/.union_bridge/broker/block-indexer/multi-client-1.pem`
-- `${BASE_STORAGE_PATH}/.union_bridge/broker/block-indexer/multi-client-1.pubkey_hash`
-- `${BASE_STORAGE_PATH}/.union_bridge/broker/log-indexer/multi-client-1.pem`
-- `${BASE_STORAGE_PATH}/.union_bridge/broker/user-api/multi-client-1.pem`
-- `${BASE_STORAGE_PATH}/.union_bridge/broker/coordinator/multi-client-1.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/broker/block-indexer/op_1.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/broker/block-indexer/op_1.pubkey_hash`
+- `${BASE_STORAGE_PATH}/.union_bridge/broker/log-indexer/op_1.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/broker/user-api/op_1.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/broker/coordinator/op_1.pem`
 
 The `.pubkey_hash` files are generated from the created PEMs and are consumed by the local launcher so the
 coordinator and user-api use explicit remote identities without duplicating raw hash values in `multiclient.env`.
@@ -212,8 +212,8 @@ identity.
 For example:
 
 ```bash
-cat ${BASE_STORAGE_PATH}/.union_bridge/broker/coordinator/multi-client-1.pubkey_hash
-cat ${BASE_STORAGE_PATH}/.union_bridge/broker/coordinator/multi-client-2.pubkey_hash
+cat ${BASE_STORAGE_PATH}/.union_bridge/broker/coordinator/op_1.pubkey_hash
+cat ${BASE_STORAGE_PATH}/.union_bridge/broker/coordinator/op_2.pubkey_hash
 ```
 
 **2. Update BitVMX client config files manually, operator by operator**
@@ -230,10 +230,10 @@ components:
 
 Examples:
 
-- `config/op_1.yaml` -> coordinator `multi-client-1.pubkey_hash`
-- `config/op_2.yaml` -> coordinator `multi-client-2.pubkey_hash`
-- `config/op_3.yaml` -> coordinator `multi-client-3.pubkey_hash`
-- `config/op_4.yaml` -> coordinator `multi-client-4.pubkey_hash`
+- `config/op_1.yaml` -> coordinator `op_1.pubkey_hash`
+- `config/op_2.yaml` -> coordinator `op_2.pubkey_hash`
+- `config/op_3.yaml` -> coordinator `op_3.pubkey_hash`
+- `config/op_4.yaml` -> coordinator `op_4.pubkey_hash`
 
 This step is still manual for local BitVMX setup. Union Client and BitVMX do not share the same broker keystore.
 This ensures that messages from the BitVMX client are correctly routed back to the coordinator.

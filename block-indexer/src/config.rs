@@ -60,14 +60,14 @@ mod tests {
         assert_eq!(10001, config.block_indexer_config.notifier.port);
         assert_eq!(IndexerStartFrom::Hash, config.indexer.start_from);
         assert!(!config.indexer.storage.path.contains("{BASE_STORAGE_PATH}"));
-        assert!(config.indexer.storage.path.ends_with("/.union_bridge/database/multi-client-1"));
+        assert!(config.indexer.storage.path.ends_with("/.union_bridge/database/op_1"));
         assert_eq!(1000, config.indexer.cache.size);
         assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
         assert!(
             config
                 .block_indexer_config
                 .broker_key_path
-                .ends_with("/.union_bridge/broker/block-indexer/multi-client-1.pem")
+                .ends_with("/.union_bridge/broker/block-indexer/op_1.pem")
         );
     }
 
