@@ -474,8 +474,6 @@ where
         let take_aggregated_key = Self::build_take_aggregated_key(committee_output)?;
 
         let pegout_sighash: Vec<u8> = event.pegoutSignatureData.signatureHash.to_vec();
-        // TODO(UBC-827): v0.4.0-alpha removed pegoutId from PegoutRequested event; verify correct field usage.
-        // Determine how pegout_id should be derived in the new contract version.
         let pegout_id: Vec<u8> = event.pegoutSignatureData.txid.to_vec();
 
         let slot_index =

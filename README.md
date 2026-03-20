@@ -35,4 +35,4 @@ For Docker (blockchains, BitVMX, full operator stack): **[docker/README.md](dock
 
 ## License
 
-TBD
+This project is licensed under the [MIT License](LICENSE).

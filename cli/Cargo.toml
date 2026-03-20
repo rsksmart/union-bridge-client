@@ -4,6 +4,7 @@ members = ["run", "operations", "bitcoin-wallet", "mocks"]
 
 [workspace.package]
 version = "0.2.0"
+license = "MIT"
 
 [workspace.dependencies]
 anyhow = "1.0.94"
