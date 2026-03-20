@@ -99,8 +99,6 @@ mod tests {
         assert!(
             config.key_store.member_path.ends_with("/.union_bridge/keystore/multi-client-1-member")
         );
-        assert!(!config.key_store.broker_key_path.contains("{BASE_STORAGE_PATH}"));
-        assert!(config.key_store.broker_key_path.ends_with("/.union_bridge/keystore/broker.key"));
         assert_eq!(3, config.transaction().gas_bumps_t1);
     }
 

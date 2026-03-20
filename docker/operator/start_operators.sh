@@ -372,6 +372,7 @@ if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
   fi
 fi
 
+# TODO(iago) review this, it's mutating config files that are git tracked
 sync_regtest_bitvmx_heights() {
   local cfg_dir="${SCRIPT_DIR}/../bitvmx-client/config/regtest/client/config"
   local sample_cfg="${cfg_dir}/op_1.yaml"
