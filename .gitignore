@@ -16,7 +16,8 @@ config/qa-coordinator
 **/.llmignore
 test_keystore
 *.log
-docs/
+docs/local/
+docs/node_modules/
 .junie/memory
 .union_bridge/
 broker/

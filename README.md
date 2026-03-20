@@ -40,12 +40,17 @@ protocol.
 
 TODO: better document this
 
-### Flows Coordination
+### E2E Documentation
 
-Implemented under the `coordinator` crate, this component orchestrates the different flows of the Union and interacts
-with BitVMX.
+You can find advanced documentation on the E2E flows and other topics in the [docs/e2e/README.md](docs/e2e/README.md).
 
-TODO: better document this
+- [Union Bridge Flows](docs/e2e/flows.md)
+- [BitVMX messages listened to by Union Client](docs/e2e/bitvmx-messages-listened-by-union-client.md)
+- [Contract functions called by Union Client](docs/e2e/rootstock-contract-functions-called-by-union-client.md)
+- [Contract events listened to by Union Client](docs/e2e/rootstock-contract-events-listened-by-union-client.md)
+- [Parameter sources and mappings](docs/e2e/parameter-sources-and-mappings.md)
+- [BitVMX actions triggered by Union Client](docs/e2e/bitvmx-actions-triggered-by-union-client.md)
+- [Bitcoin and Rootstock confirmations, retry delays, and timeouts](docs/e2e/confirmations-retries-and-timeouts.md)
 
 ### Summary
 
