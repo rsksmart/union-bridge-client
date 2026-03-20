@@ -8,7 +8,11 @@ anyhow = { workspace = true }
 clap = { workspace = true, features = ["env"] }
 key-manager = { workspace = true }
 reqwest = { workspace = true }
+rpassword = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-rpassword = { workspace = true }
+sha2 = "0.10.9"
 tokio = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.16.0"

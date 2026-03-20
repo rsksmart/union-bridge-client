@@ -6,6 +6,7 @@
 //! ## setup
 //! initial configuration commands for local development
 //! - `create-rootstock-wallets`: creates rootstock keystores for local multi-client deployments
+//! - `create-broker-identities`: creates local broker identities per operator
 //!
 //! ## operator
 //! commands for operator wallet management and committee registration
@@ -37,6 +38,7 @@
 //! setup local environment:
 //! ```bash
 //! cargo run -- setup create-rootstock-wallets
+//! cargo run -- setup create-broker-identities
 //! ```
 //!
 //! fund operator wallets (local):
@@ -78,6 +80,7 @@
 //! ```
 
 mod bitcoin_wallet;
+mod broker_identity;
 mod committee;
 mod constants;
 mod environments;
@@ -86,7 +89,7 @@ mod pegout;
 mod rsk_wallet;
 mod utils;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
 
 use crate::committee::CommitteeRole;
@@ -124,6 +127,9 @@ enum SetupCommands {
     /// Create Rootstock wallets for local multi-client deployment
     #[command(name = "create-rootstock-wallets")]
     CreateRootstockWallets,
+    /// Create broker identities for local multi-client deployment
+    #[command(name = "create-broker-identities")]
+    CreateBrokerIdentities,
 }
 
 #[derive(Debug, Subcommand, Clone)]
@@ -259,6 +265,44 @@ async fn main() -> Result<()> {
                     base_storage_path.as_deref(),
                 )?;
             }
+            SetupCommands::CreateBrokerIdentities => {
+                let base_storage_path = std::env::var("BASE_STORAGE_PATH").map_err(|_| {
+                    anyhow!(
+                        "BASE_STORAGE_PATH environment variable is required (e.g., export BASE_STORAGE_PATH=/Users/username)"
+                    )
+                })?;
+
+                let identities = broker_identity::create_local_broker_identities(
+                    std::path::Path::new(&base_storage_path),
+                    &operator_ids(),
+                )?;
+
+                for identity in &identities {
+                    let status = if identity.created { "created" } else { "reused" };
+                    println!(
+                        "[{status}] operator={} service={} pem={} pubkey_hash_file={} pubkey_hash={}",
+                        identity.operator_id,
+                        identity.service,
+                        identity.pem_path.display(),
+                        identity.pubkey_hash_path.display(),
+                        identity.pubkey_hash
+                    );
+                }
+
+                println!();
+                println!(
+                    "[One time Op] Local BitVMX Client config is still manual. Update each operator's \
+config/op_N.yaml so `components.l2.pubkey_hash` matches that operator's coordinator pubkey_hash:"
+                );
+                for identity in
+                    identities.iter().filter(|identity| identity.service == "coordinator")
+                {
+                    println!(
+                        "  - operator {}: config/op_{}.yaml -> components.l2.pubkey_hash = {}",
+                        identity.operator_id, identity.operator_id, identity.pubkey_hash
+                    );
+                }
+            }
         },
         Commands::Operator { command } => match command {
             OperatorCommands::Fund { env, execute, fund_amount } => {
@@ -267,12 +311,7 @@ async fn main() -> Result<()> {
                 println!("=== Funding Bitcoin addresses ===");
                 bitcoin_wallet::handle_bitcoin_funding(env, execute, fund_amount).await?;
             }
-            OperatorCommands::Whitelist {
-                env,
-                contract_address,
-                from_address,
-                private_key,
-            } => {
+            OperatorCommands::Whitelist { env, contract_address, from_address, private_key } => {
                 rsk_wallet::handle_whitelist(
                     env,
                     &contract_address,

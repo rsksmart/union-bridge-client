@@ -5,7 +5,7 @@ use std::process::Command;
 use std::time::Duration;
 use tokio::time::sleep;
 
-use crate::constants::{ONE_OPERATOR_COMPOSE_PROJECT, REMOTE_SSH_USER, operator_ids};
+use crate::constants::{operator_ids, ONE_OPERATOR_COMPOSE_PROJECT, REMOTE_SSH_USER};
 use crate::environments::*;
 use crate::utils::command_to_string;
 

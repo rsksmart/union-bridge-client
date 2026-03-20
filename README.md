@@ -171,53 +171,72 @@ first.
 Under the directory specified in the `BASE_STORAGE_PATH` env, run the following command to create the base directory:
 
 ```bash
-mkdir -p .union_bridge/keystore
+mkdir -p ${BASE_STORAGE_PATH}/.union_bridge/keystore
 ```
 
-#### Generating the Broker Key
+#### Creating Broker Identities
 
-The Union Bridge Client uses TLS for secure communication between components. You need to generate a broker key that
-will be used for deterministic identity in broker communications.
+The Union Bridge Client uses explicit broker identities in local multi-client mode. Each operator creates separate
+broker identities for:
 
-Generate the broker key:
+- `block-indexer` broker server
+- `log-indexer` broker server
+- `user-api` broker server
+- `coordinator` broker client
 
 ```bash
-openssl genpkey -algorithm RSA -out ${BASE_STORAGE_PATH}/.union_bridge/keystore/broker.key -pkeyopt rsa_keygen_bits:2048
+./cli-operations.sh setup create-broker-identities
 ```
 
-This key is used by:
-- The coordinator to authenticate with the block-indexer, log-indexer, and user-api brokers
-- The coordinator to connect to the BitVMX client broker
+This command creates or reuses stable files under `BASE_STORAGE_PATH`, for example:
 
-**Important**: The broker key determines the client's `pubkey_hash` identity. You'll need this value to configure the
-BitVMX client (see [Configuring BitVMX Client](#configuring-bitvmx-client) below).
+- `${BASE_STORAGE_PATH}/.union_bridge/broker/block-indexer/multi-client-1.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/broker/block-indexer/multi-client-1.pubkey_hash`
+- `${BASE_STORAGE_PATH}/.union_bridge/broker/log-indexer/multi-client-1.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/broker/user-api/multi-client-1.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/broker/coordinator/multi-client-1.pem`
+
+The `.pubkey_hash` files are generated from the created PEMs and are consumed by the local launcher so the
+coordinator and user-api use explicit remote identities without duplicating raw hash values in `multiclient.env`.
+The command also prints the coordinator `pubkey_hash` for each operator so you can copy the correct value into the
+matching local BitVMX Client config.
 
 #### Configuring BitVMX Client
 
 The BitVMX client needs to know where to send messages back to the Union Bridge Client. You must configure the
-`components.l2.pubkey_hash` in the BitVMX client config files to match your Union Bridge Client's broker identity.
+`components.l2.pubkey_hash` in the BitVMX client config files to match the operator's Union Bridge coordinator client
+identity.
 
-**1. Find your broker's pubkey_hash**
+**1. Read each operator's coordinator pubkey_hash**
 
-When you start the coordinator, it logs its identity:
+For example:
+
+```bash
+cat ${BASE_STORAGE_PATH}/.union_bridge/broker/coordinator/multi-client-1.pubkey_hash
+cat ${BASE_STORAGE_PATH}/.union_bridge/broker/coordinator/multi-client-2.pubkey_hash
 ```
-BitVmxBrokerClient identity: pubkey_hash=a4f99c4236e46608bd558ef135df0122535d8dd4db073bc87e4b852a9a0afafd
-```
 
-**2. Update BitVMX client config files**
+**2. Update BitVMX client config files manually, operator by operator**
 
-In your `rust-bitvmx-workspace/rust-bitvmx-client/config/` directory, update the `components.l2.pubkey_hash` in all
-relevant config files (`op_1.yaml`, `op_2.yaml`, `op_3.yaml`, `op_4.yaml`, `development.yaml`, etc.):
+In your `rust-bitvmx-workspace/rust-bitvmx-client/config/` directory, update each `config/op_N.yaml` so
+`components.l2.pubkey_hash` matches the same operator's Union Bridge coordinator identity:
 
 ```yaml
 components:
   l2:
-    pubkey_hash: <your-broker-pubkey-hash>  # Must match Union Bridge Client's broker identity
+    pubkey_hash: <operator-coordinator-pubkey-hash>
     id: 0
 ```
 
-This ensures that messages from the BitVMX client are correctly routed back to the
-coordinator.
+Examples:
+
+- `config/op_1.yaml` -> coordinator `multi-client-1.pubkey_hash`
+- `config/op_2.yaml` -> coordinator `multi-client-2.pubkey_hash`
+- `config/op_3.yaml` -> coordinator `multi-client-3.pubkey_hash`
+- `config/op_4.yaml` -> coordinator `multi-client-4.pubkey_hash`
+
+This step is still manual for local BitVMX setup. Union Client and BitVMX do not share the same broker keystore.
+This ensures that messages from the BitVMX client are correctly routed back to the coordinator.
 
 #### DRP Program Files
 
@@ -397,7 +416,8 @@ instance (1-4). This ensures no collisions between different clients for:
 - Broker ports (block, log, user)
 - HTTP server ports
 - Database paths
-- Keystore paths
+- Rootstock keystore paths
+- Broker identity paths and broker pubkey_hash file references
 - BitVMX broker ports
 
 You can run 4 clients simultaneously using the `./cli-run.sh` script:
@@ -424,6 +444,7 @@ bash ./shell/script/deploy/deploy-local.sh
 
 # 4. Create and fund wallets
 ./cli-operations.sh setup create-rootstock-wallets
+./cli-operations.sh setup create-broker-identities
 ./cli-operations.sh operator fund
 
 # 5. Whitelist member addresses (uses CommitteeRegistry address from config/base.toml)

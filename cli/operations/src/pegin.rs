@@ -20,7 +20,6 @@ struct PeginAddressResponse {
     enabler_script_pubkey: Option<String>,
 }
 
-
 #[allow(clippy::too_many_arguments)]
 pub async fn create_pegin_tx(
     environment: Environment,
@@ -96,7 +95,13 @@ pub async fn create_pegin_tx(
     if execute {
         println!("Executing wallet command programmatically...");
         println!();
-        execute_wallet_command(value, packet_number, &pegin_address, &rsk_address, &enabler_script_pubkey)?;
+        execute_wallet_command(
+            value,
+            packet_number,
+            &pegin_address,
+            &rsk_address,
+            &enabler_script_pubkey,
+        )?;
     } else {
         println!("Now run the following command in bitcoin-wallet CLI (user mode):");
         println!();
@@ -129,7 +134,12 @@ fn execute_wallet_command(
 
     println!(
         "Running: {} user create_pegin_tx {} {} {} {} {}",
-        wallet_script, stream_amount, packet_number, pegin_address, rsk_address, enabler_script_pubkey
+        wallet_script,
+        stream_amount,
+        packet_number,
+        pegin_address,
+        rsk_address,
+        enabler_script_pubkey
     );
 
     let output = cmd.output().context("failed to execute cli-bitcoin-wallet.sh")?;

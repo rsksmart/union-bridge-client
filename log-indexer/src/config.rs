@@ -22,6 +22,7 @@ pub struct Config {
 #[derive(Debug, Deserialize)]
 pub struct LogIndexerConfig {
     pub notifier: NotifierConfig,
+    pub broker_key_path: String,
 }
 
 impl Config {
@@ -90,6 +91,12 @@ mod tests {
         assert_eq!(1000, config.indexer.cache.size);
         assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
         assert_eq!(11, config.contracts.len());
+        assert!(
+            config
+                .log_indexer_config
+                .broker_key_path
+                .ends_with("/.union_bridge/broker/log-indexer/multi-client-1.pem")
+        );
     }
 
     #[test]

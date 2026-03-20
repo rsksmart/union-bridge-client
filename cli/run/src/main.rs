@@ -111,12 +111,8 @@ impl Service {
     }
 }
 
-const UNION_CLIENT_SERVICES: [Service; 4] = [
-    Service::BlockIndexer,
-    Service::LogIndexer,
-    Service::UserApi,
-    Service::Coordinator,
-];
+const UNION_CLIENT_SERVICES: [Service; 4] =
+    [Service::BlockIndexer, Service::LogIndexer, Service::UserApi, Service::Coordinator];
 
 #[derive(Debug, Clone)]
 struct ManagedService {
@@ -169,11 +165,8 @@ async fn main() -> Result<()> {
         "BASE_STORAGE_PATH environment variable is required (e.g., export BASE_STORAGE_PATH=/Users/username)",
     )?;
 
-    let run_config = RunConfig {
-        client_id: cli.client_id,
-        features: cli.features,
-        fresh: cli.fresh,
-    };
+    let run_config =
+        RunConfig { client_id: cli.client_id, features: cli.features, fresh: cli.fresh };
 
     let result = run_clients(run_config).await;
 
@@ -223,9 +216,7 @@ async fn run_clients(config: RunConfig) -> Result<()> {
     // Keep all clients and join handles for monitors
     let mut clients: Vec<ManagedClient> = Vec::new();
 
-    let ids: Vec<u8> = config
-        .client_id
-        .map_or_else(|| vec![1, 2, 3, 4], |id| vec![id]);
+    let ids: Vec<u8> = config.client_id.map_or_else(|| vec![1, 2, 3, 4], |id| vec![id]);
 
     // launch clients and store in global state immediately
     let mut launch_error = None;
@@ -239,10 +230,7 @@ async fn run_clients(config: RunConfig) -> Result<()> {
 
         match launch_client_services(&config, envs, &client_id, &shutdown_tx) {
             Ok(services) => {
-                let client = ManagedClient {
-                    client_id: client_id.to_string(),
-                    services,
-                };
+                let client = ManagedClient { client_id: client_id.to_string(), services };
                 clients.push(client.clone());
 
                 // store in global state for panic handler
@@ -405,10 +393,7 @@ fn detect_and_kill_existing_services() -> Result<()> {
             let pid_val = Pid::from_raw(*pid as i32);
             if sys.process(sysinfo::Pid::from_u32(*pid)).is_some() {
                 let _ = kill(pid_val, Signal::SIGKILL);
-                println!(
-                    "  Force killed {} (PID {}, didn't exit gracefully)",
-                    service, pid
-                );
+                println!("  Force killed {} (PID {}, didn't exit gracefully)", service, pid);
             }
         }
 
@@ -450,6 +435,51 @@ fn load_env_file(path: &Path) -> Result<HashMap<String, String>> {
     Ok(map)
 }
 
+fn join_base_storage_path(base_storage_path: &str, value: &str) -> String {
+    if Path::new(value).is_absolute() {
+        value.to_string()
+    } else {
+        format!("{base_storage_path}/{value}")
+    }
+}
+
+fn read_env_file_value(base_storage_path: &str, value: &str) -> Result<String> {
+    let path = join_base_storage_path(base_storage_path, value);
+    let contents = fs::read_to_string(&path)
+        .with_context(|| format!("Failed to read broker metadata file {path}"))?;
+    Ok(contents.trim().to_string())
+}
+
+fn materialize_env_var(
+    base_storage_path: &str,
+    base_key: &str,
+    value: &str,
+) -> Result<(String, String)> {
+    let (final_key, final_value) = if base_key == "UB__INDEXER__STORAGE__PATH" {
+        (base_key.to_string(), format!("{}/.union_bridge/database/{}", base_storage_path, value))
+    } else if base_key == "UB__COORDINATOR__STORAGE_PATH" {
+        (base_key.to_string(), format!("{}/.union_bridge/database/{}", base_storage_path, value))
+    } else if base_key == "UB__KEY_STORE__MEMBER_PATH" {
+        (base_key.to_string(), format!("{}/.union_bridge/keystore/{}", base_storage_path, value))
+    } else if base_key == "UB__KEY_STORE__USER_PATH" {
+        (base_key.to_string(), format!("{}/.union_bridge/keystore/{}", base_storage_path, value))
+    } else if matches!(
+        base_key,
+        "UB__BLOCK_INDEXER__BROKER_KEY_PATH"
+            | "UB__LOG_INDEXER__BROKER_KEY_PATH"
+            | "UB__USER_API__BROKER_KEY_PATH"
+            | "UB__COORDINATOR__BROKER__KEY_PATH"
+    ) {
+        (base_key.to_string(), join_base_storage_path(base_storage_path, value))
+    } else if let Some(target_key) = base_key.strip_suffix("_FILE") {
+        (target_key.to_string(), read_env_file_value(base_storage_path, value)?)
+    } else {
+        (base_key.to_string(), value.to_string())
+    };
+
+    Ok((final_key, final_value))
+}
+
 fn build_env_for_client(
     id: u8,
     env_map: &HashMap<String, String>,
@@ -467,29 +497,13 @@ fn build_env_for_client(
         if key.starts_with("UB__") && key.ends_with(&suffix) {
             // strip the _N suffix to get the base env var name
             let base_key = key.strip_suffix(&suffix).unwrap().to_string();
-
-            // handle paths that need BASE_STORAGE_PATH prepended
-            let final_value = if base_key == "UB__INDEXER__STORAGE__PATH" {
-                format!("{}/.union_bridge/database/{}", base_storage_path, value)
-            } else if base_key == "UB__COORDINATOR__STORAGE_PATH" {
-                format!("{}/.union_bridge/database/{}", base_storage_path, value)
-            } else if base_key == "UB__KEY_STORE__MEMBER_PATH" {
-                format!("{}/.union_bridge/keystore/{}", base_storage_path, value)
-            } else if base_key == "UB__KEY_STORE__USER_PATH" {
-                format!("{}/.union_bridge/keystore/{}", base_storage_path, value)
-            } else {
-                value.clone()
-            };
-
-            envs.push((base_key, final_value));
+            envs.push(materialize_env_var(&base_storage_path, &base_key, value)?);
         }
     }
 
     // add CLIENT_ID
-    let client_id = env_map
-        .get(&format!("CLIENT_ID_{}", id))
-        .cloned()
-        .unwrap_or_else(|| id.to_string());
+    let client_id =
+        env_map.get(&format!("CLIENT_ID_{}", id)).cloned().unwrap_or_else(|| id.to_string());
     envs.push(("CLIENT_ID".into(), client_id));
 
     Ok(envs)
@@ -501,10 +515,7 @@ fn fresh_cleanup(client_id: Option<u8>) -> Result<()> {
 
     let path_to_clean = if let Some(id) = client_id {
         // Clean only the specific client's paths
-        format!(
-            "{}/.union_bridge/database/multi-client/{}",
-            base_storage_path, id
-        )
+        format!("{}/.union_bridge/database/multi-client/{}", base_storage_path, id)
     } else {
         // Clean the entire multi-client directory (all clients)
         format!("{}/.union_bridge/database/multi-client", base_storage_path)
@@ -547,9 +558,7 @@ fn cargo_args_for_service(config: &RunConfig, svc: &Service) -> Vec<String> {
 
 /// check if a port is listening
 fn is_port_listening(port: u16) -> bool {
-    TcpStream::connect(("127.0.0.1", port))
-        .map(|_| true)
-        .unwrap_or(false)
+    TcpStream::connect(("127.0.0.1", port)).map(|_| true).unwrap_or(false)
 }
 
 /// wait for a port to be listening, up to timeout
@@ -561,18 +570,12 @@ fn wait_for_port(port: u16, timeout: Duration) -> Result<()> {
         }
         std::thread::sleep(Duration::from_millis(100));
     }
-    bail!(
-        "Port {} did not become available within {:?}",
-        port,
-        timeout
-    )
+    bail!("Port {} did not become available within {:?}", port, timeout)
 }
 
 /// extract port number from environment variables
 fn get_port_from_envs(envs: &[(String, String)], key: &str) -> Option<u16> {
-    envs.iter()
-        .find(|(k, _)| k == key)
-        .and_then(|(_, v)| v.parse().ok())
+    envs.iter().find(|(k, _)| k == key).and_then(|(_, v)| v.parse().ok())
 }
 
 fn launch_client_services(
@@ -625,11 +628,7 @@ fn launch_client_services(
             .with_context(|| format!("Failed to start {} for {}", svc.name(), client_id))?;
         let pid = child.id();
         let child = Arc::new(Mutex::new(child));
-        let mgd_child = ManagedService {
-            service: svc.name().to_string(),
-            pid,
-            child,
-        };
+        let mgd_child = ManagedService { service: svc.name().to_string(), pid, child };
         services.push(mgd_child);
     }
 
@@ -639,10 +638,7 @@ fn launch_client_services(
     // Verify none exited immediately
     for ms in services.iter() {
         let name = format!("{}:{}", client_id, ms.service);
-        let mut guard = ms
-            .child
-            .lock()
-            .expect(format!("Failed to lock {}", name).as_str());
+        let mut guard = ms.child.lock().expect(format!("Failed to lock {}", name).as_str());
         if let Ok(Some(status)) = guard.try_wait() {
             println!("ERROR: {} exited immediately with status {}", name, status);
             let _ = shutdown_tx.send(());
@@ -670,16 +666,70 @@ fn launch_client_services(
                     monitor_name, status
                 );
             } else {
-                eprintln!(
-                    "Process {} wait failed. Initiating shutdown...",
-                    monitor_name
-                );
+                eprintln!("Process {} wait failed. Initiating shutdown...", monitor_name);
             }
             let _ = tx.send(());
         });
     }
 
     Ok(services)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+
+    static TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+    fn make_temp_dir() -> PathBuf {
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH).expect("time").as_nanos();
+        let path = std::env::temp_dir().join(format!("union-bridge-run-test-{unique}"));
+        fs::create_dir_all(&path).expect("create temp dir");
+        path
+    }
+
+    #[test]
+    fn test_build_env_for_client_reads_pubkey_hash_file_references() {
+        let _guard = TEST_MUTEX.lock().expect("lock");
+        let base_storage_path = make_temp_dir();
+        let hash_rel_path = ".union_bridge/broker/block-indexer/multi-client-1.pubkey_hash";
+        let hash_abs_path = base_storage_path.join(hash_rel_path);
+        fs::create_dir_all(hash_abs_path.parent().expect("parent")).expect("mkdir");
+        fs::write(&hash_abs_path, "abc123\n").expect("write hash file");
+
+        std::env::set_var("BASE_STORAGE_PATH", &base_storage_path);
+
+        let env_map = HashMap::from([
+            (
+                "UB__COORDINATOR__BLOCKS__PUBKEY_HASH_FILE_1".to_string(),
+                ".union_bridge/broker/block-indexer/multi-client-1.pubkey_hash".to_string(),
+            ),
+            (
+                "UB__BLOCK_INDEXER__BROKER_KEY_PATH_1".to_string(),
+                ".union_bridge/broker/block-indexer/multi-client-1.pem".to_string(),
+            ),
+        ]);
+
+        let envs = build_env_for_client(1, &env_map).expect("build envs");
+
+        assert!(envs
+            .contains(
+                &("UB__COORDINATOR__BLOCKS__PUBKEY_HASH".to_string(), "abc123".to_string(),)
+            ));
+        assert!(envs.contains(&(
+            "UB__BLOCK_INDEXER__BROKER_KEY_PATH".to_string(),
+            base_storage_path
+                .join(".union_bridge/broker/block-indexer/multi-client-1.pem")
+                .display()
+                .to_string(),
+        )));
+
+        let _ = fs::remove_dir_all(base_storage_path);
+        std::env::remove_var("BASE_STORAGE_PATH");
+    }
 }
 
 async fn teardown_all(clients: Vec<ManagedClient>) {
@@ -692,11 +742,8 @@ async fn teardown_all(clients: Vec<ManagedClient>) {
 
             // shutdown coordinator first and wait for it to exit completely
             // this ensures it can properly unsubscribe from brokers before they shut down
-            if let Some(coordinator) = client
-                .services
-                .iter()
-                .rev()
-                .find(|s| s.service == "coordinator")
+            if let Some(coordinator) =
+                client.services.iter().rev().find(|s| s.service == "coordinator")
             {
                 let pid = Pid::from_raw(coordinator.pid as i32);
                 let _ = kill(pid, Signal::SIGTERM);
