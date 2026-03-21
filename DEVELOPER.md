@@ -19,6 +19,16 @@ Before running the Union Bridge Client for the first time:
 git clone git@github.com:rsksmart/union-bridge-client.git
 ```
 
+### Local blockchains env (`docker/local-infra`)
+
+`docker/local-infra/.env.local` is **not** committed. Create it from the sample before running `start_blockchains.sh` or `start_bitvmx.sh`:
+
+```bash
+cp docker/local-infra/.env.local.sample docker/local-infra/.env.local
+```
+
+Edit `CONTRACTS_CONTEXT_PATH` (and `CONTRACTS_DOCKERFILE` if your directory layout differs) so Docker can build the deploy-contracts image from your contracts checkout.
+
 ### Restore Untracked Config Files
 
 Environment-specific config files (keys, certs, operator YAMLs, `.env` files) are not tracked by git. After cloning or pulling a branch that removed them, restore them from git history:

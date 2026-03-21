@@ -1,38 +1,39 @@
-# Union Bridge - Client
+# Union Bridge — Client
 
-> **Disclaimer**  
-> This project is a work in progress and should be considered experimental. It may contain bugs, security vulnerabilities, and incomplete features. Use at your own risk — the authors make no guarantees of functionality, stability, or security. Do not use in production or for sensitive data. Contributions and issue reports are welcome.
+## Disclaimer
 
-## Introduction
+**This software is under active development.** It is **not production-ready** and has **not undergone a security audit**. It may contain bugs, vulnerabilities, and incomplete behavior. Use at your own risk. The authors make no warranties regarding functionality, stability, or security. **Do not use for production funds or sensitive data.** Issue reports and contributions are welcome.
 
-The Union Bridge Client is a Rust application that serves as a core component of the [Union Bridge](https://rootstock.io/) protocol. It connects Rootstock with [BitVMX](https://bitvmx.org/), enabling secure, trust-minimized interactions with the Bitcoin network for peg-in and peg-out flows.
+---
 
-In short, it watches for relevant events on Rootstock and triggers the next steps in the protocol.
+## What this repository is
 
-## Architecture
+The **Union Bridge Client** is a Rust codebase that implements core off-chain services for the [Union Bridge](https://rootstock.io/) protocol on Rootstock. It integrates with [BitVMX](https://bitvmx.org/) and coordinates peg-in / peg-out–related flows: watching Rootstock, driving committee and BitVMX steps, and exposing APIs for operators and users.
 
-The client is made up of several services:
+At a glance:
 
-- **Block indexer** (`block-indexer`): Listens to new Rootstock blocks and stores minimal data needed for Union Bridge flows.
-- **Log indexer** (`log-indexer`): Subscribes to smart contract events (e.g. peg-in/peg-out requests) on Rootstock.
-- **Transaction dispatcher** (`transaction-dispatcher`): Signs and sends transactions to Rootstock.
-- **User API** (`user-api`): REST API for end-user operations (e.g. initiating peg-in/peg-out).
-- **Coordinator** (`coordinator`): Orchestrates flows and talks to BitVMX (committee setup, advance funds, peg-in/peg-out state).
+| Component | Role |
+|-----------|------|
+| `block-indexer` | Tracks Rootstock blocks |
+| `log-indexer` | Subscribes to contract events |
+| `transaction-dispatcher` | Signs and submits Rootstock transactions |
+| `user-api` | HTTP API for user-facing operations |
+| `coordinator` | Orchestrates flows with BitVMX |
 
-The client persists state, handles SIGINT/SIGTERM for clean shutdown, and uses retries and fallbacks for connectivity and reorgs.
+Configuration uses TOML under `config/`, overridable with `UB__`-prefixed environment variables (see [DEVELOPER.md](DEVELOPER.md)).
 
-## Configuration
+**License:** [MIT](LICENSE).
 
-Configuration lives under `config/` (base + environment TOML files). Any option can be overridden with the `UB__` prefix and double underscores for nesting.
+---
 
-**Example:** `UB__PROVIDER__ROOTSTOCK__URL=ws://your-rsk-node:4445`
+## For contributors — run locally
 
-## Getting Started
-
-For setup, tooling, and running the client: **[DEVELOPER.md](DEVELOPER.md)**.
-
-For Docker (blockchains, BitVMX, full operator stack): **[docker/README.md](docker/README.md)**.
-
-## License
-
-This project is licensed under the [MIT License](LICENSE).
+1. Read **[DEVELOPER.md](DEVELOPER.md)** for toolchain (Rust, Foundry, Docker, optional direnv).
+2. For the **local blockchains** stack (bitcoind + anvil + contract deploy), copy env and start compose:
+   ```bash
+   cp docker/local-infra/.env.local.sample docker/local-infra/.env.local
+   # Edit CONTRACTS_CONTEXT_PATH and CONTRACTS_DOCKERFILE if your layout differs
+   ./docker/local-infra/start_blockchains.sh --contracts-tag local-build --fresh up -d
+   ```
+3. For **Docker / BitVMX / operators**, see **[docker/README.md](docker/README.md)** and **[docker/operator/README.md](docker/operator/README.md)**.
+4. **CLI** helpers: **[cli/README.md](cli/README.md)**.

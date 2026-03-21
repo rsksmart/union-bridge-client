@@ -245,11 +245,11 @@ pub fn handle_user_funding(env: Environment) -> Result<()> {
                     bail!("private key is required");
                 }
 
-                println!("Fund using:");
+                println!("Fund using (paste your key where indicated; do not commit or log it):");
                 for (_, address) in &user_addresses {
                     println!(
-                        "  cast send {} --value 0.25ether --private-key {} --rpc-url {}",
-                        address, private_key, rpc_url
+                        "  cast send {} --value 0.25ether --private-key <PRIVATE_KEY> --rpc-url {}",
+                        address, rpc_url
                     );
                 }
             }
@@ -509,11 +509,11 @@ fn print_instructions(env: Environment) -> Result<()> {
         bail!("private key is required");
     }
 
-    println!("Fund using:");
+    println!("Fund using (paste your key where indicated; do not commit or log it):");
     for address in unique {
         println!(
-            "  cast send {} --value 0.25ether --private-key {} --rpc-url {}",
-            address, private_key, rpc_url
+            "  cast send {} --value 0.25ether --private-key <PRIVATE_KEY> --rpc-url {}",
+            address, rpc_url
         );
     }
 
