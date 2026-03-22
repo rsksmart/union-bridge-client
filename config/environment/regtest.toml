@@ -62,6 +62,15 @@ user.host = "user-api"
 max_zkp_status_retries = 0
 
 # ═══════════════════════════════════════════════════════
+# Key Store
+# ═══════════════════════════════════════════════════════
+
+[key_store]
+user_path = "/keystore/user-key.json"       # should match the one configured in key-setup.sh
+member_path = "/keystore/member-key.json"   # should match the one configured in key-setup.sh
+broker_key_path = "/keystore/broker.key"    # should match the one configured in key-setup.sh
+
+# ═══════════════════════════════════════════════════════
 # Transaction Dispatcher
 # ═══════════════════════════════════════════════════════
 
