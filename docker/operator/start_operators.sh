@@ -376,6 +376,7 @@ sync_regtest_bitvmx_heights() {
   local cfg_dir="${SCRIPT_DIR}/../bitvmx-client/config/regtest/client/config"
   local sample_cfg="${cfg_dir}/op_1.yaml"
   local height_delta="${REGTEST_BITVMX_HEIGHT_DELTA:-10}"
+  local wallet_name="${REGTEST_BITVMX_WALLET_NAME:-test_wallet_watch}"
   local rpc_payload='{"jsonrpc":"1.0","id":"ub","method":"getblockcount","params":[]}'
 
   if ! command -v curl >/dev/null 2>&1; then
@@ -431,10 +432,10 @@ sync_regtest_bitvmx_heights() {
     fi
 
     cp "${cfg_file}" "${backup_file}"
-    UB_START_HEIGHT="${start_height}" perl -0777 -i -pe 's/(checkpoint_height:\s*)\d+/$1$ENV{UB_START_HEIGHT}/g; s/(start_height:\s*)\d+/$1$ENV{UB_START_HEIGHT}/g' "${cfg_file}"
+    UB_START_HEIGHT="${start_height}" UB_BITVMX_WALLET="${wallet_name}" perl -0777 -i -pe 's/(checkpoint_height:\s*)\d+/$1$ENV{UB_START_HEIGHT}/g; s/(start_height:\s*)\d+/$1$ENV{UB_START_HEIGHT}/g; s/(^  wallet:\s*).*$/$1$ENV{UB_BITVMX_WALLET}/m' "${cfg_file}"
   done
 
-  echo "Regtest BitVMX heights synchronized: btc_height=${block_height}, start_height=${start_height}, delta=${height_delta}."
+  echo "Regtest BitVMX heights synchronized: btc_height=${block_height}, start_height=${start_height}, delta=${height_delta}, wallet=${wallet_name}."
 }
 
 resolve_regtest_check_fork_elf_path() {

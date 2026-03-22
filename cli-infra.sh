@@ -24,8 +24,13 @@ MINE_PID_FILE="/tmp/union-bridge-mining.pids"
 REGTEST_HOST="union-bridge-use2-1.regtest.rskcomputing.net"
 REGTEST_USER="ubuntu"
 REGTEST_ROOT="union-bridge-client"
-REGTEST_FRESH_REMOTE_SCRIPT="${REGTEST_FRESH_REMOTE_SCRIPT:-/home/${REGTEST_USER}/regtest-fresh/regtest_fresh.sh}"
+REGTEST_FRESH_REMOTE_SCRIPT="${REGTEST_FRESH_REMOTE_SCRIPT:-/home/${REGTEST_USER}/${REGTEST_ROOT}/docker/operator/regtest_fresh.sh}"
 REGTEST_FRESH_MODE="${REGTEST_FRESH_MODE:-remote}"
+REGTEST_POWPEG_HOST="${REGTEST_POWPEG_HOST:-powpeg-use2-1.regtest.rskcomputing.net}"
+REGTEST_POWPEG_USER="${REGTEST_POWPEG_USER:-ubuntu}"
+REGTEST_POWPEG_NODE_SETUP_DIR="${REGTEST_POWPEG_NODE_SETUP_DIR:-/home/ubuntu/powpeg-node-setup/federation_node}"
+REGTEST_BITCOIN_RPC_USER="${REGTEST_BITCOIN_RPC_USER:-user}"
+REGTEST_BITCOIN_RPC_PASSWORD="${REGTEST_BITCOIN_RPC_PASSWORD:-pass}"
 
 # colors
 GREEN='\033[0;32m'
@@ -34,6 +39,79 @@ NC='\033[0m'
 
 log() { echo -e "${GREEN}[✓]${NC} $1"; }
 warn() { echo -e "${YELLOW}[!]${NC} $1"; }
+
+powpeg_bitcoin_rpc_result() {
+    local method="$1"
+    local params_json="$2"
+
+    ssh -A "${REGTEST_POWPEG_USER}@${REGTEST_POWPEG_HOST}" \
+        "curl -sS --user '${REGTEST_BITCOIN_RPC_USER}:${REGTEST_BITCOIN_RPC_PASSWORD}' \
+        -H 'content-type:text/plain' \
+        --data-binary '{\"jsonrpc\":\"1.0\",\"id\":\"ub\",\"method\":\"${method}\",\"params\":${params_json}}' \
+        http://127.0.0.1:18332/" \
+        | jq -cr '.result'
+}
+
+powpeg_txindex_enabled() {
+    local index_info
+    index_info="$(powpeg_bitcoin_rpc_result "getindexinfo" "[]")"
+    echo "$index_info" | jq -e '.txindex != null' >/dev/null
+}
+
+powpeg_bitcoind_has_required_flags() {
+    ssh -A "${REGTEST_POWPEG_USER}@${REGTEST_POWPEG_HOST}" \
+        "set -euo pipefail; \
+        dockerfile='${REGTEST_POWPEG_NODE_SETUP_DIR}/bitcoind/Dockerfile'; \
+        grep -q -- '-txindex=1' \"\$dockerfile\" && \
+        grep -q -- '-fallbackfee=0.0002' \"\$dockerfile\""
+}
+
+ensure_regtest_powpeg_txindex() {
+    if powpeg_txindex_enabled && powpeg_bitcoind_has_required_flags; then
+        log "Powpeg bitcoind txindex and fallbackfee already enabled"
+        return 0
+    fi
+
+    warn "Powpeg bitcoind is missing required flags; patching and recreating remote bitcoind"
+    ssh -A "${REGTEST_POWPEG_USER}@${REGTEST_POWPEG_HOST}" \
+        "set -euo pipefail; \
+        compose_dir='${REGTEST_POWPEG_NODE_SETUP_DIR}'; \
+        dockerfile=\"\${compose_dir}/bitcoind/Dockerfile\"; \
+        python3 - <<'PY' \"\$dockerfile\"
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+old = '-rpcpassword=pass -wallet=regtestwallet'
+new = '-rpcpassword=pass -wallet=regtestwallet -txindex=1 -fallbackfee=0.0002'
+if new in text:
+    raise SystemExit(0)
+if old not in text:
+    old = '-rpcpassword=pass -wallet=regtestwallet -txindex=1'
+if old not in text:
+    raise SystemExit('bitcoind Dockerfile entrypoint format changed; update cli-infra.sh')
+path.write_text(text.replace(old, new, 1))
+PY
+        cd \"\$compose_dir\"; \
+        docker compose build bitcoind; \
+        docker compose up -d --force-recreate bitcoind"
+
+    local timeout_seconds=900
+    local interval_seconds=10
+    local waited_seconds=0
+    while (( waited_seconds < timeout_seconds )); do
+        if powpeg_txindex_enabled && powpeg_bitcoind_has_required_flags; then
+            log "Powpeg bitcoind txindex and fallbackfee enabled"
+            return 0
+        fi
+        sleep "$interval_seconds"
+        waited_seconds=$((waited_seconds + interval_seconds))
+    done
+
+    echo "Error: timed out waiting for powpeg bitcoind txindex and fallbackfee to become available" >&2
+    exit 1
+}
 
 # mining functions
 mine_anvil() {
@@ -276,6 +354,7 @@ start_regtest() {
             exit 1
         fi
 
+        ensure_regtest_powpeg_txindex
         warn "Fresh mode (remote-only): running script ${REGTEST_FRESH_REMOTE_SCRIPT} on ${REGTEST_HOST}"
         local remote_cmd="set -euo pipefail; if [[ ! -x '${REGTEST_FRESH_REMOTE_SCRIPT}' ]]; then echo 'Error: missing executable fresh script at ${REGTEST_FRESH_REMOTE_SCRIPT}' >&2; exit 1; fi; bash '${REGTEST_FRESH_REMOTE_SCRIPT}'"
         ssh -A "${REGTEST_USER}@${REGTEST_HOST}" "${remote_cmd}"
