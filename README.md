@@ -348,7 +348,7 @@ Command summary:
 - `--start-regtest`: starts operators with existing deployed addresses/config.
 - `--start-regtest --fresh`: runs full remote fresh orchestration and clean operator restart.
 
-Important: if you change branch on the regtest host (`~/union-bridge-client`), rebuild images tagged as `latest-regtest` before starting operators:
+Important: if you change branch on the regtest host (`~/union-bridge-client`), or if the branch now contains Rust source changes that affect the client images, rebuild images tagged as `latest-regtest` before starting operators:
 
 ```bash
 cd docker/build
