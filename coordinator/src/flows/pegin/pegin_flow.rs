@@ -513,6 +513,19 @@ where
         Ok(())
     }
 
+    fn map_native_bridge_confirmation_revert(err: DomainErrors) -> DomainErrors {
+        const NOT_ENOUGH_CONFIRMATIONS_SELECTOR: &str = "0x2f23745e";
+
+        match err {
+            DomainErrors::NoRevertError(msg) | DomainErrors::UnhandledContractError(msg)
+                if msg.contains(NOT_ENOUGH_CONFIRMATIONS_SELECTOR) =>
+            {
+                DomainErrors::MissingConfirmationsOnNativeBridge(msg)
+            }
+            other => other,
+        }
+    }
+
     fn accept_pegin(&self, spv_proof: &BtcTxSPVProof) -> Result<()> {
         debug!("Accepting pegin with SPV proof: {spv_proof:?}");
 
@@ -525,6 +538,7 @@ where
             &self.native_bridge_verifier,
             || async { self.contracts.accept_pegin(input).await },
         )
+        .map_err(Self::map_native_bridge_confirmation_revert)
         .context("Failed to accept pegin with provided SPV proof")?;
 
         Ok(())
@@ -541,7 +555,9 @@ where
             spv_proof,
             &self.native_bridge_verifier,
             || async { self.contracts.request_pegin(input).await },
-        ) {
+        )
+        .map_err(Self::map_native_bridge_confirmation_revert)
+        {
             Ok(_) => Ok(()),
             Err(DomainErrors::PeginAlreadyRequested(msg)) => {
                 info!("Pegin already requested, continuing: {msg}");

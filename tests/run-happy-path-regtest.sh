@@ -70,6 +70,8 @@ check_operators_deployed() {
 check_operators_deployed
 
 SCRIPT_ENV="regtest"
+REGTEST_FRESH_ENV_FILE="${REGTEST_FRESH_ENV_FILE:-${HOME}/regtest-fresh/.env}"
+REGTEST_FRESH_RUNS_DIR="${REGTEST_FRESH_RUNS_DIR:-${HOME}/.union-bridge/regtest-fresh/runs}"
 
 RSK_RPC_URL="${RSK_RPC_URL:-http://node-use2-1.regtest.rskcomputing.net:4444}"
 USER_API_HOST="${USER_API_HOST:-localhost}"
@@ -78,7 +80,8 @@ BITCOIN_RPC_PORT="${BITCOIN_RPC_PORT:-18332}"
 BITCOIN_RPC_USER="${BITCOIN_RPC_USER:-user}"
 BITCOIN_RPC_PASSWORD="${BITCOIN_RPC_PASSWORD:-pass}"
 BITCOIN_WALLET_NAME="${BITCOIN_WALLET_NAME:-mainwallet}"
-BITVMX_WALLET_NAME="${BITVMX_WALLET_NAME:-test_wallet}"
+BITCOIN_FUNDING_WALLET_NAME="${BITCOIN_FUNDING_WALLET_NAME:-test_wallet}"
+BITVMX_WALLET_NAME="${BITVMX_WALLET_NAME:-test_wallet_watch}"
 RESTART_BITVMX_ON_WALLET_CREATE="${RESTART_BITVMX_ON_WALLET_CREATE:-true}"
 
 BITVMX_FUND_AMOUNT="${BITVMX_FUND_AMOUNT:-32002000}"
@@ -87,7 +90,6 @@ RSK_GAS_PRICE_WEI="${RSK_GAS_PRICE_WEI:-0x3938700}"
 
 STREAM_ID="${STREAM_ID:-0}"
 VALUE="${VALUE:-100000}"
-PACKET_NUMBER="${PACKET_NUMBER:-0}"
 RSK_ADDRESS="${RSK_ADDRESS:-0x$(openssl rand -hex 20)}"
 
 LOG_SINCE="${LOG_SINCE:-30m}"
@@ -115,6 +117,92 @@ step() {
 
 require_cmd() {
     command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
+}
+
+is_true() {
+    case "${1,,}" in
+        1|true|yes|y|on) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+docker_container_status() {
+    local container_name="$1"
+    docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_name" 2>/dev/null || true
+}
+
+wait_for_container_status() {
+    local container_name="$1"
+    local expected_status="$2"
+    local timeout_secs="${3:-60}"
+    local deadline=$((SECONDS + timeout_secs))
+
+    while (( SECONDS < deadline )); do
+        if [[ "$(docker_container_status "$container_name")" == "$expected_status" ]]; then
+            return 0
+        fi
+        sleep 2
+    done
+
+    return 1
+}
+
+wait_for_container_log_pattern() {
+    local container_name="$1"
+    local pattern="$2"
+    local since_timestamp="$3"
+    local timeout_secs="${4:-60}"
+    local deadline=$((SECONDS + timeout_secs))
+
+    while (( SECONDS < deadline )); do
+        if docker logs --since "$since_timestamp" "$container_name" 2>/dev/null | grep -E -q "$pattern"; then
+            return 0
+        fi
+        sleep 2
+    done
+
+    return 1
+}
+
+latest_regtest_summary_path() {
+    [[ -d "$REGTEST_FRESH_RUNS_DIR" ]] || die "Missing regtest fresh runs dir: $REGTEST_FRESH_RUNS_DIR"
+
+    local latest_run
+    latest_run=$(ls -1t "$REGTEST_FRESH_RUNS_DIR" 2>/dev/null | head -1)
+    [[ -n "$latest_run" ]] || die "Could not resolve latest regtest fresh run under $REGTEST_FRESH_RUNS_DIR"
+
+    local summary_path="${REGTEST_FRESH_RUNS_DIR}/${latest_run}/summary.json"
+    [[ -f "$summary_path" ]] || die "Missing regtest fresh summary: $summary_path"
+    printf '%s\n' "$summary_path"
+}
+
+resolve_current_committee_registry_address() {
+    local summary_path="$1"
+    local address
+    address=$(jq -r '.contracts.committee_registry // empty' "$summary_path")
+    [[ -n "$address" && "$address" != "null" ]] || die "Could not resolve CommitteeRegistry address from $summary_path"
+    printf '%s\n' "$address"
+}
+
+resolve_current_whitelister_private_key() {
+    [[ -f "$REGTEST_FRESH_ENV_FILE" ]] || die "Missing regtest fresh env file: $REGTEST_FRESH_ENV_FILE"
+    command -v cast >/dev/null 2>&1 || die "Missing required command: cast"
+
+    local private_key
+    # The current CommitteeRegistry whitelister is the deployer derived from the same mnemonic used by regtest_fresh.
+    private_key=$(
+        (
+            set -a
+            # shellcheck disable=SC1090
+            source "$REGTEST_FRESH_ENV_FILE"
+            set +a
+            [[ -n "${REGTEST_DEPLOY_MNEMONIC:-}" ]] || exit 1
+            cast wallet private-key --mnemonic "$REGTEST_DEPLOY_MNEMONIC" --mnemonic-index 0
+        ) | tr -d '\r\n[:space:]'
+    ) || die "Could not derive whitelister private key from $REGTEST_FRESH_ENV_FILE"
+
+    [[ -n "$private_key" ]] || die "Derived empty whitelister private key"
+    printf '%s\n' "$private_key"
 }
 
 bitcoin_cli_base() {
@@ -216,6 +304,25 @@ ensure_bitcoind_wallet() {
     die "Failed to load bitcoind wallet: $wallet_name"
 }
 
+ensure_bitcoind_watch_wallet() {
+    local wallet_name="$1"
+    local wallets
+    wallets=$(bitcoin_cli_base listwallets | jq -r '.[]' 2>/dev/null || true)
+    if grep -qx "$wallet_name" <<< "$wallets"; then
+        return 1
+    fi
+
+    if bitcoin_cli_base createwallet "$wallet_name" true true "" false true >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if bitcoin_cli_base loadwallet "$wallet_name" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    die "Failed to load bitcoind watch wallet: $wallet_name"
+}
+
 ensure_user_bitcoin_wif() {
     if [[ -n "${USER_BITCOIN_WIF:-}" ]]; then
         return 0
@@ -241,19 +348,11 @@ import_user_wif() {
         return 0
     fi
 
-    # Descriptor wallets need importdescriptors. Import using the *WIF* (not the expanded pubkey)
-    # so the wallet definitely has the private key available for spending.
-    local checksum desc import_req
-    checksum=$(bitcoin_cli_base getdescriptorinfo "wpkh(${USER_BITCOIN_WIF})" | jq -r '.checksum // empty')
-    if [[ -z "$checksum" ]]; then
-        die "Failed to compute descriptor checksum for USER_BITCOIN_WIF"
-    fi
-    desc="wpkh(${USER_BITCOIN_WIF})#${checksum}"
-
-    # Use full-history import on regtest so old faucet UTXOs are visible even after wallet recreation.
-    import_req=$(printf '[{"desc":"%s","timestamp":0,"active":true,"label":"user"}]' "$desc")
+    local desc import_req
+    desc=$(user_descriptor_from_wif)
+    import_req=$(printf '[{"desc":"%s","timestamp":"now","active":true,"label":"user"}]' "$desc")
     if ! bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" importdescriptors "$import_req" >/dev/null 2>&1; then
-        die "Failed to import USER_BITCOIN_WIF into descriptor wallet (${BITCOIN_WALLET_NAME})"
+        warn "Failed to import USER_BITCOIN_WIF into descriptor wallet (${BITCOIN_WALLET_NAME}); continuing"
     fi
 }
 
@@ -261,10 +360,9 @@ rescan_user_wif_history() {
     # Try both legacy and descriptor flows; ignore failures from unsupported wallet types.
     bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" importprivkey "$USER_BITCOIN_WIF" "user-rescan" true >/dev/null 2>&1 || true
 
-    local checksum desc import_req
-    checksum=$(bitcoin_cli_base getdescriptorinfo "wpkh(${USER_BITCOIN_WIF})" | jq -r '.checksum // empty')
-    if [[ -n "$checksum" ]]; then
-        desc="wpkh(${USER_BITCOIN_WIF})#${checksum}"
+    local desc import_req
+    desc=$(user_descriptor_from_wif)
+    if [[ -n "$desc" ]]; then
         import_req=$(printf '[{"desc":"%s","timestamp":0,"active":true,"label":"user"}]' "$desc")
         bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" importdescriptors "$import_req" >/dev/null 2>&1 || true
     fi
@@ -276,23 +374,20 @@ import_watch_address_into_wallet() {
     local wallet_name="$1"
     local addr="$2"
 
-    local checksum desc import_req isrange active
-    checksum=$(bitcoin_cli_base getdescriptorinfo "addr(${addr})" | jq -r '.checksum // empty')
-    if [[ -z "$checksum" ]]; then
-        die "Failed to compute descriptor checksum for addr(${addr})"
-    fi
-    desc="addr(${addr})#${checksum}"
-    isrange=$(bitcoin_cli_base getdescriptorinfo "addr(${addr})" | jq -r '.isrange // false')
-    if [[ "$isrange" == "true" ]]; then
-        active="true"
-    else
-        active="false"
+    local descriptor_info desc import_req import_response
+    descriptor_info=$(bitcoin_cli_base getdescriptorinfo "addr(${addr})")
+    desc=$(echo "$descriptor_info" | jq -r '.descriptor // empty')
+    if [[ -z "$desc" || "$desc" == "null" ]]; then
+        die "Failed to compute descriptor for addr(${addr})"
     fi
 
-    # Non-ranged descriptors (like addr()) must not be active.
-    import_req=$(printf '[{"desc":"%s","timestamp":"now","active":%s,"label":"watch"}]' "$desc" "$active")
-    if ! bitcoin_cli_wallet "$wallet_name" importdescriptors "$import_req" >/dev/null 2>&1; then
+    import_req=$(printf '[{"desc":"%s","timestamp":"now","active":false,"label":"watch"}]' "$desc")
+    import_response=$(bitcoin_cli_wallet "$wallet_name" importdescriptors "$import_req") || {
         die "Failed to import watch address into wallet ${wallet_name}: ${addr}"
+    }
+
+    if ! jq -e 'all(.success or ((.error.message // "") | test("already|exists|active"; "i")))' >/dev/null 2>&1 <<< "$import_response"; then
+        die "Watch address import was rejected by wallet ${wallet_name}: ${import_response}"
     fi
 }
 
@@ -649,6 +744,31 @@ fund_rsk_wallets() {
     done
 }
 
+restart_bitvmx_and_coordinators() {
+    local reason="$1"
+    log "Restarting BitVMX and coordinator containers to ${reason}"
+
+    for op_id in $(seq 1 "$NUM_OPERATORS"); do
+        local bitvmx_container="op_${op_id}-bitvmx-client-1"
+        local coordinator_container="op_${op_id}-coordinator-1"
+        local bitvmx_restart_since
+        bitvmx_restart_since=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+        docker restart "$bitvmx_container" >/dev/null
+        wait_for_container_status "$bitvmx_container" "healthy" 90 || \
+            die "BitVMX container did not become healthy after restart: ${bitvmx_container}"
+        wait_for_container_log_pattern \
+            "$bitvmx_container" \
+            "Sync complete, starting normal operation" \
+            "$bitvmx_restart_since" \
+            90 || die "BitVMX container did not finish startup after restart: ${bitvmx_container}"
+
+        docker restart "$coordinator_container" >/dev/null
+        wait_for_container_status "$coordinator_container" "healthy" 90 || \
+            die "Coordinator container did not become healthy after restart: ${coordinator_container}"
+    done
+}
+
 fund_bitvmx_wallets() {
     local endpoints
     endpoints=($(user_api_endpoints))
@@ -662,9 +782,16 @@ fund_bitvmx_wallets() {
         fi
     done
 
-    sleep 5
+    local deadline=$((SECONDS + 60))
+    local bitvmx_addrs=()
+    while (( SECONDS < deadline )); do
+        mapfile -t bitvmx_addrs < <(collect_bitvmx_addresses)
+        if [[ "${#bitvmx_addrs[@]}" -ge "$NUM_OPERATORS" ]]; then
+            break
+        fi
+        sleep 2
+    done
 
-    mapfile -t bitvmx_addrs < <(collect_bitvmx_addresses)
     if [[ "${#bitvmx_addrs[@]}" -lt "$NUM_OPERATORS" ]]; then
         die "Missing BitVMX funding addresses (found ${#bitvmx_addrs[@]}, expected=${NUM_OPERATORS})"
     fi
@@ -684,6 +811,10 @@ fund_bitvmx_wallets() {
     fi
 
     mine_blocks 1
+
+    if is_true "$RESTART_BITVMX_ON_WALLET_CREATE"; then
+        restart_bitvmx_and_coordinators "refresh wallet balances"
+    fi
 }
 
 apply_stream() {
@@ -712,7 +843,53 @@ apply_stream() {
     done
 }
 
-request_pegin_address() {
+whitelist_member_addresses() {
+    export PATH="${HOME}/.cargo/bin:${HOME}/.foundry/bin:${PATH}"
+    command -v cast >/dev/null 2>&1 || die "Missing required command: cast"
+
+    local summary_path
+    summary_path=$(latest_regtest_summary_path)
+
+    local committee_registry_address
+    committee_registry_address=$(resolve_current_committee_registry_address "$summary_path")
+
+    local whitelister_private_key
+    whitelister_private_key=$(resolve_current_whitelister_private_key)
+    local whitelister_address
+    whitelister_address=$(cast wallet address --private-key "$whitelister_private_key" | tr -d '\r\n[:space:]')
+    [[ -n "$whitelister_address" ]] || die "Could not derive whitelister address"
+
+    local member_marker="Got member signer with address"
+    mapfile -t member_addrs < <(collect_rsk_addresses "$member_marker" "coordinator")
+    if [[ "${#member_addrs[@]}" -lt "$NUM_OPERATORS" ]]; then
+        die "Missing member addresses for whitelist (found ${#member_addrs[@]}, expected=${NUM_OPERATORS})"
+    fi
+
+    local member_addr_array
+    member_addr_array=$(printf '[%s]' "$(IFS=,; echo "${member_addrs[*]}")")
+    local nonce
+    nonce=$(rsk_rpc "eth_getTransactionCount" "[\"$whitelister_address\",\"latest\"]" | jq -r '.result // empty')
+    [[ "$nonce" =~ ^0x[0-9a-fA-F]+$ ]] || die "Could not resolve whitelister nonce"
+
+    log "Whitelisting member addresses on CommitteeRegistry ${committee_registry_address}"
+    if ! cast send \
+        "$committee_registry_address" \
+        'whitelistAddresses(address[])' \
+        "$member_addr_array" \
+        --legacy \
+        --gas-price 1 \
+        --gas-limit 1000000 \
+        --chain 33 \
+        --nonce "$nonce" \
+        --async \
+        --private-key "$whitelister_private_key" \
+        --rpc-url "$RSK_RPC_URL" >/dev/null; then
+        die "Whitelist command failed"
+    fi
+    mine_blocks 1
+}
+
+request_pegin_data() {
     local endpoint="http://${USER_API_HOST}:40001/user/pegin-address"
     # Get x-only public key (32 bytes) with 0x prefix
     local xonly_pubkey
@@ -721,57 +898,88 @@ request_pegin_address() {
     payload=$(printf '{"rootstock_deposit_address":"%s","value":%s,"btc_reimbursement_pub_key":"%s"}' "$RSK_ADDRESS" "$VALUE" "$xonly_pubkey")
     local response
     response=$(curl_json_post "$endpoint" "$payload")
-    local addr
-    addr=$(echo "$response" | jq -r '.address')
-    if [[ -z "$addr" || "$addr" == "null" ]]; then
+    local address packet_number enabler_script_pubkey
+    address=$(echo "$response" | jq -r '.address')
+    packet_number=$(echo "$response" | jq -r '.packet_number')
+    enabler_script_pubkey=$(echo "$response" | jq -r '.enabler_script_pubkey')
+
+    if [[ -z "$address" || "$address" == "null" ]]; then
         die "Failed to parse pegin address from user-api response"
     fi
-    echo "$addr"
+    if [[ -z "$packet_number" || "$packet_number" == "null" ]]; then
+        die "Failed to parse packet_number from user-api response"
+    fi
+    if [[ -z "$enabler_script_pubkey" || "$enabler_script_pubkey" == "null" ]]; then
+        die "Failed to parse enabler_script_pubkey from user-api response"
+    fi
+
+    jq -cn \
+        --arg address "$address" \
+        --argjson packet_number "$packet_number" \
+        --arg enabler_script_pubkey "$enabler_script_pubkey" \
+        '{address: $address, packet_number: $packet_number, enabler_script_pubkey: $enabler_script_pubkey}'
 }
 
 create_pegin_tx() {
     local pegin_address="$1"
-    local user_address="$2"
-    local rsk_hex
-    rsk_hex=$(echo "${RSK_ADDRESS#0x}" | tr 'A-F' 'a-f')
-    if [[ ${#rsk_hex} -ne 40 ]]; then
-        die "Invalid RSK address: $RSK_ADDRESS"
+    local packet_number="$2"
+    local enabler_script_pubkey="$3"
+    prepare_wallet_cli_for_pegin
+
+    local cli_output
+    if ! cli_output=$(
+        ./cli-bitcoin-wallet.sh user create_pegin_tx \
+            "$VALUE" \
+            "$packet_number" \
+            "$pegin_address" \
+            "$RSK_ADDRESS" \
+            "$enabler_script_pubkey" 2>&1
+    ); then
+        echo "$cli_output" >&2
+        die "Failed to create pegin transaction"
     fi
 
-    local packet_hex
-    packet_hex=$(printf "%016x" "$PACKET_NUMBER")
-    local xonly
-    xonly=$(user_xonly_pubkey_from_wif)
-    local op_return_hex="52534b5f504547494e${packet_hex}${rsk_hex}${xonly}"
+    echo "$cli_output"
 
-    local amount_btc
-    amount_btc=$(sats_to_btc "$VALUE")
-
-    local outputs
-    outputs=$(printf '[{"%s":%s},{"data":"%s"}]' "$pegin_address" "$amount_btc" "$op_return_hex")
-
-    local raw
-    raw=$(bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" createrawtransaction "[]" "$outputs")
-    local funded
-    # Keep output ordering stable for downstream parsers:
-    # - vout[0] = pegin address payment
-    # - vout[1] = OP_RETURN marker
-    # - vout[2] = change (if any)
-    funded=$(bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" fundrawtransaction "$raw" "{\"changeAddress\":\"$user_address\",\"changePosition\":2}")
-    local funded_hex
-    funded_hex=$(echo "$funded" | jq -r '.hex')
-    local signed
-    signed=$(bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" signrawtransactionwithwallet "$funded_hex")
-    local complete
-    complete=$(echo "$signed" | jq -r '.complete')
-    if [[ "$complete" != "true" ]]; then
-        die "Failed to sign pegin transaction"
-    fi
-    local signed_hex
-    signed_hex=$(echo "$signed" | jq -r '.hex')
     local txid
-    txid=$(bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" sendrawtransaction "$signed_hex")
+    txid=$(echo "$cli_output" | sed -n 's/^  txid=//p' | tail -1)
+    [[ -n "$txid" ]] || die "Failed to parse pegin txid from cli-bitcoin-wallet output"
+
+    if ! echo "$cli_output" | grep -q "Transaction broadcasted successfully:"; then
+        die "cli-bitcoin-wallet did not broadcast the pegin transaction successfully"
+    fi
+
     log "Pegin txid: $txid"
+}
+
+prepare_wallet_cli_for_pegin() {
+    export PATH="${HOME}/.cargo/bin:${HOME}/.foundry/bin:${PATH}"
+    export BASE_STORAGE_PATH="${HOME}"
+    export WALLET_RPC_URL="http://${BITCOIN_RPC_HOST}:${BITCOIN_RPC_PORT}/"
+    export WALLET_RPC_USER="${BITCOIN_RPC_USER}"
+    export WALLET_RPC_PASSWORD="${BITCOIN_RPC_PASSWORD}"
+
+    local user_address pegin_wallet_topup_sats pegin_wallet_topup_btc funding_txid funding_wallet_tx funding_tx block_hash vout
+    user_address=$(user_address_from_wif)
+    pegin_wallet_topup_sats=$((VALUE + 100000))
+    pegin_wallet_topup_btc=$(sats_to_btc "$pegin_wallet_topup_sats")
+    log "Funding ${user_address} with ${pegin_wallet_topup_sats} sats for cli-bitcoin-wallet"
+    funding_txid=$(bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" sendtoaddress "$user_address" "$pegin_wallet_topup_btc")
+    [[ -n "$funding_txid" && "$funding_txid" != "null" ]] || die "Failed to fund user address for cli-bitcoin-wallet"
+
+    mine_blocks 1
+
+    funding_wallet_tx=$(bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" gettransaction "$funding_txid")
+    block_hash=$(echo "$funding_wallet_tx" | jq -r '.blockhash // empty')
+    [[ -n "$block_hash" && "$block_hash" != "null" ]] || die "Failed to resolve block hash for user funding tx ${funding_txid}"
+
+    funding_tx=$(bitcoin_cli_base getrawtransaction "$funding_txid" true "$block_hash")
+    vout=$(echo "$funding_tx" | jq -r --arg addr "$user_address" '.vout | to_entries[] | select(.value.scriptPubKey.address == $addr) | .key' | head -1)
+
+    [[ -n "$vout" && "$vout" != "null" ]] || die "Failed to resolve funding vout for user address ${user_address}"
+
+    ./cli-bitcoin-wallet.sh user clear_db >/dev/null 2>&1 || true
+    ./cli-bitcoin-wallet.sh user register_utxo "$funding_txid" "$block_hash" "$vout" "$pegin_wallet_topup_sats" >/dev/null
 }
 
 request_pegout() {
@@ -825,15 +1033,8 @@ if [[ "${SKIP_NATIVE_BRIDGE_CHECK:-false}" != "true" ]]; then
     fi
 fi
 
-MAIN_WALLET_CREATED=false
-if ensure_bitcoind_wallet "$BITCOIN_WALLET_NAME"; then
-    MAIN_WALLET_CREATED=true
-fi
-
-BITVMX_WALLET_CREATED=false
-if ensure_bitcoind_wallet "$BITVMX_WALLET_NAME"; then
-    BITVMX_WALLET_CREATED=true
-fi
+ensure_bitcoind_wallet "$BITCOIN_WALLET_NAME"
+ensure_bitcoind_watch_wallet "$BITVMX_WALLET_NAME"
 ensure_user_bitcoin_wif
 import_user_wif
 
@@ -855,9 +1056,9 @@ else
         topup_sats=$((local_shortfall + 100000))
         topup_btc=$(sats_to_btc "$topup_sats")
         refill_addr=$(bitcoin_cli_wallet "$BITCOIN_WALLET_NAME" getnewaddress "replenish" "bech32")
-        log "Replenishing ${BITCOIN_WALLET_NAME} from ${BITVMX_WALLET_NAME}: ${topup_sats} sats"
-        bitcoin_cli_wallet "$BITVMX_WALLET_NAME" settxfee "0.00001000" >/dev/null 2>&1 || true
-        bitcoin_cli_wallet "$BITVMX_WALLET_NAME" sendtoaddress "$refill_addr" "$topup_btc" >/dev/null
+        log "Replenishing ${BITCOIN_WALLET_NAME} from ${BITCOIN_FUNDING_WALLET_NAME}: ${topup_sats} sats"
+        bitcoin_cli_wallet "$BITCOIN_FUNDING_WALLET_NAME" settxfee "0.00001000" >/dev/null 2>&1 || true
+        bitcoin_cli_wallet "$BITCOIN_FUNDING_WALLET_NAME" sendtoaddress "$refill_addr" "$topup_btc" >/dev/null
         mine_blocks 1
         confirmed_sats=$(wallet_confirmed_balance_sats)
         if (( confirmed_sats < required_sats )); then
@@ -872,7 +1073,11 @@ fund_rsk_wallets
 fund_bitvmx_wallets
 success "Operator wallets funded"
 
-step "Step 2: Apply Operators to Stream"
+step "Step 2: Whitelist Member Addresses"
+whitelist_member_addresses
+success "Member addresses whitelisted"
+
+step "Step 3: Apply Operators to Stream"
 apply_stream
     if ! wait_for_log_with_block_timeout "CommitteeSetupFlow Done" "$COMMITTEE_SETUP_MAX_BLOCKS"; then
     if [[ "$COMMITTEE_LOG_STRICT" == "true" ]]; then
@@ -893,16 +1098,23 @@ apply_stream
 fi
 success "Operators applied to stream ${STREAM_ID}"
 
-step "Step 3: Request Pegin"
+step "Step 4: Request Pegin"
 log "RSK Address: $RSK_ADDRESS"
 log "Amount: $VALUE sats"
-log "Packet: $PACKET_NUMBER"
-pegin_address=$(request_pegin_address)
+pegin_data=$(request_pegin_data)
+pegin_address=$(echo "$pegin_data" | jq -r '.address')
+pegin_packet_number=$(echo "$pegin_data" | jq -r '.packet_number')
+pegin_enabler_script_pubkey=$(echo "$pegin_data" | jq -r '.enabler_script_pubkey')
+log "Packet: $pegin_packet_number"
 log "Pegin address: $pegin_address"
+log "Enabler script: $pegin_enabler_script_pubkey"
 # BitVMX emits PeginTransactionFound based on what its bitcoind wallet sees.
 # Import the temporary pegin address into the BitVMX wallet (watch-only) before broadcasting the tx.
 import_watch_address_into_wallet "$BITVMX_WALLET_NAME" "$pegin_address"
-create_pegin_tx "$pegin_address" "$USER_BTC_ADDRESS"
+if is_true "$RESTART_BITVMX_ON_WALLET_CREATE"; then
+    restart_bitvmx_and_coordinators "reload the imported pegin watch address"
+fi
+create_pegin_tx "$pegin_address" "$pegin_packet_number" "$pegin_enabler_script_pubkey"
 wait_for_log_with_block_timeout "PeginFlow Done" "$PEGIN_MAX_BLOCKS"
 success "Pegin flow completed"
 
