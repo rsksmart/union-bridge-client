@@ -92,6 +92,30 @@ operator_env_file_path() {
   echo "$(operator_root_path "${op_num}")/docker/${ENVIRONMENT}.env"
 }
 
+bitvmx_template_dir() {
+  echo "${SCRIPT_DIR}/../bitvmx-client/config/${ENVIRONMENT}"
+}
+
+operator_bitvmx_root_path() {
+  local op_num="$1"
+
+  echo "$(operator_root_path "${op_num}")/bitvmx/${ENVIRONMENT}"
+}
+
+operator_bitvmx_config_dir() {
+  local op_num="$1"
+
+  echo "$(operator_bitvmx_root_path "${op_num}")/client/config"
+}
+
+operator_bitvmx_yaml_path() {
+  local op_num="$1"
+  local client_op
+
+  client_op="$(operator_client_op "${op_num}")"
+  echo "$(operator_bitvmx_config_dir "${op_num}")/${client_op}.yaml"
+}
+
 project_name_for_operator() {
   local op_num="$1"
 
@@ -220,6 +244,7 @@ write_operator_env_file() {
 
   cat > "${env_file_path}" <<EOF
 CLIENT_OP=${client_op}
+BITVMX_CONFIG_DIR=$(operator_bitvmx_config_dir "${op_num}")
 BLOCK_INDEXER_BROKER_PEM_PATH=$(broker_pem_path "block-indexer" "${op_num}")
 LOG_INDEXER_BROKER_PEM_PATH=$(broker_pem_path "log-indexer" "${op_num}")
 USER_API_BROKER_PEM_PATH=$(broker_pem_path "user-api" "${op_num}")
@@ -250,6 +275,41 @@ EOF
   fi
 
   chmod 600 "${env_file_path}" || true
+}
+
+prepare_operator_bitvmx_config() {
+  local op_num="$1"
+  local template_dir
+  local target_dir
+  local cfg_file
+  local coordinator_pubkey_hash
+  local client_op
+
+  template_dir="$(bitvmx_template_dir)"
+  target_dir="$(operator_bitvmx_root_path "${op_num}")"
+  cfg_file="$(operator_bitvmx_yaml_path "${op_num}")"
+  coordinator_pubkey_hash="$(read_broker_pubkey_hash "coordinator" "${op_num}")"
+  client_op="$(operator_client_op "${op_num}")"
+
+  if [[ ! -d "${template_dir}" ]]; then
+    echo "Error: missing BitVMX template directory ${template_dir}" >&2
+    exit 1
+  fi
+
+  rm -rf "${target_dir}"
+  mkdir -p "$(dirname "${target_dir}")"
+  cp -R "${template_dir}" "${target_dir}"
+
+  if [[ ! -f "${cfg_file}" ]]; then
+    echo "Error: missing generated BitVMX operator config ${cfg_file}" >&2
+    exit 1
+  fi
+
+  if grep -q '^[[:space:]]*pubkey_hash:' "${cfg_file}" && grep -q '^[[:space:]]*l2:' "${cfg_file}"; then
+    BITVMX_COORDINATOR_PUBKEY_HASH="${coordinator_pubkey_hash}" perl -0pi -e 's/(l2:\s*\n\s*pubkey_hash:\s*)[^\n]+/${1}$ENV{BITVMX_COORDINATOR_PUBKEY_HASH}/m' "${cfg_file}"
+  fi
+
+  echo "- Prepared BitVMX config for ${client_op} at ${cfg_file} (coordinator pubkey_hash: ${coordinator_pubkey_hash})"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -320,22 +380,23 @@ case "${ENVIRONMENT}" in
     ;;
 esac
 
-if [[ "${ENVIRONMENT}" == "local" || "${ENVIRONMENT}" == "regtest" ]]; then
-  BASE_STORAGE_PATH="${BASE_STORAGE_PATH}" "${SCRIPT_DIR}/create_broker_identities.sh" --ops "${NUM_OPERATORS}"
-else
-  BASE_STORAGE_PATH="${BASE_STORAGE_PATH}" "${SCRIPT_DIR}/create_broker_identities.sh" --op "${OPERATOR_ARG}"
-fi
-
 for op_num in "${OPERATORS_TO_RUN[@]}"; do
   project_name="$(project_name_for_operator "${op_num}")"
   env_file_path="$(operator_env_file_path "${op_num}")"
   user_bitcoin_wif_value="$(resolve_user_bitcoin_wif "${op_num}" "${project_name}" "${env_file_path}")"
 
+  echo "=== op_${op_num} (${ENVIRONMENT}) ==="
+  BASE_STORAGE_PATH="${BASE_STORAGE_PATH}" "${SCRIPT_DIR}/create_broker_identities.sh" --op "${op_num}"
+
+  prepare_operator_bitvmx_config "${op_num}"
+
   if [[ -f "${env_file_path}" ]]; then
     write_operator_env_file "${env_file_path}" "${op_num}" "${user_bitcoin_wif_value}"
-    echo "Updated operator env file ${env_file_path}"
+    echo "- Updated operator env file ${env_file_path}"
   else
     write_operator_env_file "${env_file_path}" "${op_num}" "${user_bitcoin_wif_value}"
-    echo "Created operator env file ${env_file_path}"
+    echo "- Created operator env file ${env_file_path}"
   fi
+
+  echo ""
 done

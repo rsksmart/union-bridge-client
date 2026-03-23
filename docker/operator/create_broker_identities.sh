@@ -74,7 +74,7 @@ compute_pubkey_hash() {
 }
 
 for op_num in "${OPERATOR_IDS[@]}"; do
-  echo "Preparing broker identities for op_${op_num}:"
+  echo "- Preparing broker identities for op_${op_num}:"
 
   for service in "${SERVICES[@]}"; do
     broker_dir="${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}/broker"
@@ -84,14 +84,14 @@ for op_num in "${OPERATOR_IDS[@]}"; do
     mkdir -p "${broker_dir}"
 
     if [[ -f "${pem_path}" ]]; then
-      echo "  - Reusing ${service} key at ${pem_path}"
+      action="Reusing"
     else
-      echo "  - Creating ${service} key at ${pem_path}"
+      action="Creating"
       openssl genpkey -algorithm RSA -out "${pem_path}" -pkeyopt rsa_keygen_bits:2048 2>/dev/null
       chmod 600 "${pem_path}" || true
     fi
 
     compute_pubkey_hash "${pem_path}" > "${pubkey_hash_path}"
-    echo "    pubkey_hash: $(cat "${pubkey_hash_path}")"
+    echo "  - ${action} ${service} key at ${pem_path} (pubkey_hash: $(cat "${pubkey_hash_path}"))"
   done
 done

@@ -13,7 +13,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ../bitvmx-client/config/${ENVIRONMENT:-local}/client/config:/app/config
+      - ${BITVMX_CONFIG_DIR}:/app/config
       - db-bitvmx:/tmp
       - ../../resources:/app/resources:ro
     extends:

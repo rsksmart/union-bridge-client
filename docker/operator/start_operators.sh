@@ -48,22 +48,22 @@ print_help() {
   echo "Environment Details:"
   echo "  Local:"
   echo "    - Runs operators on one host (default: 4, up to 10 with --ops)"
-  echo "    - Config: bitvmx-client/config/local/client/config/op_X.yaml"
+  echo "    - BitVMX config: \${BASE_STORAGE_PATH:-\$HOME}/.union_bridge/op_X/bitvmx/local/client/config/op_X.yaml"
   echo "    - Uses bridge network (bitvmx-shared-network) for P2P communication"
   echo "    - Project name: op_1, op_2, op_3 & op_4"
   echo "  Alphanet:"
   echo "    - Runs one operator per host (testnet_op_X where X is from --op)"
-  echo "    - Config: bitvmx-client/config/alphanet/client/config/testnet_op_X.yaml"
+  echo "    - BitVMX config: \${BASE_STORAGE_PATH:-\$HOME}/.union_bridge/op_X/bitvmx/alphanet/client/config/testnet_op_X.yaml"
   echo "    - Uses host network mode for P2P connectivity across physical machines"
   echo "    - Project name: union-operator"
   echo "  Testnet:"
   echo "    - Runs one operator per host (testnet_op_X where X is from --op)"
-  echo "    - Config: bitvmx-client/config/testnet/client/config/testnet_op_X.yaml"
+  echo "    - BitVMX config: \${BASE_STORAGE_PATH:-\$HOME}/.union_bridge/op_X/bitvmx/testnet/client/config/testnet_op_X.yaml"
   echo "    - Uses host network mode for P2P connectivity across physical machines"
   echo "    - Project name: union-operator"
   echo "  Regtest:"
   echo "    - Runs all 4 operators on one host (op_1, op_2, op_3, op_4)"
-  echo "    - Config: bitvmx-client/config/regtest/client/config/op_X.yaml"
+  echo "    - BitVMX config: \${BASE_STORAGE_PATH:-\$HOME}/.union_bridge/op_X/bitvmx/regtest/client/config/op_X.yaml"
   echo "    - Uses bridge network (bitvmx-shared-network) for P2P communication"
   echo "    - Project name: op_1, op_2, op_3 & op_4"
   echo ""
@@ -244,10 +244,8 @@ elif [[ "$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest" ]]; then
   OPERATORS_TO_RUN=($(seq 1 "${NUM_OPERATORS:-4}"))
 fi
 
-# TODO(iago) review this, it's mutating config files that are git tracked
 sync_regtest_bitvmx_heights() {
-  local cfg_dir="${SCRIPT_DIR}/../bitvmx-client/config/regtest/client/config"
-  local sample_cfg="${cfg_dir}/op_1.yaml"
+  local sample_cfg="${BASE_STORAGE_PATH}/.union_bridge/op_1/bitvmx/regtest/client/config/op_1.yaml"
   local height_delta="${REGTEST_BITVMX_HEIGHT_DELTA:-10}"
   local rpc_payload='{"jsonrpc":"1.0","id":"ub","method":"getblockcount","params":[]}'
 
@@ -295,7 +293,7 @@ sync_regtest_bitvmx_heights() {
   timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
   for op_num in "${OPERATORS_TO_RUN[@]}"; do
     local cfg_file backup_file
-    cfg_file="${cfg_dir}/op_${op_num}.yaml"
+    cfg_file="${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}/bitvmx/regtest/client/config/op_${op_num}.yaml"
     backup_file="${cfg_file}.${timestamp}.bak"
 
     if [[ ! -f "${cfg_file}" ]]; then
