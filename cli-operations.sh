@@ -15,7 +15,6 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 OPERATIONS_BIN="./target/release/operations"
-TOP_LEVEL_COMMAND="${1:-}"
 
 # In GitHub Actions (e.g. e2e framework): use existing binary if present (cache hit). Locally: always build so we never run stale code.
 if ! { [ -x "$OPERATIONS_BIN" ] && [ "${GITHUB_ACTIONS:-}" = "true" ]; }; then

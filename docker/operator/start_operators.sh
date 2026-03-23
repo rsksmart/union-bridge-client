@@ -360,11 +360,19 @@ run_compose_stack() {
 
   echo
   echo "Running ${description} with env file ${env_file_path}"
-  printf "'"
+  if [[ -n "${UC_TAG:-}" ]]; then
+    printf "'UC_TAG=%q " "${UC_TAG}"
+  else
+    printf "'"
+  fi
   printf "%q " "${compose_cmd[@]}"
   echo "'"
 
-  "${compose_cmd[@]}"
+  if [[ -n "${UC_TAG:-}" ]]; then
+    UC_TAG="${UC_TAG}" "${compose_cmd[@]}"
+  else
+    "${compose_cmd[@]}"
+  fi
 }
 
 if [[ "${ENVIRONMENT}" == "regtest" && "${IS_STARTUP_COMMAND}" == true ]]; then
