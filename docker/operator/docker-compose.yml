@@ -29,10 +29,6 @@ services:
       service: block-indexer
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    volumes:
-      - ${CONFIG_DIR:-../../config}:/app/config/:ro
-      - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
-      - db-blocks:/app/db/blocks
     networks:
       - union-network
 
@@ -42,10 +38,6 @@ services:
       service: log-indexer
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    volumes:
-      - ${CONFIG_DIR:-../../config}:/app/config/:ro
-      - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
-      - db-logs:/app/db/logs
     networks:
       - union-network
 
@@ -55,10 +47,6 @@ services:
       service: user-api
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    volumes:
-      - ${CONFIG_DIR:-../../config}:/app/config/:ro
-      - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
-      - keystore:/keystore
     networks:
       - union-network
 
@@ -66,13 +54,6 @@ services:
     extends:
       file: ../build/docker-compose.yml
       service: coordinator
-    volumes:
-      # Override volume mount to ensure config directory is accessible
-      # Uses ${CONFIG_DIR} environment variable set by start_operators.sh
-      - ${CONFIG_DIR:-../../config}:/app/config/:ro
-      - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
-      - keystore:/keystore
-      - db-coordinator:/app/db/coordinator
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

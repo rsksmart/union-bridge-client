@@ -14,10 +14,10 @@ services:
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
-      - ../../config/:/app/config/:ro
+      - ${CONFIG_DIR:-../../config}:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - db-blocks:/app/db/blocks
-      - keystore:/keystore
+      - ${BLOCK_INDEXER_BROKER_PEM_PATH}:/app/broker.pem:ro
     environment:
       - ENV_NAME=${ENV_NAME:-dummy-env-name}
     restart: no
@@ -41,10 +41,10 @@ services:
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
-      - ../../config/:/app/config/:ro
+      - ${CONFIG_DIR:-../../config}:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - db-logs:/app/db/logs
-      - keystore:/keystore
+      - ${LOG_INDEXER_BROKER_PEM_PATH}:/app/broker.pem:ro
     environment:
       - ENV_NAME=${ENV_NAME:-dummy-env-name}
     restart: no
@@ -68,8 +68,9 @@ services:
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
-      - ../../config/:/app/config/:ro
+      - ${CONFIG_DIR:-../../config}:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
+      - ${COORDINATOR_BROKER_PEM_PATH}:/app/broker.pem:ro
       - keystore:/keystore
       - ../../resources:/app/resources:ro
       - db-coordinator:/app/db/coordinator
@@ -79,6 +80,9 @@ services:
       - UB__coordinator__bitvmx__port=${BITVMX_PORT:-dummy-bitvmx-port}
       - UB__coordinator__advance_funds__check_fork_guest_elf_path=${UB__coordinator__advance_funds__check_fork_guest_elf_path:-} # TODO change this before productive release
       - UB__BRIDGE__COMMITTEE__DRP_PROGRAM_DEFINITION=${UB__BRIDGE__COMMITTEE__DRP_PROGRAM_DEFINITION:-}
+      - UB__COORDINATOR__BLOCKS__PUBKEY_HASH=${UB__COORDINATOR__BLOCKS__PUBKEY_HASH:-}
+      - UB__COORDINATOR__LOGS__PUBKEY_HASH=${UB__COORDINATOR__LOGS__PUBKEY_HASH:-}
+      - UB__COORDINATOR__USER__PUBKEY_HASH=${UB__COORDINATOR__USER__PUBKEY_HASH:-}
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
       - BITCOIN_NETWORK=${BITCOIN_NETWORK:-dummy-bitcoin-network}
       - ENV_NAME=${ENV_NAME:-dummy-env-name}
@@ -109,10 +113,12 @@ services:
       ssh:
         - default=${SSH_AUTH_SOCK}
     volumes:
-      - ../../config/:/app/config/:ro
+      - ${CONFIG_DIR:-../../config}:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
+      - ${USER_API_BROKER_PEM_PATH}:/app/broker.pem:ro
       - keystore:/keystore
     environment:
+      - UB__USER_API__COORDINATOR__PUBKEY_HASH=${UB__USER_API__COORDINATOR__PUBKEY_HASH:-}
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
       - ENV_NAME=${ENV_NAME:-dummy-env-name}
       - USER_BITCOIN_WIF=${USER_BITCOIN_WIF:-}

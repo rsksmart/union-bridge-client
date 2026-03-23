@@ -70,3 +70,6 @@
 - Review async code for `.await` points that might cause blocking
 - Ensure channels are properly closed to avoid resource leaks
 - Look for race conditions in lockfree code patterns
+
+## Docker & Deployment
+- Docker setup should not depend on .envrc or direnv env vars.

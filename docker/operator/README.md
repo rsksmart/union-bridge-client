@@ -47,7 +47,7 @@ The script clones `FairgateLabs/docker-bitvmx` at the chosen ref, saves the fetc
 
 This setup supports four deployment environments:
 
-- **Local** (`.env.local`): Development environment that runs up to 10 operators on a single host with local Bitcoin and RSK nodes (default: 4, configurable via `NUM_OPERATORS` in `.env.local` or `--ops` flag)
+- **Local** (`.env.local`): Development environment that runs up to 10 operators on a single host with local Bitcoin and RSK nodes (default: 4, configurable via `setup_operators.sh --ops` or `start_operators.sh --ops`)
 - **Alphanet** (`.env.alphanet`): Production-like environment where each host runs a single operator, connecting to the Alphanet testnet
 - **Testnet** (`.env.testnet`): Production-like environment where each host runs a single operator, connecting to the Bitcoin testnet
 - **Regtest** (`.env.regtest`): All 4 operators on one host, connected to shared regtest infrastructure (powpeg + node21)
@@ -125,6 +125,38 @@ If the contracts code changes (e.g. new tag) and you use `local-build`, run a cl
 
 ### 4) Start or stop operator stacks
 
+Before starting Union services in Docker, prepare the operator artifacts once on that machine:
+
+```bash
+cd docker/operator
+
+# Local/regtest on one host
+./setup_operators.sh --env local --ops 4
+
+# One operator per host
+./setup_operators.sh --env alphanet --op 1
+```
+
+This creates or reuses:
+
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/broker/block-indexer/op_N.pem`
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/broker/block-indexer/op_N.pubkey_hash`
+- the same pair for `log-indexer`, `user-api`, and `coordinator`
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/docker/operator/<environment>/op_N.env` or `union-operator.env`
+
+`setup_operators.sh` prompts for `USER_BITCOIN_WIF` only when an operator env file is missing that value and persists it there.
+Running setup again is incremental: existing broker identities are reused, and existing operator env files are refreshed in place so updated tags or derived broker values are applied without re-prompting for stored WIFs.
+
+`start_operators.sh` reads those generated operator env files to:
+
+- mount each Union service's own broker PEM into its container
+- inject the explicit remote broker `pubkey_hash` values required by `coordinator` and `user-api`
+
+The Docker flow no longer relies on a shared broker key in `/keystore`.
+The remaining shared `keystore` volume between `coordinator` and `user-api` is transitional and is only for the existing user/member keystore files.
+
+BitVMX is not handled by this script yet. Its configuration remains a separate follow-up.
+
 #### Environment Variables
 
 The following environment variables can be set in `.envrc` (project root) to simplify multi-host deployments:
@@ -150,11 +182,12 @@ bash start_operators.sh logs -f
 bash start_operators.sh down
 ```
 
-**Note:** Command-line flags (`--env`, `--tag`, `--op`) override `.envrc` values when provided.
+**Note:** Command-line flags override `.envrc` values when provided. `--tag` is handled by `setup_operators.sh`, not by `start_operators.sh`.
 
 #### Required Environment Variables
 
-A `USER_BITCOIN_WIF` needs to be exported in the environment. It is the Bitcoin private key (WIF) used by the user-api for user endpoints (pegin/pegout operations).
+A `USER_BITCOIN_WIF` is required for the generated operator env files because `user-api` uses it for user endpoints (pegin/pegout operations).
+`setup_operators.sh` will prompt for it when an operator env file does not already contain it, unless you provide it via `--user-bitcoin-wif` or an exported environment variable.
 You can generate one via the `bitcoin-wallet` with `generate_address`.
 See [bitcoin-wallet README](../../cli/bitcoin-wallet/README.md) for more info.
 
@@ -168,16 +201,17 @@ bash start_operators.sh --help
 
 #### 4.1) Start local/dev (local bitcoind + anvil) using published images:
 
-Start operators (no `--op` flag for local, uses `NUM_OPERATORS` from `.env.local` or `--ops` flag):
+Start operators (no `--op` flag for local; use `--ops` on `setup_operators.sh` and `start_operators.sh` when you want something other than the default 4 operators):
 
 ```bash
 bash start_operators.sh --env local up -d
 ```
 
-Or explicitly specify the tag:
+If you want to change the image tag, regenerate the operator env files first:
 
 ```bash
-bash start_operators.sh --env local --tag latest-anvil up -d
+bash setup_operators.sh --env local --ops 4 --tag latest-anvil
+bash start_operators.sh --env local up -d
 ```
 
 #### 4.2) Start alphanet:
@@ -192,11 +226,13 @@ bash start_operators.sh --op 1 --env alphanet up -d
 bash start_operators.sh --op 2 --env alphanet up -d
 
 # And so on for operators 3 through 10...
+```
 
-Or explicitly specify the tag:
+If you want to change the image tag, regenerate the operator env file first:
 
 ```bash
-bash start_operators.sh --op 1 --env alphanet --tag latest-alphanet up -d
+bash setup_operators.sh --env alphanet --op 1 --tag latest-alphanet
+bash start_operators.sh --op 1 --env alphanet up -d
 ```
 
 #### 4.3) Start testnet:
@@ -211,11 +247,13 @@ bash start_operators.sh --op 1 --env testnet up -d
 bash start_operators.sh --op 2 --env testnet up -d
 
 # And so on for operators 3 and 4...
+```
 
-Or explicitly specify the tag:
+If you want to change the image tag, regenerate the operator env file first:
 
 ```bash
-bash start_operators.sh --op 1 --env testnet --tag latest-testnet up -d
+bash setup_operators.sh --env testnet --op 1 --tag latest-testnet
+bash start_operators.sh --op 1 --env testnet up -d
 ```
 
 #### 4.4) Fund operator accounts (Rootstock and BitVMX Bitcoin accounts)
