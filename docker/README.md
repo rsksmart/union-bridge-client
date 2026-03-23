@@ -156,8 +156,6 @@ The Docker setup uses two kinds of environment files:
 - tracked static environment files such as [`docker/operator/.env.local`](operator/.env.local), [`docker/operator/.env.alphanet`](operator/.env.alphanet), [`docker/operator/.env.regtest`](operator/.env.regtest), and [`docker/operator/.env.testnet`](operator/.env.testnet)
 - generated per-operator runtime files under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker/<environment>.env`, created by `docker/operator/setup_operators.sh`
 
-The build helper also uses a local `docker/build/.env`, which you can create from `docker/build/.env.sample`.
-
 ## Troubleshooting
 
 ### Port conflicts
