@@ -44,6 +44,7 @@ print_help() {
   echo "  --op <ID>                Operator ID (1-10) - required for alphanet/testnet commands"
   echo "                            (Optional if UC_OPERATOR_ID is set in .envrc)"
   echo "  --ops <N>                Number of operators to start (1-10) for local/regtest (default: 4)"
+  echo "  --tag <TAG>              Override UC_TAG for this docker compose invocation only"
   echo "  --help                   Display this help message"
   echo "  --fresh                  Tear down operators (and volumes) before running the command"
   echo "                           - Includes confirmation prompt to prevent accidental data loss in local"
@@ -95,6 +96,7 @@ print_help() {
   echo "  $0 up -d                                                  # Same as above, if UC_ENV=local in .envrc"
   echo "  $0 --env local --fresh up -d                             # Clean and start operators locally"
   echo "  $0 --env local --fresh --yes up -d                       # Clean and start operators locally, no confirmation prompt"
+  echo "  $0 --env local --tag latest-anvil up -d                  # Start local operators with an explicit image tag"
   echo "  $0 --env local down                                      # Stop all local operators"
   echo "  $0 --env regtest up -d                                   # Start all 4 operators in regtest mode"
   echo "  $0 --env regtest --ops 6 up -d                           # Start 6 operators in regtest mode"
@@ -135,6 +137,10 @@ while [[ $# -gt 0 ]]; do
         echo "Error: --ops must be between 1 and 10"
         exit 1
       fi
+      shift 2
+      ;;
+    --tag)
+      UC_TAG="$2"
       shift 2
       ;;
     --env)

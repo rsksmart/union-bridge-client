@@ -162,7 +162,7 @@ BitVMX is not handled by this script yet. Its configuration remains a separate f
 The following environment variables can be set in `.envrc` (project root) to simplify multi-host deployments:
 
 - **`UC_ENV`**: Sets the default environment (`alphanet`, `testnet`, `local`, `local-docker`, or `regtest`). Can be overridden with `--env` flag.
-- **`UC_TAG`**: Sets the default Docker image tag. Can be overridden with `--tag` flag.
+- **`UC_TAG`**: Sets the default Docker image tag. Override it via `start_operators.sh --tag`, the shell environment, or `.envrc`.
   - Defaults: `latest-alphanet` (alphanet), `latest-testnet` (testnet), `latest-anvil` (local), `latest-regtest` (regtest)
 - **`UC_OPERATOR_ID`**: Sets the default operator ID (1-10). Can be overridden with `--op` flag.
 - **`UC_OPERATOR_ROLE`**: Sets the default operator role (`prover` or `verifier`). Used by `cli-operations.sh`.
@@ -182,7 +182,7 @@ bash start_operators.sh logs -f
 bash start_operators.sh down
 ```
 
-**Note:** Command-line flags override `.envrc` values when provided. `--tag` is handled by `setup_operators.sh`, not by `start_operators.sh`.
+**Note:** Command-line flags override `.envrc` values when provided. `UC_TAG` precedence for `start_operators.sh` is: `--tag` > shell environment / `.envrc` > static `docker/operator/.env.<environment>`.
 
 #### Required Environment Variables
 
@@ -207,11 +207,10 @@ Start operators (no `--op` flag for local; use `--ops` on `setup_operators.sh` a
 bash start_operators.sh --env local up -d
 ```
 
-If you want to change the image tag, regenerate the operator env files first:
+If you want to change the image tag for a single run:
 
 ```bash
-bash setup_operators.sh --env local --ops 4 --tag latest-anvil
-bash start_operators.sh --env local up -d
+bash start_operators.sh --env local --tag latest-anvil up -d
 ```
 
 #### 4.2) Start alphanet:
@@ -228,11 +227,10 @@ bash start_operators.sh --op 2 --env alphanet up -d
 # And so on for operators 3 through 10...
 ```
 
-If you want to change the image tag, regenerate the operator env file first:
+If you want to change the image tag for a single run:
 
 ```bash
-bash setup_operators.sh --env alphanet --op 1 --tag latest-alphanet
-bash start_operators.sh --op 1 --env alphanet up -d
+bash start_operators.sh --op 1 --env alphanet --tag latest-alphanet up -d
 ```
 
 #### 4.3) Start testnet:
@@ -249,11 +247,10 @@ bash start_operators.sh --op 2 --env testnet up -d
 # And so on for operators 3 and 4...
 ```
 
-If you want to change the image tag, regenerate the operator env file first:
+If you want to change the image tag for a single run:
 
 ```bash
-bash setup_operators.sh --env testnet --op 1 --tag latest-testnet
-bash start_operators.sh --op 1 --env testnet up -d
+bash start_operators.sh --op 1 --env testnet --tag latest-testnet up -d
 ```
 
 #### 4.4) Fund operator accounts (Rootstock and BitVMX Bitcoin accounts)

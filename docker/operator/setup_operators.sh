@@ -16,18 +16,15 @@ if [[ -z "${DIRENV_DIR:-}" && -f "$ENVRC_FILE" ]]; then
   source "$ENVRC_FILE"
 fi
 
-UC_TAG="${UC_TAG:-}"
 OPERATOR_ARG="${UC_OPERATOR_ID:-}"
 ENVIRONMENT="${UC_ENV:-}"
 NUM_OPERATORS=""
 USER_BITCOIN_WIF_ARG="${USER_BITCOIN_WIF:-}"
 BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
-CONFIG_DIR="${PROJECT_ROOT}/config"
-LOGGER_PATH="${PROJECT_ROOT}/docker/build/log4rs.yaml"
 OPERATORS_TO_RUN=()
 
 print_help() {
-  echo "Usage: $0 [--env <ENV>] [--op <ID> | --ops <N>] [--tag <TAG>] [--user-bitcoin-wif <WIF>]"
+  echo "Usage: $0 [--env <ENV>] [--op <ID> | --ops <N>] [--user-bitcoin-wif <WIF>]"
   echo ""
   echo "Creates or reuses host-side Docker operator artifacts:"
   echo "  - broker identities under ${BASE_STORAGE_PATH}/.union_bridge/op_N/broker/<service>.*"
@@ -38,7 +35,6 @@ print_help() {
   echo "  --env <ENV>                Target environment: alphanet, testnet, local, local-docker, or regtest"
   echo "  --op <ID>                  Operator ID (1-10) for alphanet/testnet"
   echo "  --ops <N>                  Number of operators to prepare (1-10) for local/regtest"
-  echo "  --tag <TAG>                Docker image tag to persist into generated operator env files"
   echo "  --user-bitcoin-wif <WIF>   User WIF to persist into generated operator env files"
   echo "  --help                     Display this help message"
   exit 0
@@ -185,44 +181,6 @@ read_env_value() {
   awk -F= -v key="${key}" '$1 == key {print substr($0, index($0, "=") + 1); exit}' "${env_file}"
 }
 
-resolve_uc_tag() {
-  local existing_tag=""
-  local op_num=""
-  local env_file=""
-  local project_name=""
-
-  if [[ -n "${UC_TAG}" ]]; then
-    echo "${UC_TAG}"
-    return 0
-  fi
-
-  for op_num in "${OPERATORS_TO_RUN[@]}"; do
-    env_file="$(operator_env_file_path "${op_num}")"
-    if [[ -f "${env_file}" ]]; then
-      existing_tag="$(read_env_value "${env_file}" "UC_TAG")"
-      if [[ -n "${existing_tag}" ]]; then
-        echo "${existing_tag}"
-        return 0
-      fi
-    fi
-  done
-
-  case "${ENVIRONMENT}" in
-    local)
-      echo "latest-anvil"
-      ;;
-    regtest)
-      echo "latest-regtest"
-      ;;
-    alphanet)
-      echo "latest-alphanet"
-      ;;
-    testnet)
-      echo "latest-testnet"
-      ;;
-  esac
-}
-
 # TODO(iago) revisit if we need this
 resolve_user_bitcoin_wif() {
   local op_num="$1"
@@ -265,11 +223,7 @@ write_operator_env_file() {
 
   client_op="$(operator_client_op "${op_num}")"
 
-# TODO(iago) I believe UC_TAG, CONFIG_DIR and LOGGER_PATH do not belong per op, and should not be part of the op env file
   cat > "${env_file_path}" <<EOF
-UC_TAG=${UC_TAG}
-CONFIG_DIR=${CONFIG_DIR}
-LOGGER_PATH=${LOGGER_PATH}
 CLIENT_OP=${client_op}
 BLOCK_INDEXER_BROKER_PEM_PATH=$(broker_pem_path "block-indexer" "${op_num}")
 LOG_INDEXER_BROKER_PEM_PATH=$(broker_pem_path "log-indexer" "${op_num}")
@@ -328,10 +282,6 @@ while [[ $# -gt 0 ]]; do
       fi
       shift 2
       ;;
-    --tag)
-      UC_TAG="$2"
-      shift 2
-      ;;
     --user-bitcoin-wif)
       USER_BITCOIN_WIF_ARG="$2"
       shift 2
@@ -378,17 +328,6 @@ case "${ENVIRONMENT}" in
     exit 1
     ;;
 esac
-
-UC_TAG="$(resolve_uc_tag)"
-
-if [[ ! -d "${CONFIG_DIR}" ]]; then
-  echo "Error: config directory not found at ${CONFIG_DIR}"
-  exit 1
-fi
-if [[ ! -f "${LOGGER_PATH}" ]]; then
-  echo "Error: logger config not found at ${LOGGER_PATH}"
-  exit 1
-fi
 
 if [[ "${ENVIRONMENT}" == "local" || "${ENVIRONMENT}" == "regtest" ]]; then
   BASE_STORAGE_PATH="${BASE_STORAGE_PATH}" "${SCRIPT_DIR}/create_broker_identities.sh" --ops "${NUM_OPERATORS}"

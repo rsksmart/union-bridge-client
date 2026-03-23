@@ -51,6 +51,7 @@ fi
 # Use environment from args if provided, otherwise from UC_ENV
 ENV_TO_LOAD="${ENV_FROM_ARGS:-${UC_ENV:-}}"
 
+# TODO(iago) check if we really need to load docker specific .env files, is it being used?
 # Map environment names to .env file paths (for other vars like BITCOIND_URL, ROOTSTOCK_URL, etc.)
 if [[ "${SHOULD_LOAD_DOCKER_ENV}" == true && -n "$ENV_TO_LOAD" ]]; then
   case "$ENV_TO_LOAD" in
