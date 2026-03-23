@@ -51,7 +51,12 @@ cd docker/local-infra
 # Start blockchains (first time or fresh start)
 ./start_blockchains.sh --fresh up -d
 
+# Generate local per-operator BitVMX config under ~/.union_bridge/op_N/bitvmx/local
+cd ../operator
+./setup_operators.sh --env local --ops 4
+
 # Start 4 BitVMX clients
+cd ../local-infra
 ./start_bitvmx.sh --fresh up -d
 
 # Then run Union Client locally with cargo (from project root)

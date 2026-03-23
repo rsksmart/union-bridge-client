@@ -9,6 +9,7 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.bitvmx.yml"
 ENV_FILE="${SCRIPT_DIR}/.env.local"
 NETWORK_NAME="bitvmx-shared-network"
+export BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
 
 print_help() {
   echo "Usage: $0 [OPTIONS] [DOCKER_COMPOSE_ARGS...]"
@@ -27,6 +28,7 @@ print_help() {
   echo ""
   echo "Prerequisites: Start blockchains first"
   echo "  ./start_blockchains.sh --fresh up -d"
+  echo "  ../operator/setup_operators.sh --env local --ops 4"
   echo ""
   echo "Connect to:"
   echo "  op_1 -> localhost:22222"
@@ -69,6 +71,19 @@ ensure_network() {
   fi
 }
 
+ensure_generated_bitvmx_configs() {
+  local op_num config_dir
+
+  for op_num in 1 2 3 4; do
+    config_dir="${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}/bitvmx/local/client/config"
+    if [[ ! -d "${config_dir}" ]]; then
+      echo "Error: missing generated BitVMX config directory ${config_dir}" >&2
+      echo "Run ../operator/setup_operators.sh --env local --ops 4 before starting BitVMX." >&2
+      exit 1
+    fi
+  done
+}
+
 # Check if we're using the 'up' command
 IS_UP_COMMAND=false
 for arg in "${DOCKER_COMPOSE_ARGS[@]}"; do
@@ -86,6 +101,7 @@ fi
 
 # Ensure network exists for up command
 if [[ "${IS_UP_COMMAND}" == true ]]; then
+  ensure_generated_bitvmx_configs
   ensure_network
 fi
 

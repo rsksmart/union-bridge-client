@@ -2,6 +2,7 @@
 # Usage: docker compose -f docker-compose.bitvmx.yml up -d
 # Volume ../../resources -> /app/resources: DRP program definition (e.g. hello-world.yaml) lives in resources/;
 # coordinator config uses /app/resources/hello-world.yaml.
+# BitVMX client config is generated per operator under ${BASE_STORAGE_PATH}/.union_bridge/op_N/bitvmx/local/...
 
 services:
   bitvmx-client-1:
@@ -17,7 +18,7 @@ services:
     ports:
       - "22222:22222"
     volumes:
-      - ../bitvmx-client/config/local/client/config:/app/config
+      - ${BASE_STORAGE_PATH}/.union_bridge/op_1/bitvmx/local/client/config:/app/config
       - ../../resources:/app/resources:ro
       - db-bitvmx-1:/tmp
     networks:
@@ -37,7 +38,7 @@ services:
     ports:
       - "33333:33333"
     volumes:
-      - ../bitvmx-client/config/local/client/config:/app/config
+      - ${BASE_STORAGE_PATH}/.union_bridge/op_2/bitvmx/local/client/config:/app/config
       - ../../resources:/app/resources:ro
       - db-bitvmx-2:/tmp
     networks:
@@ -57,7 +58,7 @@ services:
     ports:
       - "44444:44444"
     volumes:
-      - ../bitvmx-client/config/local/client/config:/app/config
+      - ${BASE_STORAGE_PATH}/.union_bridge/op_3/bitvmx/local/client/config:/app/config
       - ../../resources:/app/resources:ro
       - db-bitvmx-3:/tmp
     networks:
@@ -77,7 +78,7 @@ services:
     ports:
       - "55554:55554"
     volumes:
-      - ../bitvmx-client/config/local/client/config:/app/config
+      - ${BASE_STORAGE_PATH}/.union_bridge/op_4/bitvmx/local/client/config:/app/config
       - ../../resources:/app/resources:ro
       - db-bitvmx-4:/tmp
     networks:
