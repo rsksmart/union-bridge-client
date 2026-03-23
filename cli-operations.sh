@@ -15,6 +15,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 OPERATIONS_BIN="./target/release/operations"
+TOP_LEVEL_COMMAND="${1:-}"
 
 # Determine environment from UC_ENV or parse from args to load appropriate .env file
 ENV_FROM_ARGS=""
@@ -40,22 +41,18 @@ if [[ -z "${DIRENV_DIR:-}" && -f "$ENVRC_FILE" ]]; then
   source "$ENVRC_FILE"
 fi
 
-# Save UC_OPERATOR_ID and UC_OPERATOR_ROLE before .env file might overwrite them
-# Precedence: command-line flags (-o, -r) > .envrc values > .env file values
-SAVED_UC_OPERATOR_ID_FROM_ENVRC=""
-SAVED_UC_OPERATOR_ROLE_FROM_ENVRC=""
-if [[ -n "${UC_OPERATOR_ID:-}" ]]; then
-  SAVED_UC_OPERATOR_ID_FROM_ENVRC="${UC_OPERATOR_ID}"
-fi
-if [[ -n "${UC_OPERATOR_ROLE:-}" ]]; then
-  SAVED_UC_OPERATOR_ROLE_FROM_ENVRC="${UC_OPERATOR_ROLE}"
+# Setup commands create local artifacts and should not inherit Docker operator
+# defaults like KEY_STORE_PASSWORD from docker/operator/.env.* files.
+SHOULD_LOAD_DOCKER_ENV=true
+if [[ "${TOP_LEVEL_COMMAND}" == "setup" ]]; then
+  SHOULD_LOAD_DOCKER_ENV=false
 fi
 
 # Use environment from args if provided, otherwise from UC_ENV
 ENV_TO_LOAD="${ENV_FROM_ARGS:-${UC_ENV:-}}"
 
 # Map environment names to .env file paths (for other vars like BITCOIND_URL, ROOTSTOCK_URL, etc.)
-if [[ -n "$ENV_TO_LOAD" ]]; then
+if [[ "${SHOULD_LOAD_DOCKER_ENV}" == true && -n "$ENV_TO_LOAD" ]]; then
   case "$ENV_TO_LOAD" in
     alphanet)
       ENV_FILE="docker/operator/.env.alphanet"
@@ -77,14 +74,6 @@ if [[ -n "$ENV_TO_LOAD" ]]; then
     set -a
     source "$ENV_FILE"
     set +a
-    
-    # Restore UC_OPERATOR_ID and UC_OPERATOR_ROLE if they were set before .env load
-    if [[ -n "${SAVED_UC_OPERATOR_ID_FROM_ENVRC}" ]]; then
-      export UC_OPERATOR_ID="${SAVED_UC_OPERATOR_ID_FROM_ENVRC}"
-    fi
-    if [[ -n "${SAVED_UC_OPERATOR_ROLE_FROM_ENVRC}" ]]; then
-      export UC_OPERATOR_ROLE="${SAVED_UC_OPERATOR_ROLE_FROM_ENVRC}"
-    fi
   fi
 fi
 
@@ -95,4 +84,3 @@ fi
 
 # forward all arguments to operations (using release binary directly)
 RUST_BACKTRACE=0 exec "$OPERATIONS_BIN" "$@"
-

@@ -4971,6 +4971,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
+ "key-manager",
  "nix 0.29.0",
  "sysinfo",
  "tokio",

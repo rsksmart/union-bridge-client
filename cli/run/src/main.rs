@@ -54,6 +54,7 @@
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{ArgAction, Parser};
+use key_manager::key_manager::KeyManager;
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
 use std::collections::HashMap;
@@ -217,6 +218,7 @@ async fn run_clients(config: RunConfig) -> Result<()> {
     let mut clients: Vec<ManagedClient> = Vec::new();
 
     let ids: Vec<u8> = config.client_id.map_or_else(|| vec![1, 2, 3, 4], |id| vec![id]);
+    validate_local_keystores(&ids)?;
 
     // launch clients and store in global state immediately
     let mut launch_error = None;
@@ -511,6 +513,40 @@ fn build_env_for_client(
     envs.push(("CLIENT_ID".into(), client_id));
 
     Ok(envs)
+}
+
+fn validate_local_keystores(ids: &[u8]) -> Result<()> {
+    let base_storage_path = std::env::var("BASE_STORAGE_PATH")
+        .context("BASE_STORAGE_PATH environment variable is required")?;
+    std::env::var("KEY_STORE_PASSWORD")
+        .context("KEY_STORE_PASSWORD environment variable is required for local client runs")?;
+
+    for id in ids {
+        let keystore_dir = Path::new(&base_storage_path)
+            .join(".union_bridge")
+            .join(format!("op_{id}"))
+            .join("keystore");
+
+        for key_name in ["user", "member"] {
+            let key_path = keystore_dir.join(key_name);
+            if !key_path.exists() {
+                bail!(
+                    "Missing local keystore {}. Run `./cli-operations.sh setup create-all` to recreate local artifacts.",
+                    key_path.display()
+                );
+            }
+
+            KeyManager::get_signer(&key_path).with_context(|| {
+                format!(
+                    "Failed to decrypt local {key_name} keystore {}. \
+Check KEY_STORE_PASSWORD or rerun `./cli-operations.sh setup create-all` if the keystore was created with a different password.",
+                    key_path.display()
+                )
+            })?;
+        }
+    }
+
+    Ok(())
 }
 
 fn fresh_cleanup(client_id: Option<u8>) -> Result<()> {

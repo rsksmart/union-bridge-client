@@ -423,18 +423,13 @@ fn print_wallet_summary(mode: &str, num_wallets: u8) {
     println!("total wallets: {} (member + user per client)", num_wallets * 2);
 }
 
-fn create_or_use_keystore(keystore_path: &Path, file_name: &str, password: &str) -> Result<()> {
+fn create_or_use_keystore(keystore_path: &Path, file_name: &str, password: &str) -> Result<bool> {
     let full_keystore_path = keystore_path.join(file_name);
 
     if full_keystore_path.exists() {
-        println!(
-            "[wallet-setup] key already exists at {}, skipping generation",
-            full_keystore_path.display()
-        );
-        return Ok(());
+        println!("[reused] wallet={} path={}", file_name, full_keystore_path.display());
+        return Ok(false);
     }
-
-    println!("[wallet-setup] creating new key at {}...", keystore_path.display());
 
     // create directory if it doesn't exist
     fs::create_dir_all(keystore_path)
@@ -449,9 +444,9 @@ fn create_or_use_keystore(keystore_path: &Path, file_name: &str, password: &str)
         format!("failed to rename {} to {}", generated_path, full_keystore_path.display())
     })?;
 
-    println!("[wallet-setup] key created successfully at {}", full_keystore_path.display());
+    println!("[created] wallet={} path={}", file_name, full_keystore_path.display());
 
-    Ok(())
+    Ok(true)
 }
 
 fn setup_wallets_create(num_wallets: u8, base_storage_path: &str) -> Result<()> {
