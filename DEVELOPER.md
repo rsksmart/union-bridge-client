@@ -37,7 +37,7 @@ Environment-specific config files (keys, certs, operator YAMLs, `.env` files) ar
 bash scripts/restore-untracked-configs.sh
 ```
 
-This is idempotent — files that already exist on disk are skipped. The script prefers the current branch’s history so you get the latest structure (e.g. 10 operators, updated op_*.yaml format). You can target specific environments:
+This is idempotent — files that already exist on disk are skipped. By default each file is restored from the **main merge of BitVMX 5.0.1 + contracts 0.4.0** (PR #356, commit `7cd5317c`), so you get the canonical updated layouts (e.g. operators 5–10, current YAML shapes). **Broker `*.pem` files and `client/config/keys/*` are taken only from that baseline** (no older-commit fallback) so they stay aligned with `pubkey_hash` / allow-list YAML from the same tree. Other paths may still fall back through history if missing at the baseline. Override with `RESTORE_BASE_REF=<commit>` if needed. You can target specific environments:
 
 ```bash
 bash scripts/restore-untracked-configs.sh testnet
