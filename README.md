@@ -304,15 +304,15 @@ hardcoded to 4 in the CLI).
 
 #### Wallet and Committee Setup
 
-**1. Create Wallets (first time only)**
+**1. Create Local Runtime Artifacts (first time only)**
 
-Creates Rootstock wallets for 4 operators. Each operator gets **two wallets**: one for member operations and one for
-user operations (8 wallets total).
+Creates the local Rootstock wallets and broker identities for 4 operators. Each operator gets **two wallets**: one for member operations and one for
+user operations (8 wallets total), plus separate broker identities for `block-indexer`, `log-indexer`, `user-api`, and `coordinator`.
 
 This is required for the **Transaction Dispatcher** to sign and send transactions to Rootstock.
 
 ```bash
-./cli-operations.sh setup create-rootstock-wallets
+./cli-operations.sh setup create-all
 ```
 
 **2. Fund Operators (every time you restart Anvil or run out of funds)**
@@ -451,9 +451,8 @@ anvil --block-time 2  # optional: auto-mine every 2 seconds
 cd <path_to_bitvmx_union_bridge_contracts>
 bash ./shell/script/deploy/deploy-local.sh
 
-# 4. Create and fund wallets
-./cli-operations.sh setup create-rootstock-wallets
-./cli-operations.sh setup create-broker-identities
+# 4. Create local wallets and broker identities, then fund wallets
+./cli-operations.sh setup create-all
 ./cli-operations.sh operator fund
 
 # 5. Whitelist member addresses (uses CommitteeRegistry address from config/base.toml)
@@ -778,5 +777,3 @@ The file [rusty-hook.toml](rusty-hook.toml) will be used for hook configuration.
 
 For information about the GitHub Actions workflows in this project, including how to test them locally with `act`, see
 [.github/WORKFLOWS.md](.github/WORKFLOWS.md).
-
-TODO(iago) check if READMEs are still up to date after the latest changes in the repo structure and scripts. Update if needed.

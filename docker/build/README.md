@@ -1,13 +1,16 @@
 # Docker Setup for Union Client
 
+This directory is for image building and registry operations only.
+Use [`docker/operator`](../operator/README.md) to run Union Client operators in Docker.
+
 ## Config
 
-Copy the `.env.example` file to `.env` and adjust the values as needed. This file contains environment variables that
-will be automatically used by the Docker Compose setup.
+Copy the `.env.sample` file to `.env` only if you still need to run `docker compose` manually from this directory.
+That is no longer the supported runtime path; operator startup is handled from [`docker/operator`](../operator/README.md).
 
 By default, the compose will use:
 
-- the `config/docker` folder for the Union Client config files
+- the repository `config/` directory for the Union Client config files
     - you can override any configuration value using environment variables prefixed with `UB__` matching the config structure, e.g.
       `UB__COORDINATOR__BLOCKS__HOST=192.168.1.100`
     - see the main [README.md](../../README.md#configuration-overrides) for detailed examples and mapping rules
@@ -38,11 +41,15 @@ bash d-build-client.sh --help
 ```
 
 ### First time docker setup pre-requisite 
-Inside the docker/build directory, copy the contents of the `.env.sample` file into a new `.env` file (not to be confused with `.envrc` which the project uses in the root directory). 
+Inside the `docker/build` directory, `.env.sample` exists only for direct manual `docker compose` usage from this folder.
+That is not the recommended path anymore.
 
-Set a value for the `KEY_STORE_PASSWORD` variable, it doesn't need to be the same as the equivalent var in the `.envrc` of the project's root directory.
+For normal Docker runtime usage:
 
-N.B.: Please note that you need to have both Anvil and the `bitvmx-workspace` running before starting up the Union client services with Docker. Runtime startup is handled from [`docker/operator`](../operator/README.md).
+1. build images from here with `d-build-client.sh`
+2. run operators from [`docker/operator`](../operator/README.md)
+
+If you do use `docker compose` manually from this directory, set `KEY_STORE_PASSWORD` in `docker/build/.env`.
 
 ## Registry Management Scripts
 

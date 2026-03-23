@@ -2,7 +2,7 @@
 
 This setup provides flexible operator deployment configurations:
 
-- **Local environment**: Run all 10 independent operator stacks in parallel (`op_1`..`op_10`) on a single host to simulate a committee, using a shared Docker bridge network for BitVMX P2P communication
+- **Local environment**: Run multiple independent operator stacks in parallel (`op_1`..`op_N`) on a single host to simulate a committee, using a shared Docker bridge network for BitVMX P2P communication. The default is 4 operators; use `--ops` when you need more.
 - **Alphanet environment**: Run a single operator per host, allowing distributed committee deployment across multiple machines, using host network mode for BitVMX P2P connectivity
 - Each stack includes: BitVMX client + Union Client services (`user-api`, `block-indexer`, `log-indexer`, `coordinator`)
 
@@ -47,7 +47,7 @@ The script clones `FairgateLabs/docker-bitvmx` at the chosen ref, saves the fetc
 
 This setup supports four deployment environments:
 
-- **Local** (`.env.local`): Development environment that runs up to 10 operators on a single host with local Bitcoin and RSK nodes (default: 4, configurable via `setup_operators.sh --ops` or `start_operators.sh --ops`)
+- **Local** (`.env.local`): Development environment that runs multiple operators on a single host with local Bitcoin and RSK nodes (default: 4, configurable via `setup_operators.sh --ops` or `start_operators.sh --ops`)
 - **Alphanet** (`.env.alphanet`): Production-like environment where each host runs a single operator, connecting to the Alphanet testnet
 - **Testnet** (`.env.testnet`): Production-like environment where each host runs a single operator, connecting to the Bitcoin testnet
 - **Regtest** (`.env.regtest`): All 4 operators on one host, connected to shared regtest infrastructure (powpeg + node21)
@@ -325,20 +325,16 @@ cd ../../
 
 ### 5) Viewing logs per operator project
 
-**Local environment:** You can tail logs per operator project name (`op_1`..`op_10`) using docker compose directly:
+**Local environment:** You can tail logs per operator project name (`op_1`..`op_N`) using docker compose directly:
 
 ```bash
 docker compose -p op_1 logs -f
 docker compose -p op_2 logs -f
 docker compose -p op_3 logs -f
 docker compose -p op_4 logs -f
-docker compose -p op_5 logs -f
-docker compose -p op_6 logs -f
-docker compose -p op_7 logs -f
-docker compose -p op_8 logs -f
-docker compose -p op_9 logs -f
-docker compose -p op_10 logs -f
 ```
+
+Add more `op_N` projects only if you started them with `--ops`.
 
 Using the `start_operators.sh` script:
 
@@ -360,18 +356,14 @@ bash start_operators.sh --env testnet logs -f
 
 ### 6) Interacting with the user-api
 
-**Local environment:** Each operator stack exposes a user-api on different ports:
+**Local environment:** Each operator stack exposes a user-api on different ports. With the default 4-operator setup:
 
 - `op_1` -> http://localhost:40001
 - `op_2` -> http://localhost:40002
 - `op_3` -> http://localhost:40003
 - `op_4` -> http://localhost:40004
-- `op_5` -> http://localhost:40005
-- `op_6` -> http://localhost:40006
-- `op_7` -> http://localhost:40007
-- `op_8` -> http://localhost:40008
-- `op_9` -> http://localhost:40009
-- `op_10` -> http://localhost:40010
+
+If you start more operators with `--ops`, the pattern continues (`op_5` -> `:40005`, etc.).
 
 **Alphanet/Testnet environment:** Each host runs one operator, accessible at:
 
@@ -381,7 +373,7 @@ bash start_operators.sh --env testnet logs -f
 
 Use the `committee_setup.sh` script to apply operators to a stream:
 
-**Local:** Apply all 10 operators:
+**Local:** Apply all started operators:
 
 ```bash
 bash operator_scripts/committee_setup.sh --stream-id <STREAM_ID> --env local
@@ -428,8 +420,7 @@ See the `bitcoin-wallet` [README](../../cli/bitcoin-wallet/README.md) for more i
 
 ### Resource conflicts
 
-- **Port conflicts**: ensure ports `40001–40010`, `61180–61189`, and `22222/33333/44444/55554/55555–55560` are free.
-  export `BITVMX_P2P_HOST` addresses accordingly in `start_operators.sh`.
+- **Port conflicts**: ensure the ports for the operators you plan to run are free. With the default 4-operator local setup, that includes `40001–40004`, `61180–61183`, and `22222/33333/44444/55554`.
 - **Healthchecks**: services wait for each other; if something is stuck, try bringing stacks down as mentioned above,
   re-check env files, and start again.
 

@@ -151,13 +151,12 @@ See [build/README.md](build/README.md) for detailed usage.
 
 ## Environment Files
 
-Each deployment scenario uses environment files (`.env`, `.env.local`, `.env.alphanet`) containing configuration like:
+The Docker setup uses two kinds of environment files:
 
-- `BITCOIND_URL` - Bitcoin RPC endpoint
-- `ENVIRONMENT` - Environment name (local, alphanet)
-- Contract addresses and other deployment-specific settings
+- tracked static environment files such as [`docker/operator/.env.local`](operator/.env.local), [`docker/operator/.env.alphanet`](operator/.env.alphanet), [`docker/operator/.env.regtest`](operator/.env.regtest), and [`docker/operator/.env.testnet`](operator/.env.testnet)
+- generated per-operator runtime files under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker/<environment>.env`, created by `docker/operator/setup_operators.sh`
 
-These files are gitignored and must be created locally. Check the respective folder's README or sample files for required variables.
+The build helper also uses a local `docker/build/.env`, which you can create from `docker/build/.env.sample`.
 
 ## Troubleshooting
 
