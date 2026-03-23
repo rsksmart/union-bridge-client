@@ -332,10 +332,10 @@ resolve_regtest_check_fork_elf_path() {
 }
 
 operator_env_file_path() {
-  local project_name="$1"
-  local runtime_dir="${BASE_STORAGE_PATH}/.union_bridge/docker/operator/${ENVIRONMENT}"
+  local op_num="$1"
+  local runtime_dir="${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}/docker"
 
-  echo "${runtime_dir}/${project_name}.env"
+  echo "${runtime_dir}/${ENVIRONMENT}.env"
 }
 
 require_operator_env_file() {
@@ -392,7 +392,7 @@ if [[ "${FRESH}" == true ]]; then
   if [[ "$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest" ]]; then
     echo "Cleaning operator stacks (down --volumes)..."
     for op_num in "${OPERATORS_TO_RUN[@]}"; do
-      operator_env_file="$(operator_env_file_path "op_${op_num}")"
+      operator_env_file="$(operator_env_file_path "${op_num}")"
       if ! require_operator_env_file "${operator_env_file}"; then
         exit 1
       fi
@@ -400,7 +400,7 @@ if [[ "${FRESH}" == true ]]; then
     done
   else
     echo "Cleaning operator stack (down --volumes) for project union-operator..."
-    operator_env_file="$(operator_env_file_path "union-operator")"
+    operator_env_file="$(operator_env_file_path "${OPERATORS_TO_RUN[0]}")"
     if ! require_operator_env_file "${operator_env_file}"; then
       exit 1
     fi
@@ -424,7 +424,7 @@ run_all_operators() {
   
   for op_num in "${OPERATORS_TO_RUN[@]}"; do
     local operator_env_file
-    operator_env_file="$(operator_env_file_path "op_${op_num}")"
+    operator_env_file="$(operator_env_file_path "${op_num}")"
     if ! require_operator_env_file "${operator_env_file}"; then
       exit 1
     fi
@@ -438,7 +438,7 @@ run_single_operator() {
   local environment_label="$1"
   local op_num=${OPERATORS_TO_RUN[0]}
   local operator_env_file
-  operator_env_file="$(operator_env_file_path "union-operator")"
+  operator_env_file="$(operator_env_file_path "${op_num}")"
   if ! require_operator_env_file "${operator_env_file}"; then
     exit 1
   fi

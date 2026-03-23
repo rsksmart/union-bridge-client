@@ -325,10 +325,10 @@ mod tests {
                 .coordinator
                 .broker
                 .key_path
-                .ends_with("/.union_bridge/broker/coordinator/op_1.pem")
+                .ends_with("/.union_bridge/op_1/broker/coordinator.pem")
         );
         assert!(!config.coordinator.storage_path.contains("{BASE_STORAGE_PATH}"));
-        assert!(config.coordinator.storage_path.ends_with("/.union_bridge/database/op_1"));
+        assert!(config.coordinator.storage_path.ends_with("/.union_bridge/op_1/database"));
         assert_eq!(
             "/app/config/check-fork-guest.bin",
             config.coordinator.advance_funds.check_fork_guest_elf_path

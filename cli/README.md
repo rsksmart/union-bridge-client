@@ -82,11 +82,8 @@ export UC_OPERATOR_ROLE="prover"
 ```bash
 ./cli-operations.sh --help
 
-# Setup: Create Rootstock wallets for 4 operators
-./cli-operations.sh setup create-rootstock-wallets
-
-# Setup: Create broker identities for 4 operators
-./cli-operations.sh setup create-broker-identities
+# Setup: Create local wallets and broker identities for 4 operators
+./cli-operations.sh setup create-all
 
 # Operator: Fund operators on local-docker environment
 ./cli-operations.sh operator fund --env local-docker
@@ -113,6 +110,7 @@ export UC_OPERATOR_ROLE="prover"
 ### Command Structure
 
 - **`setup`**: Initial configuration (create wallets and local broker identities)
+  - `create-all`: convenience command that runs both local setup steps
 - **`operator`**: Operator management (fund, apply-stream)
   - `fund`: Display bitcoin addresses and optionally execute wallet commands with `--execute`
 - **`user`**: User operations (pegin, pegout)
@@ -161,23 +159,20 @@ The CLI workspace is independent from the main Union Bridge workspace, allowing 
 ### Local Development Setup
 
 ```bash
-# 1. Create wallets for 4 operators
-./cli-operations.sh setup create-rootstock-wallets
+# 1. Create wallets and broker identities for 4 operators
+./cli-operations.sh setup create-all
 
-# 2. Create broker identities for 4 operators
-./cli-operations.sh setup create-broker-identities
-
-# 3. Fund operators (Bitcoin + Rootstock)
+# 2. Fund operators (Bitcoin + Rootstock)
 # Option A: Print commands to run manually
 ./cli-operations.sh operator fund
 
 # Option B: Execute wallet commands automatically
 ./cli-operations.sh operator fund --execute
 
-# 4. Run all 4 clients
+# 3. Run all 4 clients
 ./cli-run.sh --features anvil
 
-# 5. Apply operators to stream
+# 4. Apply operators to stream
 ./cli-operations.sh operator apply-stream --stream-id 1
 ```
 

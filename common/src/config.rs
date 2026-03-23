@@ -317,7 +317,7 @@ mod tests {
         );
         assert_eq!(IndexerStartFrom::Hash, config.indexer.start_from);
         assert!(!config.indexer.storage.path.contains("{BASE_STORAGE_PATH}"));
-        assert!(config.indexer.storage.path.ends_with("/.union_bridge/database/op_1"));
+        assert!(config.indexer.storage.path.ends_with("/.union_bridge/op_1/database"));
         assert_eq!(1000, config.indexer.cache.size);
         assert_eq!(100, config.indexer.sync.finality_depth);
         assert_eq!(100, config.indexer.sync.batch_size);

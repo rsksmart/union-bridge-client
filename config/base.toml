@@ -12,7 +12,7 @@ bitcoin_network = "regtest"
 # - "best": ignore initial_block_hash and start from provider best block at startup.
 start_from = "hash"
 initial_block_hash = "0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"
-storage.path = "/{BASE_STORAGE_PATH}/.union_bridge/database/op_1"
+storage.path = "/{BASE_STORAGE_PATH}/.union_bridge/op_1/database"
 cache.size = 1000
 sync.finality_depth = 100
 sync.batch_size = 100
@@ -66,9 +66,9 @@ address = "0x0000000000000000000000000000000001000006"
 
 [key_store]
 # Path to user keystore (for user role transactions)
-user_path = "/{BASE_STORAGE_PATH}/.union_bridge/keystore/op_1-user"
+user_path = "/{BASE_STORAGE_PATH}/.union_bridge/op_1/keystore/user"
 # Path to member keystore (for member role transactions)
-member_path = "/{BASE_STORAGE_PATH}/.union_bridge/keystore/op_1-member"
+member_path = "/{BASE_STORAGE_PATH}/.union_bridge/op_1/keystore/member"
 
 # ═══════════════════════════════════════════════════════
 # Coordinator
@@ -93,8 +93,8 @@ bitvmx.port = 22222
 # The pubkey_hash of the bitvmx broker server's message queue (components.bitvmx.pubkey_hash in bitvmx-client config)
 bitvmx.pubkey_hash = "1d10fa43ebbf6674d74caa3e9032711ade09d98ea7d20f89459f61152bebda1e" # can be patched with env
 broker.client_id = 101
-broker.key_path = "/{BASE_STORAGE_PATH}/.union_bridge/broker/coordinator/op_1.pem"
-storage_path = "/{BASE_STORAGE_PATH}/.union_bridge/database/op_1"
+broker.key_path = "/{BASE_STORAGE_PATH}/.union_bridge/op_1/broker/coordinator.pem"
+storage_path = "/{BASE_STORAGE_PATH}/.union_bridge/op_1/database"
 
 [coordinator.advance_funds]
 check_fork_guest_elf_path = "/app/config/check-fork-guest.bin"
@@ -154,7 +154,7 @@ min_tx_confirmations = 2
 [block_indexer]
 
 notifier.port = 10001
-broker_key_path = "/{BASE_STORAGE_PATH}/.union_bridge/broker/block-indexer/op_1.pem"
+broker_key_path = "/{BASE_STORAGE_PATH}/.union_bridge/op_1/broker/block-indexer.pem"
 
 # ═══════════════════════════════════════════════════════
 # Log Indexer
@@ -163,7 +163,7 @@ broker_key_path = "/{BASE_STORAGE_PATH}/.union_bridge/broker/block-indexer/op_1.
 [log_indexer]
 
 notifier.port = 20001
-broker_key_path = "/{BASE_STORAGE_PATH}/.union_bridge/broker/log-indexer/op_1.pem"
+broker_key_path = "/{BASE_STORAGE_PATH}/.union_bridge/op_1/broker/log-indexer.pem"
 
 # ═══════════════════════════════════════════════════════
 # Transaction Dispatcher
@@ -184,6 +184,6 @@ transaction.gas_bumps_t1 = 3
 coordinator.client_id = 101
 # Local multi-client runs override this from multiclient.env via the provisioned .pubkey_hash file.
 coordinator.pubkey_hash = "<to_patch_with_env>"
-broker_key_path = "/{BASE_STORAGE_PATH}/.union_bridge/broker/user-api/op_1.pem"
+broker_key_path = "/{BASE_STORAGE_PATH}/.union_bridge/op_1/broker/user-api.pem"
 notifier.port = 30001
 http.port = 40001

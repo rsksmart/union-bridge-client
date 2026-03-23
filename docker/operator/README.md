@@ -139,10 +139,10 @@ cd docker/operator
 
 This creates or reuses:
 
-- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/broker/block-indexer/op_N.pem`
-- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/broker/block-indexer/op_N.pubkey_hash`
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/broker/block-indexer.pem`
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/broker/block-indexer.pubkey_hash`
 - the same pair for `log-indexer`, `user-api`, and `coordinator`
-- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/docker/operator/<environment>/op_N.env` or `union-operator.env`
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker/<environment>.env`
 
 `setup_operators.sh` prompts for `USER_BITCOIN_WIF` only when an operator env file is missing that value and persists it there.
 Running setup again is incremental: existing broker identities are reused, and existing operator env files are refreshed in place so updated tags or derived broker values are applied without re-prompting for stored WIFs.

@@ -124,6 +124,9 @@ enum Commands {
 
 #[derive(Debug, Subcommand, Clone)]
 enum SetupCommands {
+    /// Create local Rootstock wallets and broker identities for local multi-client deployment
+    #[command(name = "create-all")]
+    CreateAll,
     /// Create Rootstock wallets for local multi-client deployment
     #[command(name = "create-rootstock-wallets")]
     CreateRootstockWallets,
@@ -258,6 +261,16 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Setup { command } => match command {
+            SetupCommands::CreateAll => {
+                let base_storage_path = std::env::var("BASE_STORAGE_PATH").ok();
+                let num_operators = operator_ids().len() as u8;
+
+                println!("=== Creating Rootstock Wallets ===");
+                rsk_wallet::handle_wallet_creation(num_operators, base_storage_path.as_deref())?;
+                println!();
+                println!("=== Creating Broker Identities ===");
+                create_and_print_broker_identities()?;
+            }
             SetupCommands::CreateRootstockWallets => {
                 let base_storage_path = std::env::var("BASE_STORAGE_PATH").ok();
                 rsk_wallet::handle_wallet_creation(
@@ -265,44 +278,7 @@ async fn main() -> Result<()> {
                     base_storage_path.as_deref(),
                 )?;
             }
-            SetupCommands::CreateBrokerIdentities => {
-                let base_storage_path = std::env::var("BASE_STORAGE_PATH").map_err(|_| {
-                    anyhow!(
-                        "BASE_STORAGE_PATH environment variable is required (e.g., export BASE_STORAGE_PATH=/Users/username)"
-                    )
-                })?;
-
-                let identities = broker_identity::create_local_broker_identities(
-                    std::path::Path::new(&base_storage_path),
-                    &operator_ids(),
-                )?;
-
-                for identity in &identities {
-                    let status = if identity.created { "created" } else { "reused" };
-                    println!(
-                        "[{status}] operator={} service={} pem={} pubkey_hash_file={} pubkey_hash={}",
-                        identity.operator_id,
-                        identity.service,
-                        identity.pem_path.display(),
-                        identity.pubkey_hash_path.display(),
-                        identity.pubkey_hash
-                    );
-                }
-
-                println!();
-                println!(
-                    "[One time Op] Local BitVMX Client config is still manual. Update each operator's \
-config/op_N.yaml so `components.l2.pubkey_hash` matches that operator's coordinator pubkey_hash:"
-                );
-                for identity in
-                    identities.iter().filter(|identity| identity.service == "coordinator")
-                {
-                    println!(
-                        "  - operator {}: config/op_{}.yaml -> components.l2.pubkey_hash = {}",
-                        identity.operator_id, identity.operator_id, identity.pubkey_hash
-                    );
-                }
-            }
+            SetupCommands::CreateBrokerIdentities => create_and_print_broker_identities()?,
         },
         Commands::Operator { command } => match command {
             OperatorCommands::Fund { env, execute, fund_amount } => {
@@ -334,6 +310,45 @@ config/op_N.yaml so `components.l2.pubkey_hash` matches that operator's coordina
                 pegout::request_pegout(env, value, usr_pub_key).await?;
             }
         },
+    }
+
+    Ok(())
+}
+
+fn create_and_print_broker_identities() -> Result<()> {
+    let base_storage_path = std::env::var("BASE_STORAGE_PATH").map_err(|_| {
+        anyhow!(
+            "BASE_STORAGE_PATH environment variable is required (e.g., export BASE_STORAGE_PATH=/Users/username)"
+        )
+    })?;
+
+    let identities = broker_identity::create_local_broker_identities(
+        std::path::Path::new(&base_storage_path),
+        &operator_ids(),
+    )?;
+
+    for identity in &identities {
+        let status = if identity.created { "created" } else { "reused" };
+        println!(
+            "[{status}] operator={} service={} pem={} pubkey_hash_file={} pubkey_hash={}",
+            identity.operator_id,
+            identity.service,
+            identity.pem_path.display(),
+            identity.pubkey_hash_path.display(),
+            identity.pubkey_hash
+        );
+    }
+
+    println!();
+    println!(
+        "[One time Op] Local BitVMX Client config is still manual. Update each operator's \
+config/op_N.yaml so `components.l2.pubkey_hash` matches that operator's coordinator pubkey_hash:"
+    );
+    for identity in identities.iter().filter(|identity| identity.service == "coordinator") {
+        println!(
+            "  - operator {}: config/op_{}.yaml -> components.l2.pubkey_hash = {}",
+            identity.operator_id, identity.operator_id, identity.pubkey_hash
+        );
     }
 
     Ok(())

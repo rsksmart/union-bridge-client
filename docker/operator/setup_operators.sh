@@ -22,8 +22,6 @@ ENVIRONMENT="${UC_ENV:-}"
 NUM_OPERATORS=""
 USER_BITCOIN_WIF_ARG="${USER_BITCOIN_WIF:-}"
 BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
-BROKER_ROOT="${BASE_STORAGE_PATH}/.union_bridge/broker"
-OPERATOR_ENV_ROOT="${BASE_STORAGE_PATH}/.union_bridge/docker/operator"
 CONFIG_DIR="${PROJECT_ROOT}/config"
 LOGGER_PATH="${PROJECT_ROOT}/docker/build/log4rs.yaml"
 OPERATORS_TO_RUN=()
@@ -32,8 +30,8 @@ print_help() {
   echo "Usage: $0 [--env <ENV>] [--op <ID> | --ops <N>] [--tag <TAG>] [--user-bitcoin-wif <WIF>]"
   echo ""
   echo "Creates or reuses host-side Docker operator artifacts:"
-  echo "  - broker identities under ${BASE_STORAGE_PATH}/.union_bridge/broker/<service>/op_N.*"
-  echo "  - generated operator env files under ${BASE_STORAGE_PATH}/.union_bridge/docker/operator/<env>/"
+  echo "  - broker identities under ${BASE_STORAGE_PATH}/.union_bridge/op_N/broker/<service>.*"
+  echo "  - generated operator env files under ${BASE_STORAGE_PATH}/.union_bridge/op_N/docker/<env>.env"
   echo "  Existing operator env files are refreshed in place."
   echo ""
   echo "Options:"
@@ -93,10 +91,16 @@ prompt_num_operators() {
   done
 }
 
-operator_env_file_path() {
-  local project_name="$1"
+operator_root_path() {
+  local op_num="$1"
 
-  echo "${OPERATOR_ENV_ROOT}/${ENVIRONMENT}/${project_name}.env"
+  echo "${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}"
+}
+
+operator_env_file_path() {
+  local op_num="$1"
+
+  echo "$(operator_root_path "${op_num}")/docker/${ENVIRONMENT}.env"
 }
 
 project_name_for_operator() {
@@ -150,14 +154,14 @@ broker_pem_path() {
   local service="$1"
   local op_num="$2"
 
-  echo "${BROKER_ROOT}/${service}/op_${op_num}.pem"
+  echo "$(operator_root_path "${op_num}")/broker/${service}.pem"
 }
 
 broker_pubkey_hash_path() {
   local service="$1"
   local op_num="$2"
 
-  echo "${BROKER_ROOT}/${service}/op_${op_num}.pubkey_hash"
+  echo "$(operator_root_path "${op_num}")/broker/${service}.pubkey_hash"
 }
 
 read_broker_pubkey_hash() {
@@ -193,8 +197,7 @@ resolve_uc_tag() {
   fi
 
   for op_num in "${OPERATORS_TO_RUN[@]}"; do
-    project_name="$(project_name_for_operator "${op_num}")"
-    env_file="$(operator_env_file_path "${project_name}")"
+    env_file="$(operator_env_file_path "${op_num}")"
     if [[ -f "${env_file}" ]]; then
       existing_tag="$(read_env_value "${env_file}" "UC_TAG")"
       if [[ -n "${existing_tag}" ]]; then
@@ -220,6 +223,7 @@ resolve_uc_tag() {
   esac
 }
 
+# TODO(iago) revisit if we need this
 resolve_user_bitcoin_wif() {
   local op_num="$1"
   local project_name="$2"
@@ -261,6 +265,7 @@ write_operator_env_file() {
 
   client_op="$(operator_client_op "${op_num}")"
 
+# TODO(iago) I believe UC_TAG, CONFIG_DIR and LOGGER_PATH do not belong per op, and should not be part of the op env file
   cat > "${env_file_path}" <<EOF
 UC_TAG=${UC_TAG}
 CONFIG_DIR=${CONFIG_DIR}
@@ -393,7 +398,7 @@ fi
 
 for op_num in "${OPERATORS_TO_RUN[@]}"; do
   project_name="$(project_name_for_operator "${op_num}")"
-  env_file_path="$(operator_env_file_path "${project_name}")"
+  env_file_path="$(operator_env_file_path "${op_num}")"
   user_bitcoin_wif_value="$(resolve_user_bitcoin_wif "${op_num}" "${project_name}" "${env_file_path}")"
 
   if [[ -f "${env_file_path}" ]]; then

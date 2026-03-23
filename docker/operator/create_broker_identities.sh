@@ -3,7 +3,6 @@
 set -euo pipefail
 
 BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
-BROKER_ROOT="${BASE_STORAGE_PATH}/.union_bridge/broker"
 SERVICES=("block-indexer" "log-indexer" "user-api" "coordinator")
 OPERATOR_IDS=()
 
@@ -11,8 +10,8 @@ print_help() {
   echo "Usage: $0 [--op <ID> | --ops <N>]"
   echo ""
   echo "Creates or reuses host-side Union broker identities under:"
-  echo "  ${BASE_STORAGE_PATH}/.union_bridge/broker/<service>/op_N.pem"
-  echo "  ${BASE_STORAGE_PATH}/.union_bridge/broker/<service>/op_N.pubkey_hash"
+  echo "  ${BASE_STORAGE_PATH}/.union_bridge/op_N/broker/<service>.pem"
+  echo "  ${BASE_STORAGE_PATH}/.union_bridge/op_N/broker/<service>.pubkey_hash"
   echo ""
   echo "Options:"
   echo "  --op <ID>    Create identities for one operator (1-10)"
@@ -78,11 +77,11 @@ for op_num in "${OPERATOR_IDS[@]}"; do
   echo "Preparing broker identities for op_${op_num}:"
 
   for service in "${SERVICES[@]}"; do
-    service_dir="${BROKER_ROOT}/${service}"
-    pem_path="${service_dir}/op_${op_num}.pem"
-    pubkey_hash_path="${service_dir}/op_${op_num}.pubkey_hash"
+    broker_dir="${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}/broker"
+    pem_path="${broker_dir}/${service}.pem"
+    pubkey_hash_path="${broker_dir}/${service}.pubkey_hash"
 
-    mkdir -p "${service_dir}"
+    mkdir -p "${broker_dir}"
 
     if [[ -f "${pem_path}" ]]; then
       echo "  - Reusing ${service} key at ${pem_path}"

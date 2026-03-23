@@ -37,14 +37,14 @@ fn provision_identity(
     operator_id: u8,
     service: &'static str,
 ) -> Result<ProvisionedBrokerIdentity> {
-    let service_dir = base_storage_path.join(".union_bridge").join("broker").join(service);
-    fs::create_dir_all(&service_dir).with_context(|| {
-        format!("Failed to create broker identity directory {}", service_dir.display())
+    let operator_dir = base_storage_path.join(".union_bridge").join(format!("op_{operator_id}"));
+    let broker_dir = operator_dir.join("broker");
+    fs::create_dir_all(&broker_dir).with_context(|| {
+        format!("Failed to create broker identity directory {}", broker_dir.display())
     })?;
 
-    let identity_name = format!("op_{operator_id}");
-    let pem_path = service_dir.join(format!("{identity_name}.pem"));
-    let pubkey_hash_path = service_dir.join(format!("{identity_name}.pubkey_hash"));
+    let pem_path = broker_dir.join(format!("{service}.pem"));
+    let pubkey_hash_path = broker_dir.join(format!("{service}.pubkey_hash"));
 
     let created = if pem_path.exists() {
         false
@@ -143,7 +143,7 @@ mod tests {
             assert_eq!(first.pem_path, second.pem_path);
             assert_eq!(first.pubkey_hash_path, second.pubkey_hash_path);
             assert_eq!(first.pubkey_hash, second.pubkey_hash);
-            assert!(first.pem_path.to_string_lossy().contains("/.union_bridge/broker/"));
+            assert!(first.pem_path.to_string_lossy().contains("/.union_bridge/op_1/broker/"));
             assert!(first.pem_path.exists());
             assert!(first.pubkey_hash_path.exists());
         }

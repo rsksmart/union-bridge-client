@@ -171,7 +171,7 @@ first.
 Under the directory specified in the `BASE_STORAGE_PATH` env, run the following command to create the base directory:
 
 ```bash
-mkdir -p ${BASE_STORAGE_PATH}/.union_bridge/keystore
+mkdir -p ${BASE_STORAGE_PATH}/.union_bridge
 ```
 
 #### Creating Broker Identities
@@ -185,21 +185,30 @@ broker identities for:
 - `coordinator` broker client
 
 ```bash
-./cli-operations.sh setup create-broker-identities
+./cli-operations.sh setup create-all
 ```
 
-This command creates or reuses stable files under `BASE_STORAGE_PATH`, for example:
+This command creates or reuses both the local Rootstock keystores and the local broker identities under `BASE_STORAGE_PATH`, for example:
 
-- `${BASE_STORAGE_PATH}/.union_bridge/broker/block-indexer/op_1.pem`
-- `${BASE_STORAGE_PATH}/.union_bridge/broker/block-indexer/op_1.pubkey_hash`
-- `${BASE_STORAGE_PATH}/.union_bridge/broker/log-indexer/op_1.pem`
-- `${BASE_STORAGE_PATH}/.union_bridge/broker/user-api/op_1.pem`
-- `${BASE_STORAGE_PATH}/.union_bridge/broker/coordinator/op_1.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/block-indexer.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/block-indexer.pubkey_hash`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/log-indexer.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/user-api.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/coordinator.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/keystore/user`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/keystore/member`
 
 The `.pubkey_hash` files are generated from the created PEMs and are consumed by the local launcher so the
 coordinator and user-api use explicit remote identities without duplicating raw hash values in `multiclient.env`.
 The command also prints the coordinator `pubkey_hash` for each operator so you can copy the correct value into the
 matching local BitVMX Client config.
+
+If you only need one half of the local setup, the granular commands still exist:
+
+```bash
+./cli-operations.sh setup create-rootstock-wallets
+./cli-operations.sh setup create-broker-identities
+```
 
 #### Configuring BitVMX Client
 
@@ -212,8 +221,8 @@ identity.
 For example:
 
 ```bash
-cat ${BASE_STORAGE_PATH}/.union_bridge/broker/coordinator/op_1.pubkey_hash
-cat ${BASE_STORAGE_PATH}/.union_bridge/broker/coordinator/op_2.pubkey_hash
+cat ${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/coordinator.pubkey_hash
+cat ${BASE_STORAGE_PATH}/.union_bridge/op_2/broker/coordinator.pubkey_hash
 ```
 
 **2. Update BitVMX client config files manually, operator by operator**
@@ -230,10 +239,10 @@ components:
 
 Examples:
 
-- `config/op_1.yaml` -> coordinator `op_1.pubkey_hash`
-- `config/op_2.yaml` -> coordinator `op_2.pubkey_hash`
-- `config/op_3.yaml` -> coordinator `op_3.pubkey_hash`
-- `config/op_4.yaml` -> coordinator `op_4.pubkey_hash`
+- `config/op_1.yaml` -> coordinator `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/coordinator.pubkey_hash`
+- `config/op_2.yaml` -> coordinator `${BASE_STORAGE_PATH}/.union_bridge/op_2/broker/coordinator.pubkey_hash`
+- `config/op_3.yaml` -> coordinator `${BASE_STORAGE_PATH}/.union_bridge/op_3/broker/coordinator.pubkey_hash`
+- `config/op_4.yaml` -> coordinator `${BASE_STORAGE_PATH}/.union_bridge/op_4/broker/coordinator.pubkey_hash`
 
 This step is still manual for local BitVMX setup. Union Client and BitVMX do not share the same broker keystore.
 This ensures that messages from the BitVMX client are correctly routed back to the coordinator.
@@ -513,7 +522,7 @@ The test includes comprehensive health checks to detect issues early.
 - **Process Cleanup**: If services fail to start due to port conflicts or corrupt database, run:
   ```bash
   pkill -f "target/debug/"
-  rm -rf ${BASE_STORAGE_PATH}/.union_bridge/database
+  find ${BASE_STORAGE_PATH}/.union_bridge -maxdepth 2 -type d -name database -exec rm -rf {} +
   ```
   **Warning:** This kills all Rust processes and prunes your database.
 - **Local Setup Issues**: Verify `BASE_STORAGE_PATH` and `KEY_STORE_PASSWORD` environment variables are set correctly

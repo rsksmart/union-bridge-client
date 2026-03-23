@@ -458,20 +458,20 @@ fn setup_wallets_create(num_wallets: u8, base_storage_path: &str) -> Result<()> 
     let password = std::env::var("KEY_STORE_PASSWORD")
         .context("KEY_STORE_PASSWORD environment variable is required")?;
 
-    let keystore_base_path =
-        PathBuf::from(base_storage_path).join(".union_bridge").join("keystore");
-
     println!("[wallet-setup] starting wallet creation...");
 
     for i in 1..=num_wallets {
+        let keystore_base_path = PathBuf::from(base_storage_path)
+            .join(".union_bridge")
+            .join(format!("op_{i}"))
+            .join("keystore");
+
         // create member wallet
-        let member_name = format!("op_{}-member", i);
-        create_or_use_keystore(&keystore_base_path, &member_name, &password)
+        create_or_use_keystore(&keystore_base_path, "member", &password)
             .with_context(|| format!("failed to create member wallet for client {}", i))?;
 
         // create user wallet
-        let user_name = format!("op_{}-user", i);
-        create_or_use_keystore(&keystore_base_path, &user_name, &password)
+        create_or_use_keystore(&keystore_base_path, "user", &password)
             .with_context(|| format!("failed to create user wallet for client {}", i))?;
     }
 

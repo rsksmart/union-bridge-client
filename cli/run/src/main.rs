@@ -450,19 +450,23 @@ fn read_env_file_value(base_storage_path: &str, value: &str) -> Result<String> {
     Ok(contents.trim().to_string())
 }
 
+fn union_bridge_path(base_storage_path: &str, value: &str) -> String {
+    format!("{base_storage_path}/.union_bridge/{value}")
+}
+
 fn materialize_env_var(
     base_storage_path: &str,
     base_key: &str,
     value: &str,
 ) -> Result<(String, String)> {
     let (final_key, final_value) = if base_key == "UB__INDEXER__STORAGE__PATH" {
-        (base_key.to_string(), format!("{}/.union_bridge/database/{}", base_storage_path, value))
+        (base_key.to_string(), union_bridge_path(base_storage_path, value))
     } else if base_key == "UB__COORDINATOR__STORAGE_PATH" {
-        (base_key.to_string(), format!("{}/.union_bridge/database/{}", base_storage_path, value))
+        (base_key.to_string(), union_bridge_path(base_storage_path, value))
     } else if base_key == "UB__KEY_STORE__MEMBER_PATH" {
-        (base_key.to_string(), format!("{}/.union_bridge/keystore/{}", base_storage_path, value))
+        (base_key.to_string(), union_bridge_path(base_storage_path, value))
     } else if base_key == "UB__KEY_STORE__USER_PATH" {
-        (base_key.to_string(), format!("{}/.union_bridge/keystore/{}", base_storage_path, value))
+        (base_key.to_string(), union_bridge_path(base_storage_path, value))
     } else if matches!(
         base_key,
         "UB__BLOCK_INDEXER__BROKER_KEY_PATH"
@@ -513,17 +517,31 @@ fn fresh_cleanup(client_id: Option<u8>) -> Result<()> {
     let base_storage_path = std::env::var("BASE_STORAGE_PATH")
         .context("BASE_STORAGE_PATH environment variable is required")?;
 
-    let path_to_clean = if let Some(id) = client_id {
-        // Clean only the specific client's paths
-        format!("{}/.union_bridge/database/op_{}", base_storage_path, id)
-    } else {
-        // Clean the entire multi-client directory (all clients)
-        format!("{}/.union_bridge/database", base_storage_path)
-    };
+    let union_bridge_root = Path::new(&base_storage_path).join(".union_bridge");
 
-    if Path::new(&path_to_clean).exists() {
-        fs::remove_dir_all(&path_to_clean)
-            .with_context(|| format!("Failed to remove {}", path_to_clean))?;
+    if let Some(id) = client_id {
+        let path_to_clean = union_bridge_root.join(format!("op_{id}")).join("database");
+        if path_to_clean.exists() {
+            fs::remove_dir_all(&path_to_clean)
+                .with_context(|| format!("Failed to remove {}", path_to_clean.display()))?;
+        }
+    } else if union_bridge_root.exists() {
+        for entry in fs::read_dir(&union_bridge_root)
+            .with_context(|| format!("Failed to read {}", union_bridge_root.display()))?
+        {
+            let entry = entry?;
+            let file_name = entry.file_name();
+            let file_name = file_name.to_string_lossy();
+            if !file_name.starts_with("op_") {
+                continue;
+            }
+
+            let database_path = entry.path().join("database");
+            if database_path.exists() {
+                fs::remove_dir_all(&database_path)
+                    .with_context(|| format!("Failed to remove {}", database_path.display()))?;
+            }
+        }
     }
 
     Ok(())
@@ -695,7 +713,7 @@ mod tests {
     fn test_build_env_for_client_reads_pubkey_hash_file_references() {
         let _guard = TEST_MUTEX.lock().expect("lock");
         let base_storage_path = make_temp_dir();
-        let hash_rel_path = ".union_bridge/broker/block-indexer/op_1.pubkey_hash";
+        let hash_rel_path = ".union_bridge/op_1/broker/block-indexer.pubkey_hash";
         let hash_abs_path = base_storage_path.join(hash_rel_path);
         fs::create_dir_all(hash_abs_path.parent().expect("parent")).expect("mkdir");
         fs::write(&hash_abs_path, "abc123\n").expect("write hash file");
@@ -705,11 +723,11 @@ mod tests {
         let env_map = HashMap::from([
             (
                 "UB__COORDINATOR__BLOCKS__PUBKEY_HASH_FILE_1".to_string(),
-                ".union_bridge/broker/block-indexer/op_1.pubkey_hash".to_string(),
+                ".union_bridge/op_1/broker/block-indexer.pubkey_hash".to_string(),
             ),
             (
                 "UB__BLOCK_INDEXER__BROKER_KEY_PATH_1".to_string(),
-                ".union_bridge/broker/block-indexer/op_1.pem".to_string(),
+                ".union_bridge/op_1/broker/block-indexer.pem".to_string(),
             ),
         ]);
 
@@ -722,7 +740,7 @@ mod tests {
         assert!(envs.contains(&(
             "UB__BLOCK_INDEXER__BROKER_KEY_PATH".to_string(),
             base_storage_path
-                .join(".union_bridge/broker/block-indexer/op_1.pem")
+                .join(".union_bridge/op_1/broker/block-indexer.pem")
                 .display()
                 .to_string(),
         )));
