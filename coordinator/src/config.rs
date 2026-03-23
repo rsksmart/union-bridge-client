@@ -270,7 +270,7 @@ impl Config {
     }
 
     fn should_subscribe_fake_peg_manager(env_name: Option<&str>) -> bool {
-        matches!(env_name, Some("regtest")) // we can support more rsk networks by adding more env names
+        matches!(env_name, Some("regtest" | "docker-regtest")) // we can support more rsk networks by adding more env names
     }
 }
 

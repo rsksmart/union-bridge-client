@@ -78,5 +78,3 @@ broker_key_path = "/app/broker.pem"
 
 [user_api]
 broker_key_path = "/app/broker.pem"
-
-# TODO(iago) rename to docker-regtest.toml and update any affected file or script
