@@ -113,16 +113,20 @@ Full operator deployment (BitVMX + Union Client in Docker). Use this for product
 
 **Scripts:**
 - `start_operators.sh` - Main script to manage operator stacks
+- `create_broker_identities.sh` - Creates or reuses host-side Union broker PEMs and `.pubkey_hash` files
 
 **Compose files:**
 - `docker-compose.yml` - Base operator compose
 - `docker-compose.all.yml` - Overlay for running all 4 operators on one host (local)
-- `docker-compose.one.yml` - Overlay for running one operator per host (alphanet)
+- `docker-compose.one.yml` - Overlay for running one operator per host (alphanet/testnet)
 
 **Quick start (local):**
 
 ```bash
 cd docker/operator
+
+# Create host-side Union broker identities once
+./create_broker_identities.sh --ops 4
 
 # Start all 4 operators
 ./start_operators.sh --env local up -d
