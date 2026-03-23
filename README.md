@@ -199,7 +199,7 @@ This command creates or reuses both the local Rootstock keystores and the local 
 - `${BASE_STORAGE_PATH}/.union_bridge/op_1/keystore/member`
 
 The `.pubkey_hash` files are generated from the created PEMs and are consumed by the local launcher so the
-coordinator and user-api use explicit remote identities without duplicating raw hash values in `multiclient.env`.
+coordinator and user-api use explicit remote identities without duplicating raw hash values in `config/env_overrides/local-committee.env`.
 The command also prints the coordinator `pubkey_hash` for each operator so you can copy the correct value into the
 matching local BitVMX Client config.
 
@@ -417,9 +417,9 @@ You can run a single instance of the Union Client using:
 #### Running Multiple Clients (Committee Collaboration)
 
 Some sub-flows in the main flows require committee collaboration. To achieve this locally, you can run several instances
-of Union Client and BitVMX Client using the automated multiclient setup.
+of Union Client and BitVMX Client using the automated local committee setup.
 
-The project includes a `multiclient.env` file that defines unique port numbers and configuration paths for each client
+The project includes a `config/env_overrides/local-committee.env` file that defines unique port numbers and configuration paths for each client
 instance (1-4). This ensures no collisions between different clients for:
 
 - Broker ports (block, log, user)
@@ -515,7 +515,7 @@ The test includes comprehensive health checks to detect issues early.
 
 #### Troubleshooting
 
-- **Port Conflicts**: Each client uses unique ports defined in `multiclient.env`. Check this file if you encounter port
+- **Port Conflicts**: Each client uses unique ports defined in `config/env_overrides/local-committee.env`. Check this file if you encounter port
   issues.
 - **Wallet Issues**: Re-fund wallets with `./cli-operations.sh operator fund` if needed
 - **Process Cleanup**: If services fail to start due to port conflicts or corrupt database, run:

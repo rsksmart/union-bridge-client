@@ -10,6 +10,8 @@
 
 set -e
 
+cd "$(dirname "$0")"
+
 # If no arguments, default to default mode on regtest
 if [ $# -eq 0 ]; then
     NETWORK="regtest"

@@ -205,9 +205,9 @@ async fn run_clients(config: RunConfig) -> Result<()> {
         .parent() // cli
         .and_then(|p| p.parent()) // project root
         .ok_or_else(|| anyhow!("Failed to determine project root"))?;
-    let env_file = project_root.join("multiclient.env");
+    let env_file = project_root.join("config/env_overrides/local-committee.env");
     if !env_file.exists() {
-        bail!("multiclient.env not found at {}", env_file.display());
+        bail!("config/env_overrides/local-committee.env not found at {}", env_file.display());
     }
     let env_map = load_env_file(&env_file)
         .with_context(|| format!("Failed to parse {}", env_file.display()))?;

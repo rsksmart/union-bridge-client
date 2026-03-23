@@ -78,15 +78,15 @@ member_path = "/{BASE_STORAGE_PATH}/.union_bridge/op_1/keystore/member"
 
 logs.host = "0.0.0.0"
 logs.port = 20001
-# Local multi-client runs override this from multiclient.env via the provisioned .pubkey_hash file.
+# Local multi-client runs override this from config/env_overrides/local-committee.env via the provisioned .pubkey_hash file.
 logs.pubkey_hash = "<to_patch_with_env>"
 blocks.host = "0.0.0.0"
 blocks.port = 10001
-# Local multi-client runs override this from multiclient.env via the provisioned .pubkey_hash file.
+# Local multi-client runs override this from config/env_overrides/local-committee.env via the provisioned .pubkey_hash file.
 blocks.pubkey_hash = "<to_patch_with_env>"
 user.host = "0.0.0.0"
 user.port = 30001
-# Local multi-client runs override this from multiclient.env via the provisioned .pubkey_hash file.
+# Local multi-client runs override this from config/env_overrides/local-committee.env via the provisioned .pubkey_hash file.
 user.pubkey_hash = "<to_patch_with_env>"
 bitvmx.host = "0.0.0.0"
 bitvmx.port = 22222
@@ -182,7 +182,7 @@ transaction.gas_bumps_t1 = 3
 # Temporary coordinator routing config for user-api broker messages.
 # Remove these coordinator.* settings when user-api is removed.
 coordinator.client_id = 101
-# Local multi-client runs override this from multiclient.env via the provisioned .pubkey_hash file.
+# Local multi-client runs override this from config/env_overrides/local-committee.env via the provisioned .pubkey_hash file.
 coordinator.pubkey_hash = "<to_patch_with_env>"
 broker_key_path = "/{BASE_STORAGE_PATH}/.union_bridge/op_1/broker/user-api.pem"
 notifier.port = 30001

@@ -44,7 +44,7 @@ Launches one or more Union Bridge clients locally for development and testing.
 
 **Features:**
 - Launches multiple services per client (block-indexer, log-indexer, user-api, coordinator)
-- Automatic port configuration via `multiclient.env`
+- Automatic port configuration via `config/env_overrides/local-committee.env`
 - Graceful shutdown handling with proper service teardown
 - Panic recovery to ensure all services are properly stopped
 
