@@ -8,18 +8,9 @@ cd "${SCRIPT_DIR}" || {
   exit 1
 }
 
-# TODO(iago) remove .envrc usage, docker should be agnostic and not load it
-# Load environment from root .envrc (only if direnv hasn't already loaded it)
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-ENVRC_FILE="${PROJECT_ROOT}/.envrc"
-if [[ -z "${DIRENV_DIR:-}" && -f "$ENVRC_FILE" ]]; then
-  source "$ENVRC_FILE"
-fi
-
 # Initialize from environment variables (can be overridden by command line args)
 DOCKER_COMPOSE_ARGS=()
 NUM_OPERATORS=""
-# Use UC_OPERATOR_ID from .envrc if available, can be overridden by --op flag
 OPERATOR_ARG="${UC_OPERATOR_ID:-}"
 ENVIRONMENT="${UC_ENV:-}"
 AUTO_CONFIRM=false
@@ -36,13 +27,13 @@ print_help() {
   echo ""
   echo "Environment:"
   echo "  --env <ENV>              Target environment: alphanet, testnet, local, local-docker, or regtest"
-  echo "                            Falls back to UC_ENV from .envrc if not provided."
+  echo "                            Falls back to exported UC_ENV if not provided."
   echo "                            local, local-docker, regtest deploy 4 operators by default (see --ops)."
   echo "                            alphanet, testnet deploy 1 operator per host (requires --op <ID>)."
   echo ""
   echo "Options:"
   echo "  --op <ID>                Operator ID (1-10) - required for alphanet/testnet commands"
-  echo "                            (Optional if UC_OPERATOR_ID is set in .envrc)"
+  echo "                            (Optional if UC_OPERATOR_ID is exported in the shell)"
   echo "  --ops <N>                Number of operators to start (1-10) for local/regtest (default: 4)"
   echo "  --tag <TAG>              Override UC_TAG for this docker compose invocation only"
   echo "  --help                   Display this help message"
@@ -85,15 +76,15 @@ print_help() {
   echo "  Note: Building from source is not supported. Only registry images should be used."
   echo ""
   echo "Configuration:"
-  echo "  Values can be set in .envrc (root directory) to avoid passing flags:"
+  echo "  Values can be exported in the shell to avoid passing flags:"
   echo "    export UC_ENV=\"local-docker\"        # Sets default environment"
   echo "    export UC_OPERATOR_ID=1              # Sets default operator ID"
-  echo "  Command-line flags override .envrc values if provided."
+  echo "  Command-line flags override exported values when provided."
   echo ""
   echo "Examples:"
   echo "  $0 --env local up -d                                     # Start 4 operators locally (default)"
   echo "  $0 --env local --ops 10 up -d                            # Start all 10 operators locally"
-  echo "  $0 up -d                                                  # Same as above, if UC_ENV=local in .envrc"
+  echo "  $0 up -d                                                  # Same as above, if UC_ENV=local is exported"
   echo "  $0 --env local --fresh up -d                             # Clean and start operators locally"
   echo "  $0 --env local --fresh --yes up -d                       # Clean and start operators locally, no confirmation prompt"
   echo "  $0 --env local --tag latest-anvil up -d                  # Start local operators with an explicit image tag"
@@ -103,7 +94,7 @@ print_help() {
   echo "  $0 --env regtest --fresh up -d                           # Clean and start all operators in regtest mode"
   echo "  $0 --env regtest down                                    # Stop all regtest operators"
   echo "  $0 --env alphanet --op 1 up -d                           # Start operator 1 in alphanet"
-  echo "  $0 --env alphanet up -d                                  # Same, if UC_OPERATOR_ID=1 in .envrc"
+  echo "  $0 --env alphanet up -d                                  # Same, if UC_OPERATOR_ID=1 is exported"
   echo "  $0 --env alphanet --op 2 up -d                           # Start operator 2 in alphanet"
   echo "  $0 --env alphanet down --volumes                         # Stop operator on this alphanet host"
   echo "  $0 --env alphanet logs -f                                # View logs for operator on this host"
@@ -128,7 +119,6 @@ while [[ $# -gt 0 ]]; do
         echo "Error: --op must be between 1 and 10"
         exit 1
       fi
-      # Explicit --op overrides any UC_OPERATOR_ID from .envrc
       shift 2
       ;;
     --ops)
@@ -170,7 +160,7 @@ if [[ -z "$ENVIRONMENT" ]]; then
     ENVIRONMENT="${UC_ENV}"
   else
     echo "Error: --env flag is required. Use 'alphanet', 'testnet', 'local', 'local-docker', or 'regtest'."
-    echo "Alternatively, set UC_ENV in .envrc (root directory) to avoid passing the flag."
+    echo "Alternatively, export UC_ENV in the shell before running the script."
     echo "Run '$0 --help' for usage information."
     exit 1
   fi
@@ -232,7 +222,7 @@ if [[ ("$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest") && -n "$OPERATO
   exit 1
 elif [[ ("$ENVIRONMENT" == "alphanet" || "$ENVIRONMENT" == "testnet") && -z "$OPERATOR_ARG" ]]; then
   echo "Error: --op <ID> is required when using --env ${ENVIRONMENT}."
-  echo "Alternatively, set UC_OPERATOR_ID in .envrc (root directory) to avoid passing the flag."
+  echo "Alternatively, export UC_OPERATOR_ID in the shell before running the script."
   echo "Run '$0 --help' for usage information."
   exit 1
 fi

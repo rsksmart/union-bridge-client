@@ -60,7 +60,7 @@ The following environment variables can be set to simplify multi-host deployment
 - **`UC_OPERATOR_ID`**: Sets the default operator ID (1-10) for `apply-stream` command. Can be overridden with `--operator-id` flag.
 - **`UC_OPERATOR_ROLE`**: Sets the default operator role (`prover` or `verifier`) for `apply-stream` command. Can be overridden with `--role` flag.
 
-All three can be set in `.envrc` at the project root. The `.env.*` files (`docker/operator/.env.alphanet`, `.env.testnet`, `.env.local`) use docker-compose `--env-file` format (no `export` keyword).
+All three can be exported in the shell or set in `.envrc` at the project root.
 
 **Example for multi-host deployment:**
 
@@ -75,7 +75,7 @@ export UC_OPERATOR_ROLE="prover"
 ./cli-operations.sh operator fund
 ```
 
-**Precedence:** command-line flags > environment variables > `.envrc` values.
+**Precedence:** command-line flags > exported environment variables / `.envrc` values.
 
 ### Usage Examples
 

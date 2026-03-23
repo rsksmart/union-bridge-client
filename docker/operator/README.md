@@ -159,10 +159,10 @@ BitVMX is not handled by this script yet. Its configuration remains a separate f
 
 #### Environment Variables
 
-The following environment variables can be set in `.envrc` (project root) to simplify multi-host deployments:
+The following environment variables can be exported in the shell to simplify multi-host deployments:
 
 - **`UC_ENV`**: Sets the default environment (`alphanet`, `testnet`, `local`, `local-docker`, or `regtest`). Can be overridden with `--env` flag.
-- **`UC_TAG`**: Sets the default Docker image tag. Override it via `start_operators.sh --tag`, the shell environment, or `.envrc`.
+- **`UC_TAG`**: Sets the default Docker image tag. Override it via `start_operators.sh --tag` or the shell environment.
   - Defaults: `latest-alphanet` (alphanet), `latest-testnet` (testnet), `latest-anvil` (local), `latest-regtest` (regtest)
 - **`UC_OPERATOR_ID`**: Sets the default operator ID (1-10). Can be overridden with `--op` flag.
 - **`UC_OPERATOR_ROLE`**: Sets the default operator role (`prover` or `verifier`). Used by `cli-operations.sh`.
@@ -170,7 +170,7 @@ The following environment variables can be set in `.envrc` (project root) to sim
 **Example for multi-host deployment:**
 
 ```bash
-# In .envrc (project root), set default values
+# Export default values in the shell
 export UC_ENV=alphanet
 export UC_TAG=latest-alphanet
 export UC_OPERATOR_ID=1
@@ -182,7 +182,7 @@ bash start_operators.sh logs -f
 bash start_operators.sh down
 ```
 
-**Note:** Command-line flags override `.envrc` values when provided. `UC_TAG` precedence for `start_operators.sh` is: `--tag` > shell environment / `.envrc` > static `docker/operator/.env.<environment>`.
+**Note:** Command-line flags override exported shell values when provided. `UC_TAG` precedence for `start_operators.sh` is: `--tag` > exported `UC_TAG` > static `docker/operator/.env.<environment>`.
 
 #### Required Environment Variables
 

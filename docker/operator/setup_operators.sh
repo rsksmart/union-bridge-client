@@ -9,13 +9,6 @@ cd "${SCRIPT_DIR}" || {
   exit 1
 }
 
-# TODO(iago) remove .envrc usage, docker should be agnostic and not load it
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-ENVRC_FILE="${PROJECT_ROOT}/.envrc"
-if [[ -z "${DIRENV_DIR:-}" && -f "$ENVRC_FILE" ]]; then
-  source "$ENVRC_FILE"
-fi
-
 OPERATOR_ARG="${UC_OPERATOR_ID:-}"
 ENVIRONMENT="${UC_ENV:-}"
 NUM_OPERATORS=""
