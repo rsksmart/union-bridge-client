@@ -200,8 +200,7 @@ This command creates or reuses both the local Rootstock keystores and the local 
 
 The `.pubkey_hash` files are generated from the created PEMs and are consumed by the local launcher so the
 coordinator and user-api use explicit remote identities without duplicating raw hash values in `config/env_overrides/local-committee.env`.
-The command also prints the coordinator `pubkey_hash` for each operator so you can copy the correct value into the
-matching local BitVMX Client config.
+The command also prints the coordinator `pubkey_hash` for each operator.
 
 If you only need one half of the local setup, the granular commands still exist:
 
@@ -210,7 +209,15 @@ If you only need one half of the local setup, the granular commands still exist:
 ./cli-operations.sh setup create-broker-identities
 ```
 
-#### Configuring BitVMX Client
+#### Configuring BitVMX Client (local cargo flow only)
+
+This section applies only when you run Union Client locally with `./cli-run.sh` and manage BitVMX separately from its
+own workspace.
+
+If you are using the Docker operator flow under [`docker/operator/`](docker/operator/README.md), skip this section:
+`setup_operators.sh` already generates per-operator BitVMX config copies under
+`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/<environment>/` and patches
+`components.l2.pubkey_hash` automatically.
 
 The BitVMX client needs to know where to send messages back to the Union Bridge Client. You must configure the
 `components.l2.pubkey_hash` in the BitVMX client config files to match the operator's Union Bridge coordinator client
