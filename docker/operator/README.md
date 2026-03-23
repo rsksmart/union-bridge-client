@@ -187,7 +187,7 @@ bash start_operators.sh down
 #### Required Environment Variables
 
 A `USER_BITCOIN_WIF` is required for the generated operator env files because `user-api` uses it for user endpoints (pegin/pegout operations).
-`setup_operators.sh` prompts for it only when creating a new operator env file, then reuses the stored value on later runs.
+`setup_operators.sh` reuses an exported `USER_BITCOIN_WIF` when present; otherwise it prompts once when creating a new operator env file, then reuses the stored value on later runs.
 You can generate one via the `bitcoin-wallet` with `generate_address`.
 See [bitcoin-wallet README](../../cli/bitcoin-wallet/README.md) for more info.
 

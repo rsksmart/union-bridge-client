@@ -14,7 +14,8 @@ ENVIRONMENT="${UC_ENV:-}"
 NUM_OPERATORS=""
 BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
 OPERATORS_TO_RUN=()
-NEW_USER_BITCOIN_WIF=""
+NEW_USER_BITCOIN_WIF="${USER_BITCOIN_WIF:-}"
+USED_EXPORTED_USER_BITCOIN_WIF=false
 
 print_help() {
   echo "Usage: $0 [--env <ENV>] [--op <ID> | --ops <N>]"
@@ -193,13 +194,15 @@ resolve_user_bitcoin_wif() {
 
   if [[ -z "${NEW_USER_BITCOIN_WIF}" ]]; then
     while [[ -z "${NEW_USER_BITCOIN_WIF}" ]]; do
-      echo "Please enter USER_BITCOIN_WIF for ${project_name} (op_${op_num}); input will be hidden:"
-      read -r -s NEW_USER_BITCOIN_WIF
+      read -r -s -p "Please enter USER_BITCOIN_WIF for ${project_name} (op_${op_num}): " NEW_USER_BITCOIN_WIF
       echo ""
       if [[ -z "${NEW_USER_BITCOIN_WIF}" ]]; then
         echo "Error: USER_BITCOIN_WIF is required."
       fi
     done
+  elif [[ "${USED_EXPORTED_USER_BITCOIN_WIF}" != true ]]; then
+    echo "Using exported USER_BITCOIN_WIF for new operator env files." >&2
+    USED_EXPORTED_USER_BITCOIN_WIF=true
   fi
 
   echo "${NEW_USER_BITCOIN_WIF}"

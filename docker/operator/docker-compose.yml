@@ -23,10 +23,14 @@ services:
   # ================================
   # Union Bridge Client Services
   # ================================
+  # Operator-specific broker mounts and runtime env vars live here instead of
+  # ../build/docker-compose.yml so the base compose remains build-safe.
   block-indexer:
     extends:
       file: ../build/docker-compose.yml
       service: block-indexer
+    volumes:
+      - ${BLOCK_INDEXER_BROKER_PEM_PATH}:/app/broker.pem:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -36,6 +40,8 @@ services:
     extends:
       file: ../build/docker-compose.yml
       service: log-indexer
+    volumes:
+      - ${LOG_INDEXER_BROKER_PEM_PATH}:/app/broker.pem:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -45,6 +51,13 @@ services:
     extends:
       file: ../build/docker-compose.yml
       service: user-api
+    volumes:
+      - ${USER_API_BROKER_PEM_PATH}:/app/broker.pem:ro
+    environment:
+      - UB__USER_API__COORDINATOR__PUBKEY_HASH=${UB__USER_API__COORDINATOR__PUBKEY_HASH:-}
+      - USER_BITCOIN_WIF=${USER_BITCOIN_WIF:-}
+    ports:
+      - "${USER_API_PORT:-40001}:40001"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -54,6 +67,14 @@ services:
     extends:
       file: ../build/docker-compose.yml
       service: coordinator
+    volumes:
+      - ${COORDINATOR_BROKER_PEM_PATH}:/app/broker.pem:ro
+    environment:
+      - UB__coordinator__bitvmx__host=${BITVMX_HOST:-dummy-bitvmx-host}
+      - UB__coordinator__bitvmx__port=${BITVMX_PORT:-dummy-bitvmx-port}
+      - UB__COORDINATOR__BLOCKS__PUBKEY_HASH=${UB__COORDINATOR__BLOCKS__PUBKEY_HASH:-}
+      - UB__COORDINATOR__LOGS__PUBKEY_HASH=${UB__COORDINATOR__LOGS__PUBKEY_HASH:-}
+      - UB__COORDINATOR__USER__PUBKEY_HASH=${UB__COORDINATOR__USER__PUBKEY_HASH:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
