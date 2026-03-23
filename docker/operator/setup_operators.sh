@@ -12,12 +12,12 @@ cd "${SCRIPT_DIR}" || {
 OPERATOR_ARG="${UC_OPERATOR_ID:-}"
 ENVIRONMENT="${UC_ENV:-}"
 NUM_OPERATORS=""
-USER_BITCOIN_WIF_ARG="${USER_BITCOIN_WIF:-}"
 BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
 OPERATORS_TO_RUN=()
+NEW_USER_BITCOIN_WIF=""
 
 print_help() {
-  echo "Usage: $0 [--env <ENV>] [--op <ID> | --ops <N>] [--user-bitcoin-wif <WIF>]"
+  echo "Usage: $0 [--env <ENV>] [--op <ID> | --ops <N>]"
   echo ""
   echo "Creates or reuses host-side Docker operator artifacts:"
   echo "  - broker identities under ${BASE_STORAGE_PATH}/.union_bridge/op_N/broker/<service>.*"
@@ -28,7 +28,6 @@ print_help() {
   echo "  --env <ENV>                Target environment: alphanet, testnet, local, local-docker, or regtest"
   echo "  --op <ID>                  Operator ID (1-10) for alphanet/testnet"
   echo "  --ops <N>                  Number of operators to prepare (1-10) for local/regtest"
-  echo "  --user-bitcoin-wif <WIF>   User WIF to persist into generated operator env files"
   echo "  --help                     Display this help message"
   exit 0
 }
@@ -174,17 +173,11 @@ read_env_value() {
   awk -F= -v key="${key}" '$1 == key {print substr($0, index($0, "=") + 1); exit}' "${env_file}"
 }
 
-# TODO(iago) revisit if we need this
 resolve_user_bitcoin_wif() {
   local op_num="$1"
   local project_name="$2"
   local env_file="$3"
   local existing_wif=""
-
-  if [[ -n "${USER_BITCOIN_WIF_ARG}" ]]; then
-    echo "${USER_BITCOIN_WIF_ARG}"
-    return 0
-  fi
 
   if [[ -f "${env_file}" ]]; then
     existing_wif="$(read_env_value "${env_file}" "USER_BITCOIN_WIF")"
@@ -192,18 +185,24 @@ resolve_user_bitcoin_wif() {
       echo "${existing_wif}"
       return 0
     fi
+
+    echo "Error: existing operator env file ${env_file} is missing USER_BITCOIN_WIF." >&2
+    echo "Fix the file or delete it and rerun setup_operators.sh." >&2
+    exit 1
   fi
 
-  while [[ -z "${existing_wif}" ]]; do
-    echo "Please enter USER_BITCOIN_WIF for ${project_name} (op_${op_num}); input will be hidden:"
-    read -r -s existing_wif
-    echo ""
-    if [[ -z "${existing_wif}" ]]; then
-      echo "Error: USER_BITCOIN_WIF is required."
-    fi
-  done
+  if [[ -z "${NEW_USER_BITCOIN_WIF}" ]]; then
+    while [[ -z "${NEW_USER_BITCOIN_WIF}" ]]; do
+      echo "Please enter USER_BITCOIN_WIF for ${project_name} (op_${op_num}); input will be hidden:"
+      read -r -s NEW_USER_BITCOIN_WIF
+      echo ""
+      if [[ -z "${NEW_USER_BITCOIN_WIF}" ]]; then
+        echo "Error: USER_BITCOIN_WIF is required."
+      fi
+    done
+  fi
 
-  echo "${existing_wif}"
+  echo "${NEW_USER_BITCOIN_WIF}"
 }
 
 write_operator_env_file() {
@@ -273,10 +272,6 @@ while [[ $# -gt 0 ]]; do
         echo "Error: --ops must be between 1 and 10"
         exit 1
       fi
-      shift 2
-      ;;
-    --user-bitcoin-wif)
-      USER_BITCOIN_WIF_ARG="$2"
       shift 2
       ;;
     *)
