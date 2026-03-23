@@ -7,22 +7,13 @@ PLATFORM="linux/amd64"
 UC_TAG="latest"
 HELP=0
 
-# This is a dummy variable that is used to override the default value of ENV_NAME
-# We don't care about this because it is then overridden by the .env.local/alphanet
-# file when building the docker-image for operator
-export ENV_NAME="dummy-env-name"
-
 show_help() {
   cat << EOF
 
-🔨 Union Services Build & Run Script
+🔨 Union Services Build Script
 
 Usage: 
-  $(basename "$0") <command> [options] [service] [docker compose arguments...]
-
-Commands:
-  build               Build service container(s)
-  up                  Build (if needed) and start services
+  $(basename "$0") [options] [service] [docker compose build arguments...]
 
 Options:
   --features=<list>   Build the workspace with specified features (comma-separated list)
@@ -31,7 +22,7 @@ Options:
   --help, -h          Show this help
 
 Service Names (optional):
-  You can specify a service name to build/run only that service.
+  You can specify a service name to build only that service.
   Service names are defined in your docker-compose.yml file.
 
 All additional arguments (including --no-cache, -d, etc.) are passed directly to 'docker compose' commands.
@@ -44,17 +35,13 @@ Notes:
   - Standard docker compose arguments like --no-cache, -d, etc. are fully supported.
 
 Examples:
-  $(basename "$0") build                                            Build all services
-  $(basename "$0") build log-indexer                                Build a specific service
-  $(basename "$0") build --features=anvil                           Build with anvil feature  
-  $(basename "$0") build --features=anvil,debug                     Build with multiple features
-  $(basename "$0") build --platform=linux/arm64                     Build for ARM64 platform
-  $(basename "$0") build --tag=v1.0.0                               Build with custom tag
-  $(basename "$0") build coordinator --no-cache                     Build coordinator without cache
-  $(basename "$0") up                                               Start all services
-  $(basename "$0") up --features=anvil                              Start all services with anvil feature
-  $(basename "$0") up coordinator -d                                Start only coordinator in background
-  $(basename "$0") up coordinator user-api --scale coordinator=2    Start coordinator and user-api, scaling coordinator to 2 instances
+  $(basename "$0")                                                  Build all services
+  $(basename "$0") log-indexer                                      Build a specific service
+  $(basename "$0") --features=anvil                                 Build with anvil feature  
+  $(basename "$0") --features=anvil,debug                           Build with multiple features
+  $(basename "$0") --platform=linux/arm64                           Build for ARM64 platform
+  $(basename "$0") --tag=v1.0.0                                     Build with custom tag
+  $(basename "$0") coordinator --no-cache                           Build coordinator without cache
 
 EOF
   exit 0
@@ -73,12 +60,9 @@ use_env_vars() {
 }
 
 # Parse command line arguments
-if [[ $# -eq 0 ]] || [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]]; then
+if [[ $# -gt 0 ]] && ([[ "$1" == "--help" ]] || [[ "$1" == "-h" ]]); then
   show_help
 fi
-
-CMD="$1"
-shift
 
 DOCKER_ARGS=()
 
@@ -146,35 +130,4 @@ build_services() {
   echo "✅ Build completed"
 }
 
-# Start services
-start_services() {
-  echo "🚀 Starting services..."
-
-  use_env_vars
-
-  cmd=(docker compose up)
-
-  # Add any additional docker compose arguments
-  cmd+=("${DOCKER_ARGS[@]}")
-
-  echo "Running with command: ${cmd[@]}"
-
-  "${cmd[@]}"
-}
-
-# Main execution
-case "$CMD" in
-  build)
-    build_services
-    ;;
-  up)
-    start_services
-    ;;
-  *)
-    echo "Unknown command: $CMD"
-    echo "Use 'build' or 'up'"
-    show_help
-    ;;
-esac
-
-
+build_services

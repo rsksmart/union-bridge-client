@@ -380,7 +380,7 @@ Important: if you change branch on the regtest host (`~/union-bridge-client`), r
 
 ```bash
 cd docker/build
-bash d-compose-cli.sh build --tag=latest-regtest --no-cache
+bash d-build-client.sh --tag=latest-regtest --no-cache
 ```
 
 For full instance details (hosts, env vars, artifacts, validation, troubleshooting), see:
