@@ -8,17 +8,23 @@ key_manager:
   network: regtest
   key_derivation_path: m/101/1/0/0/
 
+coordinator_settings:
+  max_feerate_sat_vb: 2
+  monitor_settings:
+    indexer_settings:
+      checkpoint_height: 0
+
 key_storage:
   password: <to_patch_in_host>
   path: /tmp/regtest/op_3/keys.db
 
 storage:
-  path: /tmp/regtest/op_3/storage.db
+  path: /tmp/local/op_3/storage.db
 
 comms:
   address: 172.20.0.13:61182
   priv_key: config/keys/op_3.key
-  storage_path: /tmp/regtest/op_3/comms.db
+  storage_path: /tmp/local/op_3/comms.db
 
 broker:
   allow_list: config/allow_list.yaml
@@ -26,12 +32,12 @@ broker:
   port: 44444
   ip: 0.0.0.0
   priv_key: config/keys/services.key
-  storage: 
-    path: /tmp/regtest/op_3/broker.db
+  storage:
+    path: /tmp/local/op_3/broker.db
 
 components:
   l2:
-    pubkey_hash: <to_patch_in_host>
+    pubkey_hash: 2367f1f386c65eee7b6811b667dea03dc4c2926f6db2112776a98cdaba2793cc
     id: 0
   bitvmx:
     pubkey_hash: <to_patch_in_host>
@@ -58,10 +64,10 @@ coordinator:
   throtthle_bitcoin_updates_until_sync: 0
   throtthle_bitcoin_updates: 0
 
-client: 
+client:
   retry: 1
   retry_delay: 1000
 
 wallet:
-  db_path: /tmp/regtest/op_3/wallet.db
+  db_path: /tmp/local/op_3/wallet.db
   start_height: 0
