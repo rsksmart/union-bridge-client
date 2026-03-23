@@ -111,14 +111,14 @@ cargo run -p block-indexer-validator -- \
 
 ---
 
-### 2. Long-run backward sync from genesis
+### 2. Long-run backward sync (deep history)
 
-**Goal:** Verify the indexer can sync the full chain from the genesis block.
+**Goal:** Verify the indexer can sync the full chain from block 1.
 
 
 | Step | Action                                                                      |
 | ---- | --------------------------------------------------------------------------- |
-| 1    | Start in a tmux/screen session (runner fetches genesis hash via `-b 1`)     |
+| 1    | Start in a tmux/screen session (runner resolves the block 1 via `-b 1`    ) |
 | 2    | Let it run until backward sync completes (hours, depending on chain length) |
 | 3    | Stop with `Ctrl+C`                                                          |
 
@@ -140,19 +140,19 @@ cargo run -p block-indexer-validator -- \
 **Pass criteria:**
 
 - Backward sync completes without errors
-- Storage contains the full chain from genesis to current best
+- Storage contains a continuous chain from height 1 to current best
 - No gaps in storage
 
 ---
 
-### 3. Large cache + long backward sync from genesis
+### 3. Large cache + long backward sync
 
-**Goal:** Verify the indexer handles a very large cache combined with a full chain sync (memory stress test).
+**Goal:** Verify the indexer handles a very large cache combined with a long backward sync and subscription (memory stress test).
 
 
 | Step | Action                                                                        |
 | ---- | ----------------------------------------------------------------------------- |
-| 1    | Start in a tmux/screen session (runner handles genesis hash + cache override) |
+| 1    | Start in a tmux/screen session (runner resolves `-b 1` + `--cache-size`)    |
 | 2    | Let it run until backward sync completes and subscription starts              |
 | 3    | Let it subscribe for a while, then stop                                       |
 
