@@ -17,3 +17,4 @@ config/qa-coordinator
 test_keystore
 *.log
 docs/
+.junie/memory
