@@ -89,6 +89,22 @@ fn generate_private_key(pem_path: &Path) -> Result<()> {
         String::from_utf8_lossy(&output.stderr).trim()
     );
 
+    restrict_owner_only_permissions(pem_path)?;
+
+    Ok(())
+}
+
+#[cfg(unix)]
+fn restrict_owner_only_permissions(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let permissions = fs::Permissions::from_mode(0o600);
+    fs::set_permissions(path, permissions)
+        .with_context(|| format!("Failed to set 0600 permissions on {}", path.display()))
+}
+
+#[cfg(not(unix))]
+fn restrict_owner_only_permissions(_path: &Path) -> Result<()> {
     Ok(())
 }
 
@@ -146,6 +162,22 @@ mod tests {
             assert!(first.pem_path.to_string_lossy().contains("/.union_bridge/op_1/broker/"));
             assert!(first.pem_path.exists());
             assert!(first.pubkey_hash_path.exists());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_generated_private_key_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let identities =
+            create_local_broker_identities(temp_dir.path(), &[1]).expect("provision identities");
+
+        for identity in identities {
+            let mode =
+                fs::metadata(&identity.pem_path).expect("metadata").permissions().mode() & 0o777;
+            assert_eq!(0o600, mode, "unexpected mode for {}", identity.pem_path.display());
         }
     }
 }

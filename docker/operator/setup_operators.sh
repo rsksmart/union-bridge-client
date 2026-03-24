@@ -16,6 +16,7 @@ BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
 OPERATORS_TO_RUN=()
 NEW_USER_BITCOIN_WIF="${USER_BITCOIN_WIF:-}"
 USED_EXPORTED_USER_BITCOIN_WIF=false
+BROKER_SERVICES=("block-indexer" "log-indexer" "user-api" "coordinator")
 
 print_help() {
   echo "Usage: $0 [--env <ENV>] [--op <ID> | --ops <N>]"
@@ -31,6 +32,13 @@ print_help() {
   echo "  --ops <N>                  Number of operators to prepare (1-10) for local/regtest"
   echo "  --help                     Display this help message"
   exit 0
+}
+
+ensure_dependencies() {
+  if ! command -v openssl >/dev/null 2>&1; then
+    echo "Error: openssl is required to create broker identities."
+    exit 1
+  fi
 }
 
 prompt_environment() {
@@ -177,6 +185,41 @@ broker_pubkey_hash_path() {
   echo "$(operator_root_path "${op_num}")/broker/${service}.pubkey_hash"
 }
 
+compute_broker_pubkey_hash() {
+  local pem_path="$1"
+
+  openssl pkey -in "${pem_path}" -pubout -outform DER 2>/dev/null \
+    | openssl dgst -sha256 -binary \
+    | od -A n -v -t x1 \
+    | tr -d ' \n'
+}
+
+provision_operator_broker_identities() {
+  local op_num="$1"
+  local broker_dir pem_path pubkey_hash_path action service
+
+  echo "- Preparing broker identities for op_${op_num}:"
+
+  for service in "${BROKER_SERVICES[@]}"; do
+    broker_dir="$(operator_root_path "${op_num}")/broker"
+    pem_path="${broker_dir}/${service}.pem"
+    pubkey_hash_path="${broker_dir}/${service}.pubkey_hash"
+
+    mkdir -p "${broker_dir}"
+
+    if [[ -f "${pem_path}" ]]; then
+      action="Reusing"
+    else
+      action="Creating"
+      openssl genpkey -algorithm RSA -out "${pem_path}" -pkeyopt rsa_keygen_bits:2048 2>/dev/null
+      chmod 600 "${pem_path}"
+    fi
+
+    compute_broker_pubkey_hash "${pem_path}" > "${pubkey_hash_path}"
+    echo "  - ${action} ${service} key at ${pem_path} (pubkey_hash: $(cat "${pubkey_hash_path}"))"
+  done
+}
+
 read_broker_pubkey_hash() {
   local service="$1"
   local op_num="$2"
@@ -274,7 +317,7 @@ EOF
     printf 'BITVMX_P2P_HOST=%s\n' "${bitvmx_p2p_host}" >> "${env_file_path}"
   fi
 
-  chmod 600 "${env_file_path}" || true
+  chmod 600 "${env_file_path}"
 }
 
 prepare_operator_bitvmx_config() {
@@ -353,6 +396,8 @@ if [[ "${ENVIRONMENT}" == "local-docker" ]]; then
   ENVIRONMENT="local"
 fi
 
+ensure_dependencies
+
 case "${ENVIRONMENT}" in
   local|regtest)
     if [[ -n "${OPERATOR_ARG}" ]]; then
@@ -386,7 +431,7 @@ for op_num in "${OPERATORS_TO_RUN[@]}"; do
   user_bitcoin_wif_value="$(resolve_user_bitcoin_wif "${op_num}" "${project_name}" "${env_file_path}")"
 
   echo "=== op_${op_num} (${ENVIRONMENT}) ==="
-  BASE_STORAGE_PATH="${BASE_STORAGE_PATH}" "${SCRIPT_DIR}/create_broker_identities.sh" --op "${op_num}"
+  provision_operator_broker_identities "${op_num}"
 
   prepare_operator_bitvmx_config "${op_num}"
 
