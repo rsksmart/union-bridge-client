@@ -155,7 +155,7 @@ the Union Client) are:
 
 We recommend using `direnv` to manage private environment variables. Then you can set them up by:
 
-1. copying `[.envrc.sample](.envrc.sample)`) in the project root as `.envrc`
+1. copying `[.envrc.sample](.envrc.sample)` in the project root as `.envrc`
 2. modifying what you need. You can initially focus on the section _For local client running_.
 3. and running `direnv allow` (every time you do a change)
 
@@ -163,32 +163,19 @@ This will automatically load the environment variables defined in the `.envrc` o
 
 ### Multi Client Setup
 
-The Multi Client setup is mostly automated using the `cli-operations.sh` tool. You need to complete a few manual steps
-first.
+The local multi-client flow is mostly automated through `cli-operations.sh`.
 
-#### Creating the base directory
+#### Bootstrap Local Operator State
 
-Under the directory specified in the `BASE_STORAGE_PATH` env, run the following command to create the base directory:
-
-```bash
-mkdir -p ${BASE_STORAGE_PATH}/.union_bridge
-```
-
-#### Creating Broker Identities
-
-The Union Bridge Client uses explicit broker identities in local multi-client mode. Each operator creates separate
-broker identities for:
-
-- `block-indexer` broker server
-- `log-indexer` broker server
-- `user-api` broker server
-- `coordinator` broker client
+Under the directory specified in `BASE_STORAGE_PATH`, create the base directory and then run the local setup helper:
 
 ```bash
+mkdir -p "${BASE_STORAGE_PATH}/.union_bridge"
 ./cli-operations.sh setup create-all
 ```
 
-This command creates or reuses both the local Rootstock keystores and the local broker identities under `BASE_STORAGE_PATH`, for example:
+`create-all` creates or reuses both the local Rootstock keystores and the local broker identities under
+`BASE_STORAGE_PATH`, for example:
 
 - `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/block-indexer.pem`
 - `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/block-indexer.pubkey_hash`
@@ -199,8 +186,8 @@ This command creates or reuses both the local Rootstock keystores and the local 
 - `${BASE_STORAGE_PATH}/.union_bridge/op_1/keystore/member`
 
 The `.pubkey_hash` files are generated from the created PEMs and are consumed by the local launcher so the
-coordinator and user-api use explicit remote identities without duplicating raw hash values in `config/env_overrides/local-committee.env`.
-The command also prints the coordinator `pubkey_hash` for each operator.
+coordinator and user-api use explicit remote identities without duplicating raw hash values in
+`config/env_overrides/local-committee.env`. The command also prints the coordinator `pubkey_hash` for each operator.
 
 If you only need one half of the local setup, the granular commands still exist:
 
@@ -309,48 +296,37 @@ Then you should deploy the contracts, and you can use the operations CLI for the
 **Note:** The `committeeMemberCount` value should always match the number of clients you intend to run (currently
 hardcoded to 4 in the CLI).
 
-#### Wallet and Committee Setup
+#### Next Steps After `create-all`
 
-**1. Create Local Runtime Artifacts (first time only)**
+Once the local runtime artifacts exist, the remaining local committee flow is:
 
-Creates the local Rootstock wallets and broker identities for 4 operators. Each operator gets **two wallets**: one for member operations and one for
-user operations (8 wallets total), plus separate broker identities for `block-indexer`, `log-indexer`, `user-api`, and `coordinator`.
-
-This is required for the **Transaction Dispatcher** to sign and send transactions to Rootstock.
-
-```bash
-./cli-operations.sh setup create-all
-```
-
-**2. Fund Operators (every time you restart Anvil or run out of funds)**
-
-Funds both Bitcoin addresses and Rootstock wallets for all operators.
+1. Fund the operators:
 
 ```bash
 ./cli-operations.sh operator fund
 ```
 
-**3. Whitelist Member Addresses**
-
-Before operators can apply to a stream, their member addresses must be whitelisted on the `CommitteeRegistry` contract.
-This is required by the contract to control which addresses are allowed to participate in committees.
+2. Whitelist member addresses on `CommitteeRegistry`:
 
 ```bash
 ./cli-operations.sh operator whitelist --contract-address <COMMITTEE_REGISTRY_ADDRESS>
 ```
 
-The `CommitteeRegistry` contract address can be found in `config/base.toml` under the `CommitteeRegistry` entry.
+3. Run the local clients:
 
-**4. Apply to Stream (committee setup)**
+```bash
+./cli-run.sh --fresh
+```
 
-Applies all 4 operators to a stream to form the committee. The clients must be running before executing this command.
+4. Apply the operators to the stream:
 
 ```bash
 ./cli-operations.sh operator apply-stream -s 1
 ```
 
-**Note:** Each Rootstock event in the flow requires confirmations. With anvil auto-mining, this happens automatically.
-Otherwise, manually mine blocks with `cast rpc anvil_mine N`.
+The `CommitteeRegistry` contract address can be found in `config/base.toml` under the `CommitteeRegistry` entry.
+
+For the fuller local cargo workflow, usage examples, and command details, see [cli/README.md](cli/README.md).
 
 ## CLI Tools
 
@@ -440,36 +416,6 @@ You can run 4 clients simultaneously using the `./cli-run.sh` script:
 
 ```bash
 ./cli-run.sh
-```
-
-#### Complete Workflow Example
-
-Here's the complete workflow to set up and run 4 clients:
-
-```bash
-# 1. Start BitVMX client (in separate terminal)
-cd <path_to_bitvmx_workspace_repo>/rust-bitvmx-client
-rm -rf /tmp/broker_p2p* ; rm -rf /tmp/regtest ; bash run_union_example.sh
-
-# 2. Start Anvil (in separate terminal)
-anvil --block-time 2  # optional: auto-mine every 2 seconds
-
-# 3. Deploy contracts (in another terminal)
-cd <path_to_bitvmx_union_bridge_contracts>
-bash ./shell/script/deploy/deploy-local.sh
-
-# 4. Create local wallets and broker identities, then fund wallets
-./cli-operations.sh setup create-all
-./cli-operations.sh operator fund
-
-# 5. Whitelist member addresses (uses CommitteeRegistry address from config/base.toml)
-./cli-operations.sh operator whitelist --contract-address <COMMITTEE_REGISTRY_ADDRESS>
-
-# 6. Run the 4 clients
-./cli-run.sh --fresh
-
-# 7. Apply operators to stream (requires clients to be running)
-./cli-operations.sh operator apply-stream -s 0
 ```
 
 #### Automated Happy Path Test
