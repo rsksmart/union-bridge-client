@@ -19,7 +19,7 @@ services:
     ports:
       - "22222:22222"
     volumes:
-      - ${BASE_STORAGE_PATH}/.union_bridge/op_1/bitvmx:/app/config
+      - ${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_1/bitvmx:/app/config
       - ../../resources:/app/resources:ro
       - db-bitvmx-1:/tmp
     networks:
@@ -39,7 +39,7 @@ services:
     ports:
       - "33333:33333"
     volumes:
-      - ${BASE_STORAGE_PATH}/.union_bridge/op_2/bitvmx:/app/config
+      - ${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_2/bitvmx:/app/config
       - ../../resources:/app/resources:ro
       - db-bitvmx-2:/tmp
     networks:
@@ -59,7 +59,7 @@ services:
     ports:
       - "44444:44444"
     volumes:
-      - ${BASE_STORAGE_PATH}/.union_bridge/op_3/bitvmx:/app/config
+      - ${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_3/bitvmx:/app/config
       - ../../resources:/app/resources:ro
       - db-bitvmx-3:/tmp
     networks:
@@ -79,7 +79,7 @@ services:
     ports:
       - "55554:55554"
     volumes:
-      - ${BASE_STORAGE_PATH}/.union_bridge/op_4/bitvmx:/app/config
+      - ${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_4/bitvmx:/app/config
       - ../../resources:/app/resources:ro
       - db-bitvmx-4:/tmp
     networks:
