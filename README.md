@@ -203,7 +203,7 @@ own workspace.
 
 If you are using the Docker operator flow under [`docker/operator/`](docker/operator/README.md), skip this section:
 `setup_operators.sh` already generates per-operator BitVMX config copies under
-`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/<environment>/` and patches
+`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/` and patches
 `components.l2.pubkey_hash` automatically.
 
 The BitVMX client needs to know where to send messages back to the Union Bridge Client. You must configure the

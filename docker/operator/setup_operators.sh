@@ -17,6 +17,8 @@ OPERATORS_TO_RUN=()
 NEW_USER_BITCOIN_WIF="${USER_BITCOIN_WIF:-}"
 USED_EXPORTED_USER_BITCOIN_WIF=false
 BROKER_SERVICES=("block-indexer" "log-indexer" "user-api" "coordinator")
+RESOLVED_USER_BITCOIN_WIF=""
+RESOLVED_BITVMX_BROKER_PUBKEY_HASH=""
 
 print_help() {
   echo "Usage: $0 [--env <ENV>] [--op <ID> | --ops <N>]"
@@ -37,6 +39,10 @@ print_help() {
 ensure_dependencies() {
   if ! command -v openssl >/dev/null 2>&1; then
     echo "Error: openssl is required to create broker identities."
+    exit 1
+  fi
+  if ! command -v perl >/dev/null 2>&1; then
+    echo "Error: perl is required to patch generated BitVMX config."
     exit 1
   fi
 }
@@ -97,7 +103,7 @@ operator_root_path() {
 operator_env_file_path() {
   local op_num="$1"
 
-  echo "$(operator_root_path "${op_num}")/docker/${ENVIRONMENT}.env"
+  echo "$(operator_root_path "${op_num}")/docker/.env"
 }
 
 bitvmx_template_dir() {
@@ -107,13 +113,19 @@ bitvmx_template_dir() {
 operator_bitvmx_root_path() {
   local op_num="$1"
 
-  echo "$(operator_root_path "${op_num}")/bitvmx/${ENVIRONMENT}"
+  echo "$(operator_root_path "${op_num}")/bitvmx"
 }
 
 operator_bitvmx_config_dir() {
   local op_num="$1"
 
-  echo "$(operator_bitvmx_root_path "${op_num}")/client/config"
+  echo "$(operator_bitvmx_root_path "${op_num}")"
+}
+
+operator_bitvmx_keys_dir() {
+  local op_num="$1"
+
+  echo "$(operator_bitvmx_config_dir "${op_num}")/keys"
 }
 
 operator_bitvmx_yaml_path() {
@@ -122,6 +134,21 @@ operator_bitvmx_yaml_path() {
 
   client_op="$(operator_client_op "${op_num}")"
   echo "$(operator_bitvmx_config_dir "${op_num}")/${client_op}.yaml"
+}
+
+prune_extra_bitvmx_operator_yaml_files() {
+  local target_dir="$1"
+  local cfg_file="$2"
+  local yaml_file
+  local yaml_name
+
+  for yaml_file in "${target_dir}"/*.yaml; do
+    [[ -e "${yaml_file}" ]] || continue
+    yaml_name="$(basename "${yaml_file}")"
+    if [[ "${yaml_file}" != "${cfg_file}" ]] && [[ "${yaml_name}" =~ ^(op_[0-9]+|testnet_op_[0-9]+)\.yaml$ ]]; then
+      rm -f "${yaml_file}"
+    fi
+  done
 }
 
 project_name_for_operator() {
@@ -185,13 +212,20 @@ broker_pubkey_hash_path() {
   echo "$(operator_root_path "${op_num}")/broker/${service}.pubkey_hash"
 }
 
-compute_broker_pubkey_hash() {
-  local pem_path="$1"
+compute_pubkey_hash() {
+  local key_path="$1"
 
-  openssl pkey -in "${pem_path}" -pubout -outform DER 2>/dev/null \
+  openssl pkey -in "${key_path}" -pubout -outform DER 2>/dev/null \
     | openssl dgst -sha256 -binary \
     | od -A n -v -t x1 \
     | tr -d ' \n'
+}
+
+generate_private_key() {
+  local output_path="$1"
+
+  openssl genpkey -algorithm RSA -out "${output_path}" -pkeyopt rsa_keygen_bits:2048 2>/dev/null
+  chmod 600 "${output_path}"
 }
 
 provision_operator_broker_identities() {
@@ -211,13 +245,113 @@ provision_operator_broker_identities() {
       action="Reusing"
     else
       action="Creating"
-      openssl genpkey -algorithm RSA -out "${pem_path}" -pkeyopt rsa_keygen_bits:2048 2>/dev/null
-      chmod 600 "${pem_path}"
+      generate_private_key "${pem_path}"
     fi
 
-    compute_broker_pubkey_hash "${pem_path}" > "${pubkey_hash_path}"
+    compute_pubkey_hash "${pem_path}" > "${pubkey_hash_path}"
     echo "  - ${action} ${service} key at ${pem_path} (pubkey_hash: $(cat "${pubkey_hash_path}"))"
   done
+}
+
+patch_bitvmx_component_pubkey_hash() {
+  local cfg_file="$1"
+  local component_name="$2"
+  local pubkey_hash="$3"
+
+  if grep -q "^[[:space:]]*${component_name}:" "${cfg_file}" && grep -q '^[[:space:]]*pubkey_hash:' "${cfg_file}"; then
+    BITVMX_COMPONENT_NAME="${component_name}" BITVMX_COMPONENT_PUBKEY_HASH="${pubkey_hash}" \
+      perl -0pi -e 's/($ENV{BITVMX_COMPONENT_NAME}:\s*\n\s*pubkey_hash:\s*)[^\n]+/${1}$ENV{BITVMX_COMPONENT_PUBKEY_HASH}/m' "${cfg_file}"
+  fi
+}
+
+ensure_operator_bitvmx_config_tree() {
+  local op_num="$1"
+  local template_dir="$2"
+  local target_dir="$3"
+  local cfg_file="$4"
+
+  if [[ ! -d "${template_dir}" ]]; then
+    echo "Error: missing BitVMX template directory ${template_dir}" >&2
+    exit 1
+  fi
+
+  if [[ ! -d "${target_dir}" ]]; then
+    mkdir -p "$(dirname "${target_dir}")"
+    cp -R "${template_dir}" "${target_dir}"
+  fi
+
+  if [[ ! -f "${cfg_file}" ]]; then
+    echo "Error: missing generated BitVMX operator config ${cfg_file}" >&2
+    echo "Delete $(operator_root_path "${op_num}") and rerun setup_operators.sh from a clean state." >&2
+    exit 1
+  fi
+}
+
+generate_operator_bitvmx_keys() {
+  local target_keys_dir="$1"
+  shift
+  local key_file
+
+  mkdir -p "${target_keys_dir}"
+
+  for key_file in "$@"; do
+    if [[ "${key_file}" == "l2.key" ]]; then
+      continue
+    fi
+    if [[ -f "${target_keys_dir}/${key_file}" ]]; then
+      chmod 600 "${target_keys_dir}/${key_file}"
+      echo "  - Reusing BitVMX key at ${target_keys_dir}/${key_file}"
+    else
+      generate_private_key "${target_keys_dir}/${key_file}"
+      echo "  - Creating BitVMX key at ${target_keys_dir}/${key_file}"
+    fi
+  done
+}
+
+write_operator_bitvmx_pubkey_hash_files() {
+  local target_keys_dir="$1"
+
+  if [[ -f "${target_keys_dir}/services.key" ]]; then
+    compute_pubkey_hash "${target_keys_dir}/services.key" > "${target_keys_dir}/services.pubkey_hash"
+  fi
+  if [[ -f "${target_keys_dir}/emulator.key" ]]; then
+    compute_pubkey_hash "${target_keys_dir}/emulator.key" > "${target_keys_dir}/emulator.pubkey_hash"
+  fi
+  if [[ -f "${target_keys_dir}/prover.key" ]]; then
+    compute_pubkey_hash "${target_keys_dir}/prover.key" > "${target_keys_dir}/prover.pubkey_hash"
+  fi
+}
+
+patch_operator_bitvmx_identity_hashes() {
+  local cfg_file="$1"
+  local coordinator_pubkey_hash="$2"
+  local target_keys_dir="$3"
+  local bitvmx_pubkey_hash=""
+  local emulator_pubkey_hash=""
+  local prover_pubkey_hash=""
+
+  if [[ -f "${target_keys_dir}/services.pubkey_hash" ]]; then
+    bitvmx_pubkey_hash="$(tr -d ' \n' < "${target_keys_dir}/services.pubkey_hash")"
+  fi
+  if [[ -f "${target_keys_dir}/emulator.pubkey_hash" ]]; then
+    emulator_pubkey_hash="$(tr -d ' \n' < "${target_keys_dir}/emulator.pubkey_hash")"
+  fi
+  if [[ -f "${target_keys_dir}/prover.pubkey_hash" ]]; then
+    prover_pubkey_hash="$(tr -d ' \n' < "${target_keys_dir}/prover.pubkey_hash")"
+  fi
+
+  patch_bitvmx_component_pubkey_hash "${cfg_file}" "l2" "${coordinator_pubkey_hash}"
+  if [[ -n "${bitvmx_pubkey_hash}" ]]; then
+    patch_bitvmx_component_pubkey_hash "${cfg_file}" "bitvmx" "${bitvmx_pubkey_hash}"
+  fi
+  if [[ -n "${emulator_pubkey_hash}" ]]; then
+    patch_bitvmx_component_pubkey_hash "${cfg_file}" "emulator" "${emulator_pubkey_hash}"
+  fi
+  if [[ -n "${prover_pubkey_hash}" ]]; then
+    patch_bitvmx_component_pubkey_hash "${cfg_file}" "prover" "${prover_pubkey_hash}"
+  fi
+
+  RESOLVED_BITVMX_BROKER_PUBKEY_HASH="${bitvmx_pubkey_hash}"
 }
 
 read_broker_pubkey_hash() {
@@ -250,7 +384,7 @@ resolve_user_bitcoin_wif() {
   if [[ -f "${env_file}" ]]; then
     existing_wif="$(read_env_value "${env_file}" "USER_BITCOIN_WIF")"
     if [[ -n "${existing_wif}" ]]; then
-      echo "${existing_wif}"
+      RESOLVED_USER_BITCOIN_WIF="${existing_wif}"
       return 0
     fi
 
@@ -272,13 +406,14 @@ resolve_user_bitcoin_wif() {
     USED_EXPORTED_USER_BITCOIN_WIF=true
   fi
 
-  echo "${NEW_USER_BITCOIN_WIF}"
+  RESOLVED_USER_BITCOIN_WIF="${NEW_USER_BITCOIN_WIF}"
 }
 
 write_operator_env_file() {
   local env_file_path="$1"
   local op_num="$2"
   local user_bitcoin_wif="$3"
+  local bitvmx_pubkey_hash="$4"
   local client_op
 
   mkdir -p "$(dirname "${env_file_path}")"
@@ -295,6 +430,7 @@ COORDINATOR_BROKER_PEM_PATH=$(broker_pem_path "coordinator" "${op_num}")
 UB__COORDINATOR__BLOCKS__PUBKEY_HASH=$(read_broker_pubkey_hash "block-indexer" "${op_num}")
 UB__COORDINATOR__LOGS__PUBKEY_HASH=$(read_broker_pubkey_hash "log-indexer" "${op_num}")
 UB__COORDINATOR__USER__PUBKEY_HASH=$(read_broker_pubkey_hash "user-api" "${op_num}")
+UB__COORDINATOR__BITVMX__PUBKEY_HASH=${bitvmx_pubkey_hash}
 UB__USER_API__COORDINATOR__PUBKEY_HASH=$(read_broker_pubkey_hash "coordinator" "${op_num}")
 USER_BITCOIN_WIF=${user_bitcoin_wif}
 EOF
@@ -327,32 +463,35 @@ prepare_operator_bitvmx_config() {
   local cfg_file
   local coordinator_pubkey_hash
   local client_op
+  local target_keys_dir
+  local config_action
+  local -a referenced_key_files=()
 
   template_dir="$(bitvmx_template_dir)"
   target_dir="$(operator_bitvmx_root_path "${op_num}")"
   cfg_file="$(operator_bitvmx_yaml_path "${op_num}")"
   coordinator_pubkey_hash="$(read_broker_pubkey_hash "coordinator" "${op_num}")"
   client_op="$(operator_client_op "${op_num}")"
+  target_keys_dir="$(operator_bitvmx_keys_dir "${op_num}")"
 
-  if [[ ! -d "${template_dir}" ]]; then
-    echo "Error: missing BitVMX template directory ${template_dir}" >&2
-    exit 1
+  if [[ -d "${target_dir}" ]]; then
+    config_action="Reusing"
+  else
+    config_action="Creating"
   fi
 
-  rm -rf "${target_dir}"
-  mkdir -p "$(dirname "${target_dir}")"
-  cp -R "${template_dir}" "${target_dir}"
+  ensure_operator_bitvmx_config_tree "${op_num}" "${template_dir}" "${target_dir}" "${cfg_file}"
 
-  if [[ ! -f "${cfg_file}" ]]; then
-    echo "Error: missing generated BitVMX operator config ${cfg_file}" >&2
-    exit 1
-  fi
+  prune_extra_bitvmx_operator_yaml_files "${target_dir}" "${cfg_file}"
 
-  if grep -q '^[[:space:]]*pubkey_hash:' "${cfg_file}" && grep -q '^[[:space:]]*l2:' "${cfg_file}"; then
-    BITVMX_COORDINATOR_PUBKEY_HASH="${coordinator_pubkey_hash}" perl -0pi -e 's/(l2:\s*\n\s*pubkey_hash:\s*)[^\n]+/${1}$ENV{BITVMX_COORDINATOR_PUBKEY_HASH}/m' "${cfg_file}"
-  fi
+  mapfile -t referenced_key_files < <(grep -Eo 'config/keys/[^[:space:]]+' "${cfg_file}" | sed 's#config/keys/##' | sort -u)
+  generate_operator_bitvmx_keys "${target_keys_dir}" "${referenced_key_files[@]}"
+  write_operator_bitvmx_pubkey_hash_files "${target_keys_dir}"
+  patch_operator_bitvmx_identity_hashes "${cfg_file}" "${coordinator_pubkey_hash}" "${target_keys_dir}"
 
-  echo "- Prepared BitVMX config for ${client_op} at ${cfg_file} (coordinator pubkey_hash: ${coordinator_pubkey_hash})"
+  rm -rf "${target_dir}/broker"
+
+  echo "- ${config_action} BitVMX config for ${client_op} at ${cfg_file} (coordinator pubkey_hash: ${coordinator_pubkey_hash})"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -428,18 +567,20 @@ esac
 for op_num in "${OPERATORS_TO_RUN[@]}"; do
   project_name="$(project_name_for_operator "${op_num}")"
   env_file_path="$(operator_env_file_path "${op_num}")"
-  user_bitcoin_wif_value="$(resolve_user_bitcoin_wif "${op_num}" "${project_name}" "${env_file_path}")"
+  resolve_user_bitcoin_wif "${op_num}" "${project_name}" "${env_file_path}"
+  user_bitcoin_wif_value="${RESOLVED_USER_BITCOIN_WIF}"
 
   echo "=== op_${op_num} (${ENVIRONMENT}) ==="
   provision_operator_broker_identities "${op_num}"
 
   prepare_operator_bitvmx_config "${op_num}"
+  bitvmx_pubkey_hash="${RESOLVED_BITVMX_BROKER_PUBKEY_HASH}"
 
   if [[ -f "${env_file_path}" ]]; then
-    write_operator_env_file "${env_file_path}" "${op_num}" "${user_bitcoin_wif_value}"
+    write_operator_env_file "${env_file_path}" "${op_num}" "${user_bitcoin_wif_value}" "${bitvmx_pubkey_hash}"
     echo "- Updated operator env file ${env_file_path}"
   else
-    write_operator_env_file "${env_file_path}" "${op_num}" "${user_bitcoin_wif_value}"
+    write_operator_env_file "${env_file_path}" "${op_num}" "${user_bitcoin_wif_value}" "${bitvmx_pubkey_hash}"
     echo "- Created operator env file ${env_file_path}"
   fi
 

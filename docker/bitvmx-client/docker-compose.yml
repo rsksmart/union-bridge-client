@@ -15,7 +15,7 @@ services:
       retries: 3
       start_period: 10s
     volumes:
-      - ./config/${ENVIRONMENT}/client/config:/app/config
+      - ./config/${ENVIRONMENT}:/app/config
       - db-bitvmx:/tmp
 
 volumes:

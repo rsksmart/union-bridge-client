@@ -51,7 +51,7 @@ cd docker/local-infra
 # Start blockchains (first time or fresh start)
 ./start_blockchains.sh --fresh up -d
 
-# Generate local per-operator BitVMX config under ~/.union_bridge/op_N/bitvmx/local
+# Generate local per-operator BitVMX config under ~/.union_bridge/op_N/bitvmx
 cd ../operator
 ./setup_operators.sh --env local --ops 4
 
@@ -158,7 +158,7 @@ See [build/README.md](build/README.md) for detailed usage.
 The Docker setup uses two kinds of environment files:
 
 - tracked static environment files such as [`docker/operator/.env.local`](operator/.env.local), [`docker/operator/.env.alphanet`](operator/.env.alphanet), [`docker/operator/.env.regtest`](operator/.env.regtest), and [`docker/operator/.env.testnet`](operator/.env.testnet)
-- generated per-operator runtime files under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker/<environment>.env`, created by `docker/operator/setup_operators.sh`
+- generated per-operator runtime files under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker/.env`, created by `docker/operator/setup_operators.sh`
 
 ## Troubleshooting
 

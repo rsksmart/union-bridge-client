@@ -75,7 +75,7 @@ ensure_generated_bitvmx_configs() {
   local op_num config_dir
 
   for op_num in 1 2 3 4; do
-    config_dir="${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}/bitvmx/local/client/config"
+    config_dir="${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}/bitvmx"
     if [[ ! -d "${config_dir}" ]]; then
       echo "Error: missing generated BitVMX config directory ${config_dir}" >&2
       echo "Run ../operator/setup_operators.sh --env local --ops 4 before starting BitVMX." >&2

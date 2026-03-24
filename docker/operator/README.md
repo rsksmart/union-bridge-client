@@ -142,12 +142,12 @@ This creates or reuses:
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/broker/block-indexer.pem`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/broker/block-indexer.pubkey_hash`
 - the same pair for `log-indexer`, `user-api`, and `coordinator`
-- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/<environment>/...` copied from `docker/bitvmx-client/config/<environment>`
-- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker/<environment>.env`
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/...` copied from `docker/bitvmx-client/config/<environment>`
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker/.env`
 
 `setup_operators.sh` prompts for `USER_BITCOIN_WIF` only when an operator env file is missing that value and persists it there.
 Running setup again is incremental: existing broker identities are reused, and existing operator env files are refreshed in place so updated tags or derived broker values are applied without re-prompting for stored WIFs.
-The generated BitVMX config copy is refreshed from the tracked template on each run, and the operator's client YAML is patched so `components.l2.pubkey_hash` matches that operator's coordinator broker identity when that field exists in the template.
+The generated BitVMX config copy is created from the tracked template on first setup, then reused on later runs. On each run, the operator's client YAML is patched so `components.l2.pubkey_hash` matches that operator's coordinator broker identity when that field exists in the template, and the referenced BitVMX runtime keys are generated or reused under `.union_bridge/op_N/bitvmx/...` instead of being copied from the tracked template. In other words, `docker/bitvmx-client/config/<environment>` is treated as a config template, not as the source of runtime private keys.
 
 `local` and `local-docker` share the same host-side runtime root by default:
 
@@ -163,12 +163,12 @@ So local cargo flows and local Docker operator flows reuse the same per-operator
 The Docker flow no longer relies on a shared broker key in `/keystore`.
 The remaining shared `keystore` volume between `coordinator` and `user-api` is transitional and is only for the existing user/member keystore files.
 
-BitVMX runtime config is now generated under `.union_bridge/op_N/bitvmx/<environment>/` instead of patching the tracked repo files in place.
+BitVMX runtime config is now generated under `.union_bridge/op_N/bitvmx/` instead of patching the tracked repo files in place.
 
 Why BitVMX config is generated but Union Client config is not:
 
 - Union Client already supports runtime configuration overrides via `UB__...` environment variables, so operator-specific values such as broker identities, remote pubkey hashes, ports, and WIFs can be injected without copying the tracked `config/` tree.
-- BitVMX does not have an equivalent operator-runtime override layer in this repo. Its operator-specific values live inside YAML files, so the clean boundary is to treat `docker/bitvmx-client/config/<environment>` as a template and generate a per-operator host copy under `.union_bridge/op_N/bitvmx/<environment>/`.
+- BitVMX does not have an equivalent operator-runtime override layer in this repo. Its operator-specific values live inside YAML files, so the clean boundary is to treat `docker/bitvmx-client/config/<environment>` as a template and generate a per-operator host copy under `.union_bridge/op_N/bitvmx/`.
 - This keeps tracked files static while making all operator-runtime state live under `.union_bridge/op_N/...`.
 
 #### Environment Variables

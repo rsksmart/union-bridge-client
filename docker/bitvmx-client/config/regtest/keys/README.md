@@ -1,0 +1,17 @@
+This directory is part of the tracked BitVMX config template.
+
+Runtime private keys are not stored in the repo anymore. During operator setup,
+`docker/operator/setup_operators.sh` generates the referenced key files under:
+
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/keys/`
+
+For the regtest template, the generated files are the operator keys referenced
+by the `op_N.yaml` files, for example:
+
+- `op_1.key`
+- `op_2.key`
+- `...`
+
+So, for example, `op_1` ends up with:
+
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_1/bitvmx/keys/op_1.key`
