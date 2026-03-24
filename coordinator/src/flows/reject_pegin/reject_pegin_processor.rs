@@ -34,7 +34,7 @@ fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
     })
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct RejectPeginProcessorConfig {
     /// Minimum BTC transaction confirmations for reject pegin (default: 1)
     pub min_tx_confirmations: u32,
@@ -42,6 +42,12 @@ pub struct RejectPeginProcessorConfig {
     pub blocks_delay_for_tx_check: u32,
     /// Required RSK block confirmations for `RejectPeginRegistered` (default: 5)
     pub required_confirmations: u32,
+}
+
+impl Default for RejectPeginProcessorConfig {
+    fn default() -> Self {
+        Self { min_tx_confirmations: 1, blocks_delay_for_tx_check: 20, required_confirmations: 5 }
+    }
 }
 
 pub struct RejectPeginProcessor<CG, BC, S>
@@ -110,8 +116,34 @@ where
 
         processor.flows = restore_flows(store.as_ref(), StorePrefix::RejectPeginFlow, flow_factory)
             .expect("Failed to load reject pegin flows from store");
+        processor.rehydrate_pending_tx_status_checks();
 
         processor
+    }
+
+    fn rehydrate_pending_tx_status_checks(&mut self) {
+        let pending_checks: Vec<Uuid> = self
+            .flows
+            .iter()
+            .filter_map(|(flow_id, flow)| {
+                if flow.current_step() == Steps::GetRejectTxConfirmation {
+                    if flow.get_reject_pegin_txid().is_some() {
+                        return Some(*flow_id);
+                    }
+
+                    warn!(
+                        "RejectPeginProcessor restored flow {flow_id} in GetRejectTxConfirmation without a tracked tx id"
+                    );
+                }
+
+                None
+            })
+            .collect();
+
+        for flow_id in pending_checks {
+            debug!("RejectPeginProcessor rehydrating tx status polling for flow {flow_id}");
+            self.tx_status_scheduler.schedule(flow_id, 0);
+        }
     }
 
     fn start_reject_pegin_flow(&mut self, trigger: RejectPeginTrigger) -> Result<()> {
@@ -502,7 +534,7 @@ where
     }
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
-        if self.config.min_tx_confirmations == 0 {
+        if self.config.required_confirmations == 0 {
             return self.process_confirmed_rsk_event(event);
         }
 
@@ -629,13 +661,28 @@ mod tests {
         global_context: GlobalContext,
         config: RejectPeginProcessorConfig,
     ) -> TestProcessor {
-        let store = test_store();
+        test_processor_with_store(
+            bitvmx_broker,
+            contracts_gateway,
+            global_context,
+            &test_store(),
+            config,
+        )
+    }
+
+    fn test_processor_with_store(
+        bitvmx_broker: BitVmxMock,
+        contracts_gateway: MockRskContractsGatewayApi,
+        global_context: GlobalContext,
+        store: &Rc<CoordinatorStore>,
+        config: RejectPeginProcessorConfig,
+    ) -> TestProcessor {
         RejectPeginProcessor::new(
             Rc::new(bitvmx_broker),
             Rc::new(contracts_gateway),
             RuntimeSync::new().expect("runtime"),
             global_context,
-            &store,
+            store,
             config,
             NativeBridgeVerifier::Dummy,
         )
@@ -751,6 +798,101 @@ mod tests {
 
         // After setup we wait for REJECT_PEGIN_TX, flow is not removed yet
         assert_eq!(processor.active_flows_len(), 1);
+    }
+
+    #[test]
+    fn restored_processor_rehydrates_tx_status_polling_for_reject_pegin_flow() {
+        let store = test_store();
+        let global_context = test_global_context();
+        let config = RejectPeginProcessorConfig {
+            min_tx_confirmations: 2,
+            blocks_delay_for_tx_check: 5,
+            required_confirmations: 1,
+        };
+
+        let mut initial_broker = BitVmxMock::new();
+        initial_broker.expect_send().times(3).returning(|_| Ok(true));
+
+        let tx_status = test_tx_status(1);
+        let protocol_id = {
+            let mut processor = test_processor_with_store(
+                initial_broker,
+                MockRskContractsGatewayApi::new(),
+                global_context.clone(),
+                &store,
+                config.clone(),
+            );
+
+            processor
+                .process_user_request(&UserRequests::RejectPegin(test_request()))
+                .expect("reject pegin request is handled");
+            let protocol_id = processor.active_flow_ids().pop().expect("one active flow");
+
+            processor
+                .process_new_bitvmx_event(&OutgoingBitVMXApiMessages::CommInfo(
+                    Uuid::new_v4(),
+                    CommsAddress {
+                        address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 61180),
+                        pubkey_hash: "cd".repeat(32),
+                    },
+                ))
+                .expect("comm info is handled");
+
+            processor
+                .process_new_bitvmx_event(&OutgoingBitVMXApiMessages::SetupCompleted(protocol_id))
+                .expect("setup completed is handled");
+
+            processor
+                .process_new_bitvmx_event(&OutgoingBitVMXApiMessages::Transaction(
+                    protocol_id,
+                    tx_status.clone(),
+                    Some(REJECT_PEGIN_TX.to_string()),
+                ))
+                .expect("transaction status is handled");
+
+            assert_eq!(
+                processor.flows.get(&protocol_id).and_then(RejectPeginFlow::get_reject_pegin_txid),
+                Some(tx_status.tx_id)
+            );
+            assert!(processor.tx_status_scheduler.is_scheduled(&protocol_id));
+
+            protocol_id
+        };
+
+        let mut restored_broker = BitVmxMock::new();
+        restored_broker
+            .expect_send()
+            .with(mockall::predicate::function(move |msg: &IncomingBitVMXApiMessages| {
+                matches!(
+                    msg,
+                    IncomingBitVMXApiMessages::GetTransaction(id, tx_id)
+                        if *id == protocol_id && *tx_id == tx_status.tx_id
+                )
+            }))
+            .times(1)
+            .returning(|_| Ok(true));
+
+        let mut restored_processor = test_processor_with_store(
+            restored_broker,
+            MockRskContractsGatewayApi::new(),
+            global_context,
+            &store,
+            config,
+        );
+
+        assert_eq!(restored_processor.active_flows_len(), 1);
+        assert_eq!(
+            restored_processor
+                .flows
+                .get(&protocol_id)
+                .and_then(RejectPeginFlow::get_reject_pegin_txid),
+            Some(tx_status.tx_id)
+        );
+        assert!(restored_processor.tx_status_scheduler.is_scheduled(&protocol_id));
+
+        restored_processor
+            .handle_transaction_status_tick()
+            .expect("restored flow should request transaction status");
     }
 
     #[test]
@@ -904,5 +1046,78 @@ mod tests {
         processor.process_new_block(&block).expect("block confirmations are handled");
 
         assert_eq!(processor.active_flows_len(), 0);
+    }
+
+    #[test]
+    fn reject_pegin_registered_still_waits_for_rsk_confirmation_when_btc_confirmations_disabled() {
+        let mut bitvmx_broker = BitVmxMock::new();
+        bitvmx_broker.expect_send().times(4).returning(|_| Ok(true));
+
+        let mut contracts_gateway = MockRskContractsGatewayApi::new();
+        contracts_gateway.expect_reject_pegin().times(1).returning(|_| {
+            Ok(transaction_dispatcher::types::TxSentOutput {
+                transaction_hash: "0xdeadbeef".to_string(),
+            })
+        });
+
+        let config = RejectPeginProcessorConfig {
+            min_tx_confirmations: 0,
+            blocks_delay_for_tx_check: 0,
+            required_confirmations: 1,
+        };
+        let mut processor =
+            test_processor_with(bitvmx_broker, contracts_gateway, test_global_context(), config);
+
+        processor
+            .process_user_request(&UserRequests::RejectPegin(test_request()))
+            .expect("reject pegin request is handled");
+        let protocol_id = processor.active_flow_ids().pop().expect("one active flow");
+
+        processor
+            .process_new_bitvmx_event(&OutgoingBitVMXApiMessages::CommInfo(
+                Uuid::new_v4(),
+                CommsAddress {
+                    address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 61180),
+                    pubkey_hash: "cd".repeat(32),
+                },
+            ))
+            .expect("comm info is handled");
+
+        processor
+            .process_new_bitvmx_event(&OutgoingBitVMXApiMessages::SetupCompleted(protocol_id))
+            .expect("setup completed is handled");
+
+        let tx_status = test_tx_status(0);
+        let spv_proof = test_spv_proof(&tx_status.tx);
+        processor
+            .process_new_bitvmx_event(&OutgoingBitVMXApiMessages::Transaction(
+                protocol_id,
+                tx_status.clone(),
+                Some(REJECT_PEGIN_TX.to_string()),
+            ))
+            .expect("transaction status is handled");
+
+        processor
+            .process_new_bitvmx_event(&OutgoingBitVMXApiMessages::SPVProof(
+                tx_status.tx_id,
+                Some(spv_proof),
+            ))
+            .expect("spv proof registers reject pegin");
+
+        processor
+            .process_new_rsk_event(&RskPegManagerEvents::RejectPeginRegistered(
+                test_reject_pegin_registered(tx_status.tx_id, test_request().request_pegin_txid),
+            ))
+            .expect("RejectPeginRegistered event is queued for confirmation");
+
+        assert_eq!(processor.active_flows_len(), 1);
+        assert_eq!(processor.events_confirming.len(), 1);
+
+        let block =
+            RskBlockAndUncles::new_no_uncles(create_fake_block(101.into(), RskU256::from(50)));
+        processor.process_new_block(&block).expect("block confirmations are handled");
+
+        assert_eq!(processor.active_flows_len(), 0);
+        assert!(processor.events_confirming.is_empty());
     }
 }

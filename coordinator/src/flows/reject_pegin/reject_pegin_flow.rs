@@ -357,7 +357,8 @@ where
     }
 
     pub fn record_reject_pegin_tx_status(&mut self, tx_status: &TransactionStatus) -> Result<()> {
-        self.update_reject_pegin_tx_status(tx_status)
+        self.update_reject_pegin_tx_status(tx_status)?;
+        self.persist_state().context("Failed to persist reject pegin tx status")
     }
 
     fn update_reject_pegin_tx_status(&mut self, tx_status: &TransactionStatus) -> Result<()> {

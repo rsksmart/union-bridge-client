@@ -163,7 +163,7 @@ pub struct RejectPeginConfig {
 
 impl Default for RejectPeginConfig {
     fn default() -> Self {
-        Self { min_tx_confirmations: 1, blocks_delay_for_tx_check: 6 }
+        Self { min_tx_confirmations: 1, blocks_delay_for_tx_check: 20 }
     }
 }
 

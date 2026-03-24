@@ -1001,13 +1001,14 @@ fn utxo_db_path(root: &Path, network: Network, mode: &crate::cli::WalletMode) ->
     Ok(root.join(mode_name).join(network_name).join("utxo_db"))
 }
 
-fn pending_tx_db_path(root: &Path, network: Network, mode: &crate::cli::WalletMode) -> Result<PathBuf> {
+fn pending_tx_db_path(
+    root: &Path,
+    network: Network,
+    mode: &crate::cli::WalletMode,
+) -> Result<PathBuf> {
     let mode_name = mode.to_string();
     let network_name = network_name(network)?;
-    Ok(root
-        .join(mode_name)
-        .join(network_name)
-        .join("pending_tx_db"))
+    Ok(root.join(mode_name).join(network_name).join("pending_tx_db"))
 }
 
 /// Returns the canonical path/env name for a supported network.

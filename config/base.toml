@@ -116,7 +116,7 @@ min_tx_confirmations = 1
 blocks_delay_for_tx_check = 20
 
 [bridge.reject_pegin]
-# Minimum BTC transaction confirmations for pegin
+# Minimum BTC transaction confirmations required to reject a pegin
 min_tx_confirmations = 1
 # Blocks delay before rechecking transaction status
 blocks_delay_for_tx_check = 6

@@ -300,7 +300,7 @@ where
                 }
                 Some(FlowCompletion::Rejected(reject_pegin_registered)) => {
                     info!(
-                        "PeginFlow Finihsed: {} because pegin was rejected \
+                        "PeginFlow Finished: {} because pegin was rejected \
                          (RejectPeginRegistered for request_pegin_txid {})",
                         self.state.flow_id, reject_pegin_registered.request_pegin_txid
                     );
