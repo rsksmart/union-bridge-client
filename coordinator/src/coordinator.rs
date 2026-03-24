@@ -44,6 +44,33 @@ fn normalize_env_name(env_name: Option<&str>) -> Option<&str> {
 impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi + 'static>
     Coordinator<M, BC, S>
 {
+    fn build_native_bridge_verifier<CG: RskContractsGatewayApi + 'static>(
+        env_name: Option<&str>,
+        contracts_arc: &Rc<CG>,
+        rt_sync: &RuntimeSync,
+        bridge_config: &BridgeConfig,
+    ) -> NativeBridgeVerifier<CG> {
+        let normalized_env_name = normalize_env_name(env_name);
+        if let Some(normalized @ ("alphanet" | "regtest" | "testnet")) = normalized_env_name {
+            log::info!(
+                "Environment: {} (normalized: {normalized}) → Using Real Native Bridge Verifier",
+                env_name.unwrap_or("NONE")
+            );
+            NativeBridgeVerifier::Real {
+                contracts: contracts_arc.clone(),
+                rt_sync: rt_sync.clone(),
+                min_tx_confirmations: bridge_config.native_bridge.min_tx_confirmations,
+            }
+        } else {
+            log::info!(
+                "Environment: {} (normalized: {}) → Using Dummy Native Bridge Verifier (BitVMX confirmations only)",
+                env_name.unwrap_or("NONE"),
+                normalized_env_name.unwrap_or("NONE")
+            );
+            NativeBridgeVerifier::Dummy
+        }
+    }
+
     /// # Panics
     /// Panics if loading context from the database fails.
     #[allow(clippy::too_many_arguments)]
@@ -78,28 +105,8 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             bridge_config.committee.clone(),
         );
 
-        let normalized_env_name = normalize_env_name(env_name);
-        let native_bridge_verifier = if let Some(
-            normalized @ ("alphanet" | "regtest" | "testnet"),
-        ) = normalized_env_name
-        {
-            log::info!(
-                "Environment: {} (normalized: {normalized}) → Using Real Native Bridge Verifier",
-                env_name.unwrap_or("NONE")
-            );
-            NativeBridgeVerifier::Real {
-                contracts: contracts_arc.clone(),
-                rt_sync: rt_sync.clone(),
-                min_tx_confirmations: bridge_config.native_bridge.min_tx_confirmations,
-            }
-        } else {
-            log::info!(
-                "Environment: {} (normalized: {}) → Using Dummy Native Bridge Verifier (BitVMX confirmations only)",
-                env_name.unwrap_or("NONE"),
-                normalized_env_name.unwrap_or("NONE")
-            );
-            NativeBridgeVerifier::Dummy
-        };
+        let native_bridge_verifier =
+            Self::build_native_bridge_verifier(env_name, &contracts_arc, rt_sync, bridge_config);
 
         let processors: Vec<Box<dyn EventProcessor>> = vec![
             Box::new(AdvanceFundsProcessor::new(
