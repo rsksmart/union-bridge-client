@@ -60,7 +60,7 @@ runs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-          ./shared-target
+          ./target
         key: ${{ runner.os }}-rust-cargo-${{ hashFiles('./Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-rust-cargo-

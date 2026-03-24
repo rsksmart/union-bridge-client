@@ -18,6 +18,10 @@ on:
 jobs:
   tests:
     runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+      RUSTFLAGS: -C link-arg=-fuse-ld=lld
+      CARGO_PROFILE_TEST_DEBUG: 0
 
     steps:
 
@@ -32,10 +36,20 @@ jobs:
           contracts_github_token: ${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
           cache-build: true
 
+      - name: Install Linker Dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y clang lld
+
       - name: Test Prod
         run: |
-          cargo test --workspace --all-targets --locked
+          cargo test --workspace --locked
 
       - name: Test Features
         run: |
-          cargo test --workspace --all-targets --all-features --locked
+          cargo test --workspace --all-features --locked
+
+      - name: Check All Targets
+        run: |
+          cargo check --workspace --all-targets --all-features --locked
