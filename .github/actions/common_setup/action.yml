@@ -31,18 +31,10 @@ runs:
         rustflags: '' # this action errors on warnings by default via RUSTFLAGS, so we need to clear them
 
     - name: Install RocksDB Dependencies
-      if: ${{ env.ACT }}
       shell: bash
       run: |
         sudo apt-get update
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libclang-dev clang lld
-
-    - name: Install Linker Dependencies
-      if: ${{ !env.ACT }}
-      shell: bash
-      run: |
-        sudo apt-get update
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y lld
 
     - name: Cache RISC Zero
       id: cache-risc0
