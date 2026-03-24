@@ -70,10 +70,7 @@ tower-http = { version = "0.6.1", features = ["timeout", "trace"] }
 union-contracts = { package = "union-bridge-contracts", git = "ssh://git@github.com/temp-rsk/bitvmx-union-bridge-contracts.git", tag = "v0.4.1-alpha" }
 uuid = { version = "1.11.0", features = ["v4", "serde"] }
 
-# The broker crate references rust-bitvmx-storage-backend via a relative path
-# (path = "../rust-bitvmx-storage-backend") which only works inside its monorepo.
-# This patch redirects it to the git source so cargo can resolve it.
-# The broker crate references rust-bitvmx-storage-backend via HTTPS + path fallback.
+# The broker crate references rust-bitvmx-storage-backend via HTTPS.
 # This patch redirects it to our SSH git source so cargo can resolve it.
 [patch."https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git"]
 rust-bitvmx-storage-backend = { git = "ssh://git@github.com/FairgateLabs/rust-bitvmx-storage-backend.git", tag = "v0.5.1" }

@@ -86,11 +86,7 @@ impl BrokerServer {
 
         debug!("BrokerServer identity: pubkey_hash={pubk_hash}");
 
-        let config = StorageConfig::new(storage_path.to_string(), None);
-        let storage = Storage::new(&config)
-            .map_err(|e| BrokerError::UnknownError(anyhow::anyhow!("Storage init failed: {e}")))?;
-        let broker_storage =
-            Arc::new(Mutex::new(BrokerStorage::new(Arc::new(Mutex::new(storage)))));
+        let broker_storage = create_broker_storage(storage_path)?;
         let broker_config =
             BrokerConfig::new(port, Some(IpAddr::from(Ipv4Addr::UNSPECIFIED)), pubk_hash.clone());
         let broker = BrokerSync::new_simple(&broker_config, broker_storage.clone(), cert)?;
@@ -247,11 +243,7 @@ impl BitVmxBrokerServer {
         debug!("Starting BitVmxBrokerServer on port {port}");
 
         let pubk_hash = cert.get_pubk_hash()?;
-        let config = StorageConfig::new(storage_path.to_string(), None);
-        let storage = Storage::new(&config)
-            .map_err(|e| BrokerError::UnknownError(anyhow::anyhow!("Storage init failed: {e}")))?;
-        let broker_storage =
-            Arc::new(Mutex::new(BrokerStorage::new(Arc::new(Mutex::new(storage)))));
+        let broker_storage = create_broker_storage(storage_path)?;
         let broker_config =
             BrokerConfig::new(port, Some(IpAddr::from(Ipv4Addr::UNSPECIFIED)), pubk_hash.clone());
         let broker =
@@ -371,6 +363,13 @@ pub enum BrokerError {
     SerializationError(#[from] serde_json::Error),
     #[error("Unknown error on Broker: {0}")]
     UnknownError(#[from] anyhow::Error),
+}
+
+fn create_broker_storage(storage_path: &str) -> Result<Arc<Mutex<BrokerStorage>>, BrokerError> {
+    let config = StorageConfig::new(storage_path.to_string(), None);
+    let storage = Storage::new(&config)
+        .map_err(|e| BrokerError::UnknownError(anyhow::anyhow!("Storage init failed: {e}")))?;
+    Ok(Arc::new(Mutex::new(BrokerStorage::new(Arc::new(Mutex::new(storage))))))
 }
 
 fn resolve_ip(name: String, port: u16) -> std::io::Result<IpAddr> {
