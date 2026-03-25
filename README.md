@@ -253,17 +253,7 @@ The repository ships sample files under `resources/`:
 
 **Steps:**
 
-1. Copy (or symlink) both files to a path that is accessible by the BitVMX client process.
-   For local runs with `config/environment/local.toml`, copy both files to `/var/tmp/bitvmx-client` so the YAML can
-   resolve the relative `hello-world.elf` reference:
-
-   ```bash
-   mkdir -p /var/tmp/bitvmx-client
-   cp resources/hello-world.yaml /var/tmp/bitvmx-client/hello-world.yaml
-   cp resources/hello-world.elf /var/tmp/bitvmx-client/hello-world.elf
-   ```
-
-2. Set the path to the `.yaml` file in the coordinator configuration:
+1. Set the path to the `.yaml` file in the coordinator configuration:
 
    ```toml
    # config/base.toml  (or your environment override file)
@@ -271,11 +261,15 @@ The repository ships sample files under `resources/`:
    drp_program_definition = "/path/accessible/by/bitvmx/hello-world.yaml"
    ```
 
-   Alternatively, export the corresponding environment variable:
+2. For the normal local + Docker-backed BitVMX flow, `config/environment/local.toml` now defaults to:
 
-   ```bash
-   export UB__BRIDGE__COMMITTEE__DRP_PROGRAM_DEFINITION="/path/accessible/by/bitvmx/hello-world.yaml"
-   ```
+   - `/app/resources/hello-world.yaml`
+
+   which matches the BitVMX Docker mounts.
+
+3. If you use `cli-run.sh --bitvmx-mode repo`, the launcher injects:
+
+   - `UB__BRIDGE__COMMITTEE__DRP_PROGRAM_DEFINITION=<project_root>/resources/hello-world.yaml`
 
 
 #### Configuring the Committee

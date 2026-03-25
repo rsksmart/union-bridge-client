@@ -220,12 +220,7 @@ async fn run_clients(config: RunConfig) -> Result<()> {
         fresh_cleanup(config.client_id)?;
     }
 
-    // find project root by going up from cargo manifest dir (cli/run) to project root
-    let manifest_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let project_root = manifest_path
-        .parent() // cli
-        .and_then(|p| p.parent()) // project root
-        .ok_or_else(|| anyhow!("Failed to determine project root"))?;
+    let project_root = project_root()?;
     let env_file = project_root.join("config/env_overrides/local-committee.env");
     if !env_file.exists() {
         bail!("config/env_overrides/local-committee.env not found at {}", env_file.display());
@@ -466,6 +461,15 @@ fn join_base_storage_path(base_storage_path: &str, value: &str) -> String {
     }
 }
 
+fn project_root() -> Result<PathBuf> {
+    let manifest_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    manifest_path
+        .parent()
+        .and_then(|p| p.parent())
+        .map(Path::to_path_buf)
+        .ok_or_else(|| anyhow!("Failed to determine project root"))
+}
+
 fn read_env_file_value(base_storage_path: &str, value: &str) -> Result<String> {
     let path = join_base_storage_path(base_storage_path, value);
     let contents = fs::read_to_string(&path)
@@ -557,6 +561,13 @@ fn build_env_for_client(
     let client_id =
         env_map.get(&format!("CLIENT_ID_{}", id)).cloned().unwrap_or_else(|| id.to_string());
     envs.push(("CLIENT_ID".into(), client_id));
+
+    if bitvmx_mode == BitvmxMode::Repo {
+        envs.push((
+            "UB__BRIDGE__COMMITTEE__DRP_PROGRAM_DEFINITION".to_string(),
+            project_root()?.join("resources").join("hello-world.yaml").display().to_string(),
+        ));
+    }
 
     Ok(envs)
 }
