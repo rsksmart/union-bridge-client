@@ -144,6 +144,7 @@ This creates or reuses:
 - the same pair for `log-indexer`, `user-api`, and `coordinator`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/...` copied from `docker/bitvmx-client/config/<environment>`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/keystore/{member,user}` (only when setup is run with `--env local`; used by `./cli-run.sh`)
 
 The generated `docker.env` file is used only for Docker operator execution via `start_operators.sh`.
 It is not used by local cargo mode (`./cli-run.sh`).

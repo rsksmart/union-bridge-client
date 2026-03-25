@@ -186,6 +186,10 @@ The bootstrap creates or reuses local Rootstock keystores, broker identities, an
 - `${BASE_STORAGE_PATH}/.union_bridge/op_1/keystore/member`
 - `${BASE_STORAGE_PATH}/.union_bridge/op_1/bitvmx/keys/services.pubkey_hash`
 
+Note: local keystores (`op_N/keystore/{member,user}`) are created only in `--env local` bootstrap runs and are used by
+local cargo mode (`./cli-run.sh`). Docker operator runs use container keystore paths and do not consume these
+host-side cargo keystore files.
+
 The `.pubkey_hash` files are generated from the created PEMs and are consumed by the local launcher so the
 coordinator and user-api use explicit remote identities without duplicating raw hash values in
 `config/env_overrides/local-committee.env`.

@@ -176,6 +176,9 @@ The CLI workspace is independent from the main Union Bridge workspace, allowing 
 ./cli-operations.sh operator apply-stream --stream-id 1
 ```
 
+`cli-setup-operators.sh --env local` creates the local keystores consumed by `./cli-run.sh`.
+Docker operator mode uses `docker.env` and container keystore paths instead of these cargo-mode keystore files.
+
 ### Alphanet/Testnet Operations
 
 ```bash

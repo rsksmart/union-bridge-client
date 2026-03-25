@@ -20,6 +20,7 @@ USED_EXPORTED_USER_BITCOIN_WIF=false
 BROKER_SERVICES=("block-indexer" "log-indexer" "user-api" "coordinator")
 RESOLVED_USER_BITCOIN_WIF=""
 RESOLVED_BITVMX_BROKER_PUBKEY_HASH=""
+KEY_STORE_PASSWORD_VALUE=""
 
 print_help() {
   echo "Usage: $0 [--env <ENV>] [--op <ID> | --ops <N>]"
@@ -27,6 +28,7 @@ print_help() {
   echo "Creates or reuses host-side Docker operator artifacts:"
   echo "  - broker identities under ${BASE_STORAGE_PATH}/.union_bridge/op_N/broker/<service>.*"
   echo "  - generated operator docker.env files under ${BASE_STORAGE_PATH}/.union_bridge/op_N/docker.env"
+  echo "  - in --env local only: local cargo-mode keystores under ${BASE_STORAGE_PATH}/.union_bridge/op_N/keystore/{member,user}"
   echo "  Existing operator env files are refreshed in place."
   echo ""
   echo "Options:"
@@ -44,6 +46,24 @@ ensure_dependencies() {
   fi
   if ! command -v perl >/dev/null 2>&1; then
     echo "Error: perl is required to patch generated BitVMX config."
+    exit 1
+  fi
+}
+
+prepare_local_keystore_password() {
+  if [[ "${ENVIRONMENT}" != "local" ]]; then
+    return 0
+  fi
+
+  if ! command -v cargo >/dev/null 2>&1; then
+    echo "Error: cargo is required to create local keystores in --env local mode." >&2
+    exit 1
+  fi
+
+  KEY_STORE_PASSWORD_VALUE="${KEY_STORE_PASSWORD:-}"
+  if [[ -z "${KEY_STORE_PASSWORD_VALUE}" ]]; then
+    echo "Error: KEY_STORE_PASSWORD is required in --env local mode." >&2
+    echo "Export KEY_STORE_PASSWORD and rerun <project_root>/cli-setup-operators.sh." >&2
     exit 1
   fi
 }
@@ -457,6 +477,53 @@ EOF
   chmod 600 "${env_file_path}"
 }
 
+create_or_reuse_local_keystore() {
+  local op_num="$1"
+  local wallet_name="$2"
+  local keystore_dir
+  local target_path
+  local cmd_output
+  local generated_path
+
+  keystore_dir="$(operator_root_path "${op_num}")/keystore"
+  target_path="${keystore_dir}/${wallet_name}"
+  mkdir -p "${keystore_dir}"
+
+  if [[ -f "${target_path}" ]]; then
+    chmod 600 "${target_path}" || true
+    echo "  - Reusing local ${wallet_name} keystore at ${target_path}"
+    return 0
+  fi
+
+  cmd_output="$(
+    cd "${PROJECT_ROOT}" && cargo run --quiet --manifest-path key-manager/Cargo.toml -- \
+      new-key -p "${KEY_STORE_PASSWORD_VALUE}" -d "${keystore_dir}"
+  )"
+
+  generated_path="$(printf '%s\n' "${cmd_output}" | sed -n 's/^Generated key @ \([^,]*\),.*/\1/p')"
+  if [[ -z "${generated_path}" || ! -f "${generated_path}" ]]; then
+    echo "Error: failed to create ${wallet_name} keystore for op_${op_num}." >&2
+    echo "key-manager output: ${cmd_output}" >&2
+    exit 1
+  fi
+
+  mv "${generated_path}" "${target_path}"
+  chmod 600 "${target_path}" || true
+  echo "  - Created local ${wallet_name} keystore at ${target_path}"
+}
+
+prepare_local_keystores_if_needed() {
+  local op_num="$1"
+
+  if [[ "${ENVIRONMENT}" != "local" ]]; then
+    return 0
+  fi
+
+  echo "- Preparing local cargo-mode keystores for op_${op_num}:"
+  create_or_reuse_local_keystore "${op_num}" "member"
+  create_or_reuse_local_keystore "${op_num}" "user"
+}
+
 prepare_operator_bitvmx_config() {
   local op_num="$1"
   local template_dir
@@ -537,6 +604,7 @@ if [[ "${ENVIRONMENT}" == "local-docker" ]]; then
 fi
 
 ensure_dependencies
+prepare_local_keystore_password
 
 case "${ENVIRONMENT}" in
   local|regtest)
@@ -573,6 +641,7 @@ for op_num in "${OPERATORS_TO_RUN[@]}"; do
 
   echo "=== op_${op_num} (${ENVIRONMENT}) ==="
   provision_operator_broker_identities "${op_num}"
+  prepare_local_keystores_if_needed "${op_num}"
 
   prepare_operator_bitvmx_config "${op_num}"
   bitvmx_pubkey_hash="${RESOLVED_BITVMX_BROKER_PUBKEY_HASH}"
