@@ -48,12 +48,15 @@ pub struct CoordinatorAdvanceFundsConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct BrokerClientConfig {
     pub client_id: u32,
+    pub key_path: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct BrokerConfig {
     pub host: String,
     pub port: u16,
+    #[serde(default)]
+    pub pubkey_hash: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -267,7 +270,7 @@ impl Config {
     }
 
     fn should_subscribe_fake_peg_manager(env_name: Option<&str>) -> bool {
-        matches!(env_name, Some("regtest")) // we can support more rsk networks by adding more env names
+        matches!(env_name, Some("regtest" | "docker-regtest")) // we can support more rsk networks by adding more env names
     }
 }
 
@@ -303,10 +306,13 @@ mod tests {
 
         assert_eq!("0.0.0.0", config.coordinator.logs.host);
         assert_eq!(20001, config.coordinator.logs.port);
+        assert_eq!("<to_patch_with_env>", config.coordinator.logs.pubkey_hash);
         assert_eq!("0.0.0.0", config.coordinator.blocks.host);
         assert_eq!(10001, config.coordinator.blocks.port);
+        assert_eq!("<to_patch_with_env>", config.coordinator.blocks.pubkey_hash);
         assert_eq!("0.0.0.0", config.coordinator.user.host);
         assert_eq!(30001, config.coordinator.user.port);
+        assert_eq!("<to_patch_with_env>", config.coordinator.user.pubkey_hash);
         assert_eq!("0.0.0.0", config.coordinator.bitvmx.host);
         assert_eq!(22222, config.coordinator.bitvmx.port);
         assert_eq!(
@@ -314,10 +320,15 @@ mod tests {
             config.coordinator.bitvmx.pubkey_hash
         );
         assert_eq!(101, config.coordinator.broker.client_id);
-        assert!(!config.coordinator.storage_path.contains("{BASE_STORAGE_PATH}"));
         assert!(
-            config.coordinator.storage_path.ends_with("/.union_bridge/database/multi-client-1")
+            config
+                .coordinator
+                .broker
+                .key_path
+                .ends_with("/.union_bridge/op_1/broker/coordinator.pem")
         );
+        assert!(!config.coordinator.storage_path.contains("{BASE_STORAGE_PATH}"));
+        assert!(config.coordinator.storage_path.ends_with("/.union_bridge/op_1/database"));
         assert_eq!(
             "/app/config/check-fork-guest.bin",
             config.coordinator.advance_funds.check_fork_guest_elf_path

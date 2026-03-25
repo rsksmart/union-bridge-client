@@ -1,5 +1,4 @@
 use anyhow::{anyhow, bail, Context, Result};
-use key_manager::key_manager::KeyManager;
 use rpassword::prompt_password;
 use std::collections::HashSet;
 use std::fs;
@@ -7,11 +6,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::constants::{
-    LOCAL_ANVIL_ADDRESS, ONE_OPERATOR_COMPOSE_PROJECT, REMOTE_SSH_USER, operator_ids,
+    operator_ids, LOCAL_ANVIL_ADDRESS, ONE_OPERATOR_COMPOSE_PROJECT, REMOTE_SSH_USER,
 };
 use crate::environments::*;
 use crate::utils::command_to_string;
-use crate::validate_1_10;
 
 const MEMBER_LOG_MARKER: &str = "Got member signer with address";
 const USER_LOG_MARKER: &str = "Got user signer with address";
@@ -182,17 +180,6 @@ fn has_prefixed_hex_len(value: &str, hex_len: usize) -> bool {
     };
 
     hex.len() == hex_len && hex.chars().all(|ch| ch.is_ascii_hexdigit())
-}
-
-/// handles creating local rootstock wallets for multi-client deployments
-pub fn handle_wallet_creation(num_wallets: u8, base_storage_path: Option<&str>) -> Result<()> {
-    let base = require_base_storage_path(base_storage_path)?;
-    validate_1_10(num_wallets, "num-wallets")?;
-
-    setup_wallets_create(num_wallets, base)?;
-    print_wallet_summary("create", num_wallets);
-
-    Ok(())
 }
 
 /// handles funding rootstock wallets for operator stacks
@@ -406,77 +393,6 @@ fn extract_user_rsk_address(log_content: &str) -> Option<String> {
         }
     }
     None
-}
-
-fn require_base_storage_path(base_storage_path: Option<&str>) -> Result<&str> {
-    base_storage_path.ok_or_else(|| {
-        anyhow!(
-            "BASE_STORAGE_PATH environment variable is required (e.g., export BASE_STORAGE_PATH=/Users/username)"
-        )
-    })
-}
-
-fn print_wallet_summary(mode: &str, num_wallets: u8) {
-    println!("\n=== wallet setup summary ===");
-    println!("setup mode: {}", mode);
-    println!("number of clients: {}", num_wallets);
-    println!("total wallets: {} (member + user per client)", num_wallets * 2);
-}
-
-fn create_or_use_keystore(keystore_path: &Path, file_name: &str, password: &str) -> Result<()> {
-    let full_keystore_path = keystore_path.join(file_name);
-
-    if full_keystore_path.exists() {
-        println!(
-            "[wallet-setup] key already exists at {}, skipping generation",
-            full_keystore_path.display()
-        );
-        return Ok(());
-    }
-
-    println!("[wallet-setup] creating new key at {}...", keystore_path.display());
-
-    // create directory if it doesn't exist
-    fs::create_dir_all(keystore_path)
-        .with_context(|| format!("failed to create directory {}", keystore_path.display()))?;
-
-    // generate key using KeyManager directly
-    let (generated_path, _public_key, _address) = KeyManager::generate_key(keystore_path, password)
-        .context("failed to generate key with KeyManager")?;
-
-    // rename the generated key to the desired filename
-    fs::rename(&generated_path, &full_keystore_path).with_context(|| {
-        format!("failed to rename {} to {}", generated_path, full_keystore_path.display())
-    })?;
-
-    println!("[wallet-setup] key created successfully at {}", full_keystore_path.display());
-
-    Ok(())
-}
-
-fn setup_wallets_create(num_wallets: u8, base_storage_path: &str) -> Result<()> {
-    let password = std::env::var("KEY_STORE_PASSWORD")
-        .context("KEY_STORE_PASSWORD environment variable is required")?;
-
-    let keystore_base_path =
-        PathBuf::from(base_storage_path).join(".union_bridge").join("keystore");
-
-    println!("[wallet-setup] starting wallet creation...");
-
-    for i in 1..=num_wallets {
-        // create member wallet
-        let member_name = format!("multi-client-{}-member", i);
-        create_or_use_keystore(&keystore_base_path, &member_name, &password)
-            .with_context(|| format!("failed to create member wallet for client {}", i))?;
-
-        // create user wallet
-        let user_name = format!("multi-client-{}-user", i);
-        create_or_use_keystore(&keystore_base_path, &user_name, &password)
-            .with_context(|| format!("failed to create user wallet for client {}", i))?;
-    }
-
-    println!("[wallet-setup] wallet creation complete! all keystores have been created.");
-    Ok(())
 }
 
 fn fund_local() -> Result<()> {

@@ -155,7 +155,7 @@ the Union Client) are:
 
 We recommend using `direnv` to manage private environment variables. Then you can set them up by:
 
-1. copying `[.envrc.sample](.envrc.sample)`) in the project root as `.envrc`
+1. copying `[.envrc.sample](.envrc.sample)` in the project root as `.envrc`
 2. modifying what you need. You can initially focus on the section _For local client running_.
 3. and running `direnv allow` (every time you do a change)
 
@@ -163,61 +163,81 @@ This will automatically load the environment variables defined in the `.envrc` o
 
 ### Multi Client Setup
 
-The Multi Client setup is mostly automated using the `cli-operations.sh` tool. You need to complete a few manual steps
-first.
+The local multi-client flow is bootstrapped through `./cli-setup-operators.sh`.
 
-#### Creating the base directory
+#### Bootstrap Local Operator State
 
-Under the directory specified in the `BASE_STORAGE_PATH` env, run the following command to create the base directory:
-
-```bash
-mkdir -p .union_bridge/keystore
-```
-
-#### Generating the Broker Key
-
-The Union Bridge Client uses TLS for secure communication between components. You need to generate a broker key that
-will be used for deterministic identity in broker communications.
-
-Generate the broker key:
+Under the directory specified in `BASE_STORAGE_PATH`, create the base directory and then run the bootstrap helper:
 
 ```bash
-openssl genpkey -algorithm RSA -out ${BASE_STORAGE_PATH}/.union_bridge/keystore/broker.key -pkeyopt rsa_keygen_bits:2048
+mkdir -p "${BASE_STORAGE_PATH}/.union_bridge"
+./cli-setup-operators.sh --env local --ops 4
 ```
 
-This key is used by:
-- The coordinator to authenticate with the block-indexer, log-indexer, and user-api brokers
-- The coordinator to connect to the BitVMX client broker
+The bootstrap creates or reuses local Rootstock keystores, broker identities, and BitVMX runtime files under
+`BASE_STORAGE_PATH`, for example:
 
-**Important**: The broker key determines the client's `pubkey_hash` identity. You'll need this value to configure the
-BitVMX client (see [Configuring BitVMX Client](#configuring-bitvmx-client) below).
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/block-indexer.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/block-indexer.pubkey_hash`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/log-indexer.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/user-api.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/coordinator.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/keystore/user`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/keystore/member`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/bitvmx/keys/services.pubkey_hash`
 
-#### Configuring BitVMX Client
+Note: local keystores (`op_N/keystore/{member,user}`) are created only in `--env local` bootstrap runs and are used by
+local cargo mode (`./cli-run.sh`). Docker operator runs use container keystore paths and do not consume these
+host-side cargo keystore files.
+
+The `.pubkey_hash` files are generated from the created PEMs and are consumed by the local launcher so the
+coordinator and user-api use explicit remote identities without duplicating raw hash values in
+`config/env_overrides/local-committee.env`.
+
+#### Configuring BitVMX Client (local cargo flow only)
+
+This section applies only when you run Union Client locally with `./cli-run.sh` and manage BitVMX separately from its
+own workspace.
+
+If you are using the Docker operator flow under [`docker/operator/`](docker/operator/README.md), skip this section:
+`./cli-setup-operators.sh` already generates per-operator BitVMX config copies under
+`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/` and patches
+`components.l2.pubkey_hash` automatically.
 
 The BitVMX client needs to know where to send messages back to the Union Bridge Client. You must configure the
-`components.l2.pubkey_hash` in the BitVMX client config files to match your Union Bridge Client's broker identity.
+`components.l2.pubkey_hash` in the BitVMX client config files to match the operator's Union Bridge coordinator client
+identity.
 
-**1. Find your broker's pubkey_hash**
+**1. Read each operator's coordinator pubkey_hash**
 
-When you start the coordinator, it logs its identity:
+For example:
+
+```bash
+cat ${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/coordinator.pubkey_hash
+cat ${BASE_STORAGE_PATH}/.union_bridge/op_2/broker/coordinator.pubkey_hash
 ```
-BitVmxBrokerClient identity: pubkey_hash=a4f99c4236e46608bd558ef135df0122535d8dd4db073bc87e4b852a9a0afafd
-```
 
-**2. Update BitVMX client config files**
+**2. Update BitVMX client config files manually, operator by operator**
 
-In your `rust-bitvmx-workspace/rust-bitvmx-client/config/` directory, update the `components.l2.pubkey_hash` in all
-relevant config files (`op_1.yaml`, `op_2.yaml`, `op_3.yaml`, `op_4.yaml`, `development.yaml`, etc.):
+In your `rust-bitvmx-workspace/rust-bitvmx-client/config/` directory, update each `config/op_N.yaml` so
+`components.l2.pubkey_hash` matches the same operator's Union Bridge coordinator identity:
 
 ```yaml
 components:
   l2:
-    pubkey_hash: <your-broker-pubkey-hash>  # Must match Union Bridge Client's broker identity
+    pubkey_hash: <operator-coordinator-pubkey-hash>
     id: 0
 ```
 
-This ensures that messages from the BitVMX client are correctly routed back to the
-coordinator.
+Examples:
+
+- `config/op_1.yaml` -> coordinator `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/coordinator.pubkey_hash`
+- `config/op_2.yaml` -> coordinator `${BASE_STORAGE_PATH}/.union_bridge/op_2/broker/coordinator.pubkey_hash`
+- `config/op_3.yaml` -> coordinator `${BASE_STORAGE_PATH}/.union_bridge/op_3/broker/coordinator.pubkey_hash`
+- `config/op_4.yaml` -> coordinator `${BASE_STORAGE_PATH}/.union_bridge/op_4/broker/coordinator.pubkey_hash`
+
+This step is still manual for local BitVMX setup. Union Client and BitVMX do not share the same broker keystore.
+This ensures that messages from the BitVMX client are correctly routed back to the coordinator.
 
 #### DRP Program Files
 
@@ -233,8 +253,7 @@ The repository ships sample files under `resources/`:
 
 **Steps:**
 
-1. Copy (or symlink) both files to a path that is accessible by the BitVMX client process.
-2. Set the path to the `.yaml` file in the coordinator configuration:
+1. Set the path to the `.yaml` file in the coordinator configuration:
 
    ```toml
    # config/base.toml  (or your environment override file)
@@ -242,11 +261,15 @@ The repository ships sample files under `resources/`:
    drp_program_definition = "/path/accessible/by/bitvmx/hello-world.yaml"
    ```
 
-   Alternatively, export the corresponding environment variable:
+2. For the normal local + Docker-backed BitVMX flow, `config/environment/local.toml` now defaults to:
 
-   ```bash
-   export UB__BRIDGE__COMMITTEE__DRP_PROGRAM_DEFINITION="/path/accessible/by/bitvmx/hello-world.yaml"
-   ```
+   - `/app/resources/hello-world.yaml`
+
+   which matches the BitVMX Docker mounts.
+
+3. If you use `cli-run.sh --bitvmx-mode repo`, the launcher injects:
+
+   - `UB__BRIDGE__COMMITTEE__DRP_PROGRAM_DEFINITION=<project_root>/resources/hello-world.yaml`
 
 
 #### Configuring the Committee
@@ -274,55 +297,46 @@ Then you should deploy the contracts, and you can use the operations CLI for the
 **Note:** The `committeeMemberCount` value should always match the number of clients you intend to run (currently
 hardcoded to 4 in the CLI).
 
-#### Wallet and Committee Setup
+#### Next Steps After Bootstrap
 
-**1. Create Wallets (first time only)**
+Once the local runtime artifacts exist, the remaining local committee flow is:
 
-Creates Rootstock wallets for 4 operators. Each operator gets **two wallets**: one for member operations and one for
-user operations (8 wallets total).
-
-This is required for the **Transaction Dispatcher** to sign and send transactions to Rootstock.
-
-```bash
-./cli-operations.sh setup create-rootstock-wallets
-```
-
-**2. Fund Operators (every time you restart Anvil or run out of funds)**
-
-Funds both Bitcoin addresses and Rootstock wallets for all operators.
+1. Fund the operators:
 
 ```bash
 ./cli-operations.sh operator fund
 ```
 
-**3. Whitelist Member Addresses**
-
-Before operators can apply to a stream, their member addresses must be whitelisted on the `CommitteeRegistry` contract.
-This is required by the contract to control which addresses are allowed to participate in committees.
+2. Whitelist member addresses on `CommitteeRegistry`:
 
 ```bash
 ./cli-operations.sh operator whitelist --contract-address <COMMITTEE_REGISTRY_ADDRESS>
 ```
 
-The `CommitteeRegistry` contract address can be found in `config/base.toml` under the `CommitteeRegistry` entry.
+3. Run the local clients:
 
-**4. Apply to Stream (committee setup)**
+```bash
+./cli-run.sh --fresh
+# If BitVMX is running directly from repo configs, use:
+# ./cli-run.sh --fresh --bitvmx-mode repo
+```
 
-Applies all 4 operators to a stream to form the committee. The clients must be running before executing this command.
+4. Apply the operators to the stream:
 
 ```bash
 ./cli-operations.sh operator apply-stream -s 1
 ```
 
-**Note:** Each Rootstock event in the flow requires confirmations. With anvil auto-mining, this happens automatically.
-Otherwise, manually mine blocks with `cast rpc anvil_mine N`.
+The `CommitteeRegistry` contract address can be found in `config/base.toml` under the `CommitteeRegistry` entry.
+
+For the fuller local cargo workflow, usage examples, and command details, see [cli/README.md](cli/README.md).
 
 ## CLI Tools
 
 The project includes two CLI tools for local development and operations:
 
 - **`cli-run.sh`**: Local client launcher for development and testing
-- **`cli-operations.sh`**: Operations toolkit for setup, operator, and user operations
+- **`cli-operations.sh`**: Operations toolkit for operator and user operations
 
 For detailed documentation, usage examples, and command references, see [cli/README.md](cli/README.md).
 
@@ -352,7 +366,7 @@ Important: if you change branch on the regtest host (`~/union-bridge-client`), r
 
 ```bash
 cd docker/build
-bash d-compose-cli.sh build --tag=latest-regtest --no-cache
+bash d-build-client.sh --tag=latest-regtest --no-cache
 ```
 
 For full instance details (hosts, env vars, artifacts, validation, troubleshooting), see:
@@ -389,51 +403,22 @@ You can run a single instance of the Union Client using:
 #### Running Multiple Clients (Committee Collaboration)
 
 Some sub-flows in the main flows require committee collaboration. To achieve this locally, you can run several instances
-of Union Client and BitVMX Client using the automated multiclient setup.
+of Union Client and BitVMX Client using the automated local committee setup.
 
-The project includes a `multiclient.env` file that defines unique port numbers and configuration paths for each client
+The project includes a `config/env_overrides/local-committee.env` file that defines unique port numbers and configuration paths for each client
 instance (1-4). This ensures no collisions between different clients for:
 
 - Broker ports (block, log, user)
 - HTTP server ports
 - Database paths
-- Keystore paths
+- Rootstock keystore paths
+- Broker identity paths and broker pubkey_hash file references
 - BitVMX broker ports
 
 You can run 4 clients simultaneously using the `./cli-run.sh` script:
 
 ```bash
 ./cli-run.sh
-```
-
-#### Complete Workflow Example
-
-Here's the complete workflow to set up and run 4 clients:
-
-```bash
-# 1. Start BitVMX client (in separate terminal)
-cd <path_to_bitvmx_workspace_repo>/rust-bitvmx-client
-rm -rf /tmp/broker_p2p* ; rm -rf /tmp/regtest ; bash run_union_example.sh
-
-# 2. Start Anvil (in separate terminal)
-anvil --block-time 2  # optional: auto-mine every 2 seconds
-
-# 3. Deploy contracts (in another terminal)
-cd <path_to_bitvmx_union_bridge_contracts>
-bash ./shell/script/deploy/deploy-local.sh
-
-# 4. Create and fund wallets
-./cli-operations.sh setup create-rootstock-wallets
-./cli-operations.sh operator fund
-
-# 5. Whitelist member addresses (uses CommitteeRegistry address from config/base.toml)
-./cli-operations.sh operator whitelist --contract-address <COMMITTEE_REGISTRY_ADDRESS>
-
-# 6. Run the 4 clients
-./cli-run.sh --fresh
-
-# 7. Apply operators to stream (requires clients to be running)
-./cli-operations.sh operator apply-stream -s 0
 ```
 
 #### Automated Happy Path Test
@@ -486,13 +471,13 @@ The test includes comprehensive health checks to detect issues early.
 
 #### Troubleshooting
 
-- **Port Conflicts**: Each client uses unique ports defined in `multiclient.env`. Check this file if you encounter port
+- **Port Conflicts**: Each client uses unique ports defined in `config/env_overrides/local-committee.env`. Check this file if you encounter port
   issues.
 - **Wallet Issues**: Re-fund wallets with `./cli-operations.sh operator fund` if needed
 - **Process Cleanup**: If services fail to start due to port conflicts or corrupt database, run:
   ```bash
   pkill -f "target/debug/"
-  rm -rf ${BASE_STORAGE_PATH}/.union_bridge/database
+  find ${BASE_STORAGE_PATH}/.union_bridge -maxdepth 2 -type d -name database -exec rm -rf {} +
   ```
   **Warning:** This kills all Rust processes and prunes your database.
 - **Local Setup Issues**: Verify `BASE_STORAGE_PATH` and `KEY_STORE_PASSWORD` environment variables are set correctly
@@ -620,7 +605,7 @@ configuration files.
 
 ## Rootstock Wallet creation (manual)
 
-This is automated in the `cli-operations.sh setup create-rootstock-wallets` command, but if you want to create a wallet
+This is automated by `./cli-setup-operators.sh --env local --ops 4`, but if you want to create a wallet
 manually, you can use the `key-manager` crate for that.
 
 ```

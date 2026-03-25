@@ -18,6 +18,10 @@ Launches one or more Union Bridge clients locally for development and testing.
 # Run with fresh databases
 ./cli-run.sh --fresh --features anvil
 
+# Select BitVMX source
+./cli-run.sh --bitvmx-mode docker   # default, containers use .union_bridge/op_N/bitvmx/keys/services.pubkey_hash
+./cli-run.sh --bitvmx-mode repo     # running from cloned repo, ignores UB__COORDINATOR__BITVMX__PUBKEY_HASH_FILE_N override in [local-committee.env](../config/env_overrides/local-committee.env) and uses config/base.toml hash (matches bitvmx repo value)
+
 # View logs from all 4 coordinators
 ./cli-run.sh --logs
 
@@ -37,6 +41,7 @@ Launches one or more Union Bridge clients locally for development and testing.
 - `--id`, `-i`: Run a single client with the specified ID (1-4). If not provided, runs 4 clients.
 - `--features`, `-f`: Optional features to pass to cargo (e.g. "anvil").
 - `--fresh`: Start with clear databases (removes existing state).
+- `--bitvmx-mode`: BitVMX identity source for coordinator (`docker` or `repo`). Default: `docker`.
 - `--logs`: View logs from all 4 coordinators in real-time. Exits on Ctrl+C.
 - `--kill`: Kill all existing running services and exit. Cannot be used with other options.
 - `--start-mine`: Start background mining for both Anvil (every 1s) and Bitcoin regtest (every 5s). Runs until stopped.
@@ -44,13 +49,13 @@ Launches one or more Union Bridge clients locally for development and testing.
 
 **Features:**
 - Launches multiple services per client (block-indexer, log-indexer, user-api, coordinator)
-- Automatic port configuration via `multiclient.env`
+- Automatic port configuration via `config/env_overrides/local-committee.env`
 - Graceful shutdown handling with proper service teardown
 - Panic recovery to ensure all services are properly stopped
 
 ## `cli-operations.sh` - Operations Toolkit
 
-Handles setup, operator operations, and user operations across different environments (local, alphanet, testnet).
+Handles operator operations and user operations across different environments (local, alphanet, testnet).
 
 ### Environment Variables
 
@@ -60,7 +65,7 @@ The following environment variables can be set to simplify multi-host deployment
 - **`UC_OPERATOR_ID`**: Sets the default operator ID (1-10) for `apply-stream` command. Can be overridden with `--operator-id` flag.
 - **`UC_OPERATOR_ROLE`**: Sets the default operator role (`prover` or `verifier`) for `apply-stream` command. Can be overridden with `--role` flag.
 
-All three can be set in `.envrc` at the project root. The `.env.*` files (`docker/operator/.env.alphanet`, `.env.testnet`, `.env.local`) use docker-compose `--env-file` format (no `export` keyword).
+All three must be exported in the shell before invoking the wrapper. If you use `direnv`, keeping them in `.envrc` is one way to do that.
 
 **Example for multi-host deployment:**
 
@@ -75,15 +80,12 @@ export UC_OPERATOR_ROLE="prover"
 ./cli-operations.sh operator fund
 ```
 
-**Precedence:** command-line flags > environment variables > `.envrc` values.
+**Precedence:** command-line flags > exported environment variables.
 
 ### Usage Examples
 
 ```bash
 ./cli-operations.sh --help
-
-# Setup: Create Rootstock wallets for 4 operators
-./cli-operations.sh setup create-rootstock-wallets
 
 # Operator: Fund operators on local-docker environment
 ./cli-operations.sh operator fund --env local-docker
@@ -109,7 +111,6 @@ export UC_OPERATOR_ROLE="prover"
 
 ### Command Structure
 
-- **`setup`**: Initial configuration (create wallets)
 - **`operator`**: Operator management (fund, apply-stream)
   - `fund`: Display bitcoin addresses and optionally execute wallet commands with `--execute`
 - **`user`**: User operations (pegin, pegout)
@@ -158,8 +159,8 @@ The CLI workspace is independent from the main Union Bridge workspace, allowing 
 ### Local Development Setup
 
 ```bash
-# 1. Create wallets for 4 operators
-./cli-operations.sh setup create-rootstock-wallets
+# 1. Bootstrap wallets, broker identities, and BitVMX runtime artifacts
+<project_root>/cli-setup-operators.sh --env local --ops 4
 
 # 2. Fund operators (Bitcoin + Rootstock)
 # Option A: Print commands to run manually
@@ -174,6 +175,9 @@ The CLI workspace is independent from the main Union Bridge workspace, allowing 
 # 4. Apply operators to stream
 ./cli-operations.sh operator apply-stream --stream-id 1
 ```
+
+`cli-setup-operators.sh --env local` creates the local keystores consumed by `./cli-run.sh`.
+Docker operator mode uses `docker.env` and container keystore paths instead of these cargo-mode keystore files.
 
 ### Alphanet/Testnet Operations
 
@@ -210,4 +214,3 @@ When using the `docker/operator` setup, you can use the `cli-operations.sh` tool
 ```
 
 See [docker/operator/README.md](../docker/operator/README.md) for more information on docker deployments.
-

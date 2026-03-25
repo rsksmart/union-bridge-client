@@ -83,15 +83,13 @@ pub struct ContractConfig {
     pub address: String,
 }
 /// Key store configuration shared by all services.
-/// Contains paths to keystores used for transaction signing and broker identity.
+/// Contains paths to keystores used for transaction signing.
 #[derive(Debug, Deserialize, Clone)]
 pub struct KeyStoreConfig {
     /// Path to user keystore (for user role transactions)
     pub user_path: String,
     /// Path to member keystore (for member role transactions)
     pub member_path: String,
-    /// Path to broker TLS key file (PEM format) for deterministic broker identity
-    pub broker_key_path: String,
 }
 
 impl IndexerConfig {
@@ -319,7 +317,7 @@ mod tests {
         );
         assert_eq!(IndexerStartFrom::Hash, config.indexer.start_from);
         assert!(!config.indexer.storage.path.contains("{BASE_STORAGE_PATH}"));
-        assert!(config.indexer.storage.path.ends_with("/.union_bridge/database/multi-client-1"));
+        assert!(config.indexer.storage.path.ends_with("/.union_bridge/op_1/database"));
         assert_eq!(1000, config.indexer.cache.size);
         assert_eq!(100, config.indexer.sync.finality_depth);
         assert_eq!(100, config.indexer.sync.batch_size);
@@ -375,12 +373,12 @@ mod tests {
     }
 
     #[test]
-    fn test_regtest_environment_overrides() {
+    fn test_docker_regtest_environment_overrides() {
         let _guard = TEST_MUTEX.lock().unwrap();
 
         let config: CommonConfig =
-            CommonConfig::load_config::<CommonConfig>(Some("regtest".to_string()))
-                .expect("Failed to load config with regtest environment");
+            CommonConfig::load_config::<CommonConfig>(Some("docker-regtest".to_string()))
+                .expect("Failed to load config with docker-regtest environment");
 
         assert_eq!(
             Some("0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"),

@@ -37,9 +37,40 @@ pub struct Coordinator<M: MonitorApi, BC: BitVmxBrokerClientApi, S: CoordinatorS
     shutdown_flag: ShutdownFlag,
 }
 
+fn normalize_env_name(env_name: Option<&str>) -> Option<&str> {
+    env_name.map(|name| name.strip_prefix("docker-").unwrap_or(name))
+}
+
 impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi + 'static>
     Coordinator<M, BC, S>
 {
+    fn build_native_bridge_verifier<CG: RskContractsGatewayApi + 'static>(
+        env_name: Option<&str>,
+        contracts_arc: &Rc<CG>,
+        rt_sync: &RuntimeSync,
+        bridge_config: &BridgeConfig,
+    ) -> NativeBridgeVerifier<CG> {
+        let normalized_env_name = normalize_env_name(env_name);
+        if let Some(normalized @ ("alphanet" | "regtest" | "testnet")) = normalized_env_name {
+            log::info!(
+                "Environment: {} (normalized: {normalized}) → Using Real Native Bridge Verifier",
+                env_name.unwrap_or("NONE")
+            );
+            NativeBridgeVerifier::Real {
+                contracts: contracts_arc.clone(),
+                rt_sync: rt_sync.clone(),
+                min_tx_confirmations: bridge_config.native_bridge.min_tx_confirmations,
+            }
+        } else {
+            log::info!(
+                "Environment: {} (normalized: {}) → Using Dummy Native Bridge Verifier (BitVMX confirmations only)",
+                env_name.unwrap_or("NONE"),
+                normalized_env_name.unwrap_or("NONE")
+            );
+            NativeBridgeVerifier::Dummy
+        }
+    }
+
     /// # Panics
     /// Panics if loading context from the database fails.
     #[allow(clippy::too_many_arguments)]
@@ -74,22 +105,8 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             bridge_config.committee.clone(),
         );
 
-        let native_bridge_verifier = if let Some(env_name @ ("alphanet" | "regtest" | "testnet")) =
-            env_name
-        {
-            log::info!("Environment: {env_name} → Using Real Native Bridge Verifier");
-            NativeBridgeVerifier::Real {
-                contracts: contracts_arc.clone(),
-                rt_sync: rt_sync.clone(),
-                min_tx_confirmations: bridge_config.native_bridge.min_tx_confirmations,
-            }
-        } else {
-            log::info!(
-                "Environment: {} → Using Dummy Native Bridge Verifier (BitVMX confirmations only)",
-                env_name.unwrap_or("NONE")
-            );
-            NativeBridgeVerifier::Dummy
-        };
+        let native_bridge_verifier =
+            Self::build_native_bridge_verifier(env_name, &contracts_arc, rt_sync, bridge_config);
 
         let processors: Vec<Box<dyn EventProcessor>> = vec![
             Box::new(AdvanceFundsProcessor::new(
@@ -395,6 +412,16 @@ pub(crate) mod tests {
             required_effort: U256::from(1000),
             required_num_blocks: 4,
         }
+    }
+
+    #[test]
+    fn test_normalize_env_name_supports_docker_prefixed_values() {
+        assert_eq!(super::normalize_env_name(Some("regtest")), Some("regtest"));
+        assert_eq!(super::normalize_env_name(Some("docker-regtest")), Some("regtest"));
+        assert_eq!(super::normalize_env_name(Some("docker-testnet")), Some("testnet"));
+        assert_eq!(super::normalize_env_name(Some("docker-alphanet")), Some("alphanet"));
+        assert_eq!(super::normalize_env_name(Some("docker-local")), Some("local"));
+        assert_eq!(super::normalize_env_name(None), None);
     }
 
     #[test]

@@ -12,19 +12,10 @@ services:
       # RUST_LOG: debug
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # Startup order only (keystore): block-indexer runs key-setup first and populates
-    # broker.key + broker.pubkey_hash in the shared keystore; bitvmx-client entrypoint
-    # reads broker.pubkey_hash to patch op_*.yaml. No domain coupling.
-    depends_on:
-      block-indexer:
-        condition: service_healthy
     volumes:
-      - ../bitvmx-client/config/${ENVIRONMENT:-local}/client/config:/app/config
+      - ${BITVMX_CONFIG_DIR}:/app/config
       - db-bitvmx:/tmp
       - ../../resources:/app/resources:ro
-      - keystore:/keystore:ro
-      - ./patch_bitvmx_op_pubkey_hash.sh:/app/patch_bitvmx_op_pubkey_hash.sh:ro
-    entrypoint: ["sh", "-c", "set -e; sh /app/patch_bitvmx_op_pubkey_hash.sh; exec ./run.sh"]
     extends:
       file: ../bitvmx-client/docker-compose.yml
       service: bitvmx-client
@@ -32,16 +23,16 @@ services:
   # ================================
   # Union Bridge Client Services
   # ================================
+  # Operator-specific broker mounts and runtime env vars live here instead of
+  # ../build/docker-compose.yml so the base compose remains build-safe.
   block-indexer:
     extends:
       file: ../build/docker-compose.yml
       service: block-indexer
+    volumes:
+      - ${BLOCK_INDEXER_BROKER_PEM_PATH}:/app/broker.pem:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    volumes:
-      - ${CONFIG_DIR:-../../config}:/app/config/:ro
-      - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
-      - db-blocks:/app/db/blocks
     networks:
       - union-network
 
@@ -49,12 +40,10 @@ services:
     extends:
       file: ../build/docker-compose.yml
       service: log-indexer
+    volumes:
+      - ${LOG_INDEXER_BROKER_PEM_PATH}:/app/broker.pem:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    volumes:
-      - ${CONFIG_DIR:-../../config}:/app/config/:ro
-      - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
-      - db-logs:/app/db/logs
     networks:
       - union-network
 
@@ -62,12 +51,15 @@ services:
     extends:
       file: ../build/docker-compose.yml
       service: user-api
+    volumes:
+      - ${USER_API_BROKER_PEM_PATH}:/app/broker.pem:ro
+    environment:
+      - UB__USER_API__COORDINATOR__PUBKEY_HASH=${UB__USER_API__COORDINATOR__PUBKEY_HASH:-}
+      - USER_BITCOIN_WIF=${USER_BITCOIN_WIF:-}
+    ports:
+      - "${USER_API_PORT:-40001}:40001"
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    volumes:
-      - ${CONFIG_DIR:-../../config}:/app/config/:ro
-      - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
-      - keystore:/keystore
     networks:
       - union-network
 
@@ -76,12 +68,14 @@ services:
       file: ../build/docker-compose.yml
       service: coordinator
     volumes:
-      # Override volume mount to ensure config directory is accessible
-      # Uses ${CONFIG_DIR} environment variable set by start_operators.sh
-      - ${CONFIG_DIR:-../../config}:/app/config/:ro
-      - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
-      - keystore:/keystore
-      - db-coordinator:/app/db/coordinator
+      - ${COORDINATOR_BROKER_PEM_PATH}:/app/broker.pem:ro
+    environment:
+      - UB__coordinator__bitvmx__host=${BITVMX_HOST:-dummy-bitvmx-host}
+      - UB__coordinator__bitvmx__port=${BITVMX_PORT:-dummy-bitvmx-port}
+      - UB__COORDINATOR__BLOCKS__PUBKEY_HASH=${UB__COORDINATOR__BLOCKS__PUBKEY_HASH:-}
+      - UB__COORDINATOR__LOGS__PUBKEY_HASH=${UB__COORDINATOR__LOGS__PUBKEY_HASH:-}
+      - UB__COORDINATOR__USER__PUBKEY_HASH=${UB__COORDINATOR__USER__PUBKEY_HASH:-}
+      - UB__COORDINATOR__BITVMX__PUBKEY_HASH=${UB__COORDINATOR__BITVMX__PUBKEY_HASH:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

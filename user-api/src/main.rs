@@ -2,9 +2,9 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::thread;
 
-use anyhow::{Context, Result};
+use anyhow::{ensure, Context, Result};
 use clap::{Arg, Command};
-use common::msg_broker::broker::{BrokerServer, Cert, Identifier};
+use common::msg_broker::broker::{BrokerServer, Identifier};
 use common::shutdown_flag::ShutdownFlag;
 use log::{error, info};
 use tokio::net::TcpListener;
@@ -76,7 +76,7 @@ async fn main() -> Result<()> {
     let shutdown_flag = ShutdownFlag::init();
 
     let broker_port = config.user_api_config.notifier.port;
-    let broker_key_path = config.key_store.broker_key_path.clone();
+    let broker_key_path = config.user_api_config.broker_key_path.clone();
 
     let broker_server =
         tokio::task::spawn_blocking(move || BrokerServer::new(broker_port, &broker_key_path))
@@ -107,16 +107,16 @@ async fn main() -> Result<()> {
     )
     .await?;
 
-    // Derive the coordinator's pubkey_hash from the shared broker key file.
-    // Since all services use the same broker.key, they share the same pubkey_hash.
-    let broker_cert = Cert::from_key_file(&config.key_store.broker_key_path)
-        .context("Failed to load broker key file for identifier")?;
-    let coordinator_pubkey_hash =
-        broker_cert.get_pubk_hash().context("Failed to get pubkey_hash from broker cert")?;
+    let pubkey_hash = config.user_api_config.coordinator.pubkey_hash.clone();
+    ensure!(
+        !pubkey_hash.is_empty() && pubkey_hash != "<to_patch_with_env>",
+        "coordinator must be configured with the coordinator broker pubkey_hash"
+    );
 
     let coordinator_client_id = Identifier::new(
-        coordinator_pubkey_hash,
-        config.user_api_config.coordinator.broker.client_id as u8,
+        pubkey_hash,
+        u8::try_from(config.user_api_config.coordinator.client_id)
+            .context("user_api.coordinator.client_id must fit in u8")?,
     );
 
     let server = Server::new(

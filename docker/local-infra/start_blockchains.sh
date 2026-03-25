@@ -250,4 +250,4 @@ if [[ "${IS_UP_COMMAND}" == true && "${FRESH}" == true ]]; then
 fi
 
 echo
-echo "Blockchains ready!!!"
+echo "Done!!!"

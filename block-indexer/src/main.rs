@@ -73,7 +73,7 @@ fn main() -> Result<()> {
         rx,
         BrokerServer::new(
             config.block_indexer_config.notifier.port,
-            &config.key_store.broker_key_path,
+            &config.block_indexer_config.broker_key_path,
         )
         .expect("Failed to create BrokerServer"),
         shutdown_flag.clone(),

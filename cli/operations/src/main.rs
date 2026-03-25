@@ -1,11 +1,7 @@
 //! union bridge operator and user operations toolkit
 //!
-//! provides commands for setting up and interacting with the union bridge protocol.
-//! organized into three main command groups:
-//!
-//! ## setup
-//! initial configuration commands for local development
-//! - `create-rootstock-wallets`: creates rootstock keystores for local multi-client deployments
+//! provides commands for interacting with the union bridge protocol.
+//! local bootstrap is handled by `cli-setup-operators.sh`.
 //!
 //! ## operator
 //! commands for operator wallet management and committee registration
@@ -33,11 +29,6 @@
 //!   - requires: value in satoshis
 //!
 //! ## examples
-//!
-//! setup local environment:
-//! ```bash
-//! cargo run -- setup create-rootstock-wallets
-//! ```
 //!
 //! fund operator wallets (local):
 //! ```bash
@@ -90,7 +81,6 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 use crate::committee::CommitteeRole;
-use crate::constants::operator_ids;
 use crate::environments::Environment;
 
 #[derive(Debug, Parser, Clone)]
@@ -102,11 +92,6 @@ struct Cli {
 
 #[derive(Debug, Subcommand, Clone)]
 enum Commands {
-    /// Setup commands for initial configuration
-    Setup {
-        #[command(subcommand)]
-        command: SetupCommands,
-    },
     /// Operator commands for managing committee members
     Operator {
         #[command(subcommand)]
@@ -117,13 +102,6 @@ enum Commands {
         #[command(subcommand)]
         command: UserCommands,
     },
-}
-
-#[derive(Debug, Subcommand, Clone)]
-enum SetupCommands {
-    /// Create Rootstock wallets for local multi-client deployment
-    #[command(name = "create-rootstock-wallets")]
-    CreateRootstockWallets,
 }
 
 #[derive(Debug, Subcommand, Clone)]
@@ -251,15 +229,6 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Setup { command } => match command {
-            SetupCommands::CreateRootstockWallets => {
-                let base_storage_path = std::env::var("BASE_STORAGE_PATH").ok();
-                rsk_wallet::handle_wallet_creation(
-                    operator_ids().len() as u8,
-                    base_storage_path.as_deref(),
-                )?;
-            }
-        },
         Commands::Operator { command } => match command {
             OperatorCommands::Fund { env, execute, fund_amount } => {
                 println!("\n=== Funding Rootstock wallets ===");
@@ -267,12 +236,7 @@ async fn main() -> Result<()> {
                 println!("=== Funding Bitcoin addresses ===");
                 bitcoin_wallet::handle_bitcoin_funding(env, execute, fund_amount).await?;
             }
-            OperatorCommands::Whitelist {
-                env,
-                contract_address,
-                from_address,
-                private_key,
-            } => {
+            OperatorCommands::Whitelist { env, contract_address, from_address, private_key } => {
                 rsk_wallet::handle_whitelist(
                     env,
                     &contract_address,

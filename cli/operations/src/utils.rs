@@ -21,10 +21,7 @@ pub fn confirm_operation(description: &str) -> Result<bool> {
 /// Converts a Command to a string representation for display
 pub fn command_to_string(cmd: &Command) -> String {
     let program = cmd.get_program().to_string_lossy();
-    let args: Vec<String> = cmd
-        .get_args()
-        .map(|arg| arg.to_string_lossy().to_string())
-        .collect();
+    let args: Vec<String> = cmd.get_args().map(|arg| arg.to_string_lossy().to_string()).collect();
 
     if args.is_empty() {
         program.to_string()

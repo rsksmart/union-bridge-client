@@ -8,45 +8,34 @@ cd "${SCRIPT_DIR}" || {
   exit 1
 }
 
-# Load environment from root .envrc (only if direnv hasn't already loaded it)
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-ENVRC_FILE="${PROJECT_ROOT}/.envrc"
-if [[ -z "${DIRENV_DIR:-}" && -f "$ENVRC_FILE" ]]; then
-  source "$ENVRC_FILE"
-fi
-
 # Initialize from environment variables (can be overridden by command line args)
-# Use UC_TAG from .envrc if available, can be overridden by --tag flag
-UC_TAG="${UC_TAG:-}"
 DOCKER_COMPOSE_ARGS=()
 NUM_OPERATORS=""
-OPS_EXPLICITLY_PROVIDED=false
-# Track if --op was explicitly provided (vs loaded from .envrc)
-OP_EXPLICITLY_PROVIDED=false
-# Track if --tag was explicitly provided (vs loaded from .envrc or .env file)
-TAG_EXPLICITLY_PROVIDED=false
-# Use UC_OPERATOR_ID from .envrc if available, can be overridden by --op flag
 OPERATOR_ARG="${UC_OPERATOR_ID:-}"
 ENVIRONMENT="${UC_ENV:-}"
 AUTO_CONFIRM=false
 FRESH=false
+BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
 
 # Display help message
 print_help() {
   echo "Usage: $0 [--env <ENV>] [--op <ID>] [OPTIONS] [DOCKER_COMPOSE_ARGS...]"
   echo ""
+  echo "Before startup, prepare the operator env files on this host:"
+  echo "  <project_root>/cli-setup-operators.sh --env local --ops 4"
+  echo "  <project_root>/cli-setup-operators.sh --env alphanet --op 1"
+  echo ""
   echo "Environment:"
   echo "  --env <ENV>              Target environment: alphanet, testnet, local, local-docker, or regtest"
-  echo "                            Falls back to UC_ENV from .envrc if not provided."
+  echo "                            Falls back to exported UC_ENV if not provided."
   echo "                            local, local-docker, regtest deploy 4 operators by default (see --ops)."
   echo "                            alphanet, testnet deploy 1 operator per host (requires --op <ID>)."
   echo ""
   echo "Options:"
-  echo "  --op <ID>                Operator ID (1-10) - required for alphanet/testnet startup"
-  echo "                            (Optional if UC_OPERATOR_ID is set in .envrc)"
+  echo "  --op <ID>                Operator ID (1-10) - required for alphanet/testnet commands"
+  echo "                            (Optional if UC_OPERATOR_ID is exported in the shell)"
   echo "  --ops <N>                Number of operators to start (1-10) for local/regtest (default: 4)"
-  echo "  --tag <TAG>              Docker image tag for Union Client"
-  echo "                            (Optional if UC_TAG is set in .envrc)"
+  echo "  --tag <TAG>              Override UC_TAG for this docker compose invocation only"
   echo "  --help                   Display this help message"
   echo "  --fresh                  Tear down operators (and volumes) before running the command"
   echo "                           - Includes confirmation prompt to prevent accidental data loss in local"
@@ -59,22 +48,22 @@ print_help() {
   echo "Environment Details:"
   echo "  Local:"
   echo "    - Runs operators on one host (default: 4, up to 10 with --ops)"
-  echo "    - Config: bitvmx-client/config/local/client/config/op_X.yaml"
+  echo "    - BitVMX config: \${BASE_STORAGE_PATH:-\$HOME}/.union_bridge/op_X/bitvmx/op_X.yaml"
   echo "    - Uses bridge network (bitvmx-shared-network) for P2P communication"
   echo "    - Project name: op_1, op_2, op_3 & op_4"
   echo "  Alphanet:"
   echo "    - Runs one operator per host (testnet_op_X where X is from --op)"
-  echo "    - Config: bitvmx-client/config/alphanet/client/config/testnet_op_X.yaml"
+  echo "    - BitVMX config: \${BASE_STORAGE_PATH:-\$HOME}/.union_bridge/op_X/bitvmx/testnet_op_X.yaml"
   echo "    - Uses host network mode for P2P connectivity across physical machines"
   echo "    - Project name: union-operator"
   echo "  Testnet:"
   echo "    - Runs one operator per host (testnet_op_X where X is from --op)"
-  echo "    - Config: bitvmx-client/config/testnet/client/config/testnet_op_X.yaml"
+  echo "    - BitVMX config: \${BASE_STORAGE_PATH:-\$HOME}/.union_bridge/op_X/bitvmx/testnet_op_X.yaml"
   echo "    - Uses host network mode for P2P connectivity across physical machines"
   echo "    - Project name: union-operator"
   echo "  Regtest:"
   echo "    - Runs all 4 operators on one host (op_1, op_2, op_3, op_4)"
-  echo "    - Config: bitvmx-client/config/regtest/client/config/op_X.yaml"
+  echo "    - BitVMX config: \${BASE_STORAGE_PATH:-\$HOME}/.union_bridge/op_X/bitvmx/op_X.yaml"
   echo "    - Uses bridge network (bitvmx-shared-network) for P2P communication"
   echo "    - Project name: op_1, op_2, op_3 & op_4"
   echo ""
@@ -87,32 +76,30 @@ print_help() {
   echo "  Note: Building from source is not supported. Only registry images should be used."
   echo ""
   echo "Configuration:"
-  echo "  Values can be set in .envrc (root directory) to avoid passing flags:"
+  echo "  Values can be exported in the shell to avoid passing flags:"
   echo "    export UC_ENV=\"local-docker\"        # Sets default environment"
   echo "    export UC_OPERATOR_ID=1              # Sets default operator ID"
-  echo "    export UC_TAG=\"latest-anvil\"        # Sets default image tag"
-  echo "  Command-line flags override .envrc values if provided."
+  echo "  Command-line flags override exported values when provided."
   echo ""
   echo "Examples:"
   echo "  $0 --env local up -d                                     # Start 4 operators locally (default)"
   echo "  $0 --env local --ops 10 up -d                            # Start all 10 operators locally"
-  echo "  $0 up -d                                                  # Same as above, if UC_ENV=local in .envrc"
+  echo "  $0 up -d                                                  # Same as above, if UC_ENV=local is exported"
   echo "  $0 --env local --fresh up -d                             # Clean and start operators locally"
   echo "  $0 --env local --fresh --yes up -d                       # Clean and start operators locally, no confirmation prompt"
+  echo "  $0 --env local --tag latest-anvil up -d                  # Start local operators with an explicit image tag"
   echo "  $0 --env local down                                      # Stop all local operators"
   echo "  $0 --env regtest up -d                                   # Start all 4 operators in regtest mode"
   echo "  $0 --env regtest --ops 6 up -d                           # Start 6 operators in regtest mode"
   echo "  $0 --env regtest --fresh up -d                           # Clean and start all operators in regtest mode"
   echo "  $0 --env regtest down                                    # Stop all regtest operators"
   echo "  $0 --env alphanet --op 1 up -d                           # Start operator 1 in alphanet"
-  echo "  $0 --env alphanet up -d                                  # Same, if UC_OPERATOR_ID=1 in .envrc"
+  echo "  $0 --env alphanet up -d                                  # Same, if UC_OPERATOR_ID=1 is exported"
   echo "  $0 --env alphanet --op 2 up -d                           # Start operator 2 in alphanet"
-  echo "  $0 --env alphanet --op 1 --tag latest-alphanet up -d     # Start operator 1 with specific tag"
   echo "  $0 --env alphanet down --volumes                         # Stop operator on this alphanet host"
   echo "  $0 --env alphanet logs -f                                # View logs for operator on this host"
   echo "  $0 --env testnet --op 1 up -d                            # Start operator 1 in testnet"
   echo "  $0 --env testnet --op 2 up -d                            # Start operator 2 in testnet"
-  echo "  $0 --env testnet --op 1 --tag latest-testnet up -d       # Start operator 1 with specific tag"
   echo "  $0 --env testnet down --volumes                          # Stop operator on this testnet host"
   echo "  $0 --env testnet logs -f                                 # View logs for operator on this host"
   echo ""
@@ -128,17 +115,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --op)
       OPERATOR_ARG="$2"
-      OP_EXPLICITLY_PROVIDED=true
       if ! [[ "$OPERATOR_ARG" =~ ^(10|[1-9])$ ]]; then
         echo "Error: --op must be between 1 and 10"
         exit 1
       fi
-      # Explicit --op overrides any UC_OPERATOR_ID from .envrc
       shift 2
       ;;
     --ops)
       NUM_OPERATORS="$2"
-      OPS_EXPLICITLY_PROVIDED=true
       if ! [[ "$NUM_OPERATORS" =~ ^(10|[1-9])$ ]]; then
         echo "Error: --ops must be between 1 and 10"
         exit 1
@@ -147,8 +131,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --tag)
       UC_TAG="$2"
-      TAG_EXPLICITLY_PROVIDED=true
-      # Explicit --tag overrides any UC_TAG from .envrc or .env file
       shift 2
       ;;
     --env)
@@ -178,7 +160,7 @@ if [[ -z "$ENVIRONMENT" ]]; then
     ENVIRONMENT="${UC_ENV}"
   else
     echo "Error: --env flag is required. Use 'alphanet', 'testnet', 'local', 'local-docker', or 'regtest'."
-    echo "Alternatively, set UC_ENV in .envrc (root directory) to avoid passing the flag."
+    echo "Alternatively, export UC_ENV in the shell before running the script."
     echo "Run '$0 --help' for usage information."
     exit 1
   fi
@@ -189,74 +171,18 @@ if [[ "$ENVIRONMENT" == "local-docker" ]]; then
   ENVIRONMENT="local"
 fi
 
-# Function to restore UC_TAG based on precedence: --tag flag > .envrc > .env file > default
-# Args: $1 = default tag value for the environment
-restore_uc_tag() {
-  local default_tag="$1"
-  if [[ "${TAG_EXPLICITLY_PROVIDED}" == true ]]; then
-    UC_TAG="${SAVED_UC_TAG_FROM_FLAG}"
-  elif [[ -n "${SAVED_UC_TAG_FROM_ENVRC}" ]]; then
-    UC_TAG="${SAVED_UC_TAG_FROM_ENVRC}"
-  elif [[ -z "$UC_TAG" ]]; then
-    UC_TAG="${default_tag}"
-  fi
-}
-
-# Set ENV_FILE and load environment-specific variables (for other vars like BITCOIND_URL, etc.)
-# Save UC_TAG values before .env file might overwrite them
-# Precedence: --tag flag > .envrc value > .env file value > default
-SAVED_UC_TAG_FROM_FLAG=""
-SAVED_UC_TAG_FROM_ENVRC=""
-if [[ "${TAG_EXPLICITLY_PROVIDED}" == true ]]; then
-  # Save the --tag flag value
-  SAVED_UC_TAG_FROM_FLAG="${UC_TAG}"
-elif [[ -n "${UC_TAG}" ]]; then
-  # Save UC_TAG from .envrc if it was set (and --tag wasn't provided)
-  SAVED_UC_TAG_FROM_ENVRC="${UC_TAG}"
-fi
-# Save --ops value before .env file might overwrite NUM_OPERATORS
-SAVED_NUM_OPERATORS="${NUM_OPERATORS}"
-
+# Set the base environment file used by docker compose.
 if [[ "$ENVIRONMENT" == "alphanet" ]]; then
   ENV_FILE="${SCRIPT_DIR}/.env.alphanet"
-  if [[ -f "$ENV_FILE" ]]; then
-    set -a
-    source "$ENV_FILE"
-    set +a
-  fi
-  restore_uc_tag "latest-alphanet"
 elif [[ "$ENVIRONMENT" == "testnet" ]]; then
   ENV_FILE="${SCRIPT_DIR}/.env.testnet"
-  if [[ -f "$ENV_FILE" ]]; then
-    set -a
-    source "$ENV_FILE"
-    set +a
-  fi
-  restore_uc_tag "latest-testnet"
 elif [[ "$ENVIRONMENT" == "local" ]]; then
   ENV_FILE="${SCRIPT_DIR}/.env.local"
-  if [[ -f "$ENV_FILE" ]]; then
-    set -a
-    source "$ENV_FILE"
-    set +a
-  fi
-  restore_uc_tag "latest-anvil"
 elif [[ "$ENVIRONMENT" == "regtest" ]]; then
   ENV_FILE="${SCRIPT_DIR}/.env.regtest"
-  if [[ -f "$ENV_FILE" ]]; then
-    set -a
-    source "$ENV_FILE"
-    set +a
-  fi
-  restore_uc_tag "latest-regtest"
 else
   echo "Invalid environment. Use 'alphanet', 'testnet', 'local', 'local-docker', or 'regtest'"
   exit 1
-fi
-
-# Restore --ops flag value if it was explicitly provided (overrides .env file)
-if [[ "${OPS_EXPLICITLY_PROVIDED}" == true ]]; then
-  NUM_OPERATORS="${SAVED_NUM_OPERATORS}"
 fi
 
 # Validate --ops flag usage
@@ -291,90 +217,35 @@ for arg in "${DOCKER_COMPOSE_ARGS[@]}"; do
 done
 
 # Validate --op flag usage
-# Consolidated validation logic for operator ID across all environments
 if [[ ("$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest") && -n "$OPERATOR_ARG" ]]; then
   echo "Error: --op is not allowed in ${ENVIRONMENT} environment. All operators will be deployed."
   exit 1
-elif [[ ("$ENVIRONMENT" == "alphanet" || "$ENVIRONMENT" == "testnet") && "${IS_STARTUP_COMMAND}" == false ]]; then
-  # For non-startup commands on alphanet/testnet, clear OPERATOR_ARG if it came from .envrc
-  # (the script will automatically target the operator on this host)
-  if [[ "${OP_EXPLICITLY_PROVIDED}" == true ]]; then
-    echo "Error: --op can only be used with startup commands (up, restart, start, create)."
-    echo "For other commands, the script will target the operator on this host automatically."
-    exit 1
-  fi
-  # Clear OPERATOR_ARG for non-startup commands (it came from .envrc, not explicit --op)
-  OPERATOR_ARG=""
-elif [[ ("$ENVIRONMENT" == "alphanet" || "$ENVIRONMENT" == "testnet") && "${IS_STARTUP_COMMAND}" == true && -z "$OPERATOR_ARG" ]]; then
-  echo "Error: --op <ID> is required when using --env ${ENVIRONMENT} with startup commands (up, restart, start, create)."
-  echo "Alternatively, set UC_OPERATOR_ID in .envrc (root directory) to avoid passing the flag."
+elif [[ ("$ENVIRONMENT" == "alphanet" || "$ENVIRONMENT" == "testnet") && -z "$OPERATOR_ARG" ]]; then
+  echo "Error: --op <ID> is required when using --env ${ENVIRONMENT}."
+  echo "Alternatively, export UC_OPERATOR_ID in the shell before running the script."
   echo "Run '$0 --help' for usage information."
   exit 1
 fi
 
 # Set OPERATORS_TO_RUN based on environment
-if [[ ("$ENVIRONMENT" == "alphanet" || "$ENVIRONMENT" == "testnet") && "${IS_STARTUP_COMMAND}" == true ]]; then
-  # Alphanet/Testnet startup: use the single operator from --op
-  echo "You are about to start operator ${OPERATOR_ARG} on ${ENVIRONMENT}."
-  read -p "Is this correct? (yes/no): " confirmation
+if [[ "$ENVIRONMENT" == "alphanet" || "$ENVIRONMENT" == "testnet" ]]; then
+  if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
+    echo "You are about to start operator ${OPERATOR_ARG} on ${ENVIRONMENT}."
+    read -p "Is this correct? (yes/no): " confirmation
 
-  if [[ "$confirmation" != "yes" ]]; then
-    echo "Aborted."
-    exit 1
+    if [[ "$confirmation" != "yes" ]]; then
+      echo "Aborted."
+      exit 1
+    fi
   fi
-
   OPERATORS_TO_RUN=("$OPERATOR_ARG")
 elif [[ "$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest" ]]; then
   # Local/Regtest: default to 4 operators, overridable with --ops
   OPERATORS_TO_RUN=($(seq 1 "${NUM_OPERATORS:-4}"))
 fi
 
-# If requested, clean operator stacks regardless of the main command
-if [[ "${FRESH}" == true ]]; then
-  echo "WARNING: --fresh will tear down operators and DELETE ALL VOLUMES (including data)."
-  if [[ "$ENVIRONMENT" == "local" && "${AUTO_CONFIRM}" != true ]]; then
-    read -p "Are you sure you want to continue? (yes/no): " confirmation
-    if [[ "$confirmation" != "yes" ]]; then
-      echo "Aborted."
-      exit 1
-    fi
-  elif [[ "$ENVIRONMENT" == "regtest" ]]; then
-    echo "Regtest fresh mode enabled: continuing without confirmation prompt."
-  fi
-
-  if [[ "$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest" ]]; then
-    echo "Cleaning operator stacks (down --volumes)..."
-    for op_num in "${OPERATORS_TO_RUN[@]}"; do
-      cmd="docker compose -p op_${op_num} --env-file ${ENV_FILE} down --volumes"
-      echo "Running: ${cmd}"
-      eval "${cmd}"
-    done
-  else
-    # alphanet/testnet always use union-operator project name
-    echo "Cleaning operator stack (down --volumes) for project union-operator..."
-    cmd="docker compose -p union-operator --env-file ${ENV_FILE} down --volumes"
-    echo "Running: ${cmd}"
-    eval "${cmd}"
-  fi
-fi
-
-if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
-  # Prompt for USER_BITCOIN_WIF if running startup commands if not present on env
-  if [[ -z "${USER_BITCOIN_WIF}" ]]; then
-    echo "Please enter USER_BITCOIN_WIF (input will be hidden):"
-    read -s USER_BITCOIN_WIF
-    echo ""
-
-    if [[ -z "${USER_BITCOIN_WIF}" ]]; then
-      echo "Error: USER_BITCOIN_WIF is required for 'up' or 'restart' commands."
-      exit 1
-    fi
-  fi
-fi
-
 sync_regtest_bitvmx_heights() {
-  local cfg_dir="${SCRIPT_DIR}/../bitvmx-client/config/regtest/client/config"
-  local sample_cfg="${cfg_dir}/op_1.yaml"
+  local sample_cfg="${BASE_STORAGE_PATH}/.union_bridge/op_1/bitvmx/op_1.yaml"
   local height_delta="${REGTEST_BITVMX_HEIGHT_DELTA:-10}"
   local rpc_payload='{"jsonrpc":"1.0","id":"ub","method":"getblockcount","params":[]}'
 
@@ -422,7 +293,7 @@ sync_regtest_bitvmx_heights() {
   timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
   for op_num in "${OPERATORS_TO_RUN[@]}"; do
     local cfg_file backup_file
-    cfg_file="${cfg_dir}/op_${op_num}.yaml"
+    cfg_file="${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}/bitvmx/op_${op_num}.yaml"
     backup_file="${cfg_file}.${timestamp}.bak"
 
     if [[ ! -f "${cfg_file}" ]]; then
@@ -440,7 +311,7 @@ sync_regtest_bitvmx_heights() {
 resolve_regtest_check_fork_elf_path() {
   local configured_path="${UB__coordinator__advance_funds__check_fork_guest_elf_path:-}"
   local default_path
-  default_path="$(cd "${SCRIPT_DIR}/.." && pwd)/bitvmx-client/config/regtest/client/config/check-fork-guest.bin"
+  default_path="$(cd "${SCRIPT_DIR}/.." && pwd)/bitvmx-client/config/regtest/check-fork-guest.bin"
 
   if [[ -z "${configured_path}" || "${configured_path}" == "/app/config/check-fork-guest.bin" ]]; then
     configured_path="${default_path}"
@@ -454,124 +325,129 @@ resolve_regtest_check_fork_elf_path() {
   echo "${configured_path}"
 }
 
+operator_docker_env_file_path() {
+  local op_num="$1"
+  echo "${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}/docker.env"
+}
+
+require_operator_docker_env_file() {
+  local file_path="$1"
+
+  if [[ ! -f "${file_path}" ]]; then
+    echo "Error: missing prepared operator env file ${file_path}" >&2
+    echo "Run <project_root>/cli-setup-operators.sh for this environment/operator before starting containers." >&2
+    return 1
+  fi
+}
+
+run_compose_stack() {
+  local project_name="$1"
+  local overlay_compose="$2"
+  local description="$3"
+  local env_file_path="$4"
+  local -a compose_cmd=(
+    docker compose
+    -p "${project_name}"
+    -f docker-compose.yml
+    -f "${overlay_compose}"
+    --env-file "${ENV_FILE}"
+    --env-file "${env_file_path}"
+  )
+
+  compose_cmd+=("${DOCKER_COMPOSE_ARGS[@]}")
+
+  echo
+  echo "Running ${description} with env file ${env_file_path}"
+  if [[ -n "${UC_TAG:-}" ]]; then
+    printf "'UC_TAG=%q " "${UC_TAG}"
+  else
+    printf "'"
+  fi
+  printf "%q " "${compose_cmd[@]}"
+  echo "'"
+
+  if [[ -n "${UC_TAG:-}" ]]; then
+    UC_TAG="${UC_TAG}" "${compose_cmd[@]}"
+  else
+    "${compose_cmd[@]}"
+  fi
+}
+
 if [[ "${ENVIRONMENT}" == "regtest" && "${IS_STARTUP_COMMAND}" == true ]]; then
   sync_regtest_bitvmx_heights
+fi
+
+if [[ "${FRESH}" == true ]]; then
+  echo "WARNING: --fresh will tear down operators and DELETE ALL VOLUMES (including data)."
+  if [[ "$ENVIRONMENT" == "local" && "${AUTO_CONFIRM}" != true ]]; then
+    read -p "Are you sure you want to continue? (yes/no): " confirmation
+    if [[ "$confirmation" != "yes" ]]; then
+      echo "Aborted."
+      exit 1
+    fi
+  elif [[ "$ENVIRONMENT" == "regtest" ]]; then
+    echo "Regtest fresh mode enabled: continuing without confirmation prompt."
+  fi
+
+  if [[ "$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest" ]]; then
+    echo "Cleaning operator stacks (down --volumes)..."
+    for op_num in "${OPERATORS_TO_RUN[@]}"; do
+      operator_env_file="$(operator_docker_env_file_path "${op_num}")"
+      if ! require_operator_docker_env_file "${operator_env_file}"; then
+        exit 1
+      fi
+      docker compose -p "op_${op_num}" -f docker-compose.yml -f docker-compose.all.yml --env-file "${ENV_FILE}" --env-file "${operator_env_file}" down --volumes
+    done
+  else
+    echo "Cleaning operator stack (down --volumes) for project union-operator..."
+    operator_env_file="$(operator_docker_env_file_path "${OPERATORS_TO_RUN[0]}")"
+    if ! require_operator_docker_env_file "${operator_env_file}"; then
+      exit 1
+    fi
+    docker compose -p union-operator -f docker-compose.yml -f docker-compose.one.yml --env-file "${ENV_FILE}" --env-file "${operator_env_file}" down --volumes
+  fi
 fi
 
 run_all_operators() {
   # LOCAL/REGTEST ENVIRONMENT: Multiple operators on one host (default 4, up to 10)
   # Each operator uses different ports to avoid conflicts
 
-  # Create shared network for P2P communication between operators if missing
-  local NETWORK_NAME="bitvmx-shared-network"
-  if ! docker network inspect $NETWORK_NAME >/dev/null 2>&1; then
-    echo "Creating docker network '$NETWORK_NAME'..."
-    docker network create --driver bridge --subnet=172.20.0.0/16 $NETWORK_NAME
+  # The shared bridge network is only needed when containers are actually
+  # being created/started.
+  if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
+    local NETWORK_NAME="bitvmx-shared-network"
+    if ! docker network inspect "${NETWORK_NAME}" >/dev/null 2>&1; then
+      echo "Creating docker network '${NETWORK_NAME}'..."
+      docker network create --driver bridge --subnet=172.20.0.0/16 "${NETWORK_NAME}"
+    fi
   fi
   
-  local USER_API_PORTS=(40001 40002 40003 40004 40005 40006 40007 40008 40009 40010)
-  local BITVMX_PORTS=(22222 33333 44444 55554 55555 55556 55557 55558 55559 55560)
-  # should match docker/bitvmx-client/config/local/broker/config/peers.yaml
-  local BITVMX_P2P_HOSTS=("172.20.0.11" "172.20.0.12" "172.20.0.13" "172.20.0.14" "172.20.0.15" "172.20.0.16" "172.20.0.17" "172.20.0.18" "172.20.0.19" "172.20.0.20")
-  local CLIENT_OPS=("op_1" "op_2" "op_3" "op_4" "op_5" "op_6" "op_7" "op_8" "op_9" "op_10")
-  local COMPOSE_FILE_ARG="-f docker-compose.yml -f docker-compose.all.yml"
-  local regtest_check_fork_elf_path=""
-
-  if [[ "${ENVIRONMENT}" == "regtest" ]]; then
-    regtest_check_fork_elf_path="$(resolve_regtest_check_fork_elf_path)"
-    echo "Using regtest CheckFork guest ELF path for host dispatcher: ${regtest_check_fork_elf_path}"
-  fi
-
   for op_num in "${OPERATORS_TO_RUN[@]}"; do
-    local i=$((op_num - 1))
-    local USER_API_PORT=${USER_API_PORTS[$i]}
-    local BITVMX_PORT=${BITVMX_PORTS[$i]}
-    local BITVMX_P2P_HOST=${BITVMX_P2P_HOSTS[$i]}
-    local CLIENT_OP=${CLIENT_OPS[$i]}
-    local extra_env=""
-
-    if [[ "${ENVIRONMENT}" == "regtest" ]]; then
-      extra_env="UB__coordinator__advance_funds__check_fork_guest_elf_path=${regtest_check_fork_elf_path}"
+    local operator_env_file
+    operator_env_file="$(operator_docker_env_file_path "${op_num}")"
+    if ! require_operator_docker_env_file "${operator_env_file}"; then
+      exit 1
     fi
-
-    local DOCKER_CMD="CONFIG_DIR=${CONFIG_DIR} USER_BITCOIN_WIF=${USER_BITCOIN_WIF} USER_API_PORT=${USER_API_PORT} BITVMX_PORT=${BITVMX_PORT} BITVMX_P2P_HOST=${BITVMX_P2P_HOST} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} ${extra_env:+${extra_env} }docker compose ${COMPOSE_FILE_ARG} -p op_${op_num} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
-
-    echo
-    echo "Starting operator ${op_num} with command: '$(echo "${DOCKER_CMD}" | sed "s/USER_BITCOIN_WIF=[^ ]*/USER_BITCOIN_WIF=******/")'"
-    eval "${DOCKER_CMD}"
+    run_compose_stack "op_${op_num}" "docker-compose.all.yml" "operator ${op_num}" "${operator_env_file}"
   done
 }
 
-run_default_operator() {
-  # ALPHANET ENVIRONMENT: Each operator on separate host
-
-  local ALPHANET_PROJECT_NAME="-p union-operator"
-  local COMPOSE_FILE_ARG="-f docker-compose.yml -f docker-compose.one.yml"
-
-  local CLIENT_OP
-  if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
-    local op_num=${OPERATORS_TO_RUN[0]}
-    CLIENT_OP="testnet_op_${op_num}"
-    echo
-    echo "Starting operator ${op_num} with command:"
-  else
-    # For non-startup commands, CLIENT_OP value doesn't matter but needs to be set for compose file parsing
-    CLIENT_OP="dummy_op"
-    echo
-    echo "Running command on alphanet operator:"
+run_single_operator() {
+  # Alphanet/testnet run a single operator per host and share the same
+  # one-operator compose overlay.
+  local environment_label="$1"
+  local op_num=${OPERATORS_TO_RUN[0]}
+  local operator_env_file
+  operator_env_file="$(operator_docker_env_file_path "${op_num}")"
+  if ! require_operator_docker_env_file "${operator_env_file}"; then
+    exit 1
   fi
-
-  local DOCKER_CMD="CONFIG_DIR=${CONFIG_DIR} USER_BITCOIN_WIF=${USER_BITCOIN_WIF} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${ALPHANET_PROJECT_NAME} ${COMPOSE_FILE_ARG} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
-  echo "'$(echo "${DOCKER_CMD}" | sed "s/USER_BITCOIN_WIF=[^ ]*/USER_BITCOIN_WIF=******/")'"
-  eval "${DOCKER_CMD}"
+  run_compose_stack "union-operator" "docker-compose.one.yml" "${environment_label} operator ${op_num}" "${operator_env_file}"
 }
-
-run_testnet_operators() {
-  # TESTNET ENVIRONMENT: Each operator on separate host (same as alphanet)
-
-  local TESTNET_PROJECT_NAME="-p union-operator"
-  local COMPOSE_FILE_ARG="-f docker-compose.yml -f docker-compose.op_one.yml"
-
-  local CLIENT_OP
-  if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
-    local op_num=${OPERATORS_TO_RUN[0]}
-    CLIENT_OP="testnet_op_${op_num}"
-    echo
-    echo "Starting operator ${op_num} with command:"
-  else
-    # For non-startup commands, CLIENT_OP value doesn't matter but needs to be set for compose file parsing
-    CLIENT_OP="dummy_op"
-    echo
-    echo "Running command on testnet operator:"
-  fi
-
-  local DOCKER_CMD="CONFIG_DIR=${CONFIG_DIR} USER_BITCOIN_WIF=${USER_BITCOIN_WIF} CLIENT_OP=${CLIENT_OP} UC_TAG=${UC_TAG} docker compose ${TESTNET_PROJECT_NAME} ${COMPOSE_FILE_ARG} --env-file ${ENV_FILE} ${DOCKER_COMPOSE_ARGS[*]}"
-  echo "'$(echo "${DOCKER_CMD}" | sed "s/USER_BITCOIN_WIF=[^ ]*/USER_BITCOIN_WIF=******/")'"
-  eval "${DOCKER_CMD}"
-}
-
-# Set CONFIG_DIR and LOGGER_PATH to absolute paths for robust volume mounting
-# This ensures paths are correct regardless of where docker-compose is run from
-CONFIG_DIR="${PROJECT_ROOT}/config"
-LOGGER_PATH="${PROJECT_ROOT}/docker/build/log4rs.yaml"
-export CONFIG_DIR
-export LOGGER_PATH
-
-if [[ ! -d "${CONFIG_DIR}" ]]; then
-  echo "Error: Config directory not found: ${CONFIG_DIR}"
-  echo "Please ensure the config directory exists at the project root."
-  exit 1
-fi
-if [[ ! -f "${LOGGER_PATH}" ]]; then
-  echo "Error: Logger config not found: ${LOGGER_PATH}"
-  exit 1
-fi
 
 # Run operators based on environment
 if [[ "$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest" ]]; then
   run_all_operators
-elif [[ "$ENVIRONMENT" == "testnet" ]]; then
-  run_testnet_operators
 else
-  run_default_operator
+  run_single_operator "${ENVIRONMENT}"
 fi

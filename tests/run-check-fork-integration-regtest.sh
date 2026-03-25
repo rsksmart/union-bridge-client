@@ -118,7 +118,7 @@ get_contract_address() {
             print $3
             exit
         }
-    ' config/environment/regtest.toml
+    ' config/environment/docker-regtest.toml
 }
 
 rsk_rpc_call() {
@@ -228,8 +228,8 @@ trigger_advance_funds_mock_events() {
     local peg_manager_address
     peg_manager_address=$(get_contract_address "PegManager")
 
-    [[ -n "$fake_peg_manager_address" ]] || die "FakePegManager address not found in config/environment/regtest.toml"
-    [[ -n "$peg_manager_address" ]] || die "PegManager address not found in config/environment/regtest.toml"
+    [[ -n "$fake_peg_manager_address" ]] || die "FakePegManager address not found in config/environment/docker-regtest.toml"
+    [[ -n "$peg_manager_address" ]] || die "PegManager address not found in config/environment/docker-regtest.toml"
     [[ "${fake_peg_manager_address,,}" != "${peg_manager_address,,}" ]] \
         || die "FakePegManager must differ from PegManager on regtest"
 

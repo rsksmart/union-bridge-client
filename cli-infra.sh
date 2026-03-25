@@ -140,7 +140,7 @@ start_mining() {
 stop_mining() {
     if [ ! -f "$MINE_PID_FILE" ]; then
         warn "No mining processes found (PID file missing)"
-        exit 0
+        return 0
     fi
 
     local anvil_pid bitcoin_pid

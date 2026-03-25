@@ -20,6 +20,12 @@
 //! cargo run -- --fresh
 //! ```
 //!
+//! choose BitVMX identity source:
+//! ```bash
+//! cargo run -- --bitvmx-mode docker   # default, containers use .union_bridge/op_N/bitvmx/keys/services.pubkey_hash
+//! cargo run -- --bitvmx-mode repo     # running from cloned repo, ignores UB__COORDINATOR__BITVMX__PUBKEY_HASH_FILE_N override in [local-committee.env](../config/env_overrides/local-committee.env) and uses config/base.toml hash (matches bitvmx repo value)
+//! ```
+//!
 //! pass custom cargo features:
 //! ```bash
 //! cargo run -- --features anvil
@@ -53,7 +59,8 @@
 //! subsequent clients use incremental ports (e.g., client 2 uses 50002, 60002, 40002, 30002)
 
 use anyhow::{anyhow, bail, Context, Result};
-use clap::{ArgAction, Parser};
+use clap::{ArgAction, Parser, ValueEnum};
+use key_manager::key_manager::KeyManager;
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
 use std::collections::HashMap;
@@ -90,6 +97,16 @@ struct Cli {
     /// Kill all existing running services and exit
     #[arg(long = "kill", action = ArgAction::SetTrue)]
     kill: bool,
+
+    /// Source of BitVMX identity used by coordinator in local runs.
+    #[arg(long = "bitvmx-mode", value_enum, default_value_t = BitvmxMode::Docker)]
+    bitvmx_mode: BitvmxMode,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
+enum BitvmxMode {
+    Repo,
+    Docker,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -111,12 +128,8 @@ impl Service {
     }
 }
 
-const UNION_CLIENT_SERVICES: [Service; 4] = [
-    Service::BlockIndexer,
-    Service::LogIndexer,
-    Service::UserApi,
-    Service::Coordinator,
-];
+const UNION_CLIENT_SERVICES: [Service; 4] =
+    [Service::BlockIndexer, Service::LogIndexer, Service::UserApi, Service::Coordinator];
 
 #[derive(Debug, Clone)]
 struct ManagedService {
@@ -173,6 +186,7 @@ async fn main() -> Result<()> {
         client_id: cli.client_id,
         features: cli.features,
         fresh: cli.fresh,
+        bitvmx_mode: cli.bitvmx_mode,
     };
 
     let result = run_clients(run_config).await;
@@ -193,6 +207,7 @@ struct RunConfig {
     client_id: Option<u8>,
     features: Option<String>,
     fresh: bool,
+    bitvmx_mode: BitvmxMode,
 }
 
 async fn run_clients(config: RunConfig) -> Result<()> {
@@ -205,15 +220,10 @@ async fn run_clients(config: RunConfig) -> Result<()> {
         fresh_cleanup(config.client_id)?;
     }
 
-    // find project root by going up from cargo manifest dir (cli/run) to project root
-    let manifest_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let project_root = manifest_path
-        .parent() // cli
-        .and_then(|p| p.parent()) // project root
-        .ok_or_else(|| anyhow!("Failed to determine project root"))?;
-    let env_file = project_root.join("multiclient.env");
+    let project_root = project_root()?;
+    let env_file = project_root.join("config/env_overrides/local-committee.env");
     if !env_file.exists() {
-        bail!("multiclient.env not found at {}", env_file.display());
+        bail!("config/env_overrides/local-committee.env not found at {}", env_file.display());
     }
     let env_map = load_env_file(&env_file)
         .with_context(|| format!("Failed to parse {}", env_file.display()))?;
@@ -223,14 +233,13 @@ async fn run_clients(config: RunConfig) -> Result<()> {
     // Keep all clients and join handles for monitors
     let mut clients: Vec<ManagedClient> = Vec::new();
 
-    let ids: Vec<u8> = config
-        .client_id
-        .map_or_else(|| vec![1, 2, 3, 4], |id| vec![id]);
+    let ids: Vec<u8> = config.client_id.map_or_else(|| vec![1, 2, 3, 4], |id| vec![id]);
+    validate_local_keystores(&ids)?;
 
     // launch clients and store in global state immediately
     let mut launch_error = None;
     for id in ids {
-        let envs = build_env_for_client(id, &env_map)?;
+        let envs = build_env_for_client(id, &env_map, config.bitvmx_mode)?;
         let client_id = format!("client-{}", id);
 
         println!("============================================================================");
@@ -239,10 +248,7 @@ async fn run_clients(config: RunConfig) -> Result<()> {
 
         match launch_client_services(&config, envs, &client_id, &shutdown_tx) {
             Ok(services) => {
-                let client = ManagedClient {
-                    client_id: client_id.to_string(),
-                    services,
-                };
+                let client = ManagedClient { client_id: client_id.to_string(), services };
                 clients.push(client.clone());
 
                 // store in global state for panic handler
@@ -405,10 +411,7 @@ fn detect_and_kill_existing_services() -> Result<()> {
             let pid_val = Pid::from_raw(*pid as i32);
             if sys.process(sysinfo::Pid::from_u32(*pid)).is_some() {
                 let _ = kill(pid_val, Signal::SIGKILL);
-                println!(
-                    "  Force killed {} (PID {}, didn't exit gracefully)",
-                    service, pid
-                );
+                println!("  Force killed {} (PID {}, didn't exit gracefully)", service, pid);
             }
         }
 
@@ -450,9 +453,78 @@ fn load_env_file(path: &Path) -> Result<HashMap<String, String>> {
     Ok(map)
 }
 
+fn join_base_storage_path(base_storage_path: &str, value: &str) -> String {
+    if Path::new(value).is_absolute() {
+        value.to_string()
+    } else {
+        format!("{base_storage_path}/{value}")
+    }
+}
+
+fn project_root() -> Result<PathBuf> {
+    let manifest_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    manifest_path
+        .parent()
+        .and_then(|p| p.parent())
+        .map(Path::to_path_buf)
+        .ok_or_else(|| anyhow!("Failed to determine project root"))
+}
+
+fn read_env_file_value(base_storage_path: &str, value: &str) -> Result<String> {
+    let path = join_base_storage_path(base_storage_path, value);
+    let contents = fs::read_to_string(&path)
+        .with_context(|| format!("Failed to read broker metadata file {path}"))?;
+    Ok(contents.trim().to_string())
+}
+
+fn union_bridge_path(base_storage_path: &str, value: &str) -> String {
+    format!("{base_storage_path}/.union_bridge/{value}")
+}
+
+fn materialize_env_var(
+    base_storage_path: &str,
+    base_key: &str,
+    value: &str,
+) -> Result<Option<(String, String)>> {
+    if base_key == "UB__COORDINATOR__BITVMX__PUBKEY_HASH_FILE" {
+        let resolved = read_env_file_value(base_storage_path, value).with_context(|| {
+            format!(
+                "Missing BitVMX services pubkey hash file for local launch. \
+Run `./cli-setup-operators.sh --env local --ops 4` first (expected path from local-committee override: {value})"
+            )
+        })?;
+        return Ok(Some(("UB__COORDINATOR__BITVMX__PUBKEY_HASH".to_string(), resolved)));
+    }
+
+    let (final_key, final_value) = if base_key == "UB__INDEXER__STORAGE__PATH" {
+        (base_key.to_string(), union_bridge_path(base_storage_path, value))
+    } else if base_key == "UB__COORDINATOR__STORAGE_PATH" {
+        (base_key.to_string(), union_bridge_path(base_storage_path, value))
+    } else if base_key == "UB__KEY_STORE__MEMBER_PATH" {
+        (base_key.to_string(), union_bridge_path(base_storage_path, value))
+    } else if base_key == "UB__KEY_STORE__USER_PATH" {
+        (base_key.to_string(), union_bridge_path(base_storage_path, value))
+    } else if matches!(
+        base_key,
+        "UB__BLOCK_INDEXER__BROKER_KEY_PATH"
+            | "UB__LOG_INDEXER__BROKER_KEY_PATH"
+            | "UB__USER_API__BROKER_KEY_PATH"
+            | "UB__COORDINATOR__BROKER__KEY_PATH"
+    ) {
+        (base_key.to_string(), join_base_storage_path(base_storage_path, value))
+    } else if let Some(target_key) = base_key.strip_suffix("_FILE") {
+        (target_key.to_string(), read_env_file_value(base_storage_path, value)?)
+    } else {
+        (base_key.to_string(), value.to_string())
+    };
+
+    Ok(Some((final_key, final_value)))
+}
+
 fn build_env_for_client(
     id: u8,
     env_map: &HashMap<String, String>,
+    bitvmx_mode: BitvmxMode,
 ) -> Result<Vec<(String, String)>> {
     validate_1_4(id, "CLIENT_ID")?;
 
@@ -467,52 +539,102 @@ fn build_env_for_client(
         if key.starts_with("UB__") && key.ends_with(&suffix) {
             // strip the _N suffix to get the base env var name
             let base_key = key.strip_suffix(&suffix).unwrap().to_string();
+            if bitvmx_mode == BitvmxMode::Repo
+                && base_key == "UB__COORDINATOR__BITVMX__PUBKEY_HASH_FILE"
+            {
+                // Repo mode runs BitVMX from repository configs, so per-operator docker artifacts
+                // (.union_bridge/op_N/bitvmx/keys/services.pubkey_hash) may not exist.
+                // We intentionally skip this *_FILE override here and let coordinator use
+                // the default `coordinator.bitvmx.pubkey_hash` from config/base.toml.
+                continue;
+            }
 
-            // handle paths that need BASE_STORAGE_PATH prepended
-            let final_value = if base_key == "UB__INDEXER__STORAGE__PATH" {
-                format!("{}/.union_bridge/database/{}", base_storage_path, value)
-            } else if base_key == "UB__COORDINATOR__STORAGE_PATH" {
-                format!("{}/.union_bridge/database/{}", base_storage_path, value)
-            } else if base_key == "UB__KEY_STORE__MEMBER_PATH" {
-                format!("{}/.union_bridge/keystore/{}", base_storage_path, value)
-            } else if base_key == "UB__KEY_STORE__USER_PATH" {
-                format!("{}/.union_bridge/keystore/{}", base_storage_path, value)
-            } else {
-                value.clone()
-            };
-
-            envs.push((base_key, final_value));
+            if let Some((final_key, final_value)) =
+                materialize_env_var(&base_storage_path, &base_key, value)?
+            {
+                envs.push((final_key, final_value));
+            }
         }
     }
 
     // add CLIENT_ID
-    let client_id = env_map
-        .get(&format!("CLIENT_ID_{}", id))
-        .cloned()
-        .unwrap_or_else(|| id.to_string());
+    let client_id =
+        env_map.get(&format!("CLIENT_ID_{}", id)).cloned().unwrap_or_else(|| id.to_string());
     envs.push(("CLIENT_ID".into(), client_id));
 
+    if bitvmx_mode == BitvmxMode::Repo {
+        envs.push((
+            "UB__BRIDGE__COMMITTEE__DRP_PROGRAM_DEFINITION".to_string(),
+            project_root()?.join("resources").join("hello-world.yaml").display().to_string(),
+        ));
+    }
+
     Ok(envs)
+}
+
+fn validate_local_keystores(ids: &[u8]) -> Result<()> {
+    let base_storage_path = std::env::var("BASE_STORAGE_PATH")
+        .context("BASE_STORAGE_PATH environment variable is required")?;
+    std::env::var("KEY_STORE_PASSWORD")
+        .context("KEY_STORE_PASSWORD environment variable is required for local client runs")?;
+
+    for id in ids {
+        let keystore_dir = Path::new(&base_storage_path)
+            .join(".union_bridge")
+            .join(format!("op_{id}"))
+            .join("keystore");
+
+        for key_name in ["user", "member"] {
+            let key_path = keystore_dir.join(key_name);
+            if !key_path.exists() {
+                bail!(
+                    "Missing local keystore {}. Run `./cli-setup-operators.sh --env local --ops 4` to recreate local artifacts.",
+                    key_path.display()
+                );
+            }
+
+            KeyManager::get_signer(&key_path).with_context(|| {
+                format!(
+                    "Failed to decrypt local {key_name} keystore {}. \
+Check KEY_STORE_PASSWORD or rerun `./cli-setup-operators.sh --env local --ops 4` if the keystore was created with a different password.",
+                    key_path.display()
+                )
+            })?;
+        }
+    }
+
+    Ok(())
 }
 
 fn fresh_cleanup(client_id: Option<u8>) -> Result<()> {
     let base_storage_path = std::env::var("BASE_STORAGE_PATH")
         .context("BASE_STORAGE_PATH environment variable is required")?;
 
-    let path_to_clean = if let Some(id) = client_id {
-        // Clean only the specific client's paths
-        format!(
-            "{}/.union_bridge/database/multi-client/{}",
-            base_storage_path, id
-        )
-    } else {
-        // Clean the entire multi-client directory (all clients)
-        format!("{}/.union_bridge/database/multi-client", base_storage_path)
-    };
+    let union_bridge_root = Path::new(&base_storage_path).join(".union_bridge");
 
-    if Path::new(&path_to_clean).exists() {
-        fs::remove_dir_all(&path_to_clean)
-            .with_context(|| format!("Failed to remove {}", path_to_clean))?;
+    if let Some(id) = client_id {
+        let path_to_clean = union_bridge_root.join(format!("op_{id}")).join("database");
+        if path_to_clean.exists() {
+            fs::remove_dir_all(&path_to_clean)
+                .with_context(|| format!("Failed to remove {}", path_to_clean.display()))?;
+        }
+    } else if union_bridge_root.exists() {
+        for entry in fs::read_dir(&union_bridge_root)
+            .with_context(|| format!("Failed to read {}", union_bridge_root.display()))?
+        {
+            let entry = entry?;
+            let file_name = entry.file_name();
+            let file_name = file_name.to_string_lossy();
+            if !file_name.starts_with("op_") {
+                continue;
+            }
+
+            let database_path = entry.path().join("database");
+            if database_path.exists() {
+                fs::remove_dir_all(&database_path)
+                    .with_context(|| format!("Failed to remove {}", database_path.display()))?;
+            }
+        }
     }
 
     Ok(())
@@ -547,9 +669,7 @@ fn cargo_args_for_service(config: &RunConfig, svc: &Service) -> Vec<String> {
 
 /// check if a port is listening
 fn is_port_listening(port: u16) -> bool {
-    TcpStream::connect(("127.0.0.1", port))
-        .map(|_| true)
-        .unwrap_or(false)
+    TcpStream::connect(("127.0.0.1", port)).map(|_| true).unwrap_or(false)
 }
 
 /// wait for a port to be listening, up to timeout
@@ -561,18 +681,12 @@ fn wait_for_port(port: u16, timeout: Duration) -> Result<()> {
         }
         std::thread::sleep(Duration::from_millis(100));
     }
-    bail!(
-        "Port {} did not become available within {:?}",
-        port,
-        timeout
-    )
+    bail!("Port {} did not become available within {:?}", port, timeout)
 }
 
 /// extract port number from environment variables
 fn get_port_from_envs(envs: &[(String, String)], key: &str) -> Option<u16> {
-    envs.iter()
-        .find(|(k, _)| k == key)
-        .and_then(|(_, v)| v.parse().ok())
+    envs.iter().find(|(k, _)| k == key).and_then(|(_, v)| v.parse().ok())
 }
 
 fn launch_client_services(
@@ -625,11 +739,7 @@ fn launch_client_services(
             .with_context(|| format!("Failed to start {} for {}", svc.name(), client_id))?;
         let pid = child.id();
         let child = Arc::new(Mutex::new(child));
-        let mgd_child = ManagedService {
-            service: svc.name().to_string(),
-            pid,
-            child,
-        };
+        let mgd_child = ManagedService { service: svc.name().to_string(), pid, child };
         services.push(mgd_child);
     }
 
@@ -639,10 +749,7 @@ fn launch_client_services(
     // Verify none exited immediately
     for ms in services.iter() {
         let name = format!("{}:{}", client_id, ms.service);
-        let mut guard = ms
-            .child
-            .lock()
-            .expect(format!("Failed to lock {}", name).as_str());
+        let mut guard = ms.child.lock().expect(format!("Failed to lock {}", name).as_str());
         if let Ok(Some(status)) = guard.try_wait() {
             println!("ERROR: {} exited immediately with status {}", name, status);
             let _ = shutdown_tx.send(());
@@ -670,16 +777,94 @@ fn launch_client_services(
                     monitor_name, status
                 );
             } else {
-                eprintln!(
-                    "Process {} wait failed. Initiating shutdown...",
-                    monitor_name
-                );
+                eprintln!("Process {} wait failed. Initiating shutdown...", monitor_name);
             }
             let _ = tx.send(());
         });
     }
 
     Ok(services)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+
+    static TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+    fn make_temp_dir() -> PathBuf {
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH).expect("time").as_nanos();
+        let path = std::env::temp_dir().join(format!("union-bridge-run-test-{unique}"));
+        fs::create_dir_all(&path).expect("create temp dir");
+        path
+    }
+
+    #[test]
+    fn test_build_env_for_client_reads_pubkey_hash_file_references() {
+        let _guard = TEST_MUTEX.lock().expect("lock");
+        let base_storage_path = make_temp_dir();
+        let hash_rel_path = ".union_bridge/op_1/broker/block-indexer.pubkey_hash";
+        let hash_abs_path = base_storage_path.join(hash_rel_path);
+        fs::create_dir_all(hash_abs_path.parent().expect("parent")).expect("mkdir");
+        fs::write(&hash_abs_path, "abc123\n").expect("write hash file");
+
+        std::env::set_var("BASE_STORAGE_PATH", &base_storage_path);
+
+        let env_map = HashMap::from([
+            (
+                "UB__COORDINATOR__BLOCKS__PUBKEY_HASH_FILE_1".to_string(),
+                ".union_bridge/op_1/broker/block-indexer.pubkey_hash".to_string(),
+            ),
+            (
+                "UB__BLOCK_INDEXER__BROKER_KEY_PATH_1".to_string(),
+                ".union_bridge/op_1/broker/block-indexer.pem".to_string(),
+            ),
+        ]);
+
+        let envs = build_env_for_client(1, &env_map, BitvmxMode::Docker).expect("build envs");
+
+        assert!(envs
+            .contains(
+                &("UB__COORDINATOR__BLOCKS__PUBKEY_HASH".to_string(), "abc123".to_string(),)
+            ));
+        assert!(envs.contains(&(
+            "UB__BLOCK_INDEXER__BROKER_KEY_PATH".to_string(),
+            base_storage_path
+                .join(".union_bridge/op_1/broker/block-indexer.pem")
+                .display()
+                .to_string(),
+        )));
+
+        let _ = fs::remove_dir_all(base_storage_path);
+        std::env::remove_var("BASE_STORAGE_PATH");
+    }
+
+    #[test]
+    fn test_build_env_for_client_ignores_bitvmx_file_in_repo_mode() {
+        let _guard = TEST_MUTEX.lock().expect("lock");
+        let base_storage_path = make_temp_dir();
+
+        std::env::set_var("BASE_STORAGE_PATH", &base_storage_path);
+
+        let env_map = HashMap::from([
+            (
+                "UB__COORDINATOR__BITVMX__PUBKEY_HASH_FILE_1".to_string(),
+                ".union_bridge/op_1/bitvmx/keys/services.pubkey_hash".to_string(),
+            ),
+            ("UB__COORDINATOR__BITVMX__PORT_1".to_string(), "22222".to_string()),
+        ]);
+
+        let envs = build_env_for_client(1, &env_map, BitvmxMode::Repo).expect("build envs");
+
+        assert!(envs.iter().any(|(k, v)| k == "UB__COORDINATOR__BITVMX__PORT" && v == "22222"));
+        assert!(!envs.iter().any(|(k, _)| k == "UB__COORDINATOR__BITVMX__PUBKEY_HASH"));
+
+        let _ = fs::remove_dir_all(base_storage_path);
+        std::env::remove_var("BASE_STORAGE_PATH");
+    }
 }
 
 async fn teardown_all(clients: Vec<ManagedClient>) {
@@ -692,11 +877,8 @@ async fn teardown_all(clients: Vec<ManagedClient>) {
 
             // shutdown coordinator first and wait for it to exit completely
             // this ensures it can properly unsubscribe from brokers before they shut down
-            if let Some(coordinator) = client
-                .services
-                .iter()
-                .rev()
-                .find(|s| s.service == "coordinator")
+            if let Some(coordinator) =
+                client.services.iter().rev().find(|s| s.service == "coordinator")
             {
                 let pid = Pid::from_raw(coordinator.pid as i32);
                 let _ = kill(pid, Signal::SIGTERM);

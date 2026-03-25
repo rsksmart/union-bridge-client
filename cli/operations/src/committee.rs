@@ -41,10 +41,7 @@ impl FromStr for CommitteeRole {
         match input.to_lowercase().as_str() {
             "prover" => Ok(CommitteeRole::Prover),
             "verifier" => Ok(CommitteeRole::Verifier),
-            _ => Err(format!(
-                "Invalid role: {}. Expected Prover or Verifier",
-                input
-            )),
+            _ => Err(format!("Invalid role: {}. Expected Prover or Verifier", input)),
         }
     }
 }
@@ -86,11 +83,8 @@ pub async fn run_committee_setup(
             }
 
             for (idx, endpoint) in endpoints.iter().enumerate() {
-                let role = if idx % 2 == 0 {
-                    CommitteeRole::Prover
-                } else {
-                    CommitteeRole::Verifier
-                };
+                let role =
+                    if idx % 2 == 0 { CommitteeRole::Prover } else { CommitteeRole::Verifier };
 
                 post_apply(&client, stream_id, endpoint, role, environment).await?;
 
@@ -107,17 +101,11 @@ pub async fn run_committee_setup(
         }
         Environment::Alphanet | Environment::Testnet | Environment::Regtest => {
             let role = role.ok_or_else(|| {
-                anyhow!(
-                    "--role is required when using --env {}",
-                    environment.get_name()
-                )
+                anyhow!("--role is required when using --env {}", environment.get_name())
             })?;
 
             let op_id = operator_id.ok_or_else(|| {
-                anyhow!(
-                    "--operator-id is required when using --env {}",
-                    environment.get_name()
-                )
+                anyhow!("--operator-id is required when using --env {}", environment.get_name())
             })?;
 
             validate_1_10(op_id, "operator-id")?;
@@ -128,10 +116,7 @@ pub async fn run_committee_setup(
 
             post_apply(&client, stream_id, endpoint, role, environment).await?;
 
-            println!(
-                "Done. Applied operator {} to stream {} as {}",
-                op_id, stream_id, role
-            );
+            println!("Done. Applied operator {} to stream {} as {}", op_id, stream_id, role);
         }
     }
 
@@ -179,12 +164,7 @@ async fn post_apply(
             .text()
             .await
             .unwrap_or_else(|_| String::from("<failed to read response body>"));
-        bail!(
-            "Operator at {} responded with status {}: {}",
-            endpoint,
-            status,
-            body
-        );
+        bail!("Operator at {} responded with status {}: {}", endpoint, status, body);
     }
 
     Ok(())

@@ -51,7 +51,12 @@ cd docker/local-infra
 # Start blockchains (first time or fresh start)
 ./start_blockchains.sh --fresh up -d
 
+# Generate local per-operator BitVMX config under ~/.union_bridge/op_N/bitvmx
+cd ../operator
+<project_root>/cli-setup-operators.sh --env local --ops 4
+
 # Start 4 BitVMX clients
+cd ../local-infra
 ./start_bitvmx.sh --fresh up -d
 
 # Then run Union Client locally with cargo (from project root)
@@ -113,16 +118,20 @@ Full operator deployment (BitVMX + Union Client in Docker). Use this for product
 
 **Scripts:**
 - `start_operators.sh` - Main script to manage operator stacks
+- `<project_root>/cli-setup-operators.sh` - Creates or reuses broker identities and generated operator env files
 
 **Compose files:**
 - `docker-compose.yml` - Base operator compose
 - `docker-compose.all.yml` - Overlay for running all 4 operators on one host (local)
-- `docker-compose.one.yml` - Overlay for running one operator per host (alphanet)
+- `docker-compose.one.yml` - Overlay for running one operator per host (alphanet/testnet)
 
 **Quick start (local):**
 
 ```bash
 cd docker/operator
+
+# Prepare host-side operator artifacts once
+<project_root>/cli-setup-operators.sh --env local --ops 4
 
 # Start all 4 operators
 ./start_operators.sh --env local up -d
@@ -146,13 +155,13 @@ See [build/README.md](build/README.md) for detailed usage.
 
 ## Environment Files
 
-Each deployment scenario uses environment files (`.env`, `.env.local`, `.env.alphanet`) containing configuration like:
+The Docker setup uses two kinds of environment files:
 
-- `BITCOIND_URL` - Bitcoin RPC endpoint
-- `ENVIRONMENT` - Environment name (local, alphanet)
-- Contract addresses and other deployment-specific settings
+- tracked static environment files such as [`docker/operator/.env.local`](operator/.env.local), [`docker/operator/.env.alphanet`](operator/.env.alphanet), [`docker/operator/.env.regtest`](operator/.env.regtest), and [`docker/operator/.env.testnet`](operator/.env.testnet)
+- generated per-operator runtime files under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`, created by `<project_root>/cli-setup-operators.sh`
 
-These files are gitignored and must be created locally. Check the respective folder's README or sample files for required variables.
+`docker.env` is only consumed by Docker operator runs (`start_operators.sh` / docker compose).  
+Local cargo mode (`./cli-run.sh`) does not read this file.
 
 ## Troubleshooting
 

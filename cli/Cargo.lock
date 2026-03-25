@@ -4084,6 +4084,8 @@ dependencies = [
  "rpassword",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
  "tokio",
 ]
 
@@ -4969,6 +4971,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
+ "key-manager",
  "nix 0.29.0",
  "sysinfo",
  "tokio",

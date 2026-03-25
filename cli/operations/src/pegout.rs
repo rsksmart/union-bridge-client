@@ -24,7 +24,11 @@ fn sats_to_wei(sats: u64) -> u64 {
     sats.saturating_mul(10_000_000_000)
 }
 
-pub async fn request_pegout(environment: Environment, value: u64, usr_pub_key: String) -> Result<()> {
+pub async fn request_pegout(
+    environment: Environment,
+    value: u64,
+    usr_pub_key: String,
+) -> Result<()> {
     validate_usr_pub_key(&usr_pub_key)?;
     let amount_in_wei = sats_to_wei(value);
 
