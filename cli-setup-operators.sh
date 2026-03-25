@@ -2,7 +2,8 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="${PROJECT_ROOT}/docker/operator"
 
 cd "${SCRIPT_DIR}" || {
   echo "Error: Failed to change to script directory: ${SCRIPT_DIR}"
@@ -282,7 +283,7 @@ ensure_operator_bitvmx_config_tree() {
 
   if [[ ! -f "${cfg_file}" ]]; then
     echo "Error: missing generated BitVMX operator config ${cfg_file}" >&2
-    echo "Delete $(operator_root_path "${op_num}") and rerun setup_operators.sh from a clean state." >&2
+    echo "Delete $(operator_root_path "${op_num}") and rerun cli-setup-operators.sh from a clean state." >&2
     exit 1
   fi
 }
@@ -389,7 +390,7 @@ resolve_user_bitcoin_wif() {
     fi
 
     echo "Error: existing operator env file ${env_file} is missing USER_BITCOIN_WIF." >&2
-    echo "Fix the file or delete it and rerun setup_operators.sh." >&2
+    echo "Fix the file or delete it and rerun cli-setup-operators.sh." >&2
     exit 1
   fi
 

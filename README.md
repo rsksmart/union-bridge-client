@@ -163,18 +163,18 @@ This will automatically load the environment variables defined in the `.envrc` o
 
 ### Multi Client Setup
 
-The local multi-client flow is mostly automated through `cli-operations.sh`.
+The local multi-client flow is bootstrapped through `./cli-setup-operators.sh`.
 
 #### Bootstrap Local Operator State
 
-Under the directory specified in `BASE_STORAGE_PATH`, create the base directory and then run the local setup helper:
+Under the directory specified in `BASE_STORAGE_PATH`, create the base directory and then run the bootstrap helper:
 
 ```bash
 mkdir -p "${BASE_STORAGE_PATH}/.union_bridge"
-./cli-operations.sh setup create-all
+./cli-setup-operators.sh --env local --ops 4
 ```
 
-`create-all` creates or reuses both the local Rootstock keystores and the local broker identities under
+The bootstrap creates or reuses local Rootstock keystores, broker identities, and BitVMX runtime files under
 `BASE_STORAGE_PATH`, for example:
 
 - `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/block-indexer.pem`
@@ -184,17 +184,11 @@ mkdir -p "${BASE_STORAGE_PATH}/.union_bridge"
 - `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/coordinator.pem`
 - `${BASE_STORAGE_PATH}/.union_bridge/op_1/keystore/user`
 - `${BASE_STORAGE_PATH}/.union_bridge/op_1/keystore/member`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/bitvmx/keys/services.pubkey_hash`
 
 The `.pubkey_hash` files are generated from the created PEMs and are consumed by the local launcher so the
 coordinator and user-api use explicit remote identities without duplicating raw hash values in
-`config/env_overrides/local-committee.env`. The command also prints the coordinator `pubkey_hash` for each operator.
-
-If you only need one half of the local setup, the granular commands still exist:
-
-```bash
-./cli-operations.sh setup create-rootstock-wallets
-./cli-operations.sh setup create-broker-identities
-```
+`config/env_overrides/local-committee.env`.
 
 #### Configuring BitVMX Client (local cargo flow only)
 
@@ -202,7 +196,7 @@ This section applies only when you run Union Client locally with `./cli-run.sh` 
 own workspace.
 
 If you are using the Docker operator flow under [`docker/operator/`](docker/operator/README.md), skip this section:
-`setup_operators.sh` already generates per-operator BitVMX config copies under
+`./cli-setup-operators.sh` already generates per-operator BitVMX config copies under
 `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/` and patches
 `components.l2.pubkey_hash` automatically.
 
@@ -296,7 +290,7 @@ Then you should deploy the contracts, and you can use the operations CLI for the
 **Note:** The `committeeMemberCount` value should always match the number of clients you intend to run (currently
 hardcoded to 4 in the CLI).
 
-#### Next Steps After `create-all`
+#### Next Steps After Bootstrap
 
 Once the local runtime artifacts exist, the remaining local committee flow is:
 
@@ -316,6 +310,8 @@ Once the local runtime artifacts exist, the remaining local committee flow is:
 
 ```bash
 ./cli-run.sh --fresh
+# If BitVMX is running directly from repo configs, use:
+# ./cli-run.sh --fresh --bitvmx-mode repo
 ```
 
 4. Apply the operators to the stream:
@@ -333,7 +329,7 @@ For the fuller local cargo workflow, usage examples, and command details, see [c
 The project includes two CLI tools for local development and operations:
 
 - **`cli-run.sh`**: Local client launcher for development and testing
-- **`cli-operations.sh`**: Operations toolkit for setup, operator, and user operations
+- **`cli-operations.sh`**: Operations toolkit for operator and user operations
 
 For detailed documentation, usage examples, and command references, see [cli/README.md](cli/README.md).
 
@@ -602,7 +598,7 @@ configuration files.
 
 ## Rootstock Wallet creation (manual)
 
-This is automated in the `cli-operations.sh setup create-rootstock-wallets` command, but if you want to create a wallet
+This is automated by `./cli-setup-operators.sh --env local --ops 4`, but if you want to create a wallet
 manually, you can use the `key-manager` crate for that.
 
 ```

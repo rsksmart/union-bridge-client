@@ -18,6 +18,10 @@ Launches one or more Union Bridge clients locally for development and testing.
 # Run with fresh databases
 ./cli-run.sh --fresh --features anvil
 
+# Select BitVMX source
+./cli-run.sh --bitvmx-mode docker   # default, containers use .union_bridge/op_N/bitvmx/keys/services.pubkey_hash
+./cli-run.sh --bitvmx-mode repo     # running from cloned repo, ignores UB__COORDINATOR__BITVMX__PUBKEY_HASH_FILE_N override in [local-committee.env](../config/env_overrides/local-committee.env) and uses config/base.toml hash (matches bitvmx repo value)
+
 # View logs from all 4 coordinators
 ./cli-run.sh --logs
 
@@ -37,6 +41,7 @@ Launches one or more Union Bridge clients locally for development and testing.
 - `--id`, `-i`: Run a single client with the specified ID (1-4). If not provided, runs 4 clients.
 - `--features`, `-f`: Optional features to pass to cargo (e.g. "anvil").
 - `--fresh`: Start with clear databases (removes existing state).
+- `--bitvmx-mode`: BitVMX identity source for coordinator (`docker` or `repo`). Default: `docker`.
 - `--logs`: View logs from all 4 coordinators in real-time. Exits on Ctrl+C.
 - `--kill`: Kill all existing running services and exit. Cannot be used with other options.
 - `--start-mine`: Start background mining for both Anvil (every 1s) and Bitcoin regtest (every 5s). Runs until stopped.
@@ -50,7 +55,7 @@ Launches one or more Union Bridge clients locally for development and testing.
 
 ## `cli-operations.sh` - Operations Toolkit
 
-Handles setup, operator operations, and user operations across different environments (local, alphanet, testnet).
+Handles operator operations and user operations across different environments (local, alphanet, testnet).
 
 ### Environment Variables
 
@@ -82,9 +87,6 @@ export UC_OPERATOR_ROLE="prover"
 ```bash
 ./cli-operations.sh --help
 
-# Setup: Create local wallets and broker identities for 4 operators
-./cli-operations.sh setup create-all
-
 # Operator: Fund operators on local-docker environment
 ./cli-operations.sh operator fund --env local-docker
 
@@ -109,8 +111,6 @@ export UC_OPERATOR_ROLE="prover"
 
 ### Command Structure
 
-- **`setup`**: Initial configuration (create wallets and local broker identities)
-  - `create-all`: convenience command that runs both local setup steps
 - **`operator`**: Operator management (fund, apply-stream)
   - `fund`: Display bitcoin addresses and optionally execute wallet commands with `--execute`
 - **`user`**: User operations (pegin, pegout)
@@ -159,8 +159,8 @@ The CLI workspace is independent from the main Union Bridge workspace, allowing 
 ### Local Development Setup
 
 ```bash
-# 1. Create wallets and broker identities for 4 operators
-./cli-operations.sh setup create-all
+# 1. Bootstrap wallets, broker identities, and BitVMX runtime artifacts
+<project_root>/cli-setup-operators.sh --env local --ops 4
 
 # 2. Fund operators (Bitcoin + Rootstock)
 # Option A: Print commands to run manually

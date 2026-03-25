@@ -20,6 +20,12 @@
 //! cargo run -- --fresh
 //! ```
 //!
+//! choose BitVMX identity source:
+//! ```bash
+//! cargo run -- --bitvmx-mode docker   # default, containers use .union_bridge/op_N/bitvmx/keys/services.pubkey_hash
+//! cargo run -- --bitvmx-mode repo     # running from cloned repo, ignores UB__COORDINATOR__BITVMX__PUBKEY_HASH_FILE_N override in [local-committee.env](../config/env_overrides/local-committee.env) and uses config/base.toml hash (matches bitvmx repo value)
+//! ```
+//!
 //! pass custom cargo features:
 //! ```bash
 //! cargo run -- --features anvil
@@ -53,7 +59,7 @@
 //! subsequent clients use incremental ports (e.g., client 2 uses 50002, 60002, 40002, 30002)
 
 use anyhow::{anyhow, bail, Context, Result};
-use clap::{ArgAction, Parser};
+use clap::{ArgAction, Parser, ValueEnum};
 use key_manager::key_manager::KeyManager;
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
@@ -91,6 +97,16 @@ struct Cli {
     /// Kill all existing running services and exit
     #[arg(long = "kill", action = ArgAction::SetTrue)]
     kill: bool,
+
+    /// Source of BitVMX identity used by coordinator in local runs.
+    #[arg(long = "bitvmx-mode", value_enum, default_value_t = BitvmxMode::Docker)]
+    bitvmx_mode: BitvmxMode,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
+enum BitvmxMode {
+    Repo,
+    Docker,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -166,8 +182,12 @@ async fn main() -> Result<()> {
         "BASE_STORAGE_PATH environment variable is required (e.g., export BASE_STORAGE_PATH=/Users/username)",
     )?;
 
-    let run_config =
-        RunConfig { client_id: cli.client_id, features: cli.features, fresh: cli.fresh };
+    let run_config = RunConfig {
+        client_id: cli.client_id,
+        features: cli.features,
+        fresh: cli.fresh,
+        bitvmx_mode: cli.bitvmx_mode,
+    };
 
     let result = run_clients(run_config).await;
 
@@ -187,6 +207,7 @@ struct RunConfig {
     client_id: Option<u8>,
     features: Option<String>,
     fresh: bool,
+    bitvmx_mode: BitvmxMode,
 }
 
 async fn run_clients(config: RunConfig) -> Result<()> {
@@ -223,7 +244,7 @@ async fn run_clients(config: RunConfig) -> Result<()> {
     // launch clients and store in global state immediately
     let mut launch_error = None;
     for id in ids {
-        let envs = build_env_for_client(id, &env_map)?;
+        let envs = build_env_for_client(id, &env_map, config.bitvmx_mode)?;
         let client_id = format!("client-{}", id);
 
         println!("============================================================================");
@@ -460,7 +481,17 @@ fn materialize_env_var(
     base_storage_path: &str,
     base_key: &str,
     value: &str,
-) -> Result<(String, String)> {
+) -> Result<Option<(String, String)>> {
+    if base_key == "UB__COORDINATOR__BITVMX__PUBKEY_HASH_FILE" {
+        let resolved = read_env_file_value(base_storage_path, value).with_context(|| {
+            format!(
+                "Missing BitVMX services pubkey hash file for local launch. \
+Run `./cli-setup-operators.sh --env local --ops 4` first (expected path from local-committee override: {value})"
+            )
+        })?;
+        return Ok(Some(("UB__COORDINATOR__BITVMX__PUBKEY_HASH".to_string(), resolved)));
+    }
+
     let (final_key, final_value) = if base_key == "UB__INDEXER__STORAGE__PATH" {
         (base_key.to_string(), union_bridge_path(base_storage_path, value))
     } else if base_key == "UB__COORDINATOR__STORAGE_PATH" {
@@ -483,12 +514,13 @@ fn materialize_env_var(
         (base_key.to_string(), value.to_string())
     };
 
-    Ok((final_key, final_value))
+    Ok(Some((final_key, final_value)))
 }
 
 fn build_env_for_client(
     id: u8,
     env_map: &HashMap<String, String>,
+    bitvmx_mode: BitvmxMode,
 ) -> Result<Vec<(String, String)>> {
     validate_1_4(id, "CLIENT_ID")?;
 
@@ -503,7 +535,21 @@ fn build_env_for_client(
         if key.starts_with("UB__") && key.ends_with(&suffix) {
             // strip the _N suffix to get the base env var name
             let base_key = key.strip_suffix(&suffix).unwrap().to_string();
-            envs.push(materialize_env_var(&base_storage_path, &base_key, value)?);
+            if bitvmx_mode == BitvmxMode::Repo
+                && base_key == "UB__COORDINATOR__BITVMX__PUBKEY_HASH_FILE"
+            {
+                // Repo mode runs BitVMX from repository configs, so per-operator docker artifacts
+                // (.union_bridge/op_N/bitvmx/keys/services.pubkey_hash) may not exist.
+                // We intentionally skip this *_FILE override here and let coordinator use
+                // the default `coordinator.bitvmx.pubkey_hash` from config/base.toml.
+                continue;
+            }
+
+            if let Some((final_key, final_value)) =
+                materialize_env_var(&base_storage_path, &base_key, value)?
+            {
+                envs.push((final_key, final_value));
+            }
         }
     }
 
@@ -531,7 +577,7 @@ fn validate_local_keystores(ids: &[u8]) -> Result<()> {
             let key_path = keystore_dir.join(key_name);
             if !key_path.exists() {
                 bail!(
-                    "Missing local keystore {}. Run `./cli-operations.sh setup create-all` to recreate local artifacts.",
+                    "Missing local keystore {}. Run `./cli-setup-operators.sh --env local --ops 4` to recreate local artifacts.",
                     key_path.display()
                 );
             }
@@ -539,7 +585,7 @@ fn validate_local_keystores(ids: &[u8]) -> Result<()> {
             KeyManager::get_signer(&key_path).with_context(|| {
                 format!(
                     "Failed to decrypt local {key_name} keystore {}. \
-Check KEY_STORE_PASSWORD or rerun `./cli-operations.sh setup create-all` if the keystore was created with a different password.",
+Check KEY_STORE_PASSWORD or rerun `./cli-setup-operators.sh --env local --ops 4` if the keystore was created with a different password.",
                     key_path.display()
                 )
             })?;
@@ -767,7 +813,7 @@ mod tests {
             ),
         ]);
 
-        let envs = build_env_for_client(1, &env_map).expect("build envs");
+        let envs = build_env_for_client(1, &env_map, BitvmxMode::Docker).expect("build envs");
 
         assert!(envs
             .contains(
@@ -780,6 +826,30 @@ mod tests {
                 .display()
                 .to_string(),
         )));
+
+        let _ = fs::remove_dir_all(base_storage_path);
+        std::env::remove_var("BASE_STORAGE_PATH");
+    }
+
+    #[test]
+    fn test_build_env_for_client_ignores_bitvmx_file_in_repo_mode() {
+        let _guard = TEST_MUTEX.lock().expect("lock");
+        let base_storage_path = make_temp_dir();
+
+        std::env::set_var("BASE_STORAGE_PATH", &base_storage_path);
+
+        let env_map = HashMap::from([
+            (
+                "UB__COORDINATOR__BITVMX__PUBKEY_HASH_FILE_1".to_string(),
+                ".union_bridge/op_1/bitvmx/keys/services.pubkey_hash".to_string(),
+            ),
+            ("UB__COORDINATOR__BITVMX__PORT_1".to_string(), "22222".to_string()),
+        ]);
+
+        let envs = build_env_for_client(1, &env_map, BitvmxMode::Repo).expect("build envs");
+
+        assert!(envs.iter().any(|(k, v)| k == "UB__COORDINATOR__BITVMX__PORT" && v == "22222"));
+        assert!(!envs.iter().any(|(k, _)| k == "UB__COORDINATOR__BITVMX__PUBKEY_HASH"));
 
         let _ = fs::remove_dir_all(base_storage_path);
         std::env::remove_var("BASE_STORAGE_PATH");

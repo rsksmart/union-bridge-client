@@ -22,8 +22,8 @@ print_help() {
   echo "Usage: $0 [--env <ENV>] [--op <ID>] [OPTIONS] [DOCKER_COMPOSE_ARGS...]"
   echo ""
   echo "Before startup, prepare the operator env files on this host:"
-  echo "  ./setup_operators.sh --env local --ops 4"
-  echo "  ./setup_operators.sh --env alphanet --op 1"
+  echo "  <project_root>/cli-setup-operators.sh --env local --ops 4"
+  echo "  <project_root>/cli-setup-operators.sh --env alphanet --op 1"
   echo ""
   echo "Environment:"
   echo "  --env <ENV>              Target environment: alphanet, testnet, local, local-docker, or regtest"
@@ -337,7 +337,7 @@ require_operator_env_file() {
 
   if [[ ! -f "${file_path}" ]]; then
     echo "Error: missing prepared operator env file ${file_path}" >&2
-    echo "Run ./setup_operators.sh for this environment/operator before starting containers." >&2
+    echo "Run <project_root>/cli-setup-operators.sh for this environment/operator before starting containers." >&2
     return 1
   fi
 }

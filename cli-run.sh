@@ -3,6 +3,7 @@
 # wrapper script for run to run local operators
 # usage: ./cli-run.sh --id 1 --fresh
 #        ./cli-run.sh --features anvil
+#        ./cli-run.sh --bitvmx-mode repo
 #        ./cli-run.sh --help
 #        ./cli-run.sh --logs
 #        ./cli-run.sh --start-mine    # start background mining (anvil + bitcoin)

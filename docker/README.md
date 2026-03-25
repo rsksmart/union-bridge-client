@@ -53,7 +53,7 @@ cd docker/local-infra
 
 # Generate local per-operator BitVMX config under ~/.union_bridge/op_N/bitvmx
 cd ../operator
-./setup_operators.sh --env local --ops 4
+<project_root>/cli-setup-operators.sh --env local --ops 4
 
 # Start 4 BitVMX clients
 cd ../local-infra
@@ -118,7 +118,7 @@ Full operator deployment (BitVMX + Union Client in Docker). Use this for product
 
 **Scripts:**
 - `start_operators.sh` - Main script to manage operator stacks
-- `setup_operators.sh` - Creates or reuses broker identities and generated operator env files
+- `<project_root>/cli-setup-operators.sh` - Creates or reuses broker identities and generated operator env files
 
 **Compose files:**
 - `docker-compose.yml` - Base operator compose
@@ -131,7 +131,7 @@ Full operator deployment (BitVMX + Union Client in Docker). Use this for product
 cd docker/operator
 
 # Prepare host-side operator artifacts once
-./setup_operators.sh --env local --ops 4
+<project_root>/cli-setup-operators.sh --env local --ops 4
 
 # Start all 4 operators
 ./start_operators.sh --env local up -d
@@ -158,7 +158,7 @@ See [build/README.md](build/README.md) for detailed usage.
 The Docker setup uses two kinds of environment files:
 
 - tracked static environment files such as [`docker/operator/.env.local`](operator/.env.local), [`docker/operator/.env.alphanet`](operator/.env.alphanet), [`docker/operator/.env.regtest`](operator/.env.regtest), and [`docker/operator/.env.testnet`](operator/.env.testnet)
-- generated per-operator runtime files under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker/.env`, created by `docker/operator/setup_operators.sh`
+- generated per-operator runtime files under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker/.env`, created by `<project_root>/cli-setup-operators.sh`
 
 ## Troubleshooting
 

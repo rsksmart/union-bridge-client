@@ -47,7 +47,7 @@ The script clones `FairgateLabs/docker-bitvmx` at the chosen ref, saves the fetc
 
 This setup supports four deployment environments:
 
-- **Local** (`.env.local`): Development environment that runs multiple operators on a single host with local Bitcoin and RSK nodes (default: 4, configurable via `setup_operators.sh --ops` or `start_operators.sh --ops`)
+- **Local** (`.env.local`): Development environment that runs multiple operators on a single host with local Bitcoin and RSK nodes (default: 4, configurable via `<project_root>/cli-setup-operators.sh --ops` or `start_operators.sh --ops`)
 - **Alphanet** (`.env.alphanet`): Production-like environment where each host runs a single operator, connecting to the Alphanet testnet
 - **Testnet** (`.env.testnet`): Production-like environment where each host runs a single operator, connecting to the Bitcoin testnet
 - **Regtest** (`.env.regtest`): All 4 operators on one host, connected to shared regtest infrastructure (powpeg + node21)
@@ -131,10 +131,10 @@ Before starting Union services in Docker, prepare the operator artifacts once on
 cd docker/operator
 
 # Local/regtest on one host
-./setup_operators.sh --env local --ops 4
+<project_root>/cli-setup-operators.sh --env local --ops 4
 
 # One operator per host
-./setup_operators.sh --env alphanet --op 1
+<project_root>/cli-setup-operators.sh --env alphanet --op 1
 ```
 
 This creates or reuses:
@@ -145,7 +145,7 @@ This creates or reuses:
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/...` copied from `docker/bitvmx-client/config/<environment>`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker/.env`
 
-`setup_operators.sh` prompts for `USER_BITCOIN_WIF` only when an operator env file is missing that value and persists it there.
+`<project_root>/cli-setup-operators.sh` prompts for `USER_BITCOIN_WIF` only when an operator env file is missing that value and persists it there.
 Running setup again is incremental: existing broker identities are reused, and existing operator env files are refreshed in place so updated tags or derived broker values are applied without re-prompting for stored WIFs.
 The generated BitVMX config copy is created from the tracked template on first setup, then reused on later runs. On each run, the operator's client YAML is patched so `components.l2.pubkey_hash` matches that operator's coordinator broker identity when that field exists in the template, and the referenced BitVMX runtime keys are generated or reused under `.union_bridge/op_N/bitvmx/...` instead of being copied from the tracked template. In other words, `docker/bitvmx-client/config/<environment>` is treated as a config template, not as the source of runtime private keys.
 
@@ -201,7 +201,7 @@ bash start_operators.sh down
 #### Required Environment Variables
 
 A `USER_BITCOIN_WIF` is required for the generated operator env files because `user-api` uses it for user endpoints (pegin/pegout operations).
-`setup_operators.sh` reuses an exported `USER_BITCOIN_WIF` when present; otherwise it prompts once when creating a new operator env file, then reuses the stored value on later runs.
+`<project_root>/cli-setup-operators.sh` reuses an exported `USER_BITCOIN_WIF` when present; otherwise it prompts once when creating a new operator env file, then reuses the stored value on later runs.
 You can generate one via the `bitcoin-wallet` with `generate_address`.
 See [bitcoin-wallet README](../../cli/bitcoin-wallet/README.md) for more info.
 
@@ -215,7 +215,7 @@ bash start_operators.sh --help
 
 #### 4.1) Start local/dev (local bitcoind + anvil) using published images:
 
-Start operators (no `--op` flag for local; use `--ops` on `setup_operators.sh` and `start_operators.sh` when you want something other than the default 4 operators):
+Start operators (no `--op` flag for local; use `--ops` on `<project_root>/cli-setup-operators.sh` and `start_operators.sh` when you want something other than the default 4 operators):
 
 ```bash
 bash start_operators.sh --env local up -d
