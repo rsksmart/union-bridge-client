@@ -26,7 +26,7 @@ print_help() {
   echo ""
   echo "Creates or reuses host-side Docker operator artifacts:"
   echo "  - broker identities under ${BASE_STORAGE_PATH}/.union_bridge/op_N/broker/<service>.*"
-  echo "  - generated operator env files under ${BASE_STORAGE_PATH}/.union_bridge/op_N/docker/<env>.env"
+  echo "  - generated operator docker.env files under ${BASE_STORAGE_PATH}/.union_bridge/op_N/docker.env"
   echo "  Existing operator env files are refreshed in place."
   echo ""
   echo "Options:"
@@ -101,10 +101,10 @@ operator_root_path() {
   echo "${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}"
 }
 
-operator_env_file_path() {
+operator_docker_env_file_path() {
   local op_num="$1"
 
-  echo "$(operator_root_path "${op_num}")/docker/.env"
+  echo "$(operator_root_path "${op_num}")/docker.env"
 }
 
 bitvmx_template_dir() {
@@ -567,7 +567,7 @@ esac
 
 for op_num in "${OPERATORS_TO_RUN[@]}"; do
   project_name="$(project_name_for_operator "${op_num}")"
-  env_file_path="$(operator_env_file_path "${op_num}")"
+  env_file_path="$(operator_docker_env_file_path "${op_num}")"
   resolve_user_bitcoin_wif "${op_num}" "${project_name}" "${env_file_path}"
   user_bitcoin_wif_value="${RESOLVED_USER_BITCOIN_WIF}"
 

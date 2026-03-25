@@ -143,7 +143,10 @@ This creates or reuses:
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/broker/block-indexer.pubkey_hash`
 - the same pair for `log-indexer`, `user-api`, and `coordinator`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/...` copied from `docker/bitvmx-client/config/<environment>`
-- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker/.env`
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`
+
+The generated `docker.env` file is used only for Docker operator execution via `start_operators.sh`.
+It is not used by local cargo mode (`./cli-run.sh`).
 
 `<project_root>/cli-setup-operators.sh` prompts for `USER_BITCOIN_WIF` only when an operator env file is missing that value and persists it there.
 Running setup again is incremental: existing broker identities are reused, and existing operator env files are refreshed in place so updated tags or derived broker values are applied without re-prompting for stored WIFs.
