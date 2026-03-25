@@ -254,6 +254,15 @@ The repository ships sample files under `resources/`:
 **Steps:**
 
 1. Copy (or symlink) both files to a path that is accessible by the BitVMX client process.
+   For local runs with `config/environment/local.toml`, copy both files to `/var/tmp/bitvmx-client` so the YAML can
+   resolve the relative `hello-world.elf` reference:
+
+   ```bash
+   mkdir -p /var/tmp/bitvmx-client
+   cp resources/hello-world.yaml /var/tmp/bitvmx-client/hello-world.yaml
+   cp resources/hello-world.elf /var/tmp/bitvmx-client/hello-world.elf
+   ```
+
 2. Set the path to the `.yaml` file in the coordinator configuration:
 
    ```toml
