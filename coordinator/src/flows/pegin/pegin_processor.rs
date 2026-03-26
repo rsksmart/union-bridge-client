@@ -92,11 +92,6 @@ where
     BC: BitVmxBrokerClientApi,
     S: CoordinatorStoreApi + 'static,
 {
-    /// # Errors
-    ///
-    /// Returns an error if subscribing to BitVMX pegin events fails (e.g. broker disconnected).
-    /// Ensure the BitVMX client is running and that `coordinator.bitvmx` host/port and
-    /// `bitvmx.pubkey_hash` match the broker (see also `start_bitvmx.sh` / operator compose).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         contracts_gateway: Rc<CG>,
@@ -107,18 +102,16 @@ where
         native_bridge_verifier: NativeBridgeVerifier<CG>,
         config: PeginConfig,
         required_confirmations: u32,
-    ) -> Result<Self> {
+    ) -> Self {
         let factory = BtcSignatureSubFlowFactory::new(
             Rc::clone(&contracts_gateway),
             rt_sync.clone(),
             required_confirmations,
         );
 
-        Self::subscribe_to_bitvmx_pegin_events(&bitvmx_broker).context(
-            "Failed to subscribe to BitVMX pegin events (broker client disconnected). \
-             Start the BitVMX stack for this environment and verify coordinator config: \
-             bitvmx host/port, pubkey_hash, and broker TLS key path match the running broker.",
-        )?;
+        // Subscribe to BitVMX pegin events
+        Self::subscribe_to_bitvmx_pegin_events(&bitvmx_broker)
+            .expect("Failed to subscribe to BitVMX pegin events");
 
         info!("Successfully subscribed to BitVMX pegin events");
 
@@ -156,9 +149,9 @@ where
         };
 
         processor.pegin_flows = restore_flows(store.as_ref(), StorePrefix::PeginFlow, flow_factory)
-            .context("Failed to load pegin flows from store")?;
+            .expect("Failed to load flows from store");
 
-        Ok(processor)
+        processor
     }
 
     /// Handle `PeginRequested` event by finding and updating existing flow
