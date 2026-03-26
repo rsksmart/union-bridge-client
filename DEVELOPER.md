@@ -99,7 +99,7 @@ bash scripts/restore-untracked-configs.sh regtest local
 
 ### Environment Variables Setup
 
-The project uses environment variables for private properties and configuration overrides (see [Configuration](README.md#configuration) in README).
+The project uses environment variables for private properties and configuration overrides (see [Configuration](#configuration) below).
 
 #### Private Properties
 

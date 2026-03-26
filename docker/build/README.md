@@ -13,7 +13,7 @@ By default, the compose will use:
 - the repository `config/` directory for the Union Client config files
     - you can override any configuration value using environment variables prefixed with `UB__` matching the config structure, e.g.
       `UB__COORDINATOR__BLOCKS__HOST=192.168.1.100`
-    - see the main [README.md](../../README.md#configuration-overrides) for detailed examples and mapping rules
+    - see [DEVELOPER.md](../../DEVELOPER.md#configuration) for `UB__` override rules and examples
 
 ## Build Builder Images
 
