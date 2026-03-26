@@ -50,6 +50,19 @@ precedence:
 1. Environment variables (check in `main.rs`)
 3. Values from the TOML config file
 
+### Required Environment Variables
+
+The following environment variables must be set before running the wallet (they are **not** included in the config
+files):
+
+| Variable | CLI flag | Description |
+|---|---|---|
+| `WALLET_RPC_URL` | `--rpc-url` | Bitcoin RPC endpoint (e.g., `http://127.0.0.1:18443`) |
+| `WALLET_RPC_USER` | `--rpc-user` | Bitcoin RPC username |
+| `WALLET_RPC_PASSWORD` | `--rpc-password` | Bitcoin RPC password |
+
+If any of these is missing the wallet will exit with an error.
+
 Example `config/wallet.toml`:
 
 ```toml

@@ -204,7 +204,22 @@ bash start_operators.sh down
 
 #### Required Environment Variables
 
-A `USER_BITCOIN_WIF` is required for the generated operator env files because `user-api` uses it for user endpoints (pegin/pegout operations).
+**`BITCOIND_URL`** must be defined on every machine running operators. The BitVMX client container requires it to
+connect to a Bitcoin node. It is passed through Docker Compose variable substitution
+(`docker/bitvmx-client/docker-compose.yml`) into the container's environment.
+
+Define it in the corresponding `.env.<environment>` file or export it in the shell before starting operators:
+
+```bash
+# Format: http://<rpc_user>:<rpc_password>@<host>:<port>
+export BITCOIND_URL=http://user:password@bitcoin-node:18332
+```
+
+For **local** environments, `BITCOIND_URL` is already set in `docker/local-infra/.env.local` and flows through
+automatically. For **alphanet**, **testnet**, and **regtest** deployments, you must define it yourself — either by
+adding it to the relevant `docker/operator/.env.<environment>` file or by exporting it in the shell.
+
+**`USER_BITCOIN_WIF`** is required for the generated operator env files because `user-api` uses it for user endpoints (pegin/pegout operations).
 `<project_root>/cli-setup-operators.sh` reuses an exported `USER_BITCOIN_WIF` when present; otherwise it prompts once when creating a new operator env file, then reuses the stored value on later runs.
 You can generate one via the `bitcoin-wallet` with `generate_address`.
 See [bitcoin-wallet README](../../cli/bitcoin-wallet/README.md) for more info.

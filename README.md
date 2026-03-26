@@ -151,7 +151,9 @@ The most important environment variables that need to be exported when using the
 the Union Client) are:
 
 - `KEY_STORE_PASSWORD`: password that will be used to create the Rootstock wallets (automatic) and to
-  unlock the corresponding keystore files when running the client (see [Multi Client Setup](#Multi-Client-Setup) below)
+  unlock the corresponding keystore files when running the client (see [Multi Client Setup](#Multi-Client-Setup) below).
+  **Important:** This variable must be exported in your shell before running `cli-setup-operators.sh` or starting
+  Docker operators.
 - `BASE_STORAGE_PATH`: base path where the client will store its data (databases, keystore files, etc.). Pick a path
   that is writable and accessible by the user running the client.
 - `WALLET_PRIVATE_KEY`: a Bitcoin private key WIF. You can generate one via the `bitcoin-wallet` with

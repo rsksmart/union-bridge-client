@@ -3,10 +3,8 @@
 network = "testnet"
 sats_per_byte = 5
 
-# Default local regtest node settings for bitcoind node run inside docker container using bitcoind.rs 
-rpc_url = "http://bitcoind-01.testnet.ub.iovlabs.net:18332"
-rpc_user = "bitcoin"
-rpc_password = "aTVQ5b0mS4y27qG"
+# RPC connection: set WALLET_RPC_URL, WALLET_RPC_USER, and WALLET_RPC_PASSWORD env vars
+# (or pass --rpc-url, --rpc-user, --rpc-password CLI flags)
 
 # Root path for wallet databases (UTXOs and pending transactions)
 db_path = ".union_bridge/bitcoin-wallet"

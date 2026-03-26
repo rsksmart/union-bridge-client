@@ -1,8 +1,5 @@
 bitcoin:
   network: regtest
-  url: http://user:pass@10.1.0.107:18332
-  username: user
-  password: pass
   wallet: test_wallet
 
 key_manager:
@@ -16,7 +13,7 @@ coordinator_settings:
       checkpoint_height: 0
 
 key_storage:
-  password: SeCrEt_p4ssw0rd_5!
+  password: <to_patch_in_host>
   path: /tmp/regtest/op_4/keys.db
 
 storage:
