@@ -35,5 +35,21 @@ Configuration uses TOML under `config/`, overridable with `UB__`-prefixed enviro
    # Edit CONTRACTS_CONTEXT_PATH and CONTRACTS_DOCKERFILE if your layout differs
    ./docker/local-infra/start_blockchains.sh --contracts-tag local-build --fresh up -d
    ```
-3. For **Docker / BitVMX / operators**, see **[docker/README.md](docker/README.md)** and **[docker/operator/README.md](docker/operator/README.md)**.
-4. **CLI** helpers: **[cli/README.md](cli/README.md)**.
+3. For **Docker / BitVMX / operators**, see **[docker/README.md](docker/README.md)** and **[docker/operator/README.md](docker/operator/README.md)**. To **build or push** Union Client images, use **[docker/build/README.md](docker/build/README.md)**.
+4. **CLI** helpers: **[cli/README.md](cli/README.md)** and **[cli/bitcoin-wallet/README.md](cli/bitcoin-wallet/README.md)** (Bitcoin / regtest wallet utilities).
+
+## Documentation
+
+| Topic | README |
+|--------|--------|
+| Developer setup, config, workflows | [DEVELOPER.md](DEVELOPER.md) |
+| Docker layout (local-infra, BitVMX, operators) | [docker/README.md](docker/README.md) |
+| Operator stacks (local / alphanet) | [docker/operator/README.md](docker/operator/README.md) |
+| Image build & registry scripts | [docker/build/README.md](docker/build/README.md) |
+| CLI scripts (`cli-run`, operations, infra) | [cli/README.md](cli/README.md) |
+| Bitcoin wallet CLI | [cli/bitcoin-wallet/README.md](cli/bitcoin-wallet/README.md) |
+| CheckFork / zkVM integration | [check-fork/README.md](check-fork/README.md) |
+| Rootstock key tooling | [key-manager/README.md](key-manager/README.md) |
+| Transaction dispatcher & contract examples | [transaction-dispatcher/README.md](transaction-dispatcher/README.md) |
+| BitVMX operator keys (per environment) | [local](docker/bitvmx-client/config/local/keys/README.md), [regtest](docker/bitvmx-client/config/regtest/keys/README.md), [testnet](docker/bitvmx-client/config/testnet/keys/README.md), [alphanet](docker/bitvmx-client/config/alphanet/keys/README.md) |
+| Commit hooks & formatting | [.hooks/README.md](.hooks/README.md) |

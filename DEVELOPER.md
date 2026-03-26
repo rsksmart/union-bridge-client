@@ -2,339 +2,690 @@
 
 This guide covers setting up and running the Union Bridge Client for development and testing.
 
+## How the services fit together
+
+The client watches Rootstock via **JSON-RPC** (blocks and contract logs), persists minimal state, and drives protocol steps end-to-end. At a high level:
+
+- **Block indexer** (`block-indexer`) follows new Rootstock blocks and stores only what downstream flows need.
+- **Log indexer** (`log-indexer`) subscribes to contract logs (peg-in / peg-out and related events).
+- **Transaction dispatcher** (`transaction-dispatcher`) signs and submits Rootstock transactions.
+- **User API** (`user-api`) exposes HTTP endpoints for user-facing operations.
+- **Coordinator** (`coordinator`) orchestrates flows and talks to BitVMX (committee, advance funds, peg-in / peg-out).
+
+Processes handle **SIGINT/SIGTERM**, retry transient RPC failures, and recover after restarts using on-disk state. For a short repo overview and contributor entrypoints, see the root [README.md](README.md).
+
 ## First Time Setup
 
-Before running the Union Bridge Client for the first time:
+Before running the Union Bridge Client for the first time, you need to complete the following setup steps:
 
-1. **Clone the repository**
-2. **Restore untracked config files** (if you pulled a branch that did the repo cleanup)
-3. **Install required tools** (Rust, direnv, Foundry, etc.)
-4. **Set up required repositories** (BitVMX Workspace, BitVMX Union Bridge Contracts)
-5. **Set up environment variables** using `direnv`
-6. **Configure the client** for your environment
+1. **Clone the repository with SSH** (required for submodules access)
+2. **Install required tools** (Rust, direnv, Foundry, etc.)
+3. **Set up required repositories** (BitVMX Workspace, BitVMX Union Bridge Contracts)
+4. **Set up environment variables** using `direnv`
+5. **Configure the client** for your environment
 
-### Clone the Repository
+### Clone the repository
+
+**Important**: You must clone the repository using SSH because the project uses private submodules that require SSH
+authentication.
 
 ```bash
 git clone git@github.com:rsksmart/union-bridge-client.git
 ```
 
-### Local blockchains env (`docker/local-infra`)
-
-`docker/local-infra/.env.local` is **not** committed. Create it from the sample before running `start_blockchains.sh` or `start_bitvmx.sh`:
-
-```bash
-cp docker/local-infra/.env.local.sample docker/local-infra/.env.local
-```
-
-Edit `CONTRACTS_CONTEXT_PATH` (and `CONTRACTS_DOCKERFILE` if your directory layout differs) so Docker can build the deploy-contracts image from your contracts checkout.
-
-### Restore Untracked Config Files
-
-Environment-specific config files (keys, certs, operator YAMLs, `.env` files) are not tracked by git. After cloning or pulling a branch that removed them, restore them from git history:
-
-```bash
-bash scripts/restore-untracked-configs.sh
-```
-
-This is idempotent — files that already exist on disk are skipped. By default each file is restored from the **main merge of BitVMX 5.0.1 + contracts 0.4.0** (PR #356, commit `7cd5317c`), so you get the canonical updated layouts (e.g. operators 5–10, current YAML shapes). **Broker `*.pem` files and `client/config/keys/*` are taken only from that baseline** (no older-commit fallback) so they stay aligned with `pubkey_hash` / allow-list YAML from the same tree. Other paths may still fall back through history if missing at the baseline. Override with `RESTORE_BASE_REF=<commit>` if needed. You can target specific environments:
-
-```bash
-bash scripts/restore-untracked-configs.sh testnet
-bash scripts/restore-untracked-configs.sh regtest local
-```
-
 ### Tooling
+
+Before running the Union Bridge Client, you need to install and set up the following tools and repositories:
 
 #### Required Tools
 
-1. **Rust and Cargo** — The project is built in Rust
+1. **Rust and Cargo** - The project is built in Rust
    ```bash
+   # Install from https://www.rust-lang.org/tools/install
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
    ```
 
-2. **direnv** — For managing environment variables
+2. **direnv** - For managing environment variables
    ```bash
    # macOS
    brew install direnv
-
+   
    # Add to your shell profile (~/.zshrc or ~/.bashrc)
    eval "$(direnv hook zsh)"  # or bash
    ```
 
-3. **Foundry** — Ethereum development toolkit (includes Anvil)
+3. **Foundry** - Ethereum development toolkit (includes Anvil)
    ```bash
+   # Install Foundry
    curl -L https://foundry.paradigm.xyz | bash
    foundryup
    ```
 
 #### Optional Tools
 
-- **Docker** — For containerized deployment (see [docker/README.md](docker/README.md))
-- **act** — For running GitHub Actions locally
+- **Docker** - For containerized deployment (see [docker/README.md](docker/README.md))
+- **act** - For running GitHub Actions locally
   ```bash
   brew install act
   ```
 
 ### Required Repositories
 
-1. **BitVMX Workspace** — Contains the BitVMX client
+1. **BitVMX Workspace** - Contains the BitVMX client
 
-   Clone the [BitVMX Workspace](https://github.com/FairgateLabs/rust-bitvmx-workspace) and follow its README. Then run the BitVMX client:
+   You have to clone the [BitVMX Workspace](https://github.com/FairgateLabs/rust-bitvmx-workspace) repository and follow
+   the README instructions to set it up. Once done, you can run the BitVMX client by following the next steps:
 
    ```bash
    git clone git@github.com:FairgateLabs/rust-bitvmx-workspace.git
    cd <path_to_bitvmx_workspace_repo>/rust-bitvmx-client
-   ./run_union_example.sh
+   ./run_union_example.sh # this spins up the BitVMX client and make sure to have docker running on your machine
    ```
 
-   **Note:** Have Docker running before executing the script.
+   **Note**: Make sure to have Docker running on your machine before executing the script.
 
-2. **BitVMX Union Bridge Contracts** — Smart contracts for the Union Bridge protocol
+2. **BitVMX Union Bridge Contracts** - Smart contracts for the Union Bridge protocol
    ```bash
    git clone git@github.com:temp-rsk/bitvmx-union-bridge-contracts.git
    ```
 
-   Follow its `README.md` for initial setup.
+   Then follow its `README.md` for an initial setup.
 
 ### Environment Variables Setup
 
-The project uses environment variables for private properties and configuration overrides (see [Configuration](#configuration) below).
+The project uses environment variables for both private properties and configuration overrides (see
+[Configuration Files](#configuration-files) section).
 
 #### Private Properties
 
-The most important environment variables:
+The most important environment variables that need to be exported when using the scripts mentioned in this guide (and
+the Union Client) are:
 
-- **`KEY_STORE_PASSWORD`** — Password used to create/unlock Rootstock wallets
-- **`BASE_STORAGE_PATH`** — Base path where the client stores data (databases, keystore files, etc.)
-- **`USER_BITCOIN_WIF`** / **`MEMBER_BITCOIN_WIF`** — Bitcoin WIF keys for peg-in/peg-out and BitVMX operations (see [bitcoin-wallet README](cli/bitcoin-wallet/README.md))
+- `KEY_STORE_PASSWORD`: password that will be used to create the Rootstock wallets (automatic) and to
+  unlock the corresponding keystore files when running the client (see [Multi Client Setup](#multi-client-setup) below)
+- `BASE_STORAGE_PATH`: base path where the client will store its data (databases, keystore files, etc.). Pick a path
+  that is writable and accessible by the user running the client.
+- `WALLET_PRIVATE_KEY`: a Bitcoin private key WIF. You can generate one via the `bitcoin-wallet` with
+  `generate_address`.
+  See [bitcoin-wallet README](cli/bitcoin-wallet/README.md) for more info.
 
-We recommend using `direnv`:
+We recommend using `direnv` to manage private environment variables. Then you can set them up by:
 
-1. Copy [.envrc.sample](.envrc.sample) to `.envrc` in the project root
-2. Fill in the values you need (focus on _For local client running_ initially)
-3. Run `direnv allow` (and after any change to `.envrc`)
+1. copying `[.envrc.sample](.envrc.sample)` in the project root as `.envrc`
+2. modifying what you need. You can initially focus on the section _For local client running_.
+3. and running `direnv allow` (every time you do a change)
+
+This will automatically load the environment variables defined in the `.envrc` on the services that require them.
 
 ### Multi Client Setup
 
-The multi-client setup is mostly automated via `cli-operations.sh`. The repo supports 1–10 operators (committee size is configurable in the contracts).
+The local multi-client flow is bootstrapped through `./cli-setup-operators.sh`.
 
-#### Creating the Base Directory
+#### Bootstrap Local Operator State
 
-Under the directory in `BASE_STORAGE_PATH`:
-
-```bash
-mkdir -p .union_bridge
-```
-
-The `keystore` subdirectory is created automatically when needed.
-
-#### Generating the Broker Key
-
-The Union Bridge Client uses TLS for broker communication. Generate a broker key:
+Under the directory specified in `BASE_STORAGE_PATH`, create the base directory and then run the bootstrap helper:
 
 ```bash
-openssl genpkey -algorithm RSA -out ${BASE_STORAGE_PATH}/.union_bridge/keystore/broker.key -pkeyopt rsa_keygen_bits:2048
+mkdir -p "${BASE_STORAGE_PATH}/.union_bridge"
+./cli-setup-operators.sh --env local --ops 4
 ```
 
-This key defines the client’s `pubkey_hash` identity. When using Docker, the BitVMX entrypoint patches `components.l2.pubkey_hash` in the operator YAMLs from the keystore at startup, so local and Docker stay in sync.
+The bootstrap creates or reuses local Rootstock keystores, broker identities, and BitVMX runtime files under
+`BASE_STORAGE_PATH`, for example:
+
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/block-indexer.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/block-indexer.pubkey_hash`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/log-indexer.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/user-api.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/coordinator.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/keystore/user`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/keystore/member`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/bitvmx/keys/services.pubkey_hash`
+
+Note: local keystores (`op_N/keystore/{member,user}`) are created only in `--env local` bootstrap runs and are used by
+local cargo mode (`./cli-run.sh`). Docker operator runs use container keystore paths and do not consume these
+host-side cargo keystore files.
+
+The `.pubkey_hash` files are generated from the created PEMs and are consumed by the local launcher so the
+coordinator and user-api use explicit remote identities without duplicating raw hash values in
+`config/env_overrides/local-committee.env`.
+
+#### Configuring BitVMX Client (local cargo flow only)
+
+This section applies only when you run Union Client locally with `./cli-run.sh` and manage BitVMX separately from its
+own workspace.
+
+If you are using the Docker operator flow under [`docker/operator/`](docker/operator/README.md), skip this section:
+`./cli-setup-operators.sh` already generates per-operator BitVMX config copies under
+`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/` and patches
+`components.l2.pubkey_hash` automatically.
+
+The BitVMX client needs to know where to send messages back to the Union Bridge Client. You must configure the
+`components.l2.pubkey_hash` in the BitVMX client config files to match the operator's Union Bridge coordinator client
+identity.
+
+**1. Read each operator's coordinator pubkey_hash**
+
+For example:
+
+```bash
+cat ${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/coordinator.pubkey_hash
+cat ${BASE_STORAGE_PATH}/.union_bridge/op_2/broker/coordinator.pubkey_hash
+```
+
+**2. Update BitVMX client config files manually, operator by operator**
+
+In your `rust-bitvmx-workspace/rust-bitvmx-client/config/` directory, update each `config/op_N.yaml` so
+`components.l2.pubkey_hash` matches the same operator's Union Bridge coordinator identity:
+
+```yaml
+components:
+  l2:
+    pubkey_hash: <operator-coordinator-pubkey-hash>
+    id: 0
+```
+
+Examples:
+
+- `config/op_1.yaml` -> coordinator `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/coordinator.pubkey_hash`
+- `config/op_2.yaml` -> coordinator `${BASE_STORAGE_PATH}/.union_bridge/op_2/broker/coordinator.pubkey_hash`
+- `config/op_3.yaml` -> coordinator `${BASE_STORAGE_PATH}/.union_bridge/op_3/broker/coordinator.pubkey_hash`
+- `config/op_4.yaml` -> coordinator `${BASE_STORAGE_PATH}/.union_bridge/op_4/broker/coordinator.pubkey_hash`
+
+This step is still manual for local BitVMX setup. Union Client and BitVMX do not share the same broker keystore.
+This ensures that messages from the BitVMX client are correctly routed back to the coordinator.
+
+#### DRP Program Files
+
+Before running the committee setup, you must make the DRP program files accessible to the BitVMX client. These files
+define the program that BitVMX will execute during the dispute resolution protocol.
+
+The repository ships sample files under `resources/`:
+
+| File | Description |
+|---|---|
+| `resources/hello-world.elf` | RISC-V ELF binary executed by the BitVMX CPU |
+| `resources/hello-world.yaml` | Program definition consumed by the BitVMX client |
+
+**Steps:**
+
+1. Set the path to the `.yaml` file in the coordinator configuration:
+
+   ```toml
+   # config/base.toml  (or your environment override file)
+   [bridge.committee]
+   drp_program_definition = "/path/accessible/by/bitvmx/hello-world.yaml"
+   ```
+
+2. For the normal local + Docker-backed BitVMX flow, `config/environment/local.toml` now defaults to:
+
+   - `/app/resources/hello-world.yaml`
+
+   which matches the BitVMX Docker mounts.
+
+3. If you use `cli-run.sh --bitvmx-mode repo`, the launcher injects:
+
+   - `UB__BRIDGE__COMMITTEE__DRP_PROGRAM_DEFINITION=<project_root>/resources/hello-world.yaml`
+
 
 #### Configuring the Committee
 
-Edit the contracts (e.g. `bitvmx-union-bridge-contracts/src/CommitteeRegistry.sol`) to match the committee size you want (e.g. 4 or 10):
+You will need to tweak the committee size and requirements according to the committee you want to run. For example, to
+use a committee of 4 members, 2 Watchtowers (aka Verifiers) and 2 Operators (aka Provers), you will need to edit
+`bitvmx-union-bridge-contracts/src/CommitteeRegistry.sol` and change:
+
+```solidity
+minCommitteeWatchtowers = 3;
+minCommitteeOperators = 3;
+committeeMemberCount = 10;
+```
+
+to:
 
 ```solidity
 minCommitteeWatchtowers = 2;
 minCommitteeOperators = 2;
-committeeMemberCount = 4;   // or 10
+committeeMemberCount = 4;
 ```
 
-Then deploy the contracts and use the operations CLI for the rest of the setup. **`committeeMemberCount`** should match the number of clients you run.
+Then you should deploy the contracts, and you can use the operations CLI for the rest of the setup.
 
-#### Wallet and Committee Setup
+**Note:** The `committeeMemberCount` value should always match the number of clients you intend to run (currently
+hardcoded to 4 in the CLI).
 
-**1. Create wallets (first time only)**
+#### Next Steps After Bootstrap
 
-```bash
-./cli-operations.sh setup create-rootstock-wallets
-```
+Once the local runtime artifacts exist, the remaining local committee flow is:
 
-**2. Fund operators (after restarting Anvil or when low on funds)**
+1. Fund the operators:
 
 ```bash
 ./cli-operations.sh operator fund
 ```
 
-**3. Whitelist member addresses**
-
-Before applying to a stream, member addresses must be whitelisted on the `CommitteeRegistry` contract:
+2. Whitelist member addresses on `CommitteeRegistry`:
 
 ```bash
 ./cli-operations.sh operator whitelist --contract-address <COMMITTEE_REGISTRY_ADDRESS>
 ```
 
-The `CommitteeRegistry` address is in `config/base.toml` under the `CommitteeRegistry` contract entry.
+3. Run the local clients:
 
-**4. Apply to stream (committee setup)**
+```bash
+./cli-run.sh --fresh
+# If BitVMX is running directly from repo configs, use:
+# ./cli-run.sh --fresh --bitvmx-mode repo
+```
 
-Run this after the clients are up:
+4. Apply the operators to the stream:
 
 ```bash
 ./cli-operations.sh operator apply-stream -s 1
 ```
 
-**Note:** Each Rootstock event needs confirmations. With Anvil auto-mining this is automatic; otherwise use `cast rpc anvil_mine N`.
+The `CommitteeRegistry` contract address can be found in `config/base.toml` under the `CommitteeRegistry` entry.
+
+For the fuller local cargo workflow, usage examples, and command details, see [cli/README.md](cli/README.md).
 
 ## CLI Tools
 
-- **`cli-run.sh`** — Local client launcher for development and testing
-- **`cli-operations.sh`** — Operations toolkit for setup, operator, and user operations
-- **`cli-infra.sh`** — Start/stop blockchains and BitVMX (Docker), and regtest remote
+The project includes two CLI tools for local development and operations:
 
-See [cli/README.md](cli/README.md) for details.
+- **`cli-run.sh`**: Local client launcher for development and testing
+- **`cli-operations.sh`**: Operations toolkit for operator and user operations
 
-## Running the Union Client
+For detailed documentation, usage examples, and command references, see [cli/README.md](cli/README.md).
 
-### With Scripts
+## AWS Regtest (Essentials)
 
-Typical order:
+Access to regtest requires SSH credentials for:
+- `ubuntu@union-bridge-use2-1.regtest.rskcomputing.net`
 
-1. Have Docker running (if using Docker for blockchains/BitVMX).
-2. Start the BitVMX client workspace (or use `cli-infra.sh` for local Docker).
-3. Start Anvil, e.g. `anvil --block-time N`.
-4. Deploy `bitvmx-union-bridge-contracts` (see their README; for local regtest: `bash ./shell/script/deploy/deploy-local.sh`).
-5. Set `BASE_STORAGE_PATH` and `KEY_STORE_PASSWORD` (e.g. in `.envrc`).
-6. Run the Union Client: `./cli-run.sh -h` for options.
-
-#### Single client
+Run from repository root:
 
 ```bash
-./cli-run.sh
-# Or with a specific ID
-./cli-run.sh -i 2
-```
-
-#### Multiple clients (committee)
-
-Use `multiclient.env` for port and path separation. You can run several clients (e.g. 4 or 10) with:
-
-```bash
-./cli-run.sh
-```
-
-#### Full workflow example
-
-```bash
-# 1. Start BitVMX client (separate terminal)
-cd <path_to_bitvmx_workspace_repo>/rust-bitvmx-client
-rm -rf /tmp/broker_p2p* /tmp/regtest
-bash run_union_example.sh
-
-# 2. Start Anvil (separate terminal)
-anvil --block-time 2
-
-# 3. Deploy contracts (another terminal)
-cd <path_to_bitvmx_union_bridge_contracts>
-bash ./shell/script/deploy/deploy-local.sh
-
-# 4. Create and fund wallets
-./cli-operations.sh setup create-rootstock-wallets
-./cli-operations.sh operator fund
-
-# 5. Whitelist and apply to stream (clients must be running for apply-stream)
-./cli-operations.sh operator whitelist --contract-address <COMMITTEE_REGISTRY_ADDRESS>
-./cli-run.sh --fresh
-./cli-operations.sh operator apply-stream -s 1
-```
-
-#### Automated happy path test
-
-With BitVMX, Anvil, Bitcoin regtest, and contracts deployed:
-
-```bash
-./cli-run.sh --start-mine
-bash tests/run-happy-path.sh
-# When done:
-./cli-run.sh --stop-mine
-```
-
-Prerequisites: `USER_BITCOIN_WIF` and `MEMBER_BITCOIN_WIF` set; contracts deployed; background mining as above.
-
-#### AWS Regtest (essentials)
-
-With SSH access to the regtest instance:
-
-```bash
+# Fast path: start operators with existing config/addresses
 ./cli-infra.sh --start-regtest
-# Or full fresh:
+
+# Full fresh orchestration (rebuild + reconfigure + restart)
 ./cli-infra.sh --start-regtest --fresh
 
 # End-to-end regtest validation
 bash tests/run-happy-path-regtest.sh
 ```
 
-See [regtest-instance/README.md](regtest-instance/README.md) for full details.
+Command summary:
+- `--start-regtest`: starts operators with existing deployed addresses/config.
+- `--start-regtest --fresh`: runs full remote fresh orchestration and clean operator restart.
+
+Important: if you change branch on the regtest host (`~/union-bridge-client`), rebuild images tagged as `latest-regtest` before starting operators:
+
+```bash
+cd docker/build
+bash d-build-client.sh --tag=latest-regtest --no-cache
+```
+
+For full instance details (hosts, env vars, artifacts, validation, troubleshooting), see:
+- [`regtest-instance/README.md`](regtest-instance/README.md)
+
+## Running the Union Client
+
+### With Scripts
+
+Once you have gone through the initial setup steps, the order to start up the project suite is
+
+1. Have docker running on your local machine.
+2. Start up the rust-bitvmx-client-workspace
+3. Start anvil, opt. with auto mining with `anvil --block-time N` (where `N` is the number of seconds between blocks)
+4. Deploy the `bitvmx-union-bridge-contracts`. See corresponding `README.md`. (Hint: for local regtest deployment use
+   `bash ./shell/script/deploy/deploy-local.sh`)
+5. Make available `BASE_STORAGE_PATH` and `KEY_STORE_PASSWORD` environment variables (you can set them in your
+   `.envrc` file)
+6. Run the Union Client in the mode you want. Run `./cli-run.sh -h` to better understand the available
+   options.
+
+#### Running a Single Client
+
+You can run a single instance of the Union Client using:
+
+```bash
+# Single client mode (defaults to CLIENT_ID=1)
+./cli-run.sh
+
+# Single client with specific ID
+./cli-run.sh -i 2
+```
+
+#### Running Multiple Clients (Committee Collaboration)
+
+Some sub-flows in the main flows require committee collaboration. To achieve this locally, you can run several instances
+of Union Client and BitVMX Client using the automated local committee setup.
+
+The project includes a `config/env_overrides/local-committee.env` file that defines unique port numbers and configuration paths for each client
+instance (1-4). This ensures no collisions between different clients for:
+
+- Broker ports (block, log, user)
+- HTTP server ports
+- Database paths
+- Rootstock keystore paths
+- Broker identity paths and broker pubkey_hash file references
+- BitVMX broker ports
+
+You can run 4 clients simultaneously using the `./cli-run.sh` script:
+
+```bash
+./cli-run.sh
+```
+
+#### Automated Happy Path Test
+
+Once you have the setup running (steps 1-3 above), you can run a fully automated end-to-end test that exercises the
+complete flow:
+
+```bash
+# Prerequisites:
+# - BitVMX client running
+# - Anvil running
+# - Bitcoin regtest node running with RPC enabled
+# - Contracts deployed
+# - USER_BITCOIN_WIF and MEMBER_BITCOIN_WIF environment variables set (for deriving public keys)
+# - Background mining running (start with: ./cli-run.sh --start-mine)
+
+# Start background mining (in a separate terminal or before running the test)
+./cli-run.sh --start-mine
+
+# Run automated happy path test
+bash tests/run-happy-path.sh
+
+# Stop background mining when done
+./cli-run.sh --stop-mine
+```
+
+This test will automatically:
+
+1. Prepare wallets (clear databases, mine initial UTXOs)
+2. Fund operator wallets (Bitcoin + Rootstock)
+3. Whitelist member addresses on CommitteeRegistry
+4. Apply operators to stream
+5. Execute a pegin transaction (Bitcoin → Rootstock) with derived x-only public key
+6. Execute a pegout transaction (Rootstock → Bitcoin) with derived compressed public key
+7. Verify pegout completion in coordinator logs
+
+The test includes comprehensive health checks to detect issues early.
+
+> **Note**: The user-api endpoints now require public keys to be passed in the request body instead of deriving them
+> server-side from `USER_BITCOIN_WIF`. The test script automatically derives these keys from `USER_BITCOIN_WIF` using
+> `bitcoin-cli`. For manual testing, you can derive the keys with:
+>
+> ```bash
+> # Derive x-only public key (32 bytes) for pegin - returns 0x + 64 hex chars
+> bitcoin-cli -regtest getdescriptorinfo "wpkh($USER_BITCOIN_WIF)" | jq -r '.descriptor' | sed -E 's/^wpkh\(([0-9a-fA-F]+)\)#.*/0x\1/' | cut -c1-2,5-
+>
+> # Derive compressed public key (33 bytes) for pegout - returns 0x + 66 hex chars
+> bitcoin-cli -regtest getdescriptorinfo "wpkh($USER_BITCOIN_WIF)" | jq -r '.descriptor' | sed -E 's/^wpkh\(([0-9a-fA-F]+)\)#.*/0x\1/'
+> ```
+
+#### Troubleshooting
+
+- **Port Conflicts**: Each client uses unique ports defined in `config/env_overrides/local-committee.env`. Check this file if you encounter port
+  issues.
+- **Wallet Issues**: Re-fund wallets with `./cli-operations.sh operator fund` if needed
+- **Process Cleanup**: If services fail to start due to port conflicts or corrupt database, run:
+  ```bash
+  pkill -f "target/debug/"
+  find ${BASE_STORAGE_PATH}/.union_bridge -maxdepth 2 -type d -name database -exec rm -rf {} +
+  ```
+  **Warning:** This kills all Rust processes and prunes your database.
+- **Local Setup Issues**: Verify `BASE_STORAGE_PATH` and `KEY_STORE_PASSWORD` environment variables are set correctly
 
 ### With Docker
 
-For Docker-based deployments (blockchains + BitVMX, or full operator stack), see [docker/README.md](docker/README.md).
+For Docker-based deployments, see [docker/README.md](docker/README.md) which covers:
 
-### Development / testing
+- **Local development**: Running blockchains + BitVMX in Docker while developing Union Client with cargo
+- **Full operator deployment**: Running everything (BitVMX + Union Client) in Docker
+- **Building images**: Creating and pushing Union Client Docker images
 
-- **Mocking:** Run `./cli-mocking.sh` before `./cli-run.sh` to enable mocking (e.g. advance funds via FakePegManager).
-- **Force flags:** The coordinator supports force flags in non-production (e.g. `FORCE_ADVANCE`, `FORCE_DISPUTE`). See README or coordinator docs for activation (file-based or env).
+### Development/Testing Setup
 
-### Running crates individually
+Optionally, you can run `./cli-mocking.sh` in another terminal before starting the clients with `./cli-run.sh`. This
+will:
 
-You can run each crate with Cargo; see `cli/run/src/main.rs` for the commands used by `cli-run.sh`.
+#### Mocking Advance Funds Events via FakePegManager
 
-## Configuration
+By default (`deploy` mode), the CLI deploys `FakePegManager` against local anvil.
 
-Configuration is under `config/`, with base and environment-specific TOML files. Any value can be overridden with the `UB__` prefix: use double underscores for nesting (e.g. `UB__PROVIDER__ROOTSTOCK__URL=ws://host:4445`).
-
-## Rootstock wallet creation (manual)
-
-Normally done via `./cli-operations.sh setup create-rootstock-wallets`. For manual creation:
+For regtest, use `attach` mode (`--no-deploy`) and pass the predeployed address:
 
 ```bash
+./cli-mocking.sh \
+  --rpc-url ws://node-use2-1.regtest.rskcomputing.net:4445 \
+  --fake-peg-manager-address 0x... \
+  --no-deploy
+```
+
+You can also provide values through env vars:
+
+- `MOCKS_PRIVATE_KEY`
+- `FAKE_PEG_MANAGER_ADDRESS`
+- `CHECK_FORK_REQUIRED_NUM_BLOCKS` (optional, defaults to `5`)
+
+You will have the following commands available:
+
+- `raf` or `invoke-request-advance-funds`: start monitoring blocks for advance funds (emits RequestAdvanceFunds event)
+    - copy the printed `pegout_id`, you will need it for the next step
+- `kaf` or `invoke-advance-funds`: generate a fake advance-funds event that triggers the advance funds in Coordinator
+    - you need to provide the `pegout_id` from the previous step
+
+(check cli help for more info)
+
+#### Force Flags for Testing
+
+The coordinator supports force flags to trigger specific behaviors during testing. These flags are **only active in
+non-production environments** (Local, LocalDocker, Regtest) and are automatically disabled in Alphanet and Testnet.
+
+| Flag | Description |
+|------|-------------|
+| `FORCE_ADVANCE` | Contains a Rootstock address. The targeted operator skips the signature sub-flow, simulating operator misbehavior. Since signatures never complete, the advance funds timeout triggers naturally. |
+
+**Activation methods:**
+
+1. **File-based (recommended - hot-reloadable):**
+   ```bash
+   # Enable flags
+   echo "0xOPERATOR_ADDRESS" > /tmp/FORCE_ADVANCE
+
+   # Disable flags (remove files)
+   rm /tmp/FORCE_ADVANCE
+   ```
+
+2. **Environment variables (set at startup):**
+   ```bash
+   FORCE_ADVANCE=0xOPERATOR_ADDRESS ./cli-run.sh
+   ```
+
+**Hot-reloading:** The file-based approach allows QA to toggle flags while the coordinator is running. New flows will
+immediately pick up the change without restarting the application.
+
+### Individual Crates using Cargo
+
+Alternatively, you can run every crate individually. Check the `cli/run/src/main.rs` file for the cargo commands used to
+launch each service.
+
+## Configuration Files
+
+Configuration is **TOML** under `config/`, merged in this order (see `CommonConfig::load_config` in `common/src/config.rs`):
+
+1. **`config/base.toml`** — shared defaults. Paths may contain the placeholder `/{BASE_STORAGE_PATH}/…`; at load time that token is replaced with the `BASE_STORAGE_PATH` environment variable (fallback `.` if unset).
+2. **`config/environment/{env}.toml`** — optional overlay when you pass an environment name (e.g. `docker-regtest`, `local`). Omitted if the file does not exist.
+3. **Environment variables** with prefix **`UB__`** — last wins.
+
+Each service deserializes a crate-specific struct from the same layered sources; field paths in TOML (including dotted keys and table headers) map to `UB__` names as below.
+
+### Configuration Overrides
+
+Use **`UB__`** plus segments that mirror the **serde/TOML key path**: each nested level is separated by **`__`**. The loader uses prefix `UB`, separator `__`, and `try_parsing(false)` so values are strings until deserialization.
+
+**Rules:**
+
+- **Tables and nested fields:** `[indexer]` / `storage.path` → `UB__INDEXER__STORAGE__PATH`
+- **Dotted keys:** `provider.rootstock.url` → `UB__PROVIDER__ROOTSTOCK__URL`
+- **Top-level scalar:** `bitcoin_network` → `UB__BITCOIN_NETWORK`
+- **Arrays (e.g. `[[contracts]]`):** overrides use **`;`** as the list separator in the `config` crate (see `.list_separator(";")` in `common/src/config.rs`).
+
+**Example (aligned with `config/base.toml` and tests):**
+
+```toml
+# config fragment
+bitcoin_network = "regtest"
+
+provider.rootstock.url = "ws://127.0.0.1:4445"
+
+[indexer.storage]
+path = "/var/db"
+
+[indexer.cache]
+size = 1000
+```
+
+```bash
+export UB__BITCOIN_NETWORK=mainnet
+export UB__PROVIDER__ROOTSTOCK__URL=ws://mynode:4445
+export UB__INDEXER__STORAGE__PATH=/tmp/ub-indexer-db
+export UB__INDEXER__CACHE__SIZE=3000
+```
+
+The same pattern applies to other sections in `base.toml` / environment files (`coordinator`, `[key_store]`, `[user_api]`, per–`Cargo.toml` crate roots, etc.). Prefer editing TOML for defaults and `UB__` in Docker `.env` or the shell when you need overrides only.
+
+Implementation reference: `common/src/config.rs` (`Environment::with_prefix("UB").separator("__").list_separator(";")`).
+
+## Rootstock Wallet creation (manual)
+
+This is automated by `./cli-setup-operators.sh --env local --ops 4`, but if you want to create a wallet
+manually, you can use the `key-manager` crate for that.
+
+```
 cd key-manager
 cargo run --bin key-manager new-key -p <YOUR_PASSWORD> -d <PATH_TO_STORE_IT>
 ```
 
-To derive public data from an existing key:
+This will output:
 
-```bash
+- the local path to your key: you will have to point `config/` TOML (e.g. `[key_store]` paths and dispatcher settings) at it where applicable
+- the public key
+- the address (this will be automatically used by the wallet setup commands)
+
+Keep track of the password you used, as you will need to set it up in `KEY_STORE_PASSWORD` env var. Check the
+[Environment Variables Setup](#environment-variables-setup) section for more information on how to set it up.
+
+You can always derive the public information of the key afterward if you remember the password by running the following
+command:
+
+```
+cd key-manager
 cargo run derive-public-data -p <YOUR_PASSWORD> -k <PATH_TO_FILE>
 ```
 
-## CheckFork Tester — ELF and proof generation
+## CheckFork Tester - Generate ELF Demo
 
-See README section on CheckFork for generating `check_fork_args.bin`, the Stark proof, and SNARK verification (and the [ZK Proof](https://github.com/FairgateLabs/rust-bitvmx-zk-proof) repo).
+This utility shows how to generate the input for the _CheckFork_ function and its Stark Proof. Its purpose is just to
+serve as a reference for the integration of the new Client with _CheckFork_ and the ZKVM CLI. In a real scenario, we
+won't use the CLI but a programmatic approach via BitVMX Api (see `IncomingBitVMXApiMessages::GenerateZKP` usages in
+Coordinator crate).
 
-## Developer conventions
+### 1) Generate `check_fork_args.bin` (input to the CheckFork function)
 
-This repository uses [Conventional Commits](https://www.conventionalcommits.org/). Git hooks can enforce this (see `.hooks/README.md`).
-
-### Git hooks
+This is the input to the _CheckFork_ function that will be executed by the `zkvm_guest` within the `zkvm_host`. To
+generate it run:
 
 ```bash
+cd check-fork/tester
+cargo run --bin check-fork-tester -- -o elf
+```
+
+Some instructions on how to use this file and other parameters will be printed in the console. Example:
+
+```
+CLI Args { operation: "elf", fixture: None, bridge_event: true, fetch_start_block: 6883222, fetch_block_count: 100, cf_required_blocks: 100, cf_required_effort: 4886718345, cf_init_block: 6883221, cf_init_timestamp: 1701129600 }
+CheckForkArgs serialized to file: /Users/illuque/workspace/union-bridge/union-bridge-client/check-fork/tester/check_fork_args.bin. Total time: 1.79725ms
+GetBlocks executed and CheckForkArgs generated. Relevant parameters for the interaction with the ZKVM CLI:
+    - input: /Users/illuque/workspace/union-bridge/union-bridge-client/check-fork/tester/check_fork_args.bin
+    - elf: /Users/illuque/workspace/union-bridge/union-bridge-client/target/riscv-guest/check-fork-zkp/check-fork-guest/riscv32im-risc0-zkvm-elf/release/check-fork-guest.bin
+    - image_id: 18a4bad2542ac900b0681125ac38385d03139104e535590b67c473ac5465c078
+
+```
+
+### 2) Generate the Stark Proof
+
+With the previous output, we can now generate the Stark Proof
+Clone Fairgate's [ZK Proof](https://github.com/FairgateLabs/rust-bitvmx-zk-proof/) repo or use Workspace one - main
+branch works ATM.
+
+Then run the following command where:
+
+```bash
+cargo run --release --bin host -- prove-stark --input /Users/illuque/workspace/union-bridge/union-bridge-client/check-fork/tester/check_fork_args.bin --elf /Users/illuque/workspace/union-bridge/union-bridge-client/target/riscv-guest/check-fork-zkp/check-fork-guest/riscv32im-risc0-zkvm-elf/release/check-fork-guest.bin --output stark-proof.bin
+```
+
+An output like the following will be printed, showing _CheckFork_ execution result and the path to the resulting stark
+proof `stark-proof.bin`.
+
+```
+[/Users/illuque/.cargo/git/checkouts/union-bridge-check-fork-47c61d4052b7ed6f/6d36b88/check_fork/src/lib.rs:89:5] (cumulative_effort, required_effort) = (
+    3133842214971570006248820,
+    100,
+)
+Guest output: ACCEPT, check_fork effort: 3133842214971570006248820
+The proof was executed, and the receipt saved to the file: stark-proof.bin. Total time: 128.501263917s
+```
+
+### 3) Generate the Snark Proof (from the Stark) & Verify the Snark Proof
+
+Please check
+the [SNARK proof section](https://github.com/FairgateLabs/rust-bitvmx-zk-proof?tab=readme-ov-file#snark-proof) on 
+**rust-bitvmx-zk-proof** repository README for the remaining steps. Please note this is a WIP project.
+
+## Developer setup & team conventions
+
+This repository follows
+the [Conventional Commits](https://www.conventionalcommits.org/en/about/#tooling-for-conventional-commits) convention,
+and we have some git hooks to enforce it (check `.hooks/README.md` for more info).
+
+Before contributing to the project, please run the following commands to set up the project:
+
+## 1. Install _rust_ and _cargo_
+
+https://www.rust-lang.org/tools/install
+
+### 2. Install _rusty-hook_
+
+This crate is used for commit hooks management.
+Run the following commands to install and initialize _rusty-hook_:
+
+```
 cargo install rusty-hook
 rusty-hook init
 ```
 
-### Formatting
+## Install formatting tools
 
-- **rustfmt** (nightly, for `rustfmt.toml` features):
-  ```bash
-  rustup component add rustfmt --toolchain nightly
-  ```
-- **cargo-sort** for `Cargo.toml`:
-  ```bash
-  cargo install cargo-sort
-  ```
+Install `rustfmt` nightly, as it supports features we use in `rustfmt.toml` like imports reorder and grouping:
 
-Configuration: [rusty-hook.toml](rusty-hook.toml).
+```bash
+rustup component add rustfmt --toolchain nightly
+```
 
-### CI
+Install `cargo-sort` to sort dependencies in `Cargo.toml` files:
 
-For GitHub Actions and local testing with `act`, see [.github/WORKFLOWS.md](.github/WORKFLOWS.md).
+```bash
+cargo install cargo-sort
+```
+
+Together with the hooks, these tools will help you keep the codebase clean and consistent on `pre-commit`.
+
+The file [rusty-hook.toml](rusty-hook.toml) will be used for hook configuration.
+
+### GitHub Actions
+
+For information about the GitHub Actions workflows in this project, including how to test them locally with `act`, see
+[.github/WORKFLOWS.md](.github/WORKFLOWS.md).

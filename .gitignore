@@ -46,5 +46,5 @@ docker/bitvmx-client/config/testnet/
 docker/bitvmx-client/config/alphanet/
 docker/bitvmx-client/config/regtest/
 
-# BitVMX local config (operator YAMLs, keys, broker config — machine-specific, restore via scripts/restore-untracked-configs.sh)
+# BitVMX local: untracked overrides next to tracked YAML (keys, patched YAML); use cli-setup-operators.sh / entrypoints
 docker/bitvmx-client/config/local/
