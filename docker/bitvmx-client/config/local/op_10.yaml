@@ -35,13 +35,13 @@ components:
     pubkey_hash: <to_patch_in_host>
     id: 0
   bitvmx:
-    pubkey_hash: 1d10fa43ebbf6674d74caa3e9032711ade09d98ea7d20f89459f61152bebda1e
+    pubkey_hash: <to_patch_in_host>
     id: 0
   emulator:
-    pubkey_hash: c356750c04776008418c31cb1fd3d9dad936e5487358eeb8961b68831f419125
+    pubkey_hash: <to_patch_in_host>
     id: 0
   prover:
-    pubkey_hash: 054dba5c41ee2926a7d909cc3443fa78f2f2e257cb1d008fd75e0d3534e3ba0d
+    pubkey_hash: <to_patch_in_host>
     id: 0
 
 testing:

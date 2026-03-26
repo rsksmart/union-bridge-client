@@ -28,7 +28,6 @@ services:
       retries: 3
       start_period: 10s
       test: ["CMD", "pgrep", "-f", "block-indexer"] # TODO improve with health endpoint
-    entrypoint: ["sh", "/app/key-setup.sh"]
     command: ["sh", "-c", "/app/block-indexer --env $ENV_NAME"]
 
   log-indexer:
@@ -54,7 +53,6 @@ services:
       retries: 3
       start_period: 10s
       test: ["CMD", "pgrep", "-f", "log-indexer"] # TODO improve with health endpoint
-    entrypoint: ["sh", "/app/key-setup.sh"]
     command: ["sh", "-c", "/app/log-indexer --env $ENV_NAME"]
 
   coordinator:
