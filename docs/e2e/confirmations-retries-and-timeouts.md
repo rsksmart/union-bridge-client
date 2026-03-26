@@ -20,3 +20,5 @@ For the sequence context, see [Union Bridge Flows](flows.md).
 ## Notes
 
 The important operational detail is that an SPV proof from BitVMX is not always enough to trigger an immediate Rootstock write. The Union Client can still postpone the write if the Native Bridge confirmation checks do not yet consider the Bitcoin transaction mature enough.
+
+The Native Bridge confirmation gate is environment-dependent. In `alphanet`, `regtest`, and `testnet`, the Union Client uses the real Native Bridge verifier and checks `get_btc_confirmations` before the corresponding Rootstock write. In other environments, it uses a dummy verifier that skips that Native Bridge check, so this extra gate does not apply there.

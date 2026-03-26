@@ -20,6 +20,8 @@ For the sequence context, see [Union Bridge Flows](flows.md).
 
 ## `SetVar` Values Published by Union Client
 
+BitVMX variable names passed to `SetVar` are **case-sensitive**. The name string must match exactly what the program and the Union Client expect (for example, `PeginAccepted` and `pegin_accepted` are different variables). Typos or different casing will not resolve to the same slot in BitVMX.
+
 | `SetVar` name | Used in | Purpose |
 | --- | --- | --- |
 | `union_settings` | committee and dispute setup | publishes the shared runtime settings used by dispute setup |
