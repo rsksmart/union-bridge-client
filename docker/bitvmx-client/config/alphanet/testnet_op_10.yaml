@@ -12,27 +12,53 @@ key_storage:
   path: /tmp/op_10/keys.db
 storage:
   path: /tmp/op_10/storage.db
-p2p:
-  address: /ip4/10.1.1.193/tcp/61180
-  key: config/keys/op_10.key
-  peer_id_file: peer_id
-  timeout: 5
+comms:
+  address: 10.1.1.193:61180
+  priv_key: config/keys/op_10.key
+  storage_path: /tmp/op_10/comms.db
 coordinator_settings:
   max_feerate_sat_vb: 2
   monitor_settings:
     indexer_settings:
-      checkpoint_height: 4807400
+      checkpoint_height: 4896036
 coordinator:
   throtthle_bitcoin_updates_until_sync: 1
   throtthle_bitcoin_updates: 1
-broker_storage:
-  path: /tmp/op_10/broker.db
-broker_port: 22222
+broker:
+  allow_list: config/allow_list.yaml
+  routing_table: config/routing_table.yaml
+  port: 22222
+  ip: 10.1.1.193
+  priv_key: config/keys/services.key
+  storage:
+    path: /tmp/op_10/broker.db
+components:
+  l2:
+    pubkey_hash: <to_patch_in_host>
+    id: 0
+  bitvmx:
+    pubkey_hash: <to_patch_in_host>
+    id: 0
+  emulator:
+    pubkey_hash: <to_patch_in_host>
+    id: 0
+  prover:
+    pubkey_hash: <to_patch_in_host>
+    id: 0
+testing:
+  l2:
+    priv_key: config/keys/l2.key
+    id: 0
+  emulator:
+    priv_key: config/keys/emulator.key
+    id: 0
+  prover:
+    priv_key: config/keys/prover.key
+    id: 0
 client:
   retry: 1
-  # Delay between retries in milliseconds
   retry_delay: 1000
 
 wallet:
   db_path: /tmp/testnet/op_10/wallet.db
-  start_height: 4807400
+  start_height: 4896036

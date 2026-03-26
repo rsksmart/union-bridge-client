@@ -59,12 +59,18 @@ broker.key_path = "/app/broker.pem"
 drp_program_definition = "/app/resources/hello-world.yaml"
 
 # ═══════════════════════════════════════════════════════
+# Key Store
+# ═══════════════════════════════════════════════════════
+
+[key_store]
+user_path = "/keystore/user-key.json" # should match the one configured in key-setup.sh
+member_path = "/keystore/member-key.json" # should match the one configured in key-setup.sh
+
+# ═══════════════════════════════════════════════════════
 # Transaction Dispatcher
 # ═══════════════════════════════════════════════════════
 
 [transaction_dispatcher]
-key_store.user_path = "/keystore/user-key.json" # should match the one configured in key-setup.sh
-key_store.member_path = "/keystore/member-key.json" # should match the one configured in key-setup.sh
 
 [block_indexer]
 broker_key_path = "/app/broker.pem"

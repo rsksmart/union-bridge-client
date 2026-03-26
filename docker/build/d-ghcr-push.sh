@@ -62,7 +62,7 @@ if [[ $DRY_RUN -eq 1 ]]; then
   echo "🔍 DRY RUN: Would push images with tag: $UC_TAG"
   echo ""
   echo "Commands that would be executed:"
-  echo "  docker push ghcr.io/rsksmart/union-client-builder:rust-1.86-v1"
+  echo "  docker push ghcr.io/rsksmart/union-client-builder:rust-1.88-v1"
   echo "  docker push ghcr.io/rsksmart/union-client-block-indexer:$UC_TAG"
   echo "  docker push ghcr.io/rsksmart/union-client-log-indexer:$UC_TAG"
   echo "  docker push ghcr.io/rsksmart/union-client-coordinator:$UC_TAG"
@@ -74,7 +74,7 @@ else
 
   # order seems to matter (same order as defined in compose file)
   # Note: Images should already be tagged by the build scripts
-  docker push ghcr.io/rsksmart/union-client-builder:rust-1.86-v1
+  docker push ghcr.io/rsksmart/union-client-builder:rust-1.88-v1
   docker push ghcr.io/rsksmart/union-client-block-indexer:$UC_TAG
   docker push ghcr.io/rsksmart/union-client-log-indexer:$UC_TAG
   docker push ghcr.io/rsksmart/union-client-coordinator:$UC_TAG
