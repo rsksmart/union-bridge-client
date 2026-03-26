@@ -8,7 +8,7 @@ key_manager:
   network: testnet
   key_derivation_path: m/101/1/0/0/
 key_storage:
-  password: secret_password_8
+  password: SeCrEt_p4ssw0rd_8!
   path: /tmp/op_7/keys.db
 storage:
   path: /tmp/op_7/storage.db
