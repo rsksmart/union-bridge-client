@@ -440,7 +440,9 @@ The test includes comprehensive health checks to detect issues early.
 
 ### With Docker
 
-For Docker-based deployments, see [docker/README.md](docker/README.md) which covers:
+**Local blockchains** (bitcoind + Anvil + contract deploy): the repo includes **[`docker/local-infra/.env.local`](docker/local-infra/.env.local)** with non-secret defaults (public Anvil mnemonic/keys, local RPC users). Adjust `CONTRACTS_CONTEXT_PATH` and `CONTRACTS_DOCKERFILE` for your checkout layout, then run [`docker/local-infra/start_blockchains.sh`](docker/local-infra/start_blockchains.sh) (see [docker/README.md](docker/README.md) under `local-infra/`).
+
+For Docker-based deployments more broadly, see [docker/README.md](docker/README.md) which covers:
 
 - **Local development**: Running blockchains + BitVMX in Docker while developing Union Client with cargo
 - **Full operator deployment**: Running everything (BitVMX + Union Client) in Docker

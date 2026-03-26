@@ -26,17 +26,9 @@ Configuration uses TOML under `config/`, overridable with `UB__`-prefixed enviro
 
 ---
 
-## For contributors — run locally
+## For contributors
 
-1. Read **[DEVELOPER.md](DEVELOPER.md)** for toolchain (Rust, Foundry, Docker, optional direnv).
-2. For the **local blockchains** stack (bitcoind + anvil + contract deploy), copy env and start compose:
-   ```bash
-   cp docker/local-infra/.env.local.sample docker/local-infra/.env.local
-   # Edit CONTRACTS_CONTEXT_PATH and CONTRACTS_DOCKERFILE if your layout differs
-   ./docker/local-infra/start_blockchains.sh --contracts-tag local-build --fresh up -d
-   ```
-3. For **Docker / BitVMX / operators**, see **[docker/README.md](docker/README.md)** and **[docker/operator/README.md](docker/operator/README.md)**. To **build or push** Union Client images, use **[docker/build/README.md](docker/build/README.md)**.
-4. **CLI** helpers: **[cli/README.md](cli/README.md)** and **[cli/bitcoin-wallet/README.md](cli/bitcoin-wallet/README.md)** (Bitcoin / regtest wallet utilities).
+Use **[DEVELOPER.md](DEVELOPER.md)** for toolchain, environment, local blockchains (`docker/local-infra`), and running the client. For Docker layout and scripts (BitVMX, operators, images), see **[docker/README.md](docker/README.md)**.
 
 ## Documentation
 
