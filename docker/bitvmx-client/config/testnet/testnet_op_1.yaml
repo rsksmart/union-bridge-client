@@ -21,7 +21,7 @@ coordinator_settings:
   max_feerate_sat_vb: 2
   monitor_settings:
     indexer_settings:
-      checkpoint_height: 4890000
+      checkpoint_height: 4895000
 coordinator:
   throtthle_bitcoin_updates_until_sync: 1
   throtthle_bitcoin_updates: 1
@@ -34,4 +34,4 @@ client:
 
 wallet:
   db_path: /tmp/testnet/op_1/wallet.db
-  start_height: 4890000
+  start_height: 4895000
