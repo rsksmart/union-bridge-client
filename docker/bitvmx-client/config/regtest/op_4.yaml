@@ -16,7 +16,7 @@ coordinator_settings:
       checkpoint_height: 0
 
 key_storage:
-  password: secret_password_5
+  password: SeCrEt_p4ssw0rd_5!
   path: /tmp/regtest/op_4/keys.db
 
 storage:
