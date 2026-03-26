@@ -21,4 +21,6 @@ For the sequence context, see [Union Bridge Flows](flows.md).
 
 ## Notes
 
+The method or variable name string inside `Variable(program_id, name, …)` is matched **case-sensitively** in the client (for example, `"pegin_accepted"` and `"PeginAccepted"` are distinct), consistent with `SetVar` naming in [BitVMX actions triggered by Union Client](bitvmx-actions-triggered-by-union-client.md).
+
 The Union Client does not treat these messages as isolated events. Each message is interpreted in the context of a current flow id, committee state, and Rootstock event history. In practice, the same message type may be valid in one flow stage and meaningless in another.

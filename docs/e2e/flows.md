@@ -28,34 +28,123 @@ The final stage begins when the Union Client publishes the dispute-related input
 
 This flow can pause if the local member is not eligible, if committee data is still incomplete, if communication endpoints or key material are still missing, or if BitVMX does not return the expected funding and dispute variables. It is also delayed by the Rootstock confirmation rules attached to the committee events that define when the setup can be treated as stable.
 
+The sequence below is grouped by the `Steps` enum in [`setup_committee_flow.rs`](../../coordinator/src/flows/committee/setup_committee_flow.rs) (plus processor startup, which is not a flow step). Rootstock events shown with `RC-->>UC` are the ones the setup committee processor uses to advance the state machine after confirmations; [`MemberInfoDeposited`](rootstock-contract-events-listened-by-union-client.md) can still occur on-chain as members deposit keys but is not a step boundary in that processor.
+
+In the diagram, **`loop` blocks that mention committee members** iterate over the **roster of that committee** (each member index, or each pair of members), as in the Rust code. The exception is **GetMyTakeKey … SignMyCommKey**, which only runs three times for the **local** participant (take / dispute / comm key lines), not once per committee size.
+
 ```mermaid
 sequenceDiagram
     participant RC as Rootstock Contracts
     participant UC as Union Client
     participant BV as BitVMX
 
+    Note over UC,BV: Processor startup (once) — not a Steps variant
     UC->>BV: SetVar(GLOBAL_SETTINGS_UUID, "union_settings", UnionSettings)
-    RC-->>UC: NewPendingCommittee / NewCommittee / AllCommunicationDataReady / MemberInfoDeposited
-    UC->>RC: is_whitelisted()
-    UC->>RC: apply_to_stream()
-    UC->>BV: GetFundingBalance(req_id)
-    BV-->>UC: FundingBalance(req_id, sats)
-    UC->>BV: GetCommInfo(req_id)
-    BV-->>UC: CommInfo(req_id, CommsAddress)
-    UC->>RC: deposit_communication_data(...)
-    UC->>RC: deposit_aggregated_key(...)
-    UC->>RC: get_committee(...)
-    UC->>BV: SetVar(committee_id, "ADVANCE_FUNDS_INPUT", utxo)
-    UC->>BV: SetFundingUtxo(utxo)
-    UC->>BV: SetVar(committee_id, "committee", Committee)
-    UC->>BV: SetVar(protocol_id, "dispute_core_data", DisputeCoreData)
-    UC->>BV: Setup(protocol_id, "dispute_core", participants, no_leader)
-    UC->>BV: GetVar(dispute_core_pid, "OP_COSIGN_UTXOS")
-    UC->>BV: GetVar(dispute_core_pid, "WT_INIT_CHALLENGE_UTXOS")
-    BV-->>UC: Variable(dispute_core_pid, "OP_COSIGN_UTXOS", ...)
-    BV-->>UC: Variable(dispute_core_pid, "WT_INIT_CHALLENGE_UTXOS", ...)
-    UC->>BV: SetVar(drp_id, DisputeConfiguration::NAME, config)
-    UC->>BV: Setup(drp_id, "drp", [operator, watchtower], no_leader)
+
+    rect rgb(240, 248, 255)
+        Note over UC: Init
+        Note over UC: complete_step(UserRequest) → start ValidateBalances
+    end
+
+    rect rgb(240, 248, 255)
+        Note over UC,RC: ValidateBalances
+        UC->>RC: get_balance()
+        UC->>BV: GetFundingBalance(req_id)
+        BV-->>UC: FundingBalance(req_id, sats)
+    end
+
+    rect rgb(240, 248, 255)
+        Note over UC,BV: GetMyCommInfo
+        UC->>BV: GetCommInfo(req_id)
+        BV-->>UC: CommInfo(req_id, CommsAddress)
+    end
+
+    rect rgb(240, 248, 255)
+        Note over UC,BV: GetMyTakeKey … SignMyCommKey (take, dispute, comm)
+        loop local participant only: each key type (take / dispute / comm)
+            UC->>BV: GetEvenPubKey(req_id)
+            BV-->>UC: PubKey(req_id, pubkey)
+            UC->>BV: SignMessage(sign_req_id, hash, pubkey)
+            BV-->>UC: SignedMessage(sign_req_id, r, s, rec_id)
+        end
+    end
+
+    rect rgb(240, 248, 255)
+        Note over UC,BV: FundMyBitVmxAccount
+        UC->>BV: SendFunds(req_id, Batch(P2WPKH …), fee_rate)
+        BV-->>UC: FundsSent(req_id, txid)
+    end
+
+    rect rgb(240, 248, 255)
+        Note over UC,RC: ApplyToStream
+        UC->>RC: is_whitelisted() — inside apply_to_stream
+        UC->>RC: apply_to_stream(...)
+        RC-->>UC: NewPendingCommittee (confirmed) → complete_step(PendingCommittee)
+    end
+
+    rect rgb(240, 248, 255)
+        Note over UC,RC: DepositP2PData
+        UC->>RC: deposit_communication_data(...)
+        RC-->>UC: AllCommunicationDataReady (confirmed) → complete_step(ReadyCommunicationData)
+        UC->>RC: get_committee_communication_data + get_member_public_keys (per committee member in code)
+    end
+
+    rect rgb(240, 248, 255)
+        Note over UC,BV: SetupTakeAggregatedKey
+        UC->>BV: SetupKey(take_agg_id, comms, committee_take_keys, no_leader)
+        BV-->>UC: AggregatedPubkey → PublicKey (aggregated take)
+    end
+
+    rect rgb(240, 248, 255)
+        Note over UC,BV: SetupDisputeAggregatedKey
+        UC->>BV: SetupKey(dispute_agg_id, comms, committee_dispute_keys, no_leader)
+        BV-->>UC: AggregatedPubkey → PublicKey (aggregated dispute)
+    end
+
+    rect rgb(240, 248, 255)
+        Note over UC,RC: DepositAggregatedKey
+        UC->>RC: deposit_aggregated_key(...)
+        RC-->>UC: NewCommittee / NewCommitteeReady (confirmed) → complete_step(ReadyCommittee)
+    end
+
+    rect rgb(240, 248, 255)
+        Note over UC,BV: SetupPairwiseKeys (each prover↔prover pair in the committee)
+        UC->>BV: SetupKey(pair_pid, pairwise_comms, participant_keys=None, no_leader)
+        BV-->>UC: AggregatedPubkey → PairwiseAggregatedKey (one per pair)
+    end
+
+    rect rgb(240, 248, 255)
+        Note over UC,BV: SetupDisputeCore
+        UC->>BV: SetVar(committee_id, ADVANCE_FUNDS_INPUT, utxo)
+        UC->>BV: SetFundingUtxo(speedup_utxo)
+        UC->>BV: SetVar(committee_id, "committee", Committee JSON)
+        loop each committee member → dispute_core protocol_id for that member
+            UC->>BV: SetVar(protocol_id, dispute_core_data, DisputeCoreData JSON)
+            UC->>BV: Setup(protocol_id, "dispute_core", p2p_addresses, no_leader)
+            BV-->>UC: SetupCompleted(protocol_id)
+        end
+    end
+
+    rect rgb(240, 248, 255)
+        Note over UC,BV: RequestDisputeChannelVars
+        loop each dispute_core pid tied to a committee member (self + partners per rules)
+            UC->>BV: GetVar(pid, OP_COSIGN_UTXOS)
+            UC->>BV: GetVar(pid, WT_INIT_CHALLENGE_UTXOS)
+            BV-->>UC: Variable(pid, OP_COSIGN_UTXOS, …)
+            BV-->>UC: Variable(pid, WT_INIT_CHALLENGE_UTXOS, …)
+        end
+    end
+
+    rect rgb(240, 248, 255)
+        Note over UC,BV: DisputeChannelSetup
+        loop each operator↔watchtower pair in the committee (drp_id)
+            UC->>BV: SetVar(drp_id, DisputeConfiguration::NAME, config JSON)
+            UC->>BV: Setup(drp_id, "drp", [operator, watchtower], no_leader)
+            BV-->>UC: SetupCompleted(drp_id)
+        end
+    end
+
+    Note over UC: Done (or Done early if not selected on PendingCommittee)
 ```
 
 ## Flow: Pegin
@@ -68,9 +157,9 @@ The flow begins when BitVMX reports [`PeginTransactionFound`](bitvmx-messages-li
 
 [`PeginRequested`](rootstock-contract-events-listened-by-union-client.md) is the point where the flow stops being only a Bitcoin-side observation and becomes an official bridge flow. This is where the flow receives its Rootstock identity through the relevant [`parameter sources and mappings`](parameter-sources-and-mappings.md), especially the `committee_id` and `slot_id` that replace the temporary txid-based identity. From then on, the flow is no longer just a detected deposit. It is a specific pegin assigned to a specific committee slot. With that identity in place, the client can publish the Rootstock-derived pegin context back into BitVMX so the accept-pegin branch can be prepared.
 
-The next major change happens when BitVMX returns [`Variable(flow_id, "pegin_accepted", ...)`](bitvmx-messages-listened-by-union-client.md). At that point, the accept-pegin path has concrete Bitcoin transaction identifiers, including the `accept_pegin_txid`, and the flow has what it needs to move toward closure. The Bitcoin accept-pegin transaction is then dispatched and tracked until it becomes provable. When that proof is available and mature enough under the configured [confirmations, retry delays, and timeouts](confirmations-retries-and-timeouts.md), the flow returns to Rootstock through [`accept_pegin`](rootstock-contract-functions-called-by-union-client.md).
+The next major change happens when BitVMX returns [`Variable(flow_id, "pegin_accepted", ...)`](bitvmx-messages-listened-by-union-client.md) with a **`PeginAcceptedMessage`**. That is not the same thing as the Rootstock [`PeginAccepted`](rootstock-contract-events-listened-by-union-client.md) event: it is the BitVMX-side payload that carries `accept_pegin_txid` (and operator transaction ids for provers). Each **Prover** then calls [`add_operator_take_tx_hash`](rootstock-contract-functions-called-by-union-client.md) on **SignatureManager**; **Verifiers** skip that call. Nothing proceeds to dispatch until Rootstock emits [`AllOperatorTakeTxidsAdded`](rootstock-contract-events-listened-by-union-client.md) (with confirmations), which is when the client starts the **BTC signature subflow**. After signatures complete, the accept-pegin transaction is dispatched, polled on Bitcoin (`GetTransaction`), and proven with a second SPV round before [`accept_pegin`](rootstock-contract-functions-called-by-union-client.md) on Rootstock.
 
-The flow is complete when [`PeginAccepted`](rootstock-contract-events-listened-by-union-client.md) confirms on Rootstock. That event marks the point where the pegin is no longer in transition between systems. It has moved from Bitcoin detection, to Rootstock recognition, to accepted bridge state. Before that point, the flow can still pause while waiting for the initial proof, the official Rootstock recognition, the accept-pegin payload, the Bitcoin transaction to mature, or the final proof to satisfy the bridge checks.
+The flow is complete when [`PeginAccepted`](rootstock-contract-events-listened-by-union-client.md) confirms on Rootstock. The client then notifies BitVMX with [`SetVar(flow_id, "PeginAccepted", ...)`](bitvmx-messages-listened-by-union-client.md) using the **string name `PeginAccepted`**, which is distinct from the incoming **`"pegin_accepted"`** variable. Before that point, the flow can still pause while waiting for proofs, Rootstock confirmations, the BitVMX payload, all operator take hashes, the signature subflow, Bitcoin maturity for the accept-pegin tx, or Native Bridge checks on the final proof.
 
 ```mermaid
 sequenceDiagram
@@ -79,25 +168,32 @@ sequenceDiagram
     participant PM as Rootstock Contracts
     participant SM as SignatureManager
 
+    Note over UC,BV: Until PeginRequested confirms, the client tracks this flow by Bitcoin txid; afterward BitVMX uses a stable flow id from committee + slot.
     BV-->>UC: PeginTransactionFound(txid, status)
     UC->>BV: GetSPVProof(txid)
     BV-->>UC: SPVProof(txid, request_pegin_spv)
     UC->>PM: request_pegin(request_pegin_spv)
-    PM-->>UC: PeginRequested
+    PM-->>UC: PeginRequested (after confirmations)
     UC->>BV: GetCommInfo(req_id)
     BV-->>UC: CommInfo(req_id, CommsAddress)
-    UC->>PM: get_committee / get_member_public_keys / get_committee_communication_data
+    UC->>PM: get_committee (build PeginRequestMessage)
     UC->>BV: SetVar(flow_id, "pegin_request", PeginRequestMessage)
+    UC->>PM: get_committee_communication_data + get_member_public_keys (per member)
     UC->>BV: Setup(flow_id, "accept_pegin", participants, 0)
     BV-->>UC: Variable(flow_id, "pegin_accepted", PeginAcceptedMessage)
-    UC->>SM: add_operator_take_tx_hash(accept_pegin_txid, operator_take_txid, operator_won_txid)
+    opt Prover (operator)
+        UC->>SM: add_operator_take_tx_hash(accept_pegin_txid, operator_take_txid, operator_won_txid)
+    end
+    PM-->>UC: AllOperatorTakeTxidsAdded (after confirmations)
+    Note over UC,BV: BTC signature subflow (Rootstock nonce/signature events + BitVMX)
     UC->>BV: DispatchTransactionName(flow_id, "ACCEPT_PEGIN_TX")
+    UC->>BV: GetTransaction(flow_id, accept_pegin_txid)
     BV-->>UC: Transaction(flow_id, tx_status, ...)
     UC->>BV: GetSPVProof(accept_pegin_txid)
     BV-->>UC: SPVProof(accept_pegin_txid, accept_pegin_spv)
     UC->>PM: accept_pegin(accept_pegin_spv)
-    PM-->>UC: PeginAccepted
-    UC->>BV: SetVar(flow_id, "PeginAccepted", pegin_accepted_event_json)
+    PM-->>UC: PeginAccepted (after confirmations)
+    UC->>BV: SetVar(flow_id, "PeginAccepted", RSK event JSON)
 ```
 
 ## Flow: Pegout
@@ -106,13 +202,17 @@ The pegout flow starts on Rootstock and aims to finish as a pegout that has comp
 
 ### Sequence
 
-The flow begins when Rootstock emits [`PegoutRequested`](rootstock-contract-events-listened-by-union-client.md). That event marks the point where the pegout exists as an official request in the bridge state. Once it satisfies the configured [confirmations, retry delays, and timeouts](confirmations-retries-and-timeouts.md), the flow gains a concrete identity through the relevant [`parameter sources and mappings`](parameter-sources-and-mappings.md), and the user-take branch can be prepared in BitVMX with the committee and communication context attached to that pegout.
+The flow begins when Rootstock emits [`PegoutRequested`](rootstock-contract-events-listened-by-union-client.md). After it satisfies the configured [confirmations, retry delays, and timeouts](confirmations-retries-and-timeouts.md), the client creates a pegout flow with a **stable BitVMX `flow_id`** derived from committee and slot (see [`parameter sources and mappings`](parameter-sources-and-mappings.md)), then loads comms and BitVMX setup for the user-take program.
 
-The next major shift happens when BitVMX returns [`Variable(flow_id, "pegout_accepted", ...)`](bitvmx-messages-listened-by-union-client.md). At that point, the pegout has a concrete Bitcoin user-take path, including the `user_take_txid` and the signature material needed for that transaction to be dispatched. The signature stage then progresses through the relevant Rootstock milestones, especially [`AllNoncesReady`](rootstock-contract-events-listened-by-union-client.md) and [`AllSignaturesReady`](rootstock-contract-events-listened-by-union-client.md), until the user-take transaction can actually move onto Bitcoin.
+The next major shift happens when BitVMX returns [`Variable(flow_id, "pegout_accepted", ...)`](bitvmx-messages-listened-by-union-client.md) (`PegOutAccepted` JSON). That payload includes `user_take_txid` and the nonce/signature material used to start the **BTC signature subflow** in the same handler: Rootstock milestones such as [`AllNoncesReady`](rootstock-contract-events-listened-by-union-client.md) and [`AllSignaturesReady`](rootstock-contract-events-listened-by-union-client.md) together with BitVMX drive member nonces and signatures (against SignatureManager).
 
-From there, the flow advances toward completion by turning that prepared Bitcoin path into a provable outcome. The transaction is dispatched and then tracked through [`Transaction(flow_id, tx_status, ...)`](bitvmx-messages-listened-by-union-client.md) until it is mature enough to be proven back on Rootstock. Once the proof is accepted through [`register_pegout`](rootstock-contract-functions-called-by-union-client.md), the closing milestone appears as [`PegoutRegistered`](rootstock-contract-events-listened-by-union-client.md). That event marks the point where the pegout has completed its normal user-take route.
+While the pegout flow is waiting in **`DispatchTransaction`** for that signature subflow, the client schedules an **advance-funds timeout** on the next Rootstock block timestamp: `advance_funds_timeout_secs` from pegout config (see [confirmations, retry delays, and timeouts](confirmations-retries-and-timeouts.md)). If signatures finish in time, the timeout is **cancelled** and the happy path continues: dispatch **`USER_TAKE_TX`**, poll **`GetTransaction`** until Bitcoin confirmations meet the threshold, **`GetSPVProof`**, and [`register_pegout`](rootstock-contract-functions-called-by-union-client.md). If Native Bridge lacks confirmations, registration may be retried on a block tick.
 
-Before that closing milestone is reached, the flow can still stall if BitVMX does not produce the user-take payload, if the committee does not complete the signature stage, if the Bitcoin transaction does not mature, or if the Native Bridge checks still reject the proof needed for Rootstock registration.
+If the timeout **expires while the flow is still in `DispatchTransaction`** (signatures never completed), the client drops the BTC signature subflow, calls [`trigger_operator_take`](rootstock-contract-functions-called-by-union-client.md) with the pegout identifier from the original [`PegoutRequested`](rootstock-contract-events-listened-by-union-client.md) payload, and the **pegout user-take state machine goes to `Done`**. It does **not** dispatch `USER_TAKE_TX`, register the user-take pegout, or send `PEG_OUT_COMPLETED` on that path. Rootstock then emits [`OperatorTakeTriggered`](rootstock-contract-events-listened-by-union-client.md) (after its own confirmation rules), which the separate **Flow: Advance funds** consumes.
+
+The closing milestone on the **user-take** path is [`PegoutRegistered`](rootstock-contract-events-listened-by-union-client.md) on Rootstock (again after confirmations). The client then sends [`SetVar(flow_id, "PEG_OUT_COMPLETED", ...)`](bitvmx-messages-listened-by-union-client.md) with the registered event payload.
+
+Before that closing milestone is reached, the flow can still stall if BitVMX does not produce `pegout_accepted`, if the signature subflow does not finish, if the user-take transaction does not reach enough confirmations on Bitcoin, or if the Native Bridge rejects the SPV or registration proof.
 
 ```mermaid
 sequenceDiagram
@@ -121,57 +221,62 @@ sequenceDiagram
     participant BV as BitVMX / Bitcoin
     participant SG as SignatureManager
 
-    PG-->>UC: PegoutRequested
+    Note over UC,BV: flow_id is committee+slot from flow creation; BitVMX always uses this id for this pegout.
+    PG-->>UC: PegoutRequested (after confirmations)
     UC->>BV: GetCommInfo(req_id)
     BV-->>UC: CommInfo(req_id, CommsAddress)
-    UC->>PG: get_committee / get_member_public_keys / get_committee_communication_data
-    UC->>BV: SetVar(flow_id, "pegout_request", PegOutRequest)
-    UC->>BV: Setup(flow_id, "take", participants, 0)
-    BV-->>UC: Variable(flow_id, "pegout_accepted", PegOutAccepted)
-    UC->>SG: add_member_nonce / add_member_signature via BTC signature subflow
+    UC->>PG: get_committee (build PegOutRequest)
+    UC->>BV: SetVar(flow_id, "pegout_request", PegOutRequest JSON)
+    UC->>PG: get_committee_communication_data + get_member_public_keys (per member)
+    UC->>BV: Setup(flow_id, "take", CommsAddress participants, 0)
+    BV-->>UC: Variable(flow_id, "pegout_accepted", PegOutAccepted JSON)
+    Note over UC,SG: BTC signature subflow: PG AllNoncesReady / AllSignaturesReady + BitVMX; nonces/signatures on SG
+    Note over UC: If advance_funds_timeout_secs elapses in DispatchTransaction without signatures: trigger_operator_take, pegout flow Done (no USER_TAKE_TX, register_pegout, or PEG_OUT_COMPLETED); see Flow: Operator take.
     UC->>BV: DispatchTransactionName(flow_id, "USER_TAKE_TX")
-    BV-->>UC: Transaction(flow_id, tx_status, ...)
+    UC->>BV: GetTransaction(flow_id, user_take_txid)
+    BV-->>UC: Transaction(flow_id, tx_status, …)
     UC->>BV: GetSPVProof(user_take_txid)
     BV-->>UC: SPVProof(user_take_txid, user_take_spv)
     UC->>PG: register_pegout(user_take_spv)
-    PG-->>UC: PegoutRegistered
-    UC->>BV: SetVar(flow_id, "PEG_OUT_COMPLETED", pegout_registered_event_json)
+    PG-->>UC: PegoutRegistered (after confirmations)
+    UC->>BV: SetVar(flow_id, "PEG_OUT_COMPLETED", RSK event JSON)
 ```
 
 ## Flow: Operator take
 
-The timeout-to-operator-take flow marks the point where a pegout stops advancing through its normal user-take route and is formally redirected into the operator-take branch. It is not a separate independent flow. It is the moment where one pegout branch stops and another one becomes active.
+This is not a standalone coordinator flow. It is the **Rootstock branch switch** when **user-take** for that pegout stalls on signatures: the same pegout flow is stuck in **`DispatchTransaction`** waiting for the BTC signature subflow, and a **wall-clock timeout** (`advance_funds_timeout_secs`, scheduled from the next block’s timestamp after `pegout_accepted`) fires before signatures complete.
 
 ### Sequence
 
-This branch switch begins after the pegout has already reached the state where BitVMX returned [`pegout_accepted`](bitvmx-messages-listened-by-union-client.md) and the user-take route is expected to complete. If that route does not make enough progress within the configured [confirmations, retry delays, and timeouts](confirmations-retries-and-timeouts.md), the bridge stops treating the user-take path as the active completion path. At that point, the client triggers [`trigger_operator_take`](rootstock-contract-functions-called-by-union-client.md), which makes the branch change explicit on Rootstock.
+Preconditions are: BitVMX already returned [`pegout_accepted`](bitvmx-messages-listened-by-union-client.md), the pegout flow entered **`DispatchTransaction`**, and the advance-funds timeout was scheduled. When the timeout expires and the flow is **still** in **`DispatchTransaction`**, the processor removes the signature subflow, invokes [`trigger_operator_take`](rootstock-contract-functions-called-by-union-client.md) with the pegout id derived from the original [`PegoutRequested`](rootstock-contract-events-listened-by-union-client.md) payload, and transitions the **pegout user-take** state machine to **`Done`**. No `USER_TAKE_TX` dispatch, no `register_pegout`, and no `PEG_OUT_COMPLETED` happen on this pegout flow instance.
 
-The decisive milestone of this transition is [`OperatorTakeTriggered`](rootstock-contract-events-listened-by-union-client.md). That event means the pegout is no longer progressing through the user-take route. From that point forward, the pegout continues through the operator path. The timeout itself is not a Bitcoin-proof milestone, but the resulting Rootstock event still has to satisfy the configured confirmation rules before the next flow becomes active.
+On Rootstock, the decisive milestone is [`OperatorTakeTriggered`](rootstock-contract-events-listened-by-union-client.md) (after the usual confirmation rules). That event is what **Flow: Advance funds** listens for; it is not consumed by the pegout flow, which has already finished. The operator-take completion path (advance funds, reimbursement, operator-take registration) continues there.
 
 ```mermaid
 sequenceDiagram
     participant UC as Union Client
     participant PG as Rootstock Contracts
 
-    Note over UC: pegout flow remains in DispatchTransaction
-    Note over UC: timer reaches advance_funds_timeout_secs
+    Note over UC: Pegout flow in DispatchTransaction; signature subflow active; advance_funds_timeout_secs from pegout config
+    Note over UC: Timeout expires while signatures still incomplete
     UC->>PG: trigger_operator_take(pegout_txid)
-    PG-->>UC: OperatorTakeTriggered
+    Note over UC: Pegout user-take flow reaches Done
+    PG-->>UC: OperatorTakeTriggered (after confirmations; consumed by Advance funds flow)
 ```
 
 ## Flow: Advance funds
 
-The operator-take flow completes a pegout after the normal user-take path has stalled. The pegout does not jump directly from timeout to closure. It advances through a sequence of operator-side milestones: first the operator branch becomes active, then the advance-funds stage becomes visible, then the reimbursement kickoff appears, and finally the pegout closes through the operator-take registration.
+This is the **advance funds** coordinator flow (`AdvanceFundsFlow` / `AdvanceFundsFlowProcessor`). It runs after **Flow: Operator take**: when [`OperatorTakeTriggered`](rootstock-contract-events-listened-by-union-client.md) confirms, the client creates or refreshes a flow keyed by a deterministic BitVMX **program id** (`get_advance_funds_pid`: hash of committee UUID, slot index, and the tag `advance_funds`). That id is **not** the committee UUID; it is only used for `advance_funds_request`, `Setup("advance_funds", …)`, `SetupCompleted`, and the `Variable` messages below.
 
 ### Sequence
 
-The flow begins when [`OperatorTakeTriggered`](rootstock-contract-events-listened-by-union-client.md) confirms and the pegout officially enters the operator branch. At that point, the pegout context is fixed through the relevant [`parameter sources and mappings`](parameter-sources-and-mappings.md): the `pegout_id`, committee slot, selected operator, user pubkey, and operator-take pubkey now define which branch is active and who is responsible for moving it forward. The first visible effect of that transition is that the selected operator becomes explicit for BitVMX as part of the shared flow state.
+The trigger event fixes pegout context (pegout id, committee, slot, user pubkey, selected operator address, operator-take pubkey). After [`OperatorTakeTriggered`](rootstock-contract-events-listened-by-union-client.md) confirms, the flow requests BitVMX comms, then publishes the selected operator pubkey with [`SetVar(committee_uuid, "SELECTED_OPERATOR_PUBKEY_<slot>", …)`](bitvmx-messages-listened-by-union-client.md): the **first argument is the committee UUID**, not the advance-funds program id. If the local node is **not** the selected operator, the flow goes **`Done`** immediately and does not send `advance_funds_request` or `Setup`.
 
-From there, the flow divides by role. For nodes that are not the selected operator, the flow effectively stops once that selected-operator state is known and shared. For the selected operator, that same moment is the start of the active completion path. The operator-side request is then published into BitVMX so the advance-funds stage can begin.
+Only the **selected operator** sends [`SetVar(adv_flow_id, "advance_funds_request", …)`](bitvmx-messages-listened-by-union-client.md) (`AdvanceFundsRequest` JSON) and [`Setup(adv_flow_id, "advance_funds", [local CommsAddress], 0)`](bitvmx-messages-listened-by-union-client.md). BitVMX replies with [`SetupCompleted(adv_flow_id)`](bitvmx-messages-listened-by-union-client.md), then [`Variable(…, "funds_advance_spv", …)`](bitvmx-messages-listened-by-union-client.md) (`FundsAdvanceSPV` JSON). The client resolves [`get_accept_pegin_txid`](rootstock-contract-functions-called-by-union-client.md) for the pegout when registering advance funds, then calls [`register_advance_funds`](rootstock-contract-functions-called-by-union-client.md). The state machine advances to the next wait only after Rootstock confirms [`AdvanceFundsRegistered`](rootstock-contract-events-listened-by-union-client.md) for that pegout.
 
-The first major milestone in that active branch is [`funds_advance_spv`](bitvmx-messages-listened-by-union-client.md). Once that proof exists and passes the relevant [confirmation rules](confirmations-retries-and-timeouts.md), the pegout is no longer simply timed out and waiting. It has entered its advance-funds stage on Rootstock through [`register_advance_funds`](rootstock-contract-functions-called-by-union-client.md). After that, the next milestone is the reimbursement kickoff, which appears through [`union_spv_notification`](bitvmx-messages-listened-by-union-client.md) and becomes official on Rootstock through [`register_reimbursement_kickoff`](rootstock-contract-functions-called-by-union-client.md). The final stage is the operator-take proof itself, which again arrives through [`union_spv_notification`](bitvmx-messages-listened-by-union-client.md) and closes the branch through [`register_operator_take`](rootstock-contract-functions-called-by-union-client.md).
+Next, BitVMX emits [`Variable(…, "union_spv_notification", …)`](bitvmx-messages-listened-by-union-client.md) with `tx_type` **ReimbursementKickoff**; the client calls [`register_reimbursement_kickoff`](rootstock-contract-functions-called-by-union-client.md) and waits for [`ReimbursementKickoffRegistered`](rootstock-contract-events-listened-by-union-client.md). Then another `union_spv_notification` with **OperatorTake** carries the SPV for [`register_operator_take`](rootstock-contract-functions-called-by-union-client.md). The flow finishes when Rootstock confirms [`PegoutRegistered`](rootstock-contract-events-listened-by-union-client.md) for that operator-take registration (the processor matches committee and slot). If Native Bridge lacks confirmations on any of the three registrations, the processor may **retry** the corresponding contract call on a block tick.
 
-The flow is complete when the operator-side path results in the final Rootstock pegout registration. Until that point, it can still pause because the current node is not the selected operator, because BitVMX has not yet produced the next proof-bearing message, or because the Native Bridge checks still require more maturity before the next Rootstock registration can be accepted.
+BitVMX payloads can arrive **before** the step that would normally consume them; the processor **buffers** SPVs in that case. Until the flow completes, it can pause on role (non-operator), missing BitVMX variables, or Native Bridge maturity.
 
 ```mermaid
 sequenceDiagram
@@ -179,25 +284,26 @@ sequenceDiagram
     participant UC as Union Client
     participant BV as BitVMX / Bitcoin
 
-    PG-->>UC: OperatorTakeTriggered
+    Note over UC,BV: adv_flow_id = advance-funds program id (hash from committee + slot); committee_uuid = committee id for operator pubkey only
+    PG-->>UC: OperatorTakeTriggered (after confirmations)
     UC->>BV: GetCommInfo(req_id)
     BV-->>UC: CommInfo(req_id, CommsAddress)
-    UC->>BV: SetVar(flow_id, "SELECTED_OPERATOR_PUBKEY_<slot>", PubKey)
-    alt current node is selected operator
-        UC->>BV: SetVar(flow_id, "advance_funds_request", AdvanceFundsRequest)
-        UC->>BV: Setup(flow_id, "advance_funds", [selected_operator], 0)
-        BV-->>UC: SetupCompleted(flow_id)
-        BV-->>UC: Variable(flow_id, "funds_advance_spv", FundsAdvanceSPV)
-        UC->>PG: get_accept_pegin_txid(pegout_txid)
-        UC->>PG: register_advance_funds(accept_pegin_txid, advance_funds_spv)
-        PG-->>UC: AdvanceFundsRegistered
-        BV-->>UC: Variable(flow_id, "union_spv_notification", ReimbursementKickoff)
-        UC->>PG: register_reimbursement_kickoff(accept_pegin_txid, kickoff_spv)
-        PG-->>UC: ReimbursementKickoffRegistered
-        BV-->>UC: Variable(flow_id, "union_spv_notification", OperatorTake)
-        UC->>PG: register_operator_take(operator_take_spv)
-        PG-->>UC: PegoutRegistered
-    else current node is not selected operator
-        Note over UC: flow ends after publishing selected operator pubkey
+    UC->>BV: SetVar(committee_uuid, "SELECTED_OPERATOR_PUBKEY_<slot>", PubKey)
+    alt local node is selected operator
+        UC->>BV: SetVar(adv_flow_id, "advance_funds_request", AdvanceFundsRequest JSON)
+        UC->>BV: Setup(adv_flow_id, "advance_funds", [local CommsAddress], 0)
+        BV-->>UC: SetupCompleted(adv_flow_id)
+        BV-->>UC: Variable(adv_flow_id, "funds_advance_spv", FundsAdvanceSPV JSON)
+        Note over UC,PG: get_accept_pegin_txid(pegout) when calling register_advance_funds
+        UC->>PG: register_advance_funds(…)
+        PG-->>UC: AdvanceFundsRegistered (after confirmations)
+        BV-->>UC: Variable(adv_flow_id, "union_spv_notification", ReimbursementKickoff JSON)
+        UC->>PG: register_reimbursement_kickoff(…)
+        PG-->>UC: ReimbursementKickoffRegistered (after confirmations)
+        BV-->>UC: Variable(adv_flow_id, "union_spv_notification", OperatorTake JSON)
+        UC->>PG: register_operator_take(…)
+        PG-->>UC: PegoutRegistered (after confirmations)
+    else local node is not selected operator
+        Note over UC: flow completes here (no advance_funds SetVar/Setup)
     end
 ```
