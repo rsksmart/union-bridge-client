@@ -7,7 +7,7 @@ ARG JUST_CRATE
 
 # --- BUILDER STAGE ---
 
-FROM ghcr.io/rsksmart/union-client-builder:rust-1.86-v1 AS builder
+FROM ghcr.io/rsksmart/union-client-builder:rust-1.88-v1 AS builder
 ARG JUST_CRATE=""
 ARG FEATURES=""
 
