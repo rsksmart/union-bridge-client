@@ -7,32 +7,36 @@ provider.rootstock.url = "ws://10.1.0.53:4445" # if running in AWS and accessed 
 bitcoin_network = "testnet"
 
 [[contracts]]
+name = "PeginManager"
+address = "0xEF77806d90aEa0b689D20b81883329A1c3A6139C"
+
+[[contracts]]
+name = "PegoutManager"
+address = "0x03F4C48979f2a3509156c7015e08A0479D3Ba865"
+
+[[contracts]]
 name = "FakePegManager"
 address = "0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f"
 
 [[contracts]]
-name = "PeginManager"
-address = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
-
-[[contracts]]
-name = "PegoutManager"
-address = "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"
-
-[[contracts]]
 name = "SignatureManager"
-address = "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1"
+address = "0x9E5eB3F3A31C66a5955737564c930F45c723fdA6"
 
 [[contracts]]
 name = "CommitteeRegistry"
-address = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9"
+address = "0x2FbD8C54ee6b18F5A93e886b2CDB8f2866cACc06"
 
 [[contracts]]
 name = "MemberRegistry"
-address = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
+address = "0x9fd98CC3d65f6bD3BbBC467b704580EB39e3aDc5"
 
 [[contracts]]
 name = "StreamManager"
-address = "0x9A676e781A523b5d0C0e43731313A708CB607508"
+address = "0x21bE09E1ccC7e58905dd9f57eA94e43C4Ed3E8CD"
+
+[[contracts]]
+name = "ChallengeManager"
+address = "0x3A47E9530dc8C64059AB7c6e58cBD6dd25FB6c64"
 
 [[contracts]]
 name = "NativeBridge"
