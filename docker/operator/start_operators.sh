@@ -230,7 +230,7 @@ fi
 # Set OPERATORS_TO_RUN based on environment
 if [[ "$ENVIRONMENT" == "alphanet" || "$ENVIRONMENT" == "testnet" ]]; then
   if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
-    echo "You are about to start operator ${OPERATOR_ARG} on ${ENVIRONMENT}."
+    echo "You are about to start operator ${OPERATOR_ARG} on ${ENVIRONMENT} as ${UC_OPERATOR_ROLE:-undefined}."
     read -p "Is this correct? (yes/no): " confirmation
 
     if [[ "$confirmation" != "yes" ]]; then
