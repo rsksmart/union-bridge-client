@@ -11,8 +11,8 @@ created.
 
 **Required Secrets**:
 
-- `FAIRGATE_GITHUB_TOKEN`: GitHub token for accessing private dependency repositories (e.g. BitVMX)
-- `UNION_CONTRACTS_GITHUB_TOKEN`: GitHub token for accessing temp-rsk contracts repository
+- `FAIRGATE_GITHUB_TOKEN`: GitHub PAT with read access to private `git` dependencies for the BitVMX stack (matches `git` URLs in `Cargo.toml`). Configure in repo/org secrets.
+- `UNION_CONTRACTS_GITHUB_TOKEN`: GitHub PAT with read access to the private `union-contracts` repository (see `union-contracts` entry in workspace `Cargo.toml`)
 - `REGISTRY_TOKEN`: Personal Access Token with `write:packages` scope for GHCR authentication
 
 **Usage**:
@@ -134,8 +134,8 @@ especially for private repository access.
 The Docker build process requires access to private repositories using GitHub tokens (same as other workflows in this
 project):
 
-1. **FAIRGATE_GITHUB_TOKEN**: Already configured for private dependency repositories
-2. **UNION_CONTRACTS_GITHUB_TOKEN**: Already configured for temp-rsk contracts repository
+1. **FAIRGATE_GITHUB_TOKEN**: Used for private BitVMX-related git dependencies
+2. **UNION_CONTRACTS_GITHUB_TOKEN**: Used for the private contracts repo referenced by `union-contracts`
 
 These tokens are already set up and used by other workflows in the project.
 

@@ -1,5 +1,6 @@
 services:
   bitvmx-client:
+    # Published by upstream BitVMX workspace; use the same ref your operators expect. Override via compose if you mirror the image.
     image: ghcr.io/fairgatelabs/rust-bitvmx-workspace/bitvmx-client:v0.5.3-alpha
     # container_name: bitvmx-client-container
     restart: unless-stopped

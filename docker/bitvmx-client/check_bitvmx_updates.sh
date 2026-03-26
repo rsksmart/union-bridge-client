@@ -16,6 +16,9 @@ Options:
   -r, --ref <ref>   Branch or tag of BitVMX upstream docker-bitvmx repo to use (default: main)
   -s, --ssh         Use SSH URL for cloning instead of HTTPS
   -h, --help        Show this help and exit
+
+Environment:
+  BITVMX_UPSTREAM_GITHUB_ORG   GitHub org hosting docker-bitvmx (default: FairgateLabs)
 EOF
 }
 
@@ -62,13 +65,15 @@ echo "Setting up BitVMX... (ref=${REF})"
 
 BC_PATH="${SCRIPT_DIR}/bitvmx-client"
 BC_REPO="docker-bitvmx"
+# Upstream org for BitVMX docker-bitvmx (override for forks): export BITVMX_UPSTREAM_GITHUB_ORG=my-org
+BITVMX_UPSTREAM_GITHUB_ORG="${BITVMX_UPSTREAM_GITHUB_ORG:-FairgateLabs}"
 
 # Set URL based on SSH flag
 if [ "${USE_SSH}" = true ]; then
-  BC_URL="git@github.com:FairgateLabs/${BC_REPO}.git"
+  BC_URL="git@github.com:${BITVMX_UPSTREAM_GITHUB_ORG}/${BC_REPO}.git"
   echo "Using SSH URL for cloning..."
 else
-  BC_URL="https://github.com/FairgateLabs/${BC_REPO}.git"
+  BC_URL="https://github.com/${BITVMX_UPSTREAM_GITHUB_ORG}/${BC_REPO}.git"
   echo "Using HTTPS URL for cloning..."
 fi
 

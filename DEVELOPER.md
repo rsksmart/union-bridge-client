@@ -73,8 +73,8 @@ Before running the Union Bridge Client, you need to install and set up the follo
 
 1. **BitVMX Workspace** - Contains the BitVMX client
 
-   You have to clone the [BitVMX Workspace](https://github.com/FairgateLabs/rust-bitvmx-workspace) repository and follow
-   the README instructions to set it up. Once done, you can run the BitVMX client by following the next steps:
+   Clone the public [BitVMX workspace](https://github.com/FairgateLabs/rust-bitvmx-workspace) (upstream BitVMX tooling) and follow
+   its README. Then run the BitVMX client as below:
 
    ```bash
    git clone git@github.com:FairgateLabs/rust-bitvmx-workspace.git
@@ -609,31 +609,32 @@ Some instructions on how to use this file and other parameters will be printed i
 
 ```
 CLI Args { operation: "elf", fixture: None, bridge_event: true, fetch_start_block: 6883222, fetch_block_count: 100, cf_required_blocks: 100, cf_required_effort: 4886718345, cf_init_block: 6883221, cf_init_timestamp: 1701129600 }
-CheckForkArgs serialized to file: /Users/illuque/workspace/union-bridge/union-bridge-client/check-fork/tester/check_fork_args.bin. Total time: 1.79725ms
+CheckForkArgs serialized to file: check-fork/tester/check_fork_args.bin. Total time: 1.79725ms
 GetBlocks executed and CheckForkArgs generated. Relevant parameters for the interaction with the ZKVM CLI:
-    - input: /Users/illuque/workspace/union-bridge/union-bridge-client/check-fork/tester/check_fork_args.bin
-    - elf: /Users/illuque/workspace/union-bridge/union-bridge-client/target/riscv-guest/check-fork-zkp/check-fork-guest/riscv32im-risc0-zkvm-elf/release/check-fork-guest.bin
+    - input: check-fork/tester/check_fork_args.bin
+    - elf: target/riscv-guest/check-fork-zkp/check-fork-guest/riscv32im-risc0-zkvm-elf/release/check-fork-guest.bin
     - image_id: 18a4bad2542ac900b0681125ac38385d03139104e535590b67c473ac5465c078
 
 ```
 
 ### 2) Generate the Stark Proof
 
-With the previous output, we can now generate the Stark Proof
-Clone Fairgate's [ZK Proof](https://github.com/FairgateLabs/rust-bitvmx-zk-proof/) repo or use Workspace one - main
-branch works ATM.
+With the previous output, you can generate the Stark proof from the BitVMX [ZK proof](https://github.com/FairgateLabs/rust-bitvmx-zk-proof/) repository (or the copy vendored via the workspace). The `main` branch has worked in practice.
 
-Then run the following command where:
+From the `rust-bitvmx-zk-proof` repo root, point `--input` and `--elf` at paths under your `union-bridge-client` checkout (repository root):
 
 ```bash
-cargo run --release --bin host -- prove-stark --input /Users/illuque/workspace/union-bridge/union-bridge-client/check-fork/tester/check_fork_args.bin --elf /Users/illuque/workspace/union-bridge/union-bridge-client/target/riscv-guest/check-fork-zkp/check-fork-guest/riscv32im-risc0-zkvm-elf/release/check-fork-guest.bin --output stark-proof.bin
+cargo run --release --bin host -- prove-stark \
+  --input /path/to/union-bridge-client/check-fork/tester/check_fork_args.bin \
+  --elf /path/to/union-bridge-client/target/riscv-guest/check-fork-zkp/check-fork-guest/riscv32im-risc0-zkvm-elf/release/check-fork-guest.bin \
+  --output stark-proof.bin
 ```
 
 An output like the following will be printed, showing _CheckFork_ execution result and the path to the resulting stark
 proof `stark-proof.bin`.
 
 ```
-[/Users/illuque/.cargo/git/checkouts/union-bridge-check-fork-47c61d4052b7ed6f/6d36b88/check_fork/src/lib.rs:89:5] (cumulative_effort, required_effort) = (
+[check_fork/src/lib.rs:89:5] (cumulative_effort, required_effort) = (
     3133842214971570006248820,
     100,
 )

@@ -1,9 +1,9 @@
 # required for actions/download-artifact@v4 to work locally
---artifact-server-path /Users/illuque/.union_bridge/act_artifacts
+--artifact-server-path ~/.union_bridge/act_artifacts
 # required for Risc0 toolchain to work locally
 --container-architecture linux/amd64
 
-# Tokens for private dependency repositories (used by act when running workflows)
+# PATs for private git deps (matches GitHub Actions secret names; see .github/WORKFLOWS.md)
 -s FAIRGATE_GITHUB_TOKEN=<your_github_token>
 -s UNION_CONTRACTS_GITHUB_TOKEN=<your_contracts_github_token>
 

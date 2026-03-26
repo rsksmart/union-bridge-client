@@ -1,7 +1,7 @@
 ############################################################
 # Local Github Actions (Act)
 ############################################################
-# Tokens for private dependency repositories (GitHub PAT with repo access)
+# PATs for private git deps (see workspace Cargo.toml). CI uses the same values as secrets named FAIRGATE_GITHUB_TOKEN / UNION_CONTRACTS_GITHUB_TOKEN.
 export FAIRGATE_GITHUB_TOKEN="<your_github_token>"
 export UNION_CONTRACTS_GITHUB_TOKEN="<your_contracts_github_token>"
 
