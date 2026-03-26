@@ -76,6 +76,8 @@ print_help() {
   echo "  Note: Building from source is not supported. Only registry images should be used."
   echo ""
   echo "Configuration:"
+  echo "  Compose loads docker/operator/.env.<ENV>: .env.local (local), .env.regtest (regtest),"
+  echo "  .env.alphanet (alphanet), .env.testnet (testnet). Create missing profiles from .env.sample."
   echo "  Values can be exported in the shell to avoid passing flags:"
   echo "    export UC_ENV=\"local-docker\"        # Sets default environment"
   echo "    export UC_OPERATOR_ID=1              # Sets default operator ID"
@@ -182,6 +184,13 @@ elif [[ "$ENVIRONMENT" == "regtest" ]]; then
   ENV_FILE="${SCRIPT_DIR}/.env.regtest"
 else
   echo "Invalid environment. Use 'alphanet', 'testnet', 'local', 'local-docker', or 'regtest'"
+  exit 1
+fi
+
+if [[ ! -f "${ENV_FILE}" ]]; then
+  echo "Error: missing Docker Compose env file ${ENV_FILE}" >&2
+  echo "Create it from the template: cp ${SCRIPT_DIR}/.env.sample ${ENV_FILE}  # then edit for ${ENVIRONMENT}" >&2
+  echo "Tracked examples: ${SCRIPT_DIR}/.env.local and ${SCRIPT_DIR}/.env.regtest (for local/regtest)." >&2
   exit 1
 fi
 
