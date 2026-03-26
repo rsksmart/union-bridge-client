@@ -184,12 +184,7 @@ project_name_for_operator() {
 
 operator_client_op() {
   local op_num="$1"
-
-  if [[ "${ENVIRONMENT}" == "local" || "${ENVIRONMENT}" == "regtest" ]]; then
-    echo "op_${op_num}"
-  else
-    echo "testnet_op_${op_num}"
-  fi
+  echo "op_${op_num}"
 }
 
 operator_user_api_port() {
@@ -224,13 +219,6 @@ broker_pem_path() {
   local op_num="$2"
 
   echo "$(operator_root_path "${op_num}")/broker/${service}.pem"
-}
-
-broker_pubkey_hash_path() {
-  local service="$1"
-  local op_num="$2"
-
-  echo "$(operator_root_path "${op_num}")/broker/${service}.pubkey_hash"
 }
 
 compute_pubkey_hash() {
@@ -274,6 +262,13 @@ provision_operator_broker_identities() {
   done
 }
 
+broker_pubkey_hash_path() {
+  local service="$1"
+  local op_num="$2"
+
+  echo "$(operator_root_path "${op_num}")/broker/${service}.pubkey_hash"
+}
+
 patch_bitvmx_component_pubkey_hash() {
   local cfg_file="$1"
   local component_name="$2"
@@ -285,11 +280,33 @@ patch_bitvmx_component_pubkey_hash() {
   fi
 }
 
+bitvmx_resolved_operator_template_yaml() {
+  local abs_template_dir="$1"
+  local client_op="$2"
+  local p="${abs_template_dir}/${client_op}.yaml"
+
+  if [[ -f "${p}" ]]; then
+    echo "${p}"
+    return 0
+  fi
+
+  p="${abs_template_dir}/client/config/${client_op}.yaml"
+  if [[ -f "${p}" ]]; then
+    echo "${p}"
+    return 0
+  fi
+
+  return 1
+}
+
 ensure_operator_bitvmx_config_tree() {
   local op_num="$1"
   local template_dir="$2"
   local target_dir="$3"
   local cfg_file="$4"
+  local client_op="$5"
+  local abs_tpl
+  local nested_yaml
 
   if [[ ! -d "${template_dir}" ]]; then
     echo "Error: missing BitVMX template directory ${template_dir}" >&2
@@ -299,6 +316,14 @@ ensure_operator_bitvmx_config_tree() {
   if [[ ! -d "${target_dir}" ]]; then
     mkdir -p "$(dirname "${target_dir}")"
     cp -R "${template_dir}" "${target_dir}"
+  fi
+
+  if [[ ! -f "${cfg_file}" ]]; then
+    abs_tpl="$(cd "${template_dir}" && pwd)"
+    if nested_yaml="$(bitvmx_resolved_operator_template_yaml "${abs_tpl}" "${client_op}")"; then
+      mkdir -p "$(dirname "${cfg_file}")"
+      cp -f "${nested_yaml}" "${cfg_file}"
+    fi
   fi
 
   if [[ ! -f "${cfg_file}" ]]; then
@@ -548,7 +573,7 @@ prepare_operator_bitvmx_config() {
     config_action="Creating"
   fi
 
-  ensure_operator_bitvmx_config_tree "${op_num}" "${template_dir}" "${target_dir}" "${cfg_file}"
+  ensure_operator_bitvmx_config_tree "${op_num}" "${template_dir}" "${target_dir}" "${cfg_file}" "${client_op}"
 
   prune_extra_bitvmx_operator_yaml_files "${target_dir}" "${cfg_file}"
 

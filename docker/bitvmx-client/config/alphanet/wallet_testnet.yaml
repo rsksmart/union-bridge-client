@@ -1,22 +1,22 @@
 bitcoin:
   network: testnet
-  url: http://bitcoin:39048j03%40slk@10.1.0.23:18332
-  username: ""
-  password: ""
+  url: http://<bitcoin-user>:<password>@<ip>:<port>
+  username: <bitcoin-user>
+  password: <password>
   wallet: test_wallet
 
 key_manager:
   network: testnet
 
 key_storage:
-  password: secret_password_1
+  password: PLACEHOLDER_KEY_STORAGE_PASSWORD
   path: /tmp/testnet/wallet/keys.db
 
 storage:
   path: /tmp/testnet/wallet/storage.db
 
 wallet:
-  receive_key: cUVFBGCCjw5JGY2DUY5HTtKoHevMHs675aFkXVLvXeE4jV7GPeGb
-  change_key: cVTMy1VXsEqT4z3nT3w8vupAmqBTjZBmyyE38TYP9kju9rQWpK9F
+  receive_key: PLACEHOLDER_WALLET_RECEIVE_KEY
+  change_key: PLACEHOLDER_WALLET_CHANGE_KEY
   db_path: /tmp/testnet/wallet/wallet.db
-  start_height: 4631993
+  start_height: 4807400

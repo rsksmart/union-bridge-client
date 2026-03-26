@@ -1,8 +1,8 @@
 bitcoin:
   network: regtest
-  url: http://user:pass@10.1.0.107:18332
-  username: user
-  password: pass
+  url: http://<bitcoin-user>:<password>@<ip>:<port>
+  username: <bitcoin-user>
+  password: <password>
   wallet: test_wallet
 
 key_manager:
@@ -16,14 +16,14 @@ coordinator_settings:
       checkpoint_height: 0
 
 key_storage:
-  password: secret_password_3
+  password: PLACEHOLDER_KEY_STORAGE_PASSWORD
   path: /tmp/regtest/op_2/keys.db
 
 storage:
   path: /tmp/regtest/op_2/storage.db
 
 p2p:
-  address: /ip4/172.20.0.12/tcp/61181
+  address: /ip4/<p2p-host>/tcp/<p2p-port>
   key: config/keys/op_2.key
   peer_id_file: peer_id
   timeout: 5

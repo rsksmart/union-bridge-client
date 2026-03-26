@@ -97,7 +97,7 @@ BitVMX client base configuration and docker-compose definitions. Contains:
 - `docker-compose.yml` - Base BitVMX client service definition (extended by other composes)
 - `config/` - BitVMX configuration files for different environments:
   - `local/` - Local development (regtest)
-  - `alphanet/` - Alphanet testnet
+  - `alphanet/`, `testnet/`, `regtest/` - Templates with **placeholders** (`PLACEHOLDER_KEY_STORAGE_PASSWORD`, `PLACEHOLDER_WALLET_*`, Bitcoin RPC `url` like `http://<bitcoin-user>:<password>@<ip>:<port>`, `p2p.address` like `/ip4/<p2p-host>/tcp/<p2p-port>`, etc.). Replace with real values in your deployment (e.g. `cli-setup-operators.sh`, operator `.env`, or patched copies under `BASE_STORAGE_PATH`).
 - `check_bitvmx_updates.sh` - Script to fetch and compare upstream BitVMX compose changes
 
 **Checking for BitVMX updates:**

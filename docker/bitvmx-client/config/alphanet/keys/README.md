@@ -6,7 +6,7 @@ Runtime private keys are not stored in the repo anymore. During operator setup,
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/keys/`
 
 For the alphanet template, the generated files are the operator keys referenced
-by the `testnet_op_N.yaml` files, for example:
+by the `op_N.yaml` files, for example:
 
 - `op_1.key`
 - `op_2.key`
