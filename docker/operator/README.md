@@ -52,7 +52,7 @@ This setup supports four deployment environments:
 - **Local** (`.env.local`): Development environment that runs multiple operators on a single host with local Bitcoin and RSK nodes (default: 4, configurable via `<project_root>/cli-setup-operators.sh --ops` or `start_operators.sh --ops`)
 - **Alphanet** (`.env.alphanet`): Production-like environment where each host runs a single operator, connecting to the Alphanet testnet
 - **Testnet** (`.env.testnet`): Production-like environment where each host runs a single operator, connecting to the Bitcoin testnet
-- **Regtest** (`.env.regtest`): All 4 operators on one host, connected to shared regtest infrastructure (powpeg + node21)
+- **Regtest** (`.env.regtest`): All 4 operators on one host, connected to shared regtest infrastructure (powpeg + node21). Create this file with `cp docker/operator/.env.sample docker/operator/.env.regtest` and fill in URLs plus the regtest block at the bottom of the sample.
 
 #### BitVMX Network Modes
 

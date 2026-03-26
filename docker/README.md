@@ -157,7 +157,7 @@ See [build/README.md](build/README.md) for detailed usage.
 
 The Docker setup uses two kinds of environment files:
 
-- **Operator compose env:** [`docker/operator/.env.sample`](operator/.env.sample) is the template — copy it to `.env.local`, `.env.alphanet`, or `.env.testnet` (not committed). [`.env.regtest`](operator/.env.regtest) is committed as the default **shared regtest lab** profile; change URLs/passwords for your infrastructure.
+- **Operator compose env:** Only [`docker/operator/.env.sample`](operator/.env.sample) is tracked. Copy it to `.env.local`, `.env.regtest`, `.env.alphanet`, or `.env.testnet` (local env files are not committed). The sample ends with an optional **regtest** section (e.g. `UB__BRIDGE__COMMITTEE__DRP_PROGRAM_DEFINITION`) to merge into `.env.regtest`.
 - **Generated per-operator** files under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`, created by `<project_root>/cli-setup-operators.sh`
 
 `docker.env` is only consumed by Docker operator runs (`start_operators.sh` / docker compose).  

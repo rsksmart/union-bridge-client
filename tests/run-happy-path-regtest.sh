@@ -17,7 +17,7 @@ if [[ "${REGTEST_REMOTE:-}" != "1" ]]; then
         "cd ~/${REGTEST_ROOT} && REGTEST_REMOTE=1 bash tests/run-happy-path-regtest.sh"
 fi
 
-# Load NUM_OPERATORS: --ops flag > .env.regtest > default (4)
+# Load NUM_OPERATORS: --ops flag > docker/operator/.env.regtest (local, from .env.sample) > default (4)
 NUM_OPERATORS=""
 _remaining_args=()
 for arg in "$@"; do
