@@ -235,17 +235,7 @@ pub fn handle_user_funding(env: Environment) -> Result<()> {
                 }
             }
             Environment::Alphanet | Environment::Testnet | Environment::Regtest => {
-                let private_key = prompt_password("Enter Cow Private Key: ")
-                    .context("failed to read private key")?
-                    .trim()
-                    .to_string();
-                println!();
-
-                if private_key.is_empty() {
-                    bail!("private key is required");
-                }
-
-                println!("Fund using (paste your key where indicated; do not commit or log it):");
+                println!("Fund with `cast` using a key you control. Replace <PRIVATE_KEY> (do not commit or log it):");
                 for (_, address) in &user_addresses {
                     println!(
                         "  cast send {} --value 0.25ether --private-key <PRIVATE_KEY> --rpc-url {}",
@@ -499,17 +489,7 @@ fn print_instructions(env: Environment) -> Result<()> {
     }
     println!();
 
-    let private_key = prompt_password("Enter Cow Private Key: ")
-        .context("failed to read private key")?
-        .trim()
-        .to_string();
-    println!();
-
-    if private_key.is_empty() {
-        bail!("private key is required");
-    }
-
-    println!("Fund using (paste your key where indicated; do not commit or log it):");
+    println!("Fund with `cast` using a key you control. Replace <PRIVATE_KEY> (do not commit or log it):");
     for address in unique {
         println!(
             "  cast send {} --value 0.25ether --private-key <PRIVATE_KEY> --rpc-url {}",

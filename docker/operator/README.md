@@ -25,15 +25,17 @@ file. Typical times to run it:
 - After a new BitVMX upstream `docker-bitvmx` release to see what's changed.
 - Anytime you want to verify your `docker/bitvmx-client/docker-compose.yml` is aligned with upstream.
 
-Run the script:
+Run the script from **`docker/bitvmx-client/`**. If you are in **`docker/operator/`**, use `../bitvmx-client`. From the **repository root**, use `docker/bitvmx-client/check_bitvmx_updates.sh`.
 
 ```bash
+cd ../bitvmx-client
 ./check_bitvmx_updates.sh
 ```
 
 Optionally select a specific branch or tag of the BitVMX upstream `docker-bitvmx` repository:
 
 ```bash
+cd ../bitvmx-client
 ./check_bitvmx_updates.sh --ref <branch-or-tag>
 # or
 ./check_bitvmx_updates.sh -r <branch-or-tag>
