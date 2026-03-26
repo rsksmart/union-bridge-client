@@ -42,18 +42,29 @@ address = "0x59b670e9fA9D0A427751Af201D676719a970857b"
 name = "NativeBridge"
 address = "0x0000000000000000000000000000000001000006"
 
+# ═══════════════════════════════════════════════════════
+# Indexers
+# ═══════════════════════════════════════════════════════
+
 [indexer]
 
 # Override base: start from current tip; initial_block_hash from base is ignored in this env.
 start_from = "best"
 storage.path = "/app/db/" # This should match the volume mount in docker-compose
 
+[block_indexer]
+broker_key_path = "/app/broker.pem"
+
+[log_indexer]
+broker_key_path = "/app/broker.pem"
+
 # ═══════════════════════════════════════════════════════
 # Coordinator
 # ═══════════════════════════════════════════════════════
 
 [coordinator]
-storage_path = "/app/db/"     # This should match the volume mount in docker-compose
+
+storage_path = "/app/db/" # This should match the volume mount in docker-compose
 blocks.host = "block-indexer"
 logs.host = "log-indexer"
 user.host = "user-api"
@@ -71,16 +82,8 @@ user_path = "/keystore/user-key.json"     # should match the one configured in k
 member_path = "/keystore/member-key.json" # should match the one configured in key-setup.sh
 
 # ═══════════════════════════════════════════════════════
-# Transaction Dispatcher
+# User API
 # ═══════════════════════════════════════════════════════
-
-[transaction_dispatcher]
-
-[block_indexer]
-broker_key_path = "/app/broker.pem"
-
-[log_indexer]
-broker_key_path = "/app/broker.pem"
 
 [user_api]
 broker_key_path = "/app/broker.pem"

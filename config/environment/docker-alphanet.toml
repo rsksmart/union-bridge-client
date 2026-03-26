@@ -38,11 +38,21 @@ address = "0x9A676e781A523b5d0C0e43731313A708CB607508"
 name = "NativeBridge"
 address = "0x0000000000000000000000000000000001000006"
 
+# ═══════════════════════════════════════════════════════
+# Indexers
+# ═══════════════════════════════════════════════════════
+
 [indexer]
 
 # Override base: start from current tip; initial_block_hash from base is ignored in this env.
 start_from = "best"
 storage.path = "/app/db/" # This should match the volume mount in docker-compose
+
+[block_indexer]
+broker_key_path = "/app/broker.pem"
+
+[log_indexer]
+broker_key_path = "/app/broker.pem"
 
 # ═══════════════════════════════════════════════════════
 # Coordinator
@@ -55,9 +65,6 @@ logs.host = "log-indexer"
 user.host = "user-api"
 broker.key_path = "/app/broker.pem"
 
-[bridge.committee]
-drp_program_definition = "/app/resources/hello-world.yaml"
-
 # ═══════════════════════════════════════════════════════
 # Key Store
 # ═══════════════════════════════════════════════════════
@@ -67,16 +74,15 @@ user_path = "/keystore/user-key.json" # should match the one configured in key-s
 member_path = "/keystore/member-key.json" # should match the one configured in key-setup.sh
 
 # ═══════════════════════════════════════════════════════
-# Transaction Dispatcher
+# User API
 # ═══════════════════════════════════════════════════════
-
-[transaction_dispatcher]
-
-[block_indexer]
-broker_key_path = "/app/broker.pem"
-
-[log_indexer]
-broker_key_path = "/app/broker.pem"
 
 [user_api]
 broker_key_path = "/app/broker.pem"
+
+# ═══════════════════════════════════════════════════════
+# Bridge Flow Configuration
+# ═══════════════════════════════════════════════════════
+
+[bridge.committee]
+drp_program_definition = "/app/resources/hello-world.yaml"
