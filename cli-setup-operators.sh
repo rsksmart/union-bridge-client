@@ -297,18 +297,10 @@ patch_bitvmx_bitcoin_url() {
   local cfg_file="$1"
   local bitcoin_url="$2"
 
-  if ! grep -q '^[[:space:]]*bitcoin:' "${cfg_file}"; then
-    return 0
-  fi
-
-  if perl -0ne 'exit 0 if /bitcoin:\s*\n(?:[ \t]+.*\n)*?[ \t]+url:\s*/m; END { exit 1 }' "${cfg_file}"; then
+  if grep -q '^[[:space:]]*bitcoin:' "${cfg_file}" && grep -q '^[[:space:]]*url:' "${cfg_file}"; then
     BITVMX_BITCOIN_URL="${bitcoin_url}" \
-      perl -0pi -e 's/(bitcoin:\s*\n(?:[ \t]+.*\n)*?[ \t]+url:\s*)[^\n]+/${1}$ENV{BITVMX_BITCOIN_URL}/m' "${cfg_file}"
-    return 0
+      perl -0pi -e 's/(bitcoin:\s*\n(?:\s+.*\n)*?\s+url:\s*)[^\n]+/${1}$ENV{BITVMX_BITCOIN_URL}/m' "${cfg_file}"
   fi
-
-  BITVMX_BITCOIN_URL="${bitcoin_url}" \
-    perl -0pi -e 's/(bitcoin:\s*\n(?:[ \t]+.*\n)*?[ \t]+wallet:\s*[^\n]+\n)/${1}  url: $ENV{BITVMX_BITCOIN_URL}\n/m' "${cfg_file}"
 }
 
 patch_bitvmx_component_pubkey_hash() {

@@ -19,5 +19,5 @@ test_keystore
 docs/local/
 docs/node_modules/
 .junie/memory
-.union_bridge/
+.union_bridge
 broker/

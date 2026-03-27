@@ -2,7 +2,8 @@ bitcoin:
   network: testnet
   wallet: test_wallet
   url: <to_patch_in_host>
-
+  username: ''
+  password: ''
 key_manager:
   network: testnet
   key_derivation_path: m/101/1/0/0/
