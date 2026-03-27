@@ -1,5 +1,17 @@
 # Operator: BitVMX + Union Bridge Client
 
+This document owns the detailed Docker runtime flow for operator stacks. Shared contributor setup lives in
+[../../CONTRIBUTING.md](../../CONTRIBUTING.md), and the Docker directory overview lives in [../README.md](../README.md).
+
+## Related Docs
+
+- [../README.md](../README.md): Docker flow selection
+- [../build/README.md](../build/README.md): image build and registry operations
+- [../../cli/README.md](../../cli/README.md): operations wrappers that also target Docker environments
+- [../../cli/bitcoin-wallet/README.md](../../cli/bitcoin-wallet/README.md): Bitcoin wallet details used by funding flows
+
+In the examples below, `<project_root>` means the root of this repository checkout.
+
 This setup provides flexible operator deployment configurations:
 
 - **Local environment**: Run multiple independent operator stacks in parallel (`op_1`..`op_N`) on a single host to
@@ -11,13 +23,13 @@ This setup provides flexible operator deployment configurations:
 
 ## Pre-requisites
 
-When pushing or pulling to a private GitHub container registry, Docker asks for a personal access token. You can
-generate one on GitHub using this [link](https://github.com/settings/tokens/new).
-Make sure you create the token with registry access. You can set up the token by running the following command:
+When pushing or pulling private images from GHCR, Docker needs a personal access token. Build and registry-specific
+commands live in [../build/README.md](../build/README.md), but the login step is repeated here because operator startup
+often needs image pulls:
 
 ```bash
 export GITHUB_REGISTRY_TOKEN=<your-token>
-echo "$GITHUB_REGISTRY_TOKEN" | docker login ghcr.io -u "user" --password-stdin.
+echo "$GITHUB_REGISTRY_TOKEN" | docker login ghcr.io -u "user" --password-stdin
 ```
 
 ## How to run it

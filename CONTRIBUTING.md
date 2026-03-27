@@ -1,13 +1,15 @@
 # Contributing
 
-This guide covers the contributor-facing parts of the repository: local setup, required dependencies, runtime
-configuration, local and regtest flows, and developer conventions.
+This guide covers contributor setup, shared runtime concepts, configuration rules, and developer conventions. Detailed
+CLI and Docker commands live in the lower-level docs that sit next to the scripts they describe.
 
 ## Related Documentation
 
+- [README.md](README.md): repository overview and documentation map.
 - [cli/README.md](cli/README.md): CLI commands for local development and operations.
 - [docker/README.md](docker/README.md): Docker-based local development and deployments.
 - [docker/operator/README.md](docker/operator/README.md): operator-focused Docker runtime flow.
+- [docker/build/README.md](docker/build/README.md): Docker image build and registry operations.
 - [.github/WORKFLOWS.md](.github/WORKFLOWS.md): CI workflows and local `act` usage.
 
 ## First Time Setup
@@ -298,35 +300,55 @@ The `CommitteeRegistry` contract address can be found in `config/base.toml` unde
 
 For the fuller local cargo workflow, usage examples, and command details, see [cli/README.md](cli/README.md).
 
-## CLI Tools
+## Workflow Entry Points
 
-The project includes two CLI tools for local development and operations:
+This file is not the command reference for every runtime path. Use it for shared setup, then drop to the lower-level
+doc that owns the commands:
 
-- **`cli-run.sh`**: Local client launcher for development and testing
-- **`cli-operations.sh`**: Operations toolkit for operator and user operations
+- local cargo workflow: [cli/README.md](cli/README.md) plus [docker/local-infra/README.md](docker/local-infra/README.md)
+- Docker operator workflow: [docker/operator/README.md](docker/operator/README.md)
+- Docker image build and registry operations: [docker/build/README.md](docker/build/README.md)
 
-For detailed documentation, usage examples, and command references, see [cli/README.md](cli/README.md).
+## Local Running Modes
+
+There are 3 supported ways to run everything locally:
+
+1. **Union Client in cargo + BitVMX in cargo**
+
+   Use this when you want both projects running from their Rust workspaces.
+
+   - Union Client local launcher and operations flow: [cli/README.md](cli/README.md)
+   - BitVMX repo-mode setup and `cli-run.sh --bitvmx-mode repo`: [cli/README.md](cli/README.md) and
+     [Configuring BitVMX Client (local cargo flow only)](#configuring-bitvmx-client-local-cargo-flow-only)
+
+2. **Union Client in cargo + BitVMX in Docker**
+
+   Use this when Union Client runs locally, but Bitcoin, Anvil, and BitVMX run in Docker.
+
+   - Local infra flow: [docker/local-infra/README.md](docker/local-infra/README.md)
+   - Union Client local launcher and operations flow: [cli/README.md](cli/README.md)
+
+3. **All in Docker**
+
+   Use this when you want BitVMX and Union Client operators running in containers.
+
+   - Docker flow selection: [docker/README.md](docker/README.md)
+   - Full operator runtime flow: [docker/operator/README.md](docker/operator/README.md)
+
+For the Docker-backed local flows, `./cli-infra.sh` is the quickest entry point for Bitcoin, Anvil, BitVMX, and
+background mining. Its local command reference lives in [docker/local-infra/README.md](docker/local-infra/README.md).
 
 ## AWS Regtest (Essentials)
 
-Access to regtest requires SSH credentials for:
-
-- `ubuntu@union-bridge-use2-1.regtest.rskcomputing.net`
+Access to regtest requires SSH credentials for `ubuntu@union-bridge-use2-1.regtest.rskcomputing.net`.
 
 Run from repository root:
 
 ```bash
-# Fast path: start operators with existing config/addresses
 ./cli-infra.sh --start-regtest
-
-# Full fresh orchestration (rebuild + reconfigure + restart)
 ./cli-infra.sh --start-regtest --fresh
-
-# End-to-end regtest validation
 bash tests/run-happy-path-regtest.sh
 ```
-
-Command summary:
 
 - `--start-regtest`: starts operators with existing deployed addresses/config.
 - `--start-regtest --fresh`: runs full remote fresh orchestration and clean operator restart.
@@ -487,9 +509,9 @@ You can also provide values through env vars:
 You will have the following commands available:
 
 - `raf` or `invoke-request-advance-funds`: start monitoring blocks for advance funds (emits RequestAdvanceFunds event)
-  - copy the printed `pegout_id`, you will need it for the next step
+    - copy the printed `pegout_id`, you will need it for the next step
 - `kaf` or `invoke-advance-funds`: generate a fake advance-funds event that triggers the advance funds in Coordinator
-  - you need to provide the `pegout_id` from the previous step
+    - you need to provide the `pegout_id` from the previous step
 
 (check cli help for more info)
 

@@ -1,5 +1,9 @@
 # Wallet CLI
 
+For repository-level setup and workflow context, start with [../../README.md](../../README.md),
+[../../CONTRIBUTING.md](../../CONTRIBUTING.md), and [../README.md](../README.md). This README covers the wallet-specific
+commands and behavior.
+
 Simple interactive command-line wallet for crafting P2WPKH transactions using the [
 `bitcoin`](https://crates.io/crates/bitcoin) crate.
 

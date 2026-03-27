@@ -1,5 +1,8 @@
 # Transaction Dispatcher
 
+For repository-level setup and workflow context, start with [../README.md](../README.md) and
+[../CONTRIBUTING.md](../CONTRIBUTING.md). This README stays focused on transaction-dispatcher details.
+
 The `transaction-dispatcher` project is a Rust-based application designed to handle and process various Union Bridge transactions.
 
 This project depends on the **Union Bridge Contract Bindings** for interaction with the Smart Contract. These are provided by the `union-contracts` crate (check `Cargo.toml`), which points to [temp-rsk/bitvmx-union-bridge-contracts](https://github.com/temp-rsk/bitvmx-union-bridge-contracts). `forge-bind` is used under the hood to generate the bindings.
