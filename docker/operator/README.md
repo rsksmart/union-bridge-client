@@ -36,7 +36,7 @@ Run the script:
 ./check_bitvmx_updates.sh
 ```
 
-Optionally select a specific branch or tag of `FairgateLabs/docker-bitvmx`:
+Optionally select a specific branch or tag of the upstream `docker-bitvmx` repository:
 
 ```bash
 ./check_bitvmx_updates.sh --ref <branch-or-tag>
@@ -44,9 +44,10 @@ Optionally select a specific branch or tag of `FairgateLabs/docker-bitvmx`:
 ./check_bitvmx_updates.sh -r <branch-or-tag>
 ```
 
-The script clones `FairgateLabs/docker-bitvmx` at the chosen ref, saves the fetched compose as
+The script clones upstream `docker-bitvmx` at the chosen ref, saves the fetched compose as
 `docker/bitvmx-client/docker-compose.fetched.yml`, and prints a unified diff against your working
-`docker/bitvmx-client/docker-compose.yml`. It is safe to re-run at any time.
+`docker/bitvmx-client/docker-compose.yml`. Set `BITVMX_UPSTREAM_GITHUB_ORG` first if you need to compare against a fork.
+It is safe to re-run at any time.
 
 ### 2) Choose your environment
 

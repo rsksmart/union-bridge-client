@@ -2,14 +2,11 @@ name: "Build Tests"
 description: "Builds the union-bridge-client"
 
 inputs:
-  fairgate_github_token:
-    description: "GitHub token for accessing FairgateLabs org repositories"
-    required: true
   contracts_github_token:
-    description: "GitHub token for accessing temp-rsk org contracts repository"
+    description: "GitHub PAT for the private union-contracts repository"
     required: true
   cache-build:
-    description: "Wether dependencies should be cached"
+    description: "Whether dependencies should be cached"
     required: true
 
 runs:
@@ -64,14 +61,7 @@ runs:
         restore-keys: |
           ${{ runner.os }}-rust-cargo-
 
-    - name: Fix Fairgate private repo dependency cloning
-      shell: bash
-      run: |
-        git config --global \
-          url."https://${{ inputs.fairgate_github_token }}@github.com/FairgateLabs".insteadOf \
-          "ssh://git@github.com/FairgateLabs"
-
-    - name: Fix temp-rsk private repo dependency cloning
+    - name: Configure contracts dependency cloning
       shell: bash
       run: |
         git config --global \

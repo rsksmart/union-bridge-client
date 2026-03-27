@@ -29,16 +29,31 @@ blockchain reorganizations.
 ### Transaction Dispatcher
 
 Implemented under the `transaction-dispatcher` crate, this component is responsible for sending transactions to
-Rootstock.
-
-TODO: better document this
+Rootstock. It wraps contract interactions, key usage, and transaction submission so the rest of the system can request
+protocol actions without duplicating chain-specific logic.
 
 ### User API
 
 Implemented under the `user-api` crate, this component provides a user-friendly API for end user interaction with the
-protocol.
+protocol. It exposes the entry points used for operations such as peg-ins and peg-outs and validates the request data
+needed by downstream flows.
 
-TODO: better document this
+### E2E Documentation
+
+Implemented under the `coordinator` crate, this component orchestrates the different flows of the Union and interacts
+with BitVMX. It ties together blockchain events, contract state, broker messaging, and timeout handling for
+multi-step protocol execution.
+
+### Summary
+
+The Union Bridge Client is responsible for:
+
+- **Monitoring blockchain events** on Rootstock to detect protocol-relevant activity.
+- **Maintaining protocol state**, tracking all necessary data for correct operation and recovery.
+- **Dispatching protocol transactions** to Rootstock as required by protocol flows.
+- **Exposing a user API** for external interaction and integration.
+- **Integrating with a zero‑knowledge proof pipeline** to validate blockchain forks securely.
+- **Coordinating with Union Bridge contracts and the Union Client** for seamless protocol orchestration.
 
 ### E2E Documentation
 
@@ -52,34 +67,23 @@ You can find advanced documentation on the E2E flows and other topics in the [do
 - [BitVMX actions triggered by Union Client](docs/e2e/bitvmx-actions-triggered-by-union-client.md)
 - [Bitcoin and Rootstock confirmations, retry delays, and timeouts](docs/e2e/confirmations-retries-and-timeouts.md)
 
-### Summary
-
-The Union Bridge Client is responsible for:
-
-- **Monitoring blockchain events** on Rootstock to detect protocol-relevant activity.
-- **Maintaining protocol state**, tracking all necessary data for correct operation and recovery.
-- **Dispatching protocol transactions** to Rootstock as required by protocol flows.
-- **Exposing a user API** for external interaction and integration.
-- **Integrating with a zero‑knowledge proof pipeline** to validate blockchain forks securely.
-- **Coordinating with Union Bridge contracts and the Union Client** for seamless protocol orchestration.
-
 ## First Time Setup
 
 Before running the Union Bridge Client for the first time, you need to complete the following setup steps:
 
-1. **Clone the repository with SSH** (required for submodules access)
+1. **Clone the repository**
 2. **Install required tools** (Rust, direnv, Foundry, etc.)
-3. **Set up required repositories** (BitVMX Workspace, BitVMX Union Bridge Contracts)
+3. **Set up required repositories** (BitVMX Client, BitVMX Union Bridge Contracts)
 4. **Set up environment variables** using `direnv`
 5. **Configure the client** for your environment
 
 ### Clone the repository
 
-**Important**: You must clone the repository using SSH because the project uses private submodules that require SSH
-authentication.
+HTTPS or SSH both work for cloning this repository. SSH is only needed if your GitHub access model for the private
+contracts dependency requires it.
 
 ```bash
-git clone git@github.com:rsksmart/union-bridge-client.git
+git clone https://github.com/rsksmart/union-bridge-client.git
 ```
 
 ### Tooling
@@ -120,20 +124,27 @@ Before running the Union Bridge Client, you need to install and set up the follo
 
 ### Required Repositories
 
-1. **BitVMX Workspace** - Contains the BitVMX client
+For a working setup, you need the public `rust-bitvmx-client` repository and the private
+`temp-rsk/bitvmx-union-bridge-contracts` repository. Full workspace builds, Docker image builds, and CI reproduction
+require credentials for the contracts repository.
 
-   You have to clone the [BitVMX Workspace](https://github.com/FairgateLabs/rust-bitvmx-workspace) repository and follow
-   the README instructions to set it up. Once done, you can run the BitVMX client by following the next steps:
+1. **BitVMX Client** - Upstream BitVMX client repository
+
+   Clone the public [BitVMX Client](https://github.com/FairgateLabs/rust-bitvmx-client) repository and follow its
+   README. Then run the BitVMX client from that checkout:
 
    ```bash
-   git clone git@github.com:FairgateLabs/rust-bitvmx-workspace.git
-   cd <path_to_bitvmx_workspace_repo>/rust-bitvmx-client
+   git clone https://github.com/FairgateLabs/rust-bitvmx-client.git
+   cd rust-bitvmx-client
    ./run_union_example.sh # this spins up the BitVMX client and make sure to have docker running on your machine
    ```
 
    **Note**: Make sure to have Docker running on your machine before executing the script.
 
 2. **BitVMX Union Bridge Contracts** - Smart contracts for the Union Bridge protocol
+
+   This private repository is required by this workspace.
+
    ```bash
    git clone git@github.com:temp-rsk/bitvmx-union-bridge-contracts.git
    ```
@@ -235,7 +246,7 @@ cat ${BASE_STORAGE_PATH}/.union_bridge/op_2/broker/coordinator.pubkey_hash
 
 **2. Update BitVMX client config files manually, operator by operator**
 
-In your `rust-bitvmx-workspace/rust-bitvmx-client/config/` directory, update each `config/op_N.yaml` so
+In your `rust-bitvmx-client/config/` directory, update each `config/op_N.yaml` so
 `components.l2.pubkey_hash` matches the same operator's Union Bridge coordinator identity:
 
 ```yaml
@@ -387,9 +398,8 @@ cd docker/build
 bash d-build-client.sh --tag=latest-regtest --no-cache
 ```
 
-For full instance details (hosts, env vars, artifacts, validation, troubleshooting), see:
-
-- [`regtest-instance/README.md`](regtest-instance/README.md)
+For the full Docker operator flow, environment files, and runtime artifact layout, see
+[docker/operator/README.md](docker/operator/README.md).
 
 ## Running the Union Client
 
@@ -398,7 +408,7 @@ For full instance details (hosts, env vars, artifacts, validation, troubleshooti
 Once you have gone through the initial setup steps, the order to start up the project suite is
 
 1. Have docker running on your local machine.
-2. Start up the rust-bitvmx-client-workspace
+2. Start up `rust-bitvmx-client`
 3. Start anvil, opt. with auto mining with `anvil --block-time N` (where `N` is the number of seconds between blocks)
 4. Deploy the `bitvmx-union-bridge-contracts`. See corresponding `README.md`. (Hint: for local regtest deployment use
    `bash ./shell/script/deploy/deploy-local.sh`)
@@ -672,31 +682,34 @@ Some instructions on how to use this file and other parameters will be printed i
 
 ```
 CLI Args { operation: "elf", fixture: None, bridge_event: true, fetch_start_block: 6883222, fetch_block_count: 100, cf_required_blocks: 100, cf_required_effort: 4886718345, cf_init_block: 6883221, cf_init_timestamp: 1701129600 }
-CheckForkArgs serialized to file: /Users/illuque/workspace/union-bridge/union-bridge-client/check-fork/tester/check_fork_args.bin. Total time: 1.79725ms
+CheckForkArgs serialized to file: check-fork/tester/check_fork_args.bin. Total time: 1.79725ms
 GetBlocks executed and CheckForkArgs generated. Relevant parameters for the interaction with the ZKVM CLI:
-    - input: /Users/illuque/workspace/union-bridge/union-bridge-client/check-fork/tester/check_fork_args.bin
-    - elf: /Users/illuque/workspace/union-bridge/union-bridge-client/target/riscv-guest/check-fork-zkp/check-fork-guest/riscv32im-risc0-zkvm-elf/release/check-fork-guest.bin
+    - input: check-fork/tester/check_fork_args.bin
+    - elf: target/riscv-guest/check-fork-zkp/check-fork-guest/riscv32im-risc0-zkvm-elf/release/check-fork-guest.bin
     - image_id: 18a4bad2542ac900b0681125ac38385d03139104e535590b67c473ac5465c078
 
 ```
 
 ### 2) Generate the Stark Proof
 
-With the previous output, we can now generate the Stark Proof
-Clone Fairgate's [ZK Proof](https://github.com/FairgateLabs/rust-bitvmx-zk-proof/) repo or use Workspace one - main
-branch works ATM.
+With the previous output, you can generate the Stark proof from the BitVMX
+[ZK proof](https://github.com/FairgateLabs/rust-bitvmx-zk-proof/) repository.
 
-Then run the following command where:
+From the `rust-bitvmx-zk-proof` repository root, point `--input` and `--elf` at paths under your
+`union-bridge-client` checkout:
 
 ```bash
-cargo run --release --bin host -- prove-stark --input /Users/illuque/workspace/union-bridge/union-bridge-client/check-fork/tester/check_fork_args.bin --elf /Users/illuque/workspace/union-bridge/union-bridge-client/target/riscv-guest/check-fork-zkp/check-fork-guest/riscv32im-risc0-zkvm-elf/release/check-fork-guest.bin --output stark-proof.bin
+cargo run --release --bin host -- prove-stark \
+  --input /path/to/union-bridge-client/check-fork/tester/check_fork_args.bin \
+  --elf /path/to/union-bridge-client/target/riscv-guest/check-fork-zkp/check-fork-guest/riscv32im-risc0-zkvm-elf/release/check-fork-guest.bin \
+  --output stark-proof.bin
 ```
 
 An output like the following will be printed, showing _CheckFork_ execution result and the path to the resulting stark
 proof `stark-proof.bin`.
 
 ```
-[/Users/illuque/.cargo/git/checkouts/union-bridge-check-fork-47c61d4052b7ed6f/6d36b88/check_fork/src/lib.rs:89:5] (cumulative_effort, required_effort) = (
+[check_fork/src/lib.rs:89:5] (cumulative_effort, required_effort) = (
     3133842214971570006248820,
     100,
 )
