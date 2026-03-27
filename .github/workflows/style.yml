@@ -28,7 +28,6 @@ jobs:
       - name: Setup
         uses: ./.github/actions/common_setup
         with:
-          fairgate_github_token: ${{ secrets.FAIRGATE_GITHUB_TOKEN }}
           contracts_github_token: ${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
           cache-build: true
 
@@ -49,4 +48,3 @@ jobs:
       - name: Clippy CheckForkGuest
         run: |
           RISC0_SKIP_BUILD=1 cargo clippy --manifest-path check-fork/zkp/guest/Cargo.toml --all-targets --all-features
-

@@ -11,7 +11,7 @@ FROM ghcr.io/rsksmart/union-client-builder:rust-1.88-v1 AS builder
 ARG JUST_CRATE=""
 ARG FEATURES=""
 
-# setup SSH for private repositories
+# setup SSH known hosts for git dependencies
 RUN mkdir -p -m 0700 ~/.ssh && \
     ssh-keyscan github.com >> ~/.ssh/known_hosts
 
@@ -41,18 +41,16 @@ COPY user-api user-api
 ENV RUST_LOG=error
 ENV CARGO_TERM_QUIET=true
 
-# Configure Git to use HTTPS with tokens instead of SSH
-# Note: The actual tokens will be provided via build args from the GitHub Actions workflow
-ARG FAIRGATE_GITHUB_TOKEN
+# Configure Git to use token-authenticated HTTPS for the private contracts
+# repository during dependency fetch.
 ARG UNION_CONTRACTS_GITHUB_TOKEN
 
 RUN mkdir -p .cargo && \
     echo '[net]\ngit-fetch-with-cli = true' > .cargo/config.toml && \
-    git config --global url."https://${FAIRGATE_GITHUB_TOKEN}@github.com/FairgateLabs".insteadOf "ssh://git@github.com/FairgateLabs" && \
     git config --global url."https://${UNION_CONTRACTS_GITHUB_TOKEN}@github.com/temp-rsk".insteadOf "ssh://git@github.com/temp-rsk" && \
     cargo fetch --locked && \
-    # Clear the tokens from build args to avoid security warnings
-    unset FAIRGATE_GITHUB_TOKEN UNION_CONTRACTS_GITHUB_TOKEN
+    # Clear the token from build args to avoid security warnings
+    unset UNION_CONTRACTS_GITHUB_TOKEN
 
 # two build modes:
 # 1) build the entire workspace and reuse among containers, to reduce build time
