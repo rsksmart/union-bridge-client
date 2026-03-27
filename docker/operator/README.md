@@ -127,6 +127,12 @@ If the contracts code changes (e.g. new tag) and you use `local-build`, run a cl
 
 Before starting Union services in Docker, prepare the operator artifacts once on that machine:
 
+`<project_root>/cli-setup-operators.sh` requires:
+
+- `openssl` to create broker identities
+- `perl` to patch generated BitVMX config files
+- `cargo` when running with `--env local`, because it creates local cargo-mode keystores
+
 ```bash
 cd docker/operator
 
