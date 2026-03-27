@@ -80,7 +80,7 @@ print_help() {
   echo "    export UC_ENV=\"local-docker\"        # Sets default environment"
   echo "    export UC_OPERATOR_ID=1              # Sets default operator ID"
   echo "    export BITCOIND_URL=\"http://user:password@bitcoin-node:18332\""
-  echo "                                       # Required before cli-setup-operators.sh and operator startup"
+  echo "                                       # Required before cli-setup-operators.sh"
   echo "  Command-line flags override exported values when provided."
   echo ""
   echo "Examples:"
@@ -131,7 +131,7 @@ require_key_store_password() {
 
   if [[ -z "${configured_password}" ]]; then
     echo "Error: KEY_STORE_PASSWORD is required for operator startup." >&2
-    echo "Export KEY_STORE_PASSWORD or define it in docker/operator/.env.<environment> or the operator docker.env before running startup commands." >&2
+    echo "Export KEY_STORE_PASSWORD or define it in the operator docker.env (or docker/operator/.env.<environment>) before running startup commands." >&2
     exit 1
   fi
 }

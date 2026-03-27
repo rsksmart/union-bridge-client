@@ -47,8 +47,8 @@ If the chosen config file is missing the CLI aborts.
 All configuration values can also be provided via environment variables or command-line flags, with the following
 precedence:
 
-1. Environment variables (check in `main.rs`)
-3. Values from the TOML config file
+1. Command-line flags and environment variables
+2. Values from the TOML config file
 
 ### Required Environment Variables
 

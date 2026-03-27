@@ -245,10 +245,8 @@ is: `--tag` > exported `UC_TAG` > static `docker/operator/.env.<environment>`.
 
 #### Required Environment Variables
 
-**`BITCOIND_URL`** must be defined on every machine running operators. The BitVMX client container requires it to
-connect to a Bitcoin node. It is passed through Docker Compose variable substitution
-(`docker/bitvmx-client/docker-compose.yml`) into the container's environment, and
-`<project_root>/cli-setup-operators.sh` patches the generated BitVMX operator YAMLs from the exported shell value.
+**`BITCOIND_URL`** must be defined on every machine where you run `<project_root>/cli-setup-operators.sh` for
+operators. The setup script patches the generated BitVMX operator YAMLs from the exported shell value.
 
 Export it in the shell before running setup:
 
@@ -262,7 +260,8 @@ before starting operators again.
 
 **`KEY_STORE_PASSWORD`** is required by `coordinator` and `user-api` at runtime. For Docker operator flows,
 you can export it before running `<project_root>/cli-setup-operators.sh`, or let setup prompt for it. Setup then
-writes it into `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env` for later operator startup reuse.
+writes it into `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`, which `start_operators.sh` reuses on later
+starts.
 
 **`USER_BITCOIN_WIF`** is required for the generated operator env files because `user-api` uses it for user endpoints
 (pegin/pegout operations). You can export it before running `<project_root>/cli-setup-operators.sh`, or let setup
