@@ -74,8 +74,7 @@ This setup supports five deployment environments:
   Alphanet testnet
 - **Testnet** (`.env.testnet`): Production-like environment where each host runs a single operator, connecting to the
   Bitcoin testnet
-- **Regtest** (`.env.regtest`): All 4 operators on one host, connected to shared regtest infrastructure (powpeg +
-  node21)
+- **Regtest** (`.env.regtest`): All 4 operators on one host, connected to shared private regtest infrastructure
 
 #### BitVMX Network Modes
 
@@ -399,8 +398,7 @@ cd ../../
 ./cli-infra.sh --start-regtest --fresh
 ```
 
-`./cli-infra.sh --start-regtest --fresh` is remote-only and executes `/home/ubuntu/regtest-fresh/regtest_fresh.sh` on
-`union-bridge-use2-1`.
+`./cli-infra.sh --start-regtest --fresh` is remote-only and executes the configured remote fresh script.
 `REGTEST_FRESH_MODE=local` is unsupported. You can override remote script location with `REGTEST_FRESH_REMOTE_SCRIPT`.
 
 ### 5) Viewing logs per operator project

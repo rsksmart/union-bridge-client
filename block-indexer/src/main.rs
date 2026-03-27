@@ -52,7 +52,7 @@ fn main() -> Result<()> {
     let alloy_provider = AlloyProvider::new(&config.provider.rootstock.url, shutdown_flag.clone())
         .expect("Failed to create AlloyProvider (unrecoverable)");
 
-    // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - think about bounding the channel
+    // TODO(Jira) UB-132 - think about bounding the channel
     let (tx, rx): (mpsc::Sender<RskBlockAndUncles>, mpsc::Receiver<RskBlockAndUncles>) =
         mpsc::channel();
 

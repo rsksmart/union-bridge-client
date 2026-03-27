@@ -102,7 +102,7 @@ impl LogStore for RawLogStore {
     }
 
     fn save_logs(&self, logs: &[RskLog]) -> Result<()> {
-        // TODO(Jira): add bulk write operation to storage backend https://rsklabs.atlassian.net/browse/UB-113
+        // TODO(Jira): add bulk write operation to storage backend UB-113
         logs.iter().try_for_each(|log| self.save_log(log))
     }
 

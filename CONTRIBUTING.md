@@ -338,9 +338,9 @@ There are 3 supported ways to run everything locally:
 For the Docker-backed local flows, `./cli-infra.sh` is the quickest entry point for Bitcoin, Anvil, BitVMX, and
 background mining. Its local command reference lives in [docker/local-infra/README.md](docker/local-infra/README.md).
 
-## AWS Regtest (Essentials)
+## Private Regtest (Essentials)
 
-Access to regtest requires SSH credentials for `ubuntu@union-bridge-use2-1.regtest.rskcomputing.net`.
+Access to regtest requires project-specific SSH credentials.
 
 Run from repository root:
 
@@ -353,8 +353,8 @@ bash tests/run-happy-path-regtest.sh
 - `--start-regtest`: starts operators with existing deployed addresses/config.
 - `--start-regtest --fresh`: runs full remote fresh orchestration and clean operator restart.
 
-Important: if you change branch on the regtest host (`~/union-bridge-client`), rebuild images tagged as
-`latest-regtest` before starting operators:
+Important: if you change branch on the private regtest host, rebuild images tagged as `latest-regtest` before starting
+operators:
 
 ```bash
 cd docker/build
@@ -495,7 +495,7 @@ For regtest, use `attach` mode (`--no-deploy`) and pass the predeployed address:
 
 ```bash
 ./cli-mocking.sh \
-  --rpc-url ws://node-use2-1.regtest.rskcomputing.net:4445 \
+  --rpc-url ws://<private-regtest-rpc>:4445 \
   --fake-peg-manager-address 0x... \
   --no-deploy
 ```

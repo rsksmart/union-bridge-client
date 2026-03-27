@@ -3,11 +3,11 @@ use serde_json::Value;
 
 use crate::types::{Address, RskBlockAndUncles, RskLog};
 
-// TODO(Jira) https://rsklabs.atlassian.net/browse/UB-213
+// TODO(Jira) UB-213
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum ToServer {
-    // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132 - add a limit time for receiving a response?
+    // TODO(Jira) UB-132 - add a limit time for receiving a response?
 
     // block-indexer
     SubscribeBlocks,
