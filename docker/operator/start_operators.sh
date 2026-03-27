@@ -79,6 +79,8 @@ print_help() {
   echo "  Values can be exported in the shell to avoid passing flags:"
   echo "    export UC_ENV=\"local-docker\"        # Sets default environment"
   echo "    export UC_OPERATOR_ID=1              # Sets default operator ID"
+  echo "    export BITCOIND_URL=\"http://user:password@bitcoin-node:18332\""
+  echo "                                       # Required before cli-setup-operators.sh and operator startup"
   echo "  Command-line flags override exported values when provided."
   echo ""
   echo "Examples:"

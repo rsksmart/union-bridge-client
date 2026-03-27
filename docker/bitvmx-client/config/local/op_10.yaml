@@ -1,6 +1,7 @@
 bitcoin:
   network: regtest
   wallet: test_wallet
+  url: <to_patch_in_host>
 
 key_manager:
   network: regtest

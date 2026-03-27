@@ -57,6 +57,15 @@ check_key_store_password() {
   fi
 }
 
+check_bitcoind_url() {
+  if [[ -z "${BITCOIND_URL:-}" ]]; then
+    echo "Error: BITCOIND_URL is required." >&2
+    echo "Export BITCOIND_URL and rerun <project_root>/cli-setup-operators.sh." >&2
+    echo "The generated BitVMX operator YAMLs are patched from the current shell environment." >&2
+    exit 1
+  fi
+}
+
 prepare_local_keystore_password() {
   if [[ "${ENVIRONMENT}" != "local" ]]; then
     return 0
@@ -282,6 +291,24 @@ patch_bitvmx_key_storage_password() {
     BITVMX_KEY_STORAGE_PASSWORD="${password}" \
       perl -0pi -e 's/(key_storage:\s*\n\s*password:\s*)[^\n]+/${1}$ENV{BITVMX_KEY_STORAGE_PASSWORD}/m' "${cfg_file}"
   fi
+}
+
+patch_bitvmx_bitcoin_url() {
+  local cfg_file="$1"
+  local bitcoin_url="$2"
+
+  if ! grep -q '^[[:space:]]*bitcoin:' "${cfg_file}"; then
+    return 0
+  fi
+
+  if perl -0ne 'exit 0 if /bitcoin:\s*\n(?:[ \t]+.*\n)*?[ \t]+url:\s*/m; END { exit 1 }' "${cfg_file}"; then
+    BITVMX_BITCOIN_URL="${bitcoin_url}" \
+      perl -0pi -e 's/(bitcoin:\s*\n(?:[ \t]+.*\n)*?[ \t]+url:\s*)[^\n]+/${1}$ENV{BITVMX_BITCOIN_URL}/m' "${cfg_file}"
+    return 0
+  fi
+
+  BITVMX_BITCOIN_URL="${bitcoin_url}" \
+    perl -0pi -e 's/(bitcoin:\s*\n(?:[ \t]+.*\n)*?[ \t]+wallet:\s*[^\n]+\n)/${1}  url: $ENV{BITVMX_BITCOIN_URL}\n/m' "${cfg_file}"
 }
 
 patch_bitvmx_component_pubkey_hash() {
@@ -567,6 +594,7 @@ prepare_operator_bitvmx_config() {
   write_operator_bitvmx_pubkey_hash_files "${target_keys_dir}"
   patch_operator_bitvmx_identity_hashes "${cfg_file}" "${coordinator_pubkey_hash}" "${target_keys_dir}"
   patch_bitvmx_key_storage_password "${cfg_file}" "${KEY_STORE_PASSWORD}"
+  patch_bitvmx_bitcoin_url "${cfg_file}" "${BITCOIND_URL}"
 
   rm -rf "${target_dir}/broker"
 
@@ -616,6 +644,7 @@ fi
 
 ensure_dependencies
 check_key_store_password
+check_bitcoind_url
 prepare_local_keystore_password
 
 case "${ENVIRONMENT}" in

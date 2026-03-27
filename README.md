@@ -154,6 +154,9 @@ the Union Client) are:
   unlock the corresponding keystore files when running the client (see [Multi Client Setup](#Multi-Client-Setup) below).
   **Important:** This variable must be exported in your shell before running `cli-setup-operators.sh` or starting
   Docker operators.
+- `BITCOIND_URL`: Bitcoin RPC URL used by the BitVMX client.
+  **Important:** This variable must be exported in your shell before running `cli-setup-operators.sh` or starting
+  Docker operators because setup patches the generated operator YAMLs from the current environment.
 - `BASE_STORAGE_PATH`: base path where the client will store its data (databases, keystore files, etc.). Pick a path
   that is writable and accessible by the user running the client.
 - `WALLET_PRIVATE_KEY`: a Bitcoin private key WIF. You can generate one via the `bitcoin-wallet` with
@@ -209,7 +212,7 @@ own workspace.
 If you are using the Docker operator flow under [`docker/operator/`](docker/operator/README.md), skip this section:
 `./cli-setup-operators.sh` already generates per-operator BitVMX config copies under
 `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/` and patches
-`components.l2.pubkey_hash` automatically.
+`components.l2.pubkey_hash` and `bitcoin.url` automatically.
 
 The BitVMX client needs to know where to send messages back to the Union Bridge Client. You must configure the
 `components.l2.pubkey_hash` in the BitVMX client config files to match the operator's Union Bridge coordinator client

@@ -130,6 +130,8 @@ Before starting Union services in Docker, prepare the operator artifacts once on
 ```bash
 cd docker/operator
 
+export BITCOIND_URL=http://user:password@bitcoin-node:18332
+
 # Local/regtest on one host
 <project_root>/cli-setup-operators.sh --env local --ops 4
 
@@ -148,6 +150,9 @@ This creates or reuses:
 
 The generated `docker.env` file is used only for Docker operator execution via `start_operators.sh`.
 It is not used by local cargo mode (`./cli-run.sh`).
+
+`BITCOIND_URL` must already be exported in the shell before running `<project_root>/cli-setup-operators.sh`.
+The script patches each generated BitVMX operator YAML with the current `BITCOIND_URL` value.
 
 `<project_root>/cli-setup-operators.sh` prompts for `USER_BITCOIN_WIF` only when an operator env file is missing that value and persists it there.
 Running setup again is incremental: existing broker identities are reused, and existing operator env files are refreshed in place so updated tags or derived broker values are applied without re-prompting for stored WIFs.
@@ -206,18 +211,18 @@ bash start_operators.sh down
 
 **`BITCOIND_URL`** must be defined on every machine running operators. The BitVMX client container requires it to
 connect to a Bitcoin node. It is passed through Docker Compose variable substitution
-(`docker/bitvmx-client/docker-compose.yml`) into the container's environment.
+(`docker/bitvmx-client/docker-compose.yml`) into the container's environment, and
+`<project_root>/cli-setup-operators.sh` patches the generated BitVMX operator YAMLs from the exported shell value.
 
-Define it in the corresponding `.env.<environment>` file or export it in the shell before starting operators:
+Export it in the shell before running setup or starting operators:
 
 ```bash
 # Format: http://<rpc_user>:<rpc_password>@<host>:<port>
 export BITCOIND_URL=http://user:password@bitcoin-node:18332
 ```
 
-For **local** environments, `BITCOIND_URL` is already set in `docker/local-infra/.env.local` and flows through
-automatically. For **alphanet**, **testnet**, and **regtest** deployments, you must define it yourself — either by
-adding it to the relevant `docker/operator/.env.<environment>` file or by exporting it in the shell.
+If you change `BITCOIND_URL`, rerun `<project_root>/cli-setup-operators.sh` so the generated BitVMX YAMLs are updated
+before starting operators again.
 
 **`USER_BITCOIN_WIF`** is required for the generated operator env files because `user-api` uses it for user endpoints (pegin/pegout operations).
 `<project_root>/cli-setup-operators.sh` reuses an exported `USER_BITCOIN_WIF` when present; otherwise it prompts once when creating a new operator env file, then reuses the stored value on later runs.

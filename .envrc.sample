@@ -40,3 +40,5 @@ export USER_BITCOIN_WIF="<user_wif_private_key>"
 # Member/Operator WIF for BitVMX operations
 export MEMBER_BITCOIN_WIF="<member_wif_private_key>"
 export BITCOIN_NETWORK=regtest
+# Bitcoind url
+export BITCOIND_URL="<to_set_in_local>"
