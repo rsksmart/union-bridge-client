@@ -109,6 +109,28 @@ print_help() {
   exit 0
 }
 
+read_env_value() {
+  local env_file="$1"
+  local key="$2"
+
+  awk -F= -v key="${key}" '$1 == key {print substr($0, index($0, "=") + 1); exit}' "${env_file}"
+}
+
+require_key_store_password() {
+  local env_file="$1"
+  local configured_password="${KEY_STORE_PASSWORD:-}"
+
+  if [[ -z "${configured_password}" ]] && [[ -f "${env_file}" ]]; then
+    configured_password="$(read_env_value "${env_file}" "KEY_STORE_PASSWORD")"
+  fi
+
+  if [[ -z "${configured_password}" ]]; then
+    echo "Error: KEY_STORE_PASSWORD is required for operator startup." >&2
+    echo "Export KEY_STORE_PASSWORD or define it in ${env_file} before running startup commands." >&2
+    exit 1
+  fi
+}
+
 # Parse args
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -217,6 +239,10 @@ for arg in "${DOCKER_COMPOSE_ARGS[@]}"; do
     break
   fi
 done
+
+if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
+  require_key_store_password "${ENV_FILE}"
+fi
 
 # Validate --op flag usage
 if [[ ("$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest") && -n "$OPERATOR_ARG" ]]; then

@@ -2,19 +2,24 @@
 
 This setup provides flexible operator deployment configurations:
 
-- **Local environment**: Run multiple independent operator stacks in parallel (`op_1`..`op_N`) on a single host to simulate a committee, using a shared Docker bridge network for BitVMX P2P communication. The default is 4 operators; use `--ops` when you need more.
-- **Alphanet environment**: Run a single operator per host, allowing distributed committee deployment across multiple machines, using host network mode for BitVMX P2P connectivity
+- **Local environment**: Run multiple independent operator stacks in parallel (`op_1`..`op_N`) on a single host to
+  simulate a committee, using a shared Docker bridge network for BitVMX P2P communication. The default is 4 operators;
+  use `--ops` when you need more.
+- **Alphanet environment**: Run a single operator per host, allowing distributed committee deployment across multiple
+  machines, using host network mode for BitVMX P2P connectivity
 - Each stack includes: BitVMX client + Union Client services (`user-api`, `block-indexer`, `log-indexer`, `coordinator`)
 
 ## Pre-requisites
 
-When pushing or pulling to a private GitHub container registry, Docker asks for a personal access token. You can generate one on GitHub using this [link](https://github.com/settings/tokens/new). 
+When pushing or pulling to a private GitHub container registry, Docker asks for a personal access token. You can
+generate one on GitHub using this [link](https://github.com/settings/tokens/new).
 Make sure you create the token with registry access. You can set up the token by running the following command:
 
 ```bash
 export GITHUB_REGISTRY_TOKEN=<your-token>
 echo "$GITHUB_REGISTRY_TOKEN" | docker login ghcr.io -u "user" --password-stdin.
 ```
+
 ## How to run it
 
 ### 1) Check and fetch BitVMX compose (re-run as needed)
@@ -47,26 +52,34 @@ The script clones `FairgateLabs/docker-bitvmx` at the chosen ref, saves the fetc
 
 This setup supports four deployment environments:
 
-- **Local** (`.env.local`): Development environment that runs multiple operators on a single host with local Bitcoin and RSK nodes (default: 4, configurable via `<project_root>/cli-setup-operators.sh --ops` or `start_operators.sh --ops`)
-- **Alphanet** (`.env.alphanet`): Production-like environment where each host runs a single operator, connecting to the Alphanet testnet
-- **Testnet** (`.env.testnet`): Production-like environment where each host runs a single operator, connecting to the Bitcoin testnet
-- **Regtest** (`.env.regtest`): All 4 operators on one host, connected to shared regtest infrastructure (powpeg + node21)
+- **Local** (`.env.local`): Development environment that runs multiple operators on a single host with local Bitcoin and
+  RSK nodes (default: 4, configurable via `<project_root>/cli-setup-operators.sh --ops` or `start_operators.sh --ops`)
+- **Alphanet** (`.env.alphanet`): Production-like environment where each host runs a single operator, connecting to the
+  Alphanet testnet
+- **Testnet** (`.env.testnet`): Production-like environment where each host runs a single operator, connecting to the
+  Bitcoin testnet
+- **Regtest** (`.env.regtest`): All 4 operators on one host, connected to shared regtest infrastructure (powpeg +
+  node21)
 
 #### BitVMX Network Modes
 
 The BitVMX client requires different Docker network configurations depending on the deployment environment:
 
 **Local environment (Bridge Network)**:
+
 - Uses a shared Docker bridge network (`bitvmx-network`) for P2P communication between operators
 - All operators run on the same host and communicate through Docker's internal network
 - Each operator binds to a unique P2P port on the Docker bridge
 - This isolated network allows multiple BitVMX clients to communicate without exposing ports to the host
 
 **Alphanet/Testnet environment (Host Network)**:
+
 - Uses Docker's host network mode (`network_mode: host`)
 - The BitVMX client binds P2P ports directly to the host's network interfaces
-- Required because BitVMX advertises its P2P address to other operators, and must be reachable at the host's actual IP address
-- In a distributed deployment, operators on different physical machines need to connect to each other using real network addresses, not Docker internal IPs
+- Required because BitVMX advertises its P2P address to other operators, and must be reachable at the host's actual IP
+  address
+- In a distributed deployment, operators on different physical machines need to connect to each other using real network
+  addresses, not Docker internal IPs
 
 ### 3) Start local blockchains (LOCAL ONLY)
 
@@ -152,7 +165,8 @@ This creates or reuses:
 - the same pair for `log-indexer`, `user-api`, and `coordinator`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/...` copied from `docker/bitvmx-client/config/<environment>`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`
-- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/keystore/{member,user}` (only when setup is run with `--env local`; used by `./cli-run.sh`)
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/keystore/{member,user}` (only when setup is run with `--env local`;
+  used by `./cli-run.sh`)
 
 The generated `docker.env` file is used only for Docker operator execution via `start_operators.sh`.
 It is not used by local cargo mode (`./cli-run.sh`).
@@ -160,15 +174,22 @@ It is not used by local cargo mode (`./cli-run.sh`).
 `BITCOIND_URL` must already be exported in the shell before running `<project_root>/cli-setup-operators.sh`.
 The script patches each generated BitVMX operator YAML with the current `BITCOIND_URL` value.
 
-`<project_root>/cli-setup-operators.sh` prompts for `USER_BITCOIN_WIF` only when an operator env file is missing that value and persists it there.
-Running setup again is incremental: existing broker identities are reused, and existing operator env files are refreshed in place so updated tags or derived broker values are applied without re-prompting for stored WIFs.
-The generated BitVMX config copy is created from the tracked template on first setup, then reused on later runs. On each run, the operator's client YAML is patched so `components.l2.pubkey_hash` matches that operator's coordinator broker identity when that field exists in the template, and the referenced BitVMX runtime keys are generated or reused under `.union_bridge/op_N/bitvmx/...` instead of being copied from the tracked template. In other words, `docker/bitvmx-client/config/<environment>` is treated as a config template, not as the source of runtime private keys.
+`<project_root>/cli-setup-operators.sh` prompts for `USER_BITCOIN_WIF` only when an operator env file is missing that
+value and persists it there.
+Running setup again is incremental: existing broker identities are reused, and existing operator env files are refreshed
+in place so updated tags or derived broker values are applied without re-prompting for stored WIFs.
+The generated BitVMX config copy is created from the tracked template on first setup, then reused on later runs. On each
+run, the operator's client YAML is patched so `components.l2.pubkey_hash` matches that operator's coordinator broker
+identity when that field exists in the template, and the referenced BitVMX runtime keys are generated or reused under
+`.union_bridge/op_N/bitvmx/...` instead of being copied from the tracked template. In other words,
+`docker/bitvmx-client/config/<environment>` is treated as a config template, not as the source of runtime private keys.
 
 `local` and `local-docker` share the same host-side runtime root by default:
 
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/...`
 
-So local cargo flows and local Docker operator flows reuse the same per-operator broker identities and generated runtime artifacts unless you change `BASE_STORAGE_PATH`.
+So local cargo flows and local Docker operator flows reuse the same per-operator broker identities and generated runtime
+artifacts unless you change `BASE_STORAGE_PATH`.
 
 `start_operators.sh` reads those generated operator env files to:
 
@@ -176,23 +197,31 @@ So local cargo flows and local Docker operator flows reuse the same per-operator
 - inject the explicit remote broker `pubkey_hash` values required by `coordinator` and `user-api`
 
 The Docker flow no longer relies on a shared broker key in `/keystore`.
-The remaining shared `keystore` volume between `coordinator` and `user-api` is transitional and is only for the existing user/member keystore files.
+The remaining shared `keystore` volume between `coordinator` and `user-api` is transitional and is only for the existing
+user/member keystore files.
 
-BitVMX runtime config is now generated under `.union_bridge/op_N/bitvmx/` instead of patching the tracked repo files in place.
+BitVMX runtime config is now generated under `.union_bridge/op_N/bitvmx/` instead of patching the tracked repo files in
+place.
 
 Why BitVMX config is generated but Union Client config is not:
 
-- Union Client already supports runtime configuration overrides via `UB__...` environment variables, so operator-specific values such as broker identities, remote pubkey hashes, ports, and WIFs can be injected without copying the tracked `config/` tree.
-- BitVMX does not have an equivalent operator-runtime override layer in this repo. Its operator-specific values live inside YAML files, so the clean boundary is to treat `docker/bitvmx-client/config/<environment>` as a template and generate a per-operator host copy under `.union_bridge/op_N/bitvmx/`.
+- Union Client already supports runtime configuration overrides via `UB__...` environment variables, so
+  operator-specific values such as broker identities, remote pubkey hashes, ports, and WIFs can be injected without
+  copying the tracked `config/` tree.
+- BitVMX does not have an equivalent operator-runtime override layer in this repo. Its operator-specific values live
+  inside YAML files, so the clean boundary is to treat `docker/bitvmx-client/config/<environment>` as a template and
+  generate a per-operator host copy under `.union_bridge/op_N/bitvmx/`.
 - This keeps tracked files static while making all operator-runtime state live under `.union_bridge/op_N/...`.
 
 #### Environment Variables
 
 The following environment variables can be exported in the shell to simplify multi-host deployments:
 
-- **`UC_ENV`**: Sets the default environment (`alphanet`, `testnet`, `local`, `local-docker`, or `regtest`). Can be overridden with `--env` flag.
+- **`UC_ENV`**: Sets the default environment (`alphanet`, `testnet`, `local`, `local-docker`, or `regtest`). Can be
+  overridden with `--env` flag.
 - **`UC_TAG`**: Sets the default Docker image tag. Override it via `start_operators.sh --tag` or the shell environment.
-  - Defaults: `latest-alphanet` (alphanet), `latest-testnet` (testnet), `latest-anvil` (local), `latest-regtest` (regtest)
+    - Defaults: `latest-alphanet` (alphanet), `latest-testnet` (testnet), `latest-anvil` (local), `latest-regtest` (
+      regtest)
 - **`UC_OPERATOR_ID`**: Sets the default operator ID (1-10). Can be overridden with `--op` flag.
 - **`UC_OPERATOR_ROLE`**: Sets the default operator role (`prover` or `verifier`). Used by `cli-operations.sh`.
 
@@ -211,7 +240,8 @@ bash start_operators.sh logs -f
 bash start_operators.sh down
 ```
 
-**Note:** Command-line flags override exported shell values when provided. `UC_TAG` precedence for `start_operators.sh` is: `--tag` > exported `UC_TAG` > static `docker/operator/.env.<environment>`.
+**Note:** Command-line flags override exported shell values when provided. `UC_TAG` precedence for `start_operators.sh`
+is: `--tag` > exported `UC_TAG` > static `docker/operator/.env.<environment>`.
 
 #### Required Environment Variables
 
@@ -220,7 +250,7 @@ connect to a Bitcoin node. It is passed through Docker Compose variable substitu
 (`docker/bitvmx-client/docker-compose.yml`) into the container's environment, and
 `<project_root>/cli-setup-operators.sh` patches the generated BitVMX operator YAMLs from the exported shell value.
 
-Export it in the shell before running setup or starting operators:
+Export it in the shell before running setup:
 
 ```bash
 # Format: http://<rpc_user>:<rpc_password>@<host>:<port>
@@ -230,12 +260,19 @@ export BITCOIND_URL=http://user:password@bitcoin-node:18332
 If you change `BITCOIND_URL`, rerun `<project_root>/cli-setup-operators.sh` so the generated BitVMX YAMLs are updated
 before starting operators again.
 
-**`USER_BITCOIN_WIF`** is required for the generated operator env files because `user-api` uses it for user endpoints (pegin/pegout operations).
-`<project_root>/cli-setup-operators.sh` reuses an exported `USER_BITCOIN_WIF` when present; otherwise it prompts once when creating a new operator env file, then reuses the stored value on later runs.
+**`KEY_STORE_PASSWORD`** is required by `coordinator` and `user-api` at runtime. For Docker operator flows,
+you can export it before running `<project_root>/cli-setup-operators.sh`, or let setup prompt for it. Setup then
+writes it into `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env` for later operator startup reuse.
+
+**`USER_BITCOIN_WIF`** is required for the generated operator env files because `user-api` uses it for user endpoints
+(pegin/pegout operations). You can export it before running `<project_root>/cli-setup-operators.sh`, or let setup
+prompt for it. Setup then writes it into `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env` and reuses the
+stored value on later runs.
 You can generate one via the `bitcoin-wallet` with `generate_address`.
 See [bitcoin-wallet README](../../cli/bitcoin-wallet/README.md) for more info.
 
-Note: The `bitcoin-wallet` component separately uses `MEMBER_BITCOIN_WIF` for member/operator BitVMX operations, but this is not required for starting operators via `start_operators.sh`.
+Note: The `bitcoin-wallet` component separately uses `MEMBER_BITCOIN_WIF` for member/operator BitVMX operations, but
+this is not required for starting operators via `start_operators.sh`.
 
 Show script help:
 
@@ -245,7 +282,8 @@ bash start_operators.sh --help
 
 #### 4.1) Start local/dev (local bitcoind + anvil) using published images:
 
-Start operators (no `--op` flag for local; use `--ops` on `<project_root>/cli-setup-operators.sh` and `start_operators.sh` when you want something other than the default 4 operators):
+Start operators (no `--op` flag for local; use `--ops` on `<project_root>/cli-setup-operators.sh` and
+`start_operators.sh` when you want something other than the default 4 operators):
 
 ```bash
 bash start_operators.sh --env local up -d
@@ -320,7 +358,8 @@ bash operator_scripts/fund_operators_rootstock.sh --env alphanet
 ##### Fund BitVMX Bitcoin accounts
 
 We use the `bitcoin-wallet` crate (CLI) included in this repository to interact with Bitcoin node (funding addresses,
-inspecting UTXOs, etc.). See the [`bitcoin-wallet` README](../../cli/bitcoin-wallet/README.md) for how to start and use the
+inspecting UTXOs, etc.). See the [`bitcoin-wallet` README](../../cli/bitcoin-wallet/README.md) for how to start and use
+the
 CLI.
 
 Use the helper script below to collect addresses and get ready-to-run `bitcoin-wallet` CLI commands. You must pass
@@ -364,7 +403,8 @@ cd ../../
 ./cli-infra.sh --start-regtest --fresh
 ```
 
-`./cli-infra.sh --start-regtest --fresh` is remote-only and executes `/home/ubuntu/regtest-fresh/regtest_fresh.sh` on `union-bridge-use2-1`.
+`./cli-infra.sh --start-regtest --fresh` is remote-only and executes `/home/ubuntu/regtest-fresh/regtest_fresh.sh` on
+`union-bridge-use2-1`.
 `REGTEST_FRESH_MODE=local` is unsupported. You can override remote script location with `REGTEST_FRESH_REMOTE_SCRIPT`.
 
 ### 5) Viewing logs per operator project
@@ -393,6 +433,7 @@ docker compose -p union-operator logs -f
 ```
 
 Using the `start_operators.sh` script:
+
 ```bash
 bash start_operators.sh --env alphanet logs -f
 bash start_operators.sh --env testnet logs -f
@@ -464,7 +505,8 @@ See the `bitcoin-wallet` [README](../../cli/bitcoin-wallet/README.md) for more i
 
 ### Resource conflicts
 
-- **Port conflicts**: ensure the ports for the operators you plan to run are free. With the default 4-operator local setup, that includes `40001–40004`, `61180–61183`, and `22222/33333/44444/55554`.
+- **Port conflicts**: ensure the ports for the operators you plan to run are free. With the default 4-operator local
+  setup, that includes `40001–40004`, `61180–61183`, and `22222/33333/44444/55554`.
 - **Healthchecks**: services wait for each other; if something is stuck, try bringing stacks down as mentioned above,
   re-check env files, and start again.
 

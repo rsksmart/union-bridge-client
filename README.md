@@ -151,16 +151,21 @@ The most important environment variables are:
 
 - `BASE_STORAGE_PATH`: base path where the client will store its data (databases, keystore files, generated operator
   state, etc.). Pick a path that is writable and accessible by the user running the client.
-- `KEY_STORE_PASSWORD`: password used to create and unlock Rootstock keystore files.
+- `KEY_STORE_PASSWORD`: password used to create and unlock Rootstock keystore files. For Docker operator flows, you can
+  export it before running `cli-setup-operators.sh`, or let setup prompt for it. Setup then writes it into
+  `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`.
 - `USER_BITCOIN_WIF`: a Bitcoin private key WIF used for user endpoints such as peg-in and peg-out operations. You can
-  generate one via the `bitcoin-wallet` with `generate_address`. See [bitcoin-wallet README](cli/bitcoin-wallet/README.md)
+  generate one via the `bitcoin-wallet` with `generate_address`. For Docker operator flows, you can export it before
+  running `cli-setup-operators.sh`, or let setup prompt for it. Setup then writes it into
+  `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`.
+  See [bitcoin-wallet README](cli/bitcoin-wallet/README.md)
   for more info.
 
 And for in-Docker BitVMX:
 
 - `BITCOIND_URL`: Bitcoin RPC URL used by the BitVMX client.
-  **Important:** Export this in your shell before running `cli-setup-operators.sh` or starting Docker operators because
-  setup patches the generated operator YAMLs from the current environment.
+  **Important:** Export this in your shell before running `cli-setup-operators.sh`, because setup patches the generated
+  operator YAMLs from the current environment.
 
 We recommend using `direnv` to manage private environment variables. Then you can set them up by:
 
@@ -255,9 +260,9 @@ define the program that BitVMX will execute during the dispute resolution protoc
 
 The repository ships sample files under `resources/`:
 
-| File | Description |
-|---|---|
-| `resources/hello-world.elf` | RISC-V ELF binary executed by the BitVMX CPU |
+| File                         | Description                                      |
+|------------------------------|--------------------------------------------------|
+| `resources/hello-world.elf`  | RISC-V ELF binary executed by the BitVMX CPU     |
 | `resources/hello-world.yaml` | Program definition consumed by the BitVMX client |
 
 **Steps:**
@@ -272,14 +277,13 @@ The repository ships sample files under `resources/`:
 
 2. For the normal local + Docker-backed BitVMX flow, `config/environment/local.toml` now defaults to:
 
-   - `/app/resources/hello-world.yaml`
+    - `/app/resources/hello-world.yaml`
 
    which matches the BitVMX Docker mounts.
 
 3. If you use `cli-run.sh --bitvmx-mode repo`, the launcher injects:
 
-   - `UB__BRIDGE__COMMITTEE__DRP_PROGRAM_DEFINITION=<project_root>/resources/hello-world.yaml`
-
+    - `UB__BRIDGE__COMMITTEE__DRP_PROGRAM_DEFINITION=<project_root>/resources/hello-world.yaml`
 
 #### Configuring the Committee
 
@@ -352,6 +356,7 @@ For detailed documentation, usage examples, and command references, see [cli/REA
 ## AWS Regtest (Essentials)
 
 Access to regtest requires SSH credentials for:
+
 - `ubuntu@union-bridge-use2-1.regtest.rskcomputing.net`
 
 Run from repository root:
@@ -368,10 +373,12 @@ bash tests/run-happy-path-regtest.sh
 ```
 
 Command summary:
+
 - `--start-regtest`: starts operators with existing deployed addresses/config.
 - `--start-regtest --fresh`: runs full remote fresh orchestration and clean operator restart.
 
-Important: if you change branch on the regtest host (`~/union-bridge-client`), rebuild images tagged as `latest-regtest` before starting operators:
+Important: if you change branch on the regtest host (`~/union-bridge-client`), rebuild images tagged as `latest-regtest`
+before starting operators:
 
 ```bash
 cd docker/build
@@ -379,6 +386,7 @@ bash d-build-client.sh --tag=latest-regtest --no-cache
 ```
 
 For full instance details (hosts, env vars, artifacts, validation, troubleshooting), see:
+
 - [`regtest-instance/README.md`](regtest-instance/README.md)
 
 ## Running the Union Client
@@ -414,7 +422,8 @@ You can run a single instance of the Union Client using:
 Some sub-flows in the main flows require committee collaboration. To achieve this locally, you can run several instances
 of Union Client and BitVMX Client using the automated local committee setup.
 
-The project includes a `config/env_overrides/local-committee.env` file that defines unique port numbers and configuration paths for each client
+The project includes a `config/env_overrides/local-committee.env` file that defines unique port numbers and
+configuration paths for each client
 instance (1-4). This ensures no collisions between different clients for:
 
 - Broker ports (block, log, user)
@@ -480,7 +489,8 @@ The test includes comprehensive health checks to detect issues early.
 
 #### Troubleshooting
 
-- **Port Conflicts**: Each client uses unique ports defined in `config/env_overrides/local-committee.env`. Check this file if you encounter port
+- **Port Conflicts**: Each client uses unique ports defined in `config/env_overrides/local-committee.env`. Check this
+  file if you encounter port
   issues.
 - **Wallet Issues**: Re-fund wallets with `./cli-operations.sh operator fund` if needed
 - **Process Cleanup**: If services fail to start due to port conflicts or corrupt database, run:
@@ -537,8 +547,8 @@ You will have the following commands available:
 The coordinator supports force flags to trigger specific behaviors during testing. These flags are **only active in
 non-production environments** (Local, LocalDocker, Regtest) and are automatically disabled in Alphanet and Testnet.
 
-| Flag | Description |
-|------|-------------|
+| Flag            | Description                                                                                                                                                                                       |
+|-----------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `FORCE_ADVANCE` | Contains a Rootstock address. The targeted operator skips the signature sub-flow, simulating operator misbehavior. Since signatures never complete, the advance funds timeout triggers naturally. |
 
 **Activation methods:**
@@ -695,7 +705,7 @@ The proof was executed, and the receipt saved to the file: stark-proof.bin. Tota
 ### 3) Generate the Snark Proof (from the Stark) & Verify the Snark Proof
 
 Please check
-the [SNARK proof section](https://github.com/FairgateLabs/rust-bitvmx-zk-proof?tab=readme-ov-file#snark-proof) on 
+the [SNARK proof section](https://github.com/FairgateLabs/rust-bitvmx-zk-proof?tab=readme-ov-file#snark-proof) on
 **rust-bitvmx-zk-proof** repository README for the remaining steps. Please note this is a WIP project.
 
 ## Developer setup & team conventions
