@@ -2,6 +2,19 @@
 
 The project includes two CLI tools in the `cli/` workspace for managing local development and operator operations.
 
+## Related Docs
+
+- [../CONTRIBUTING.md](../CONTRIBUTING.md): contributor setup, shared configuration, and local validation flows
+- [../docker/operator/README.md](../docker/operator/README.md): Docker operator runtime flow
+- [bitcoin-wallet/README.md](bitcoin-wallet/README.md): Bitcoin wallet helper used by some operations
+
+## Workflow Entry Points
+
+- Local cargo workflow: bootstrap with `./cli-setup-operators.sh --env local --ops 4`, then use the commands below.
+  The broader sequence lives in [../CONTRIBUTING.md](../CONTRIBUTING.md).
+- Docker operator workflow: use the same operations commands with `--env local-docker`, `--env alphanet`, or
+  `--env testnet` after following [../docker/operator/README.md](../docker/operator/README.md).
+
 ## `cli-run.sh` - Local Client Runner
 
 Launches one or more Union Bridge clients locally for development and testing.
@@ -55,13 +68,14 @@ Launches one or more Union Bridge clients locally for development and testing.
 
 ## `cli-operations.sh` - Operations Toolkit
 
-Handles operator operations and user operations across different environments (local, alphanet, testnet).
+Handles operator operations and user operations across different environments (local, local-docker, regtest,
+alphanet, testnet).
 
 ### Environment Variables
 
 The following environment variables can be set to simplify multi-host deployments:
 
-- **`UC_ENV`**: Sets the default environment (`local`, `local-docker`, `alphanet`, or `testnet`). Can be overridden with `--env` flag.
+- **`UC_ENV`**: Sets the default environment (`local`, `local-docker`, `regtest`, `alphanet`, or `testnet`). Can be overridden with `--env` flag.
 - **`UC_OPERATOR_ID`**: Sets the default operator ID (1-10) for `apply-stream` command. Can be overridden with `--operator-id` flag.
 - **`UC_OPERATOR_ROLE`**: Sets the default operator role (`prover` or `verifier`) for `apply-stream` command. Can be overridden with `--role` flag.
 
@@ -99,40 +113,50 @@ export UC_OPERATOR_ROLE="prover"
 # Operator: Apply to stream on remote (requires operator-id and role)
 ./cli-operations.sh operator apply-stream --stream-id 1 --env alphanet --operator-id 1 --role prover
 
+# Operator: Whitelist member addresses on CommitteeRegistry
+./cli-operations.sh operator whitelist --contract-address 0x742d35... --env local
+
+# User: Display user addresses and funding instructions
+./cli-operations.sh user fund --env local
+
 # User: Create pegin transaction
-./cli-operations.sh user pegin --rsk-address 0x742d35... --value 1000000 --packet-number 0 --env local
+./cli-operations.sh user pegin --rsk-address 0x742d35... --value 1000000 --btc-pub-key 0x<32-byte-xonly-pubkey> --env local
 
 # User: Create pegin transaction and execute wallet command automatically
-./cli-operations.sh user pegin --rsk-address 0x742d35... --value 1000000 --packet-number 0 --env alphanet --execute
+./cli-operations.sh user pegin --rsk-address 0x742d35... --value 1000000 --btc-pub-key 0x<32-byte-xonly-pubkey> --env local-docker --execute
 
 # User: Request pegout
-./cli-operations.sh user pegout --value 1000000 --env local
+./cli-operations.sh user pegout --value 1000000 --usr-pub-key 0x<33-byte-compressed-pubkey> --env local
 ```
 
 ### Command Structure
 
-- **`operator`**: Operator management (fund, apply-stream)
+- **`operator`**: Operator management (`fund`, `whitelist`, `apply-stream`)
   - `fund`: Display bitcoin addresses and optionally execute wallet commands with `--execute`
-- **`user`**: User operations (pegin, pegout)
+  - `whitelist`: Whitelist member addresses on the `CommitteeRegistry` contract
+- **`user`**: User operations (`fund`, `pegin`, `pegout`)
+  - `fund`: Display user addresses and funding instructions
   - `pegin`: Display pegin command and optionally execute wallet command with `--execute`
 
 ### Supported Environments
 
 - **`local`**: Local development setup (default)
 - **`local-docker`**: Local docker deployment
+- **`regtest`**: Remote regtest deployment
 - **`alphanet`**: Remote alphanet deployment
 - **`testnet`**: Remote testnet deployment
 
 ### Safety Features
 
-- Confirmation prompts for all remote operations (alphanet/testnet)
+- `--execute` is only supported for local environments (`local`, `local-docker`)
+- Confirmation prompts for all remote operations (`regtest`, `alphanet`, `testnet`)
 - Displays exact commands and HTTP requests before execution
 
 ## CLI Workspace Structure
 
 The CLI tools are organized in a separate Cargo workspace under `cli/`:
 
-```
+```text
 cli/
 ├── Cargo.toml          # CLI workspace configuration with shared dependencies
 ├── run/                # Local client launcher
@@ -160,7 +184,7 @@ The CLI workspace is independent from the main Union Bridge workspace, allowing 
 
 ```bash
 # 1. Bootstrap wallets, broker identities, and BitVMX runtime artifacts
-<project_root>/cli-setup-operators.sh --env local --ops 4
+./cli-setup-operators.sh --env local --ops 4
 
 # 2. Fund operators (Bitcoin + Rootstock)
 # Option A: Print commands to run manually
@@ -179,26 +203,20 @@ The CLI workspace is independent from the main Union Bridge workspace, allowing 
 `cli-setup-operators.sh --env local` creates the local keystores consumed by `./cli-run.sh`.
 Docker operator mode uses `docker.env` and container keystore paths instead of these cargo-mode keystore files.
 
-### Alphanet/Testnet Operations
+### Regtest/Alphanet/Testnet Operations
 
 ```bash
 # Fund operators (prints addresses to fund manually)
 ./cli-operations.sh operator fund --env alphanet
 
-# Fund operators and execute wallet commands automatically
-./cli-operations.sh operator fund --env alphanet --execute
-
 # Apply specific operator to stream
 ./cli-operations.sh operator apply-stream --stream-id 1 --env alphanet --operator-id 1 --role prover
 
 # Create pegin transaction (prints command to run manually)
-./cli-operations.sh user pegin --rsk-address 0x742d35... --value 1000000 --packet-number 0 --env alphanet
-
-# Create pegin transaction and execute wallet command automatically
-./cli-operations.sh user pegin --rsk-address 0x742d35... --value 1000000 --packet-number 0 --env alphanet --execute
+./cli-operations.sh user pegin --rsk-address 0x742d35... --value 1000000 --btc-pub-key 0x<32-byte-xonly-pubkey> --env alphanet
 
 # Request pegout
-./cli-operations.sh user pegout --value 1000000 --env alphanet
+./cli-operations.sh user pegout --value 1000000 --usr-pub-key 0x<33-byte-compressed-pubkey> --env alphanet
 ```
 
 ## Docker Integration

@@ -1,76 +1,71 @@
-# Docker Setup for Union Client
+# Docker Build
 
-This directory is for image building and registry operations only.
-Use [`docker/operator`](../operator/README.md) to run Union Client operators in Docker.
+This directory is only for building and publishing Union Client images. It does not own operator runtime
+documentation.
+
+## Related Docs
+
+- [../README.md](../README.md): Docker doc index
+- [../operator/README.md](../operator/README.md): run operators with the built images
+- [../../CONTRIBUTING.md](../../CONTRIBUTING.md): shared configuration override rules
 
 ## Config
 
-No local `.env` file is required for the supported flow here.
-Operator startup is handled from [`docker/operator`](../operator/README.md), not from this directory.
+No local `.env` file is required for the supported flow in this directory.
 
-By default, the compose will use:
-
-- the repository `config/` directory for the Union Client config files
-    - you can override any configuration value using environment variables prefixed with `UB__` matching the config structure, e.g.
-      `UB__COORDINATOR__BLOCKS__HOST=192.168.1.100`
-    - see [CONTRIBUTING.md](../../CONTRIBUTING.md#configuration-overrides) for detailed examples and mapping rules
+The build compose uses the repository `config/` tree. Runtime overrides still follow the shared `UB__...` environment
+variable mapping documented in [../../CONTRIBUTING.md](../../CONTRIBUTING.md#configuration-overrides).
 
 ## Build Builder Images
 
-### d-build-builder.sh - Builder Image Script
+`d-build-builder.sh` builds the Union Client builder images.
 
-`d-build-builder.sh` builds the Union client base builder images.
-
-For detailed usage and examples:
 ```bash
 bash d-build-builder.sh --help
 ```
 
-## Build Services
+## Build Service Images
 
-The docker/build directory contains several shell scripts to help manage Docker operations for the Union client:
+`d-build-client.sh` builds the Union Client runtime images.
 
-### d-build-client.sh - Main Build Script
-
-`d-build-client.sh` builds Union client service images with Docker Compose.
-
-For detailed usage, commands, options, and examples:
 ```bash
 bash d-build-client.sh --help
 ```
 
-### First time docker setup pre-requisite 
+If the images will connect to a local Anvil node, build with the `anvil` feature enabled:
+
+```bash
+bash d-build-client.sh --features=anvil
+```
+
 For normal Docker runtime usage:
 
 1. build images from here with `d-build-client.sh`
-2. run operators from [`docker/operator`](../operator/README.md)
+2. run operators from [../operator/README.md](../operator/README.md)
 
-If you still run `docker compose` manually from this directory, export any required variables in your shell first, such as `KEY_STORE_PASSWORD`.
+If you still run `docker compose` manually from this directory, export any required variables in your shell first, such
+as `KEY_STORE_PASSWORD`.
 
-## Registry Management Scripts
+## Registry Operations
 
-### d-ghcr-pull.sh
-Pulls all Union client images from GitHub Container Registry.
+Pull images:
 
 ```bash
 bash d-ghcr-pull.sh
 ```
 
-**Prerequisites:** Login to GHCR first:
-```bash
-echo $GITHUB_REGISTRY_TOKEN | docker login ghcr.io -u <your_user> --password-stdin
-```
-
-### d-ghcr-push.sh  
-Tags and pushes all Union client images to GitHub Container Registry.
+Push images:
 
 ```bash
 bash d-ghcr-push.sh
 ```
 
-**Prerequisites:** Same as pull script - requires GHCR authentication.
+Both require GHCR authentication first:
 
-## Troubleshooting
+```bash
+echo "$GITHUB_REGISTRY_TOKEN" | docker login ghcr.io -u <your_user> --password-stdin
+```
 
-Build with `./d-build-client.sh --features=anvil` if you are going to connect to a local anvil node, otherwise you
-will face problems with different header formats, etc.
+## Next Step
+
+After building or pulling images, switch to [../operator/README.md](../operator/README.md) for runtime commands.

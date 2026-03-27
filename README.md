@@ -1,8 +1,8 @@
 # Union Bridge - Client
 
 The Union Bridge Client is a key part of the Union Bridge Protocol. It helps connect Bitcoin and Rootstock, together
-with BitVMX (through the BitVMX Client) in a trust‑minimized way. In simple terms, it watches for important events on
-Rootstock and then triggers the next steps in the protocol to handle peg‑ins and peg‑outs.
+with BitVMX (through the BitVMX Client) in a trust-minimized way. In simple terms, it watches for important events on
+Rootstock and then triggers the next steps in the protocol to handle peg-ins and peg-outs.
 
 ## Introduction
 
@@ -15,8 +15,8 @@ Below is a high-level summary of the core responsibilities handled by the Union 
 ### Event Observer
 
 The client constantly scans the Rootstock blockchain for different events required for the various Union Bridge flows.
-It uses **JSON‑RPC endpoints** to subscribe to new block headers and smart contract logs. Then, it extracts only the
-relevant events, such as peg‑in requests and peg‑out requests. This logic is implemented under `log-indexer` crate.
+It uses **JSON-RPC endpoints** to subscribe to new block headers and smart contract logs. Then, it extracts only the
+relevant events, such as peg-in requests and peg-out requests. This logic is implemented under `log-indexer` crate.
 
 It also listens every new block produced by Rootstock, storing just the minimal required data that will also be used as
 part of the different Union Bridge flows. This logic is implemented under `block-indexer` crate.
@@ -52,8 +52,21 @@ The Union Bridge Client is responsible for:
 - **Maintaining protocol state**, tracking all necessary data for correct operation and recovery.
 - **Dispatching protocol transactions** to Rootstock as required by protocol flows.
 - **Exposing a user API** for external interaction and integration.
-- **Integrating with a zero‑knowledge proof pipeline** to validate blockchain forks securely.
+- **Integrating with a zero-knowledge proof pipeline** to validate blockchain forks securely.
 - **Coordinating with Union Bridge contracts and the Union Client** for seamless protocol orchestration.
+
+## Documentation Map
+
+Higher-level docs route to lower-level ones:
+
+| If you need to... | Read |
+| --- | --- |
+| understand contributor setup, shared configuration, and developer conventions | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| run the client locally or use the operations wrappers | [cli/README.md](cli/README.md) |
+| choose a Docker workflow | [docker/README.md](docker/README.md) |
+| run full operators in Docker | [docker/operator/README.md](docker/operator/README.md) |
+| build or publish Docker images | [docker/build/README.md](docker/build/README.md) |
+| dive into component-specific detail | component READMEs close to the implementation, such as [check-fork/README.md](check-fork/README.md), [transaction-dispatcher/README.md](transaction-dispatcher/README.md), [key-manager/README.md](key-manager/README.md), and [cli/bitcoin-wallet/README.md](cli/bitcoin-wallet/README.md) |
 
 ### E2E Documentation
 
