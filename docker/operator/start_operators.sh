@@ -117,16 +117,21 @@ read_env_value() {
 }
 
 require_key_store_password() {
-  local env_file="$1"
   local configured_password="${KEY_STORE_PASSWORD:-}"
+  local env_file
 
-  if [[ -z "${configured_password}" ]] && [[ -f "${env_file}" ]]; then
-    configured_password="$(read_env_value "${env_file}" "KEY_STORE_PASSWORD")"
-  fi
+  for env_file in "$@"; do
+    if [[ -n "${configured_password}" ]]; then
+      break
+    fi
+    if [[ -f "${env_file}" ]]; then
+      configured_password="$(read_env_value "${env_file}" "KEY_STORE_PASSWORD")"
+    fi
+  done
 
   if [[ -z "${configured_password}" ]]; then
     echo "Error: KEY_STORE_PASSWORD is required for operator startup." >&2
-    echo "Export KEY_STORE_PASSWORD or define it in ${env_file} before running startup commands." >&2
+    echo "Export KEY_STORE_PASSWORD or define it in docker/operator/.env.<environment> or the operator docker.env before running startup commands." >&2
     exit 1
   fi
 }
@@ -240,10 +245,6 @@ for arg in "${DOCKER_COMPOSE_ARGS[@]}"; do
   fi
 done
 
-if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
-  require_key_store_password "${ENV_FILE}"
-fi
-
 # Validate --op flag usage
 if [[ ("$ENVIRONMENT" == "local" || "$ENVIRONMENT" == "regtest") && -n "$OPERATOR_ARG" ]]; then
   echo "Error: --op is not allowed in ${ENVIRONMENT} environment. All operators will be deployed."
@@ -302,6 +303,10 @@ run_compose_stack() {
   )
 
   compose_cmd+=("${DOCKER_COMPOSE_ARGS[@]}")
+
+  if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
+    require_key_store_password "${ENV_FILE}" "${env_file_path}"
+  fi
 
   echo
   echo "Running ${description} with env file ${env_file_path}"

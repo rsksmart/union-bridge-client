@@ -17,9 +17,12 @@ BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
 OPERATORS_TO_RUN=()
 NEW_USER_BITCOIN_WIF="${USER_BITCOIN_WIF:-}"
 USED_EXPORTED_USER_BITCOIN_WIF=false
+NEW_KEY_STORE_PASSWORD="${KEY_STORE_PASSWORD:-}"
+USED_EXPORTED_KEY_STORE_PASSWORD=false
 BROKER_SERVICES=("block-indexer" "log-indexer" "user-api" "coordinator")
 RESOLVED_USER_BITCOIN_WIF=""
 RESOLVED_BITVMX_BROKER_PUBKEY_HASH=""
+RESOLVED_KEY_STORE_PASSWORD=""
 
 print_help() {
   echo "Usage: $0 [--env <ENV>] [--op <ID> | --ops <N>]"
@@ -45,14 +48,6 @@ ensure_dependencies() {
   fi
   if ! command -v perl >/dev/null 2>&1; then
     echo "Error: perl is required to patch generated BitVMX config."
-    exit 1
-  fi
-}
-
-check_key_store_password() {
-  if [[ -z "${KEY_STORE_PASSWORD:-}" ]]; then
-    echo "Error: KEY_STORE_PASSWORD is required." >&2
-    echo "Export KEY_STORE_PASSWORD and rerun <project_root>/cli-setup-operators.sh." >&2
     exit 1
   fi
 }
@@ -425,6 +420,42 @@ read_env_value() {
   awk -F= -v key="${key}" '$1 == key {print substr($0, index($0, "=") + 1); exit}' "${env_file}"
 }
 
+resolve_key_store_password() {
+  local op_num="$1"
+  local project_name="$2"
+  local env_file="$3"
+  local existing_password=""
+
+  if [[ -n "${KEY_STORE_PASSWORD:-}" ]]; then
+    if [[ "${USED_EXPORTED_KEY_STORE_PASSWORD}" != true ]]; then
+      echo "Using exported KEY_STORE_PASSWORD for operator env files." >&2
+      USED_EXPORTED_KEY_STORE_PASSWORD=true
+    fi
+    RESOLVED_KEY_STORE_PASSWORD="${KEY_STORE_PASSWORD}"
+    return 0
+  fi
+
+  if [[ -f "${env_file}" ]]; then
+    existing_password="$(read_env_value "${env_file}" "KEY_STORE_PASSWORD")"
+    if [[ -n "${existing_password}" ]]; then
+      RESOLVED_KEY_STORE_PASSWORD="${existing_password}"
+      return 0
+    fi
+  fi
+
+  if [[ -z "${NEW_KEY_STORE_PASSWORD}" ]]; then
+    while [[ -z "${NEW_KEY_STORE_PASSWORD}" ]]; do
+      read -r -s -p "Please enter KEY_STORE_PASSWORD for ${project_name} (op_${op_num}): " NEW_KEY_STORE_PASSWORD
+      echo ""
+      if [[ -z "${NEW_KEY_STORE_PASSWORD}" ]]; then
+        echo "Error: KEY_STORE_PASSWORD is required."
+      fi
+    done
+  fi
+
+  RESOLVED_KEY_STORE_PASSWORD="${NEW_KEY_STORE_PASSWORD}"
+}
+
 resolve_user_bitcoin_wif() {
   local op_num="$1"
   local project_name="$2"
@@ -463,7 +494,8 @@ write_operator_env_file() {
   local env_file_path="$1"
   local op_num="$2"
   local user_bitcoin_wif="$3"
-  local bitvmx_pubkey_hash="$4"
+  local key_store_password="$4"
+  local bitvmx_pubkey_hash="$5"
   local client_op
 
   mkdir -p "$(dirname "${env_file_path}")"
@@ -482,6 +514,7 @@ UB__COORDINATOR__LOGS__PUBKEY_HASH=$(read_broker_pubkey_hash "log-indexer" "${op
 UB__COORDINATOR__USER__PUBKEY_HASH=$(read_broker_pubkey_hash "user-api" "${op_num}")
 UB__COORDINATOR__BITVMX__PUBKEY_HASH=${bitvmx_pubkey_hash}
 UB__USER_API__COORDINATOR__PUBKEY_HASH=$(read_broker_pubkey_hash "coordinator" "${op_num}")
+KEY_STORE_PASSWORD=${key_store_password}
 USER_BITCOIN_WIF=${user_bitcoin_wif}
 EOF
 
@@ -509,6 +542,7 @@ EOF
 create_or_reuse_local_keystore() {
   local op_num="$1"
   local wallet_name="$2"
+  local key_store_password="$3"
   local keystore_dir
   local target_path
   local cmd_output
@@ -526,7 +560,7 @@ create_or_reuse_local_keystore() {
 
   cmd_output="$(
     cd "${PROJECT_ROOT}" && cargo run --quiet --manifest-path key-manager/Cargo.toml -- \
-      new-key -p "${KEY_STORE_PASSWORD}" -d "${keystore_dir}"
+      new-key -p "${key_store_password}" -d "${keystore_dir}"
   )"
 
   generated_path="$(printf '%s\n' "${cmd_output}" | sed -n 's/^Generated key @ \([^,]*\),.*/\1/p')"
@@ -543,18 +577,20 @@ create_or_reuse_local_keystore() {
 
 prepare_local_keystores_if_needed() {
   local op_num="$1"
+  local key_store_password="$2"
 
   if [[ "${ENVIRONMENT}" != "local" ]]; then
     return 0
   fi
 
   echo "- Preparing local cargo-mode keystores for op_${op_num}:"
-  create_or_reuse_local_keystore "${op_num}" "member"
-  create_or_reuse_local_keystore "${op_num}" "user"
+  create_or_reuse_local_keystore "${op_num}" "member" "${key_store_password}"
+  create_or_reuse_local_keystore "${op_num}" "user" "${key_store_password}"
 }
 
 prepare_operator_bitvmx_config() {
   local op_num="$1"
+  local key_store_password="$2"
   local template_dir
   local target_dir
   local cfg_file
@@ -585,7 +621,7 @@ prepare_operator_bitvmx_config() {
   generate_operator_bitvmx_keys "${target_keys_dir}" "${referenced_key_files[@]}"
   write_operator_bitvmx_pubkey_hash_files "${target_keys_dir}"
   patch_operator_bitvmx_identity_hashes "${cfg_file}" "${coordinator_pubkey_hash}" "${target_keys_dir}"
-  patch_bitvmx_key_storage_password "${cfg_file}" "${KEY_STORE_PASSWORD}"
+  patch_bitvmx_key_storage_password "${cfg_file}" "${key_store_password}"
   patch_bitvmx_bitcoin_url "${cfg_file}" "${BITCOIND_URL}"
 
   rm -rf "${target_dir}/broker"
@@ -635,7 +671,6 @@ if [[ "${ENVIRONMENT}" == "local-docker" ]]; then
 fi
 
 ensure_dependencies
-check_key_store_password
 check_bitcoind_url
 prepare_local_keystore_password
 
@@ -669,14 +704,16 @@ esac
 for op_num in "${OPERATORS_TO_RUN[@]}"; do
   project_name="$(project_name_for_operator "${op_num}")"
   env_file_path="$(operator_docker_env_file_path "${op_num}")"
+  resolve_key_store_password "${op_num}" "${project_name}" "${env_file_path}"
+  key_store_password_value="${RESOLVED_KEY_STORE_PASSWORD}"
   resolve_user_bitcoin_wif "${op_num}" "${project_name}" "${env_file_path}"
   user_bitcoin_wif_value="${RESOLVED_USER_BITCOIN_WIF}"
 
   echo "=== op_${op_num} (${ENVIRONMENT}) ==="
   provision_operator_broker_identities "${op_num}"
-  prepare_local_keystores_if_needed "${op_num}"
+  prepare_local_keystores_if_needed "${op_num}" "${key_store_password_value}"
 
-  prepare_operator_bitvmx_config "${op_num}"
+  prepare_operator_bitvmx_config "${op_num}" "${key_store_password_value}"
   bitvmx_pubkey_hash="${RESOLVED_BITVMX_BROKER_PUBKEY_HASH}"
 
   if [[ -f "${env_file_path}" ]]; then
@@ -684,7 +721,7 @@ for op_num in "${OPERATORS_TO_RUN[@]}"; do
   else
     env_file_action="Created"
   fi
-  write_operator_env_file "${env_file_path}" "${op_num}" "${user_bitcoin_wif_value}" "${bitvmx_pubkey_hash}"
+  write_operator_env_file "${env_file_path}" "${op_num}" "${user_bitcoin_wif_value}" "${key_store_password_value}" "${bitvmx_pubkey_hash}"
   echo "- ${env_file_action} operator env file ${env_file_path}"
 
   echo ""
