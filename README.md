@@ -147,21 +147,20 @@ The project uses environment variables for both private properties and configura
 
 #### Private Properties
 
-The most important environment variables that need to be exported when using the scripts mentioned in this README (and
-the Union Client) are:
+The most important environment variables are:
 
-- `KEY_STORE_PASSWORD`: password that will be used to create the Rootstock wallets (automatic) and to
-  unlock the corresponding keystore files when running the client (see [Multi Client Setup](#Multi-Client-Setup) below).
-  **Important:** This variable must be exported in your shell before running `cli-setup-operators.sh` or starting
-  Docker operators.
+- `BASE_STORAGE_PATH`: base path where the client will store its data (databases, keystore files, generated operator
+  state, etc.). Pick a path that is writable and accessible by the user running the client.
+- `KEY_STORE_PASSWORD`: password used to create and unlock Rootstock keystore files.
+- `USER_BITCOIN_WIF`: a Bitcoin private key WIF used for user endpoints such as peg-in and peg-out operations. You can
+  generate one via the `bitcoin-wallet` with `generate_address`. See [bitcoin-wallet README](cli/bitcoin-wallet/README.md)
+  for more info.
+
+And for in-Docker BitVMX:
+
 - `BITCOIND_URL`: Bitcoin RPC URL used by the BitVMX client.
-  **Important:** This variable must be exported in your shell before running `cli-setup-operators.sh` or starting
-  Docker operators because setup patches the generated operator YAMLs from the current environment.
-- `BASE_STORAGE_PATH`: base path where the client will store its data (databases, keystore files, etc.). Pick a path
-  that is writable and accessible by the user running the client.
-- `WALLET_PRIVATE_KEY`: a Bitcoin private key WIF. You can generate one via the `bitcoin-wallet` with
-  `generate_address`.
-  See [bitcoin-wallet README](cli/bitcoin-wallet/README.md) for more info.
+  **Important:** Export this in your shell before running `cli-setup-operators.sh` or starting Docker operators because
+  setup patches the generated operator YAMLs from the current environment.
 
 We recommend using `direnv` to manage private environment variables. Then you can set them up by:
 
