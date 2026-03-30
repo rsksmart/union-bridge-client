@@ -26,7 +26,7 @@ print_help() {
   echo "Usage: $0 [--ops <N>]"
   echo ""
   echo "Creates or reuses host-side local operator artifacts:"
-  echo "  - broker identities under ${BASE_STORAGE_PATH}/.union_bridge/op_N/broker/<service>.*"
+  echo "  - service identities under ${BASE_STORAGE_PATH}/.union_bridge/op_N/union-client/<service>.*"
   echo "  - generated operator docker.env files under ${BASE_STORAGE_PATH}/.union_bridge/op_N/docker.env"
   echo "  - local cargo-mode keystores under ${BASE_STORAGE_PATH}/.union_bridge/op_N/keystore/{member,user}"
   echo "  Existing operator env files are refreshed in place."
@@ -156,14 +156,14 @@ broker_pem_path() {
   local service="$1"
   local op_num="$2"
 
-  echo "$(operator_root_path "${op_num}")/broker/${service}.pem"
+  echo "$(operator_root_path "${op_num}")/union-client/${service}.pem"
 }
 
 broker_pubkey_hash_path() {
   local service="$1"
   local op_num="$2"
 
-  echo "$(operator_root_path "${op_num}")/broker/${service}.pubkey_hash"
+  echo "$(operator_root_path "${op_num}")/union-client/${service}.pubkey_hash"
 }
 
 compute_pubkey_hash() {
@@ -184,16 +184,16 @@ generate_private_key() {
 
 provision_operator_broker_identities() {
   local op_num="$1"
-  local broker_dir pem_path pubkey_hash_path action service
+  local identity_dir pem_path pubkey_hash_path action service
 
-  echo "- Preparing broker identities for op_${op_num}:"
+  echo "- Preparing service identities for op_${op_num}:"
 
   for service in "${BROKER_SERVICES[@]}"; do
-    broker_dir="$(operator_root_path "${op_num}")/broker"
-    pem_path="${broker_dir}/${service}.pem"
-    pubkey_hash_path="${broker_dir}/${service}.pubkey_hash"
+    identity_dir="$(operator_root_path "${op_num}")/union-client"
+    pem_path="${identity_dir}/${service}.pem"
+    pubkey_hash_path="${identity_dir}/${service}.pubkey_hash"
 
-    mkdir -p "${broker_dir}"
+    mkdir -p "${identity_dir}"
 
     if [[ -f "${pem_path}" ]]; then
       action="Reusing"

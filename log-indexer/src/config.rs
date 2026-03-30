@@ -95,7 +95,7 @@ mod tests {
             config
                 .log_indexer_config
                 .broker_key_path
-                .ends_with("/.union_bridge/op_1/broker/log-indexer.pem")
+                .ends_with("/.union_bridge/op_1/union-client/log-indexer.pem")
         );
     }
 
