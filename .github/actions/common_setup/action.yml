@@ -61,6 +61,13 @@ runs:
         restore-keys: |
           ${{ runner.os }}-rust-cargo-
 
+    - name: Configure Fairgate dependency cloning
+      shell: bash
+      run: |
+        git config --global \
+          url."https://github.com/FairgateLabs".insteadOf \
+          "ssh://git@github.com/FairgateLabs"
+
     - name: Configure contracts dependency cloning
       shell: bash
       run: |
