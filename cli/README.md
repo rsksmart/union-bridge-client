@@ -12,7 +12,7 @@ The `cli/` workspace contains the CLI tools for local development, operator oper
 
 - Local cargo workflow: bootstrap with `./cli-setup-operators.sh --ops 4`, then use the commands below.
 - Local Docker workflow: use `--env docker` after following [../docker/operator/README.md](../docker/operator/README.md).
-- Remote CLI access remains available through profile names such as `alphanet`.
+- Remote CLI workflow: use a profile name such as `alphanet` with a matching `cli/.env.<profile>` file.
 
 ## `cli-run.sh`
 
