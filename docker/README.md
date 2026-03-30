@@ -42,7 +42,7 @@ This is the local multi-operator Docker runtime flow. It owns:
 
 - local runtime setup
 - generated runtime artifacts under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/`
-- `start_operators.sh` usage
+- `start-operators.sh` usage
 - local funding, logs, and troubleshooting
 
 ### `build/`
@@ -57,7 +57,7 @@ The Docker setup uses two kinds of environment files:
 - generated per-operator runtime files under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`, created by
   `<project_root>/cli-setup-operators.sh`
 
-`docker.env` is only consumed by local Docker operator runs (`start_operators.sh` / docker compose).
+`docker.env` is only consumed by local Docker operator runs (`start-operators.sh` / docker compose).
 Local cargo mode (`./cli-run.sh`) does not read this file.
 
 ## Troubleshooting

@@ -17,7 +17,7 @@ This repo owns:
 
 - local multi-operator Docker runtime
 - generated runtime artifacts under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/`
-- local `start_operators.sh` usage
+- local `start-operators.sh` usage
 - local funding, logs, and troubleshooting
 
 Remote runtime environments such as alphanet and testnet are not covered here.
@@ -85,18 +85,18 @@ Use the local-only operator wrapper:
 cd docker/operator
 
 # Start 4 operators
-bash start_operators.sh up -d
+bash start-operators.sh up -d
 
 # Start a different count
-bash start_operators.sh --ops 6 up -d
+bash start-operators.sh --ops 6 up -d
 
 # Clean and start again
-bash start_operators.sh --fresh up -d
+bash start-operators.sh --fresh up -d
 
 # Logs / status / stop
-bash start_operators.sh logs -f
-bash start_operators.sh ps
-bash start_operators.sh down
+bash start-operators.sh logs -f
+bash start-operators.sh ps
+bash start-operators.sh down
 ```
 
 Use `docker` for this local runtime.
@@ -126,7 +126,7 @@ cd ../bitvmx-client
 
 ### Missing operator env file
 
-If `start_operators.sh` reports a missing `docker.env`, rerun:
+If `start-operators.sh` reports a missing `docker.env`, rerun:
 
 ```bash
 ./cli-setup-operators.sh --ops 4
