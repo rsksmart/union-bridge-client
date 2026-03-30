@@ -184,6 +184,8 @@ The local multi-client flow is bootstrapped through `./cli-setup-operators.sh`.
 Under the directory specified in `BASE_STORAGE_PATH`, create the base directory and then run the bootstrap helper:
 
 ```bash
+# NOTE: BITCOIND_URL must be configured before running setup.
+# See docker/operator/README.md
 mkdir -p "${BASE_STORAGE_PATH}/.union_bridge"
 ./cli-setup-operators.sh --env local --ops 4
 ```
