@@ -39,8 +39,8 @@ mod tests {
     use std::str::FromStr;
 
     use alloy_primitives::TxHash;
-    use union_contracts::bindings::pegin_manager::PeginManager::{
-        PeginAlreadyRequested, PeginManagerErrors,
+    use union_contracts::bindings::pegout_manager::PegoutManager::{
+        InvalidSlotState, PegoutManagerErrors,
     };
 
     use crate::contracts::common::tests::generate_contract_revert_error;
@@ -90,10 +90,9 @@ mod tests {
 
         mock.expect_invoke_register_user_take()
             .returning(move |_, _| {
-                let err = PeginManagerErrors::PeginAlreadyRequested(PeginAlreadyRequested {
-                    btcTxid: "0x6b8f74fe9c66c9c3a6c3d0b7111d9b6aaac0ea3db1bdbd6a38eb0e7d8b8bba3e"
-                        .parse()
-                        .expect("Failed to parse tx hash"),
+                let err = PegoutManagerErrors::InvalidSlotState(InvalidSlotState {
+                    actual: 5,
+                    expected: 9,
                 });
                 Err(generate_contract_revert_error(&err))
             })
@@ -102,7 +101,13 @@ mod tests {
         let invoke = RegisterPegoutInvoke::new_for_tests(mock);
         let result = invoke.run(input).await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), DomainErrors::PeginAlreadyRequested(_)));
+        match result.unwrap_err() {
+            DomainErrors::InvalidSlotState { expected, actual } => {
+                assert_eq!(expected, 9);
+                assert_eq!(actual, 5);
+            }
+            other => panic!("Expected InvalidSlotState from PegoutManager decode, got {other:?}"),
+        }
     }
 
     #[tokio::test]
