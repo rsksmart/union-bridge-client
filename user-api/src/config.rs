@@ -24,7 +24,7 @@ pub struct UserApiConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct CoordinatorConfig {
-    pub client_id: u32, // TODO(Jira) for now just one client ID until we unify the brokers in scope of UB-215
+    pub client_id: u32, // TODO(UB-215) for now just one client ID until we unify the brokers
     #[serde(default)]
     pub pubkey_hash: String,
 }

@@ -490,7 +490,7 @@ pub struct StreamSettings {
     pub request_pegin_timelock: u16,
 }
 
-//TODO UBC-809 Review this default values
+//TODO(UBC-809) Review these default values
 impl Default for StreamSettings {
     fn default() -> Self {
         Self {

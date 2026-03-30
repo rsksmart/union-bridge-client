@@ -88,7 +88,7 @@ impl RskSubscription<RskBlock> for AlloySubscription<Header> {
 
         let new_block_hash = Self::get_block_hash(header)?;
 
-        // TODO(Jira) tmp approach, try to get the required block data from the subscription itself (check Rsk and Alloy impl): UB-36
+        // TODO(UB-36) tmp approach, try to get the required block data from the subscription itself (check Rsk and Alloy impl)
         let new_block = self
             .provider
             .get_block_by_hash(new_block_hash)
