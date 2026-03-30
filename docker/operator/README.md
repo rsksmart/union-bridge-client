@@ -104,7 +104,7 @@ bash start-operators.sh down
 The selected env file chooses the compose shape through `OP_MODE`:
 
 - `OP_MODE=all`: `docker-compose.all.yml`
-- `OP_MODE=one`: `docker-compose.one.yml`
+- `OP_MODE=one`: `docker-compose.one.yml` and requires `NUM_OPERATORS=1`
 
 ## Environment Files
 
@@ -147,4 +147,4 @@ If `.union_bridge/op_N/bitvmx/` is missing or stale, delete the operator directo
 ### Compose variants
 
 - [`docker-compose.all.yml`](docker-compose.all.yml): local multi-operator flow with the shared BitVMX network
-- [`docker-compose.one.yml`](docker-compose.one.yml): single-operator-per-host flow with host-network BitVMX
+- [`docker-compose.one.yml`](docker-compose.one.yml): single-operator-per-host flow with host-network BitVMX; expects single-operator, host-network-ready runtime artifacts

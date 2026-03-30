@@ -36,7 +36,10 @@ impl FromStr for Environment {
         match normalized {
             "local" => Ok(Environment::Local),
             "docker" => Ok(Environment::Docker),
-            other => Ok(Environment::Remote(other.to_string())),
+            other => {
+                validate_remote_profile_name(other)?;
+                Ok(Environment::Remote(other.to_string()))
+            }
         }
     }
 }
@@ -152,6 +155,19 @@ fn remote_profile_file_path(environment: &Environment) -> Result<PathBuf> {
     Ok(cli_dir.join(format!(".env.{profile}")))
 }
 
+fn validate_remote_profile_name(profile: &str) -> std::result::Result<(), String> {
+    let is_valid = !profile.is_empty()
+        && profile.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_');
+
+    if is_valid {
+        Ok(())
+    } else {
+        Err(format!(
+            "invalid remote profile '{profile}': use only ASCII letters, numbers, '-' or '_'"
+        ))
+    }
+}
+
 fn lookup_key_in_profile(profile_path: &Path, key: &str) -> Result<Option<String>> {
     if !profile_path.exists() {
         return Err(anyhow!(
@@ -199,4 +215,15 @@ fn lookup_key_in_profile(profile_path: &Path, key: &str) -> Result<Option<String
     }
 
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_remote_profile_names_with_path_separators() {
+        let err = Environment::from_str("../alphanet").expect_err("profile should be rejected");
+        assert!(err.contains("invalid remote profile"));
+    }
 }

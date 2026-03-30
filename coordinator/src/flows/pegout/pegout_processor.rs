@@ -74,7 +74,7 @@ where
     native_bridge_verifier: NativeBridgeVerifier<CG>,
     config: PegoutConfig,
     required_confirmations: u32,
-    // Environment name for force flags (only active in non-production environments)
+    // Environment name for force flags (only active in local environments)
     env_name: Option<String>,
 }
 

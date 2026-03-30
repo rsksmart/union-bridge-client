@@ -147,8 +147,11 @@ require_operator_docker_env_file() {
 resolved_num_operators() {
   local configured_count
   local default_count="4"
+  local compose_override
 
-  if [[ "$(compose_override_file)" == "docker-compose.one.yml" ]]; then
+  compose_override="$(compose_override_file)"
+
+  if [[ "${compose_override}" == "docker-compose.one.yml" ]]; then
     default_count="1"
   fi
 
@@ -157,6 +160,11 @@ resolved_num_operators() {
 
   if ! [[ "${configured_count}" =~ ^(10|[1-9])$ ]]; then
     echo "Error: resolved NUM_OPERATORS must be between 1 and 10." >&2
+    exit 1
+  fi
+
+  if [[ "${compose_override}" == "docker-compose.one.yml" && "${configured_count}" != "1" ]]; then
+    echo "Error: OP_MODE=one requires exactly one operator." >&2
     exit 1
   fi
 

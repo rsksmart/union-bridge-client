@@ -3,8 +3,8 @@
 //! These flags allow QA and developers to trigger advance funds and dispute
 //! mechanisms without waiting for normal timeouts or conditions.
 //!
-//! **IMPORTANT**: These flags are ONLY active in non-production environments
-//! (Local, `Docker`).
+//! **IMPORTANT**: These flags are enabled only for local runs (`local` and
+//! `docker`).
 //!
 //! ## Activation Methods
 //!
@@ -33,8 +33,8 @@ use std::path::Path;
 
 use log::warn;
 
-/// Environments where force flags are BLOCKED (production-like)
-const BLOCKED_ENVIRONMENTS: [&str; 2] = ["alphanet", "testnet"];
+/// Environments where force flags are allowed.
+const ALLOWED_ENVIRONMENTS: [&str; 2] = ["local", "docker"];
 
 /// File path for hot-reloadable `FORCE_ADVANCE` flag
 const FORCE_ADVANCE_FILE: &str = "/tmp/FORCE_ADVANCE";
@@ -44,15 +44,11 @@ const FORCE_DISPUTE_FILE: &str = "/tmp/FORCE_DISPUTE";
 
 /// Checks if the current environment allows force flags.
 ///
-/// Returns `true` for Local, `Docker`, and Regtest environments.
-/// Returns `false` for Alphanet and Testnet (production-like environments).
+/// Returns `true` only for local runs (`local` and `docker`).
 fn is_force_flags_allowed(env_name: Option<&str>) -> bool {
     match env_name {
         None => true, // Local development (no --env flag)
-        Some(env) => {
-            let env_lower = env.to_lowercase();
-            !BLOCKED_ENVIRONMENTS.iter().any(|&blocked| env_lower.contains(blocked))
-        }
+        Some(env) => ALLOWED_ENVIRONMENTS.iter().any(|allowed| env.eq_ignore_ascii_case(allowed)),
     }
 }
 
@@ -66,7 +62,7 @@ fn is_force_flags_allowed(env_name: Option<&str>) -> bool {
 ///
 /// Checks file first (hot-reloadable), then falls back to environment variable.
 ///
-/// Only works in non-production environments (Local, `Docker`, Regtest).
+/// Only works in local runs (`local` and `docker`).
 #[must_use]
 pub fn get_force_advance_address(env_name: Option<&str>) -> Option<String> {
     if !is_force_flags_allowed(env_name) {
@@ -100,7 +96,7 @@ pub fn get_force_advance_address(env_name: Option<&str>) -> Option<String> {
 ///
 /// Checks file first (hot-reloadable), then falls back to environment variable.
 ///
-/// Only works in non-production environments (Local, `Docker`, Regtest).
+/// Only works in local runs (`local` and `docker`).
 #[must_use]
 pub fn is_force_dispute_enabled(env_name: Option<&str>) -> bool {
     if !is_force_flags_allowed(env_name) {
@@ -159,13 +155,14 @@ mod tests {
         assert!(is_force_flags_allowed(Some("LOCAL"))); // case insensitive
         assert!(is_force_flags_allowed(Some("DOCKER"))); // case insensitive
 
-        // Regtest should allow force flags
-        assert!(is_force_flags_allowed(Some("regtest")));
-        assert!(is_force_flags_allowed(Some("REGTEST")));
+        // Non-local environments should not allow force flags
+        assert!(!is_force_flags_allowed(Some("regtest")));
+        assert!(!is_force_flags_allowed(Some("REGTEST")));
+        assert!(!is_force_flags_allowed(Some("stage")));
     }
 
     #[test]
-    fn test_force_flags_blocked_production_environments() {
+    fn test_force_flags_blocked_non_local_environments() {
         let _guard = lock_force_flags_test_state();
         clear_force_flags_state();
 
@@ -197,12 +194,8 @@ mod tests {
                 get_force_advance_address(Some("local")).as_deref(),
                 Some("0xABCDEF1234567890")
             );
-            assert_eq!(
-                get_force_advance_address(Some("regtest")).as_deref(),
-                Some("0xABCDEF1234567890")
-            );
-
-            // In production, should return None regardless
+            // In non-local environments, should return None regardless
+            assert!(get_force_advance_address(Some("regtest")).is_none());
             assert!(get_force_advance_address(Some("alphanet")).is_none());
             assert!(get_force_advance_address(Some("testnet")).is_none());
 
@@ -227,9 +220,8 @@ mod tests {
             std::env::set_var("FORCE_DISPUTE", "true");
             assert!(is_force_dispute_enabled(None));
             assert!(is_force_dispute_enabled(Some("local")));
-            assert!(is_force_dispute_enabled(Some("regtest")));
-
-            // With env var set to true in production, should return false
+            // With env var set to true in non-local environments, should return false
+            assert!(!is_force_dispute_enabled(Some("regtest")));
             assert!(!is_force_dispute_enabled(Some("alphanet")));
             assert!(!is_force_dispute_enabled(Some("testnet")));
 

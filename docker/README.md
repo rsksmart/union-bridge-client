@@ -60,6 +60,7 @@ The Docker setup uses two kinds of environment files:
   `<project_root>/cli-setup-operators.sh`
 
 The selected env file chooses the operator compose override through `OP_MODE=all|one`.
+`OP_MODE=one` is the single-operator host-network variant and requires `NUM_OPERATORS=1`.
 
 `docker.env` is only consumed by local Docker operator runs (`start-operators.sh` / docker compose).
 Local cargo mode (`./cli-run.sh`) does not read this file.

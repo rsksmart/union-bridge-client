@@ -492,7 +492,7 @@ You will have the following commands available:
 #### Force Flags for Testing
 
 The coordinator supports force flags to trigger specific behaviors during testing. These flags are **only active in
-non-production environments** (Local, Docker, Regtest).
+local environments** (`local` and `docker`).
 
 | Flag            | Description                                                                                                                                                                                       |
 |-----------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
