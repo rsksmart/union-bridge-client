@@ -1,7 +1,7 @@
 # Docker
 
 This document is the Docker entry point for this repository.
-It helps you choose the right local Docker flow.
+It helps you choose the right Docker flow owned by this repository.
 
 ## Related Docs
 
@@ -38,9 +38,10 @@ Key files:
 
 ### `operator/`
 
-This is the local multi-operator Docker runtime flow. It owns:
+This is the operator Docker runtime flow. It owns:
 
 - local runtime setup
+- env-file driven operator startup
 - generated runtime artifacts under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/`
 - `start-operators.sh` usage
 - local funding, logs, and troubleshooting
@@ -54,8 +55,11 @@ This directory owns image builds, builder images, GHCR pulls, and pushes.
 The Docker setup uses two kinds of environment files:
 
 - tracked static environment file: [`docker/operator/.env.local`](operator/.env.local)
+- optional external environment file passed to `start-operators.sh --env-file <path>`
 - generated per-operator runtime files under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`, created by
   `<project_root>/cli-setup-operators.sh`
+
+The selected env file chooses the operator compose override through `OP_MODE=all|one`.
 
 `docker.env` is only consumed by local Docker operator runs (`start-operators.sh` / docker compose).
 Local cargo mode (`./cli-run.sh`) does not read this file.

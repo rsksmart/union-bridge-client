@@ -1,0 +1,8 @@
+#############################
+# SINGLE-OP PER HOST OVERRIDE
+#############################
+
+services:
+  bitvmx-client:
+    # One operator per host, needs network_mode host due to how bitvmx-client binds broker host.
+    network_mode: host
