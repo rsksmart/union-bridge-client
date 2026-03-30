@@ -41,13 +41,15 @@ COPY user-api user-api
 ENV RUST_LOG=error
 ENV CARGO_TERM_QUIET=true
 
-# Configure Git to use token-authenticated HTTPS for the private contracts
-# repository during dependency fetch.
+# Configure Git to use HTTPS for all workspace git dependencies during
+# dependency fetch. The contracts repo is private and requires a token,
+# while FairgateLabs dependencies are fetched anonymously over HTTPS.
 ARG UNION_CONTRACTS_GITHUB_TOKEN
 
 RUN mkdir -p .cargo && \
     echo '[net]\ngit-fetch-with-cli = true' > .cargo/config.toml && \
     git config --global url."https://${UNION_CONTRACTS_GITHUB_TOKEN}@github.com/temp-rsk".insteadOf "ssh://git@github.com/temp-rsk" && \
+    git config --global url."https://github.com/FairgateLabs".insteadOf "ssh://git@github.com/FairgateLabs" && \
     cargo fetch --locked && \
     # Clear the token from build args to avoid security warnings
     unset UNION_CONTRACTS_GITHUB_TOKEN
