@@ -8,6 +8,7 @@ use serde::Deserialize;
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 const PEGIN_MANAGER_CONTRACT_NAME: &str = "PeginManager";
 const PEGOUT_MANAGER_CONTRACT_NAME: &str = "PegoutManager";
+const FAKE_PEG_MANAGER_CONTRACT_NAME: &str = "FakePegManager";
 const SIGNATURE_CONTRACT_NAME: &str = "SignatureManager";
 const COMMITTEE_REGISTRY_CONTRACT_NAME: &str = "CommitteeRegistry";
 const MEMBER_REGISTRY_CONTRACT_NAME: &str = "MemberRegistry";
@@ -252,7 +253,7 @@ impl Config {
     pub fn get_contract_addresses(&self) -> Vec<Address> {
         self.contracts
             .iter()
-            .filter(|contract| Self::get_contracts_to_subscribe_to(contract))
+            .filter(|contract| self.get_contracts_to_subscribe_to(contract))
             .map(|contract| contract.address.clone())
             .map(|address| {
                 Address::try_from(address.as_str()).expect("Invalid contract address on config")
@@ -260,9 +261,10 @@ impl Config {
             .collect::<Vec<Address>>()
     }
 
-    fn get_contracts_to_subscribe_to(contract: &ContractConfig) -> bool {
+    fn get_contracts_to_subscribe_to(&self, contract: &ContractConfig) -> bool {
         contract.name == PEGIN_MANAGER_CONTRACT_NAME
             || contract.name == PEGOUT_MANAGER_CONTRACT_NAME
+            || (self.subscribe_fake_peg_manager && contract.name == FAKE_PEG_MANAGER_CONTRACT_NAME)
             || contract.name == SIGNATURE_CONTRACT_NAME
             || contract.name == COMMITTEE_REGISTRY_CONTRACT_NAME
             || contract.name == MEMBER_REGISTRY_CONTRACT_NAME
@@ -270,7 +272,7 @@ impl Config {
     }
 
     fn should_subscribe_fake_peg_manager(env_name: Option<&str>) -> bool {
-        matches!(env_name, Some("regtest" | "docker")) // we can support more rsk networks by adding more env names
+        matches!(env_name, Some("regtest")) // we can support more rsk networks by adding more env names
     }
 }
 
@@ -290,6 +292,7 @@ mod tests {
 
     use bitcoin::Network;
     use common::config::CommonConfig;
+    use common::types::Address;
 
     use crate::config::{BridgeConfig, Config, CoordinatorFlowConfig};
 
@@ -387,5 +390,31 @@ mod tests {
         assert_eq!(config.bridge.coordinator.required_confirmations, 5);
         assert_eq!(config.bridge.pegin.min_tx_confirmations, 1);
         assert_eq!(config.bridge.pegout.spv_proof_min_confirmations, 1);
+    }
+
+    #[test]
+    fn test_get_contract_addresses_excludes_fake_peg_manager_outside_regtest() {
+        let config = Config::load(None).expect("Failed to load base config");
+        let contract_addresses = config.get_contract_addresses();
+
+        assert_eq!(6, contract_addresses.len());
+        assert!(!contract_addresses.iter().any(|address| {
+            *address
+                == Address::try_from("0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f")
+                    .expect("valid fake peg manager address")
+        }));
+    }
+
+    #[test]
+    fn test_get_contract_addresses_includes_fake_peg_manager_on_regtest() {
+        let config = Config::load(Some("regtest")).expect("Failed to load regtest config");
+        let contract_addresses = config.get_contract_addresses();
+
+        assert_eq!(7, contract_addresses.len());
+        assert!(contract_addresses.iter().any(|address| {
+            *address
+                == Address::try_from("0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f")
+                    .expect("valid fake peg manager address")
+        }));
     }
 }
