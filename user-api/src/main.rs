@@ -54,7 +54,7 @@ async fn main() -> Result<()> {
                 .short('e')
                 .long(ENV_CLI_FLAG)
                 .value_name("ENV")
-                .help("Environment name (e.g., local, alphanet, stage)"),
+                .help("Environment name (e.g., local, docker, alphanet)"),
         )
         .get_matches();
 

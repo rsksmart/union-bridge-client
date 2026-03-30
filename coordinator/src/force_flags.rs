@@ -4,8 +4,7 @@
 //! mechanisms without waiting for normal timeouts or conditions.
 //!
 //! **IMPORTANT**: These flags are ONLY active in non-production environments
-//! (Local, `LocalDocker`, Regtest). They are automatically disabled in
-//! Alphanet and Testnet.
+//! (Local, `Docker`).
 //!
 //! ## Activation Methods
 //!
@@ -45,7 +44,7 @@ const FORCE_DISPUTE_FILE: &str = "/tmp/FORCE_DISPUTE";
 
 /// Checks if the current environment allows force flags.
 ///
-/// Returns `true` for Local, `LocalDocker`, and Regtest environments.
+/// Returns `true` for Local, `Docker`, and Regtest environments.
 /// Returns `false` for Alphanet and Testnet (production-like environments).
 fn is_force_flags_allowed(env_name: Option<&str>) -> bool {
     match env_name {
@@ -67,7 +66,7 @@ fn is_force_flags_allowed(env_name: Option<&str>) -> bool {
 ///
 /// Checks file first (hot-reloadable), then falls back to environment variable.
 ///
-/// Only works in non-production environments (Local, `LocalDocker`, Regtest).
+/// Only works in non-production environments (Local, `Docker`, Regtest).
 #[must_use]
 pub fn get_force_advance_address(env_name: Option<&str>) -> Option<String> {
     if !is_force_flags_allowed(env_name) {
@@ -101,7 +100,7 @@ pub fn get_force_advance_address(env_name: Option<&str>) -> Option<String> {
 ///
 /// Checks file first (hot-reloadable), then falls back to environment variable.
 ///
-/// Only works in non-production environments (Local, `LocalDocker`, Regtest).
+/// Only works in non-production environments (Local, `Docker`, Regtest).
 #[must_use]
 pub fn is_force_dispute_enabled(env_name: Option<&str>) -> bool {
     if !is_force_flags_allowed(env_name) {
@@ -156,9 +155,9 @@ mod tests {
 
         // Local environments should allow force flags
         assert!(is_force_flags_allowed(Some("local")));
-        assert!(is_force_flags_allowed(Some("local-docker")));
-        assert!(is_force_flags_allowed(Some("docker-local")));
+        assert!(is_force_flags_allowed(Some("docker")));
         assert!(is_force_flags_allowed(Some("LOCAL"))); // case insensitive
+        assert!(is_force_flags_allowed(Some("DOCKER"))); // case insensitive
 
         // Regtest should allow force flags
         assert!(is_force_flags_allowed(Some("regtest")));
@@ -173,7 +172,6 @@ mod tests {
         // Alphanet should block force flags
         assert!(!is_force_flags_allowed(Some("alphanet")));
         assert!(!is_force_flags_allowed(Some("ALPHANET")));
-        assert!(!is_force_flags_allowed(Some("docker-alphanet")));
 
         // Testnet should block force flags
         assert!(!is_force_flags_allowed(Some("testnet")));

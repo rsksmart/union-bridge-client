@@ -353,12 +353,12 @@ mod tests {
     }
 
     #[test]
-    fn test_docker_local_environment_overrides() {
+    fn test_docker_environment_overrides() {
         let _guard = TEST_MUTEX.lock().unwrap();
 
         let config: CommonConfig =
-            CommonConfig::load_config::<CommonConfig>(Some("docker-local".to_string()))
-                .expect("Failed to load config with docker-local environment");
+            CommonConfig::load_config::<CommonConfig>(Some("docker".to_string()))
+                .expect("Failed to load config with docker environment");
 
         assert_eq!(
             Some("0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"),
@@ -370,24 +370,6 @@ mod tests {
         assert_eq!("ws://host.docker.internal:8545", config.provider.rootstock.url);
         assert_eq!("regtest", config.bitcoin_network);
         assert_eq!(11, config.contracts.len());
-    }
-
-    #[test]
-    fn test_docker_regtest_environment_overrides() {
-        let _guard = TEST_MUTEX.lock().unwrap();
-
-        let config: CommonConfig =
-            CommonConfig::load_config::<CommonConfig>(Some("docker-regtest".to_string()))
-                .expect("Failed to load config with docker-regtest environment");
-
-        assert_eq!(
-            Some("0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"),
-            config.indexer.initial_block_hash.as_deref()
-        );
-        assert_eq!(IndexerStartFrom::Best, config.indexer.start_from);
-        assert_eq!("/app/db/", config.indexer.storage.path);
-        assert_eq!("ws://10.1.0.66:4445", config.provider.rootstock.url);
-        assert_eq!("regtest", config.bitcoin_network);
     }
 
     #[test]
@@ -429,7 +411,7 @@ mod tests {
         }
 
         let config: CommonConfig =
-            CommonConfig::load_config::<CommonConfig>(Some("docker-local".to_string()))
+            CommonConfig::load_config::<CommonConfig>(Some("docker".to_string()))
                 .expect("Failed to load config with all overrides");
 
         assert_eq!("/app/db/", config.indexer.storage.path); // environment override
