@@ -38,7 +38,7 @@ Implemented under the `user-api` crate, this component provides a user-friendly 
 protocol. It exposes the entry points used for operations such as peg-ins and peg-outs and validates the request data
 needed by downstream flows.
 
-### E2E Documentation
+### Flows Coordination
 
 Implemented under the `coordinator` crate, this component orchestrates the different flows of the Union and interacts
 with BitVMX. It ties together blockchain events, contract state, broker messaging, and timeout handling for
@@ -57,15 +57,7 @@ The Union Bridge Client is responsible for:
 
 ### E2E Documentation
 
-You can find advanced documentation on the E2E flows and other topics in the [docs/e2e/README.md](docs/e2e/README.md).
-
-- [Union Bridge Flows](docs/e2e/flows.md)
-- [BitVMX messages listened to by Union Client](docs/e2e/bitvmx-messages-listened-by-union-client.md)
-- [Contract functions called by Union Client](docs/e2e/rootstock-contract-functions-called-by-union-client.md)
-- [Contract events listened to by Union Client](docs/e2e/rootstock-contract-events-listened-by-union-client.md)
-- [Parameter sources and mappings](docs/e2e/parameter-sources-and-mappings.md)
-- [BitVMX actions triggered by Union Client](docs/e2e/bitvmx-actions-triggered-by-union-client.md)
-- [Bitcoin and Rootstock confirmations, retry delays, and timeouts](docs/e2e/confirmations-retries-and-timeouts.md)
+For detailed end-to-end flow documentation, see [docs/e2e/README.md](docs/e2e/README.md).
 
 ## First Time Setup
 
