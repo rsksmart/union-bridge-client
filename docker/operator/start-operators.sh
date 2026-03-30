@@ -14,6 +14,8 @@ NUM_OPERATORS=""
 AUTO_CONFIRM=false
 FRESH=false
 BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
+DEFAULT_ENV_FILE="${SCRIPT_DIR}/.env.local"
+ENV_FILE="${DEFAULT_ENV_FILE}"
 
 print_help() {
   echo "Usage: $0 [OPTIONS] [DOCKER_COMPOSE_ARGS...]"
@@ -23,6 +25,7 @@ print_help() {
   echo ""
   echo "Options:"
   echo "  --ops <N>                Number of operators to start (1-10, default: 4)"
+  echo "  --env-file <PATH>        Compose env file to use instead of docker/operator/.env.local"
   echo "  --tag <TAG>              Override UC_TAG for this docker compose invocation only"
   echo "  --help                   Display this help message"
   echo "  --fresh                  Tear down operators (and volumes) before running the command"
@@ -32,8 +35,11 @@ print_help() {
   echo "  $0 up -d"
   echo "  $0 --ops 6 up -d"
   echo "  $0 --fresh up -d"
+  echo "  $0 --env-file /path/to/.env.alphanet up -d"
   echo "  $0 logs -f"
   echo "  $0 down"
+  echo ""
+  echo "The env file selects the compose override through OP_MODE=all|one."
   echo ""
   echo "Any additional arguments will be passed directly to docker compose."
   exit 0
@@ -79,6 +85,10 @@ while [[ $# -gt 0 ]]; do
       fi
       shift 2
       ;;
+    --env-file)
+      ENV_FILE="$2"
+      shift 2
+      ;;
     --tag)
       UC_TAG="$2"
       shift 2
@@ -98,7 +108,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-ENV_FILE="${SCRIPT_DIR}/.env.local"
+if [[ ! -f "${ENV_FILE}" ]]; then
+  echo "Error: missing env file ${ENV_FILE}" >&2
+  exit 1
+fi
 
 for arg in "${DOCKER_COMPOSE_ARGS[@]}"; do
   if [[ "$arg" == "build" || "$arg" == "--build" || "$arg" == "-b" ]]; then
@@ -126,16 +139,21 @@ require_operator_docker_env_file() {
 
   if [[ ! -f "${file_path}" ]]; then
     echo "Error: missing prepared operator env file ${file_path}" >&2
-    echo "Run <project_root>/cli-setup-operators.sh before starting containers." >&2
+    echo "Prepare the operator artifacts under \${BASE_STORAGE_PATH}/.union_bridge/op_N/ before starting containers." >&2
     return 1
   fi
 }
 
 resolved_num_operators() {
   local configured_count
+  local default_count="4"
+
+  if [[ "$(compose_override_file)" == "docker-compose.one.yml" ]]; then
+    default_count="1"
+  fi
 
   configured_count="${NUM_OPERATORS:-$(read_env_value "${ENV_FILE}" "NUM_OPERATORS")}"
-  configured_count="${configured_count:-4}"
+  configured_count="${configured_count:-${default_count}}"
 
   if ! [[ "${configured_count}" =~ ^(10|[1-9])$ ]]; then
     echo "Error: resolved NUM_OPERATORS must be between 1 and 10." >&2
@@ -145,14 +163,44 @@ resolved_num_operators() {
   echo "${configured_count}"
 }
 
+compose_override_file() {
+  local override_file
+
+  override_file="$(read_env_value "${ENV_FILE}" "OP_MODE")"
+  override_file="${override_file:-all}"
+
+  case "${override_file}" in
+    all)
+      echo "docker-compose.all.yml"
+      ;;
+    one)
+      echo "docker-compose.one.yml"
+      ;;
+    *)
+      echo "Error: unsupported OP_MODE '${override_file}' in ${ENV_FILE}. Use 'all' or 'one'." >&2
+      exit 1
+      ;;
+  esac
+}
+
+uses_shared_bitvmx_network() {
+  if [[ "$(compose_override_file)" == "docker-compose.all.yml" ]]; then
+    return 0
+  fi
+
+  return 1
+}
+
 run_compose_stack() {
   local project_name="$1"
   local env_file_path="$2"
+  local compose_override
+  compose_override="$(compose_override_file)"
   local -a compose_cmd=(
     docker compose
     -p "${project_name}"
     -f docker-compose.yml
-    -f docker-compose.all.yml
+    -f "${compose_override}"
     --env-file "${ENV_FILE}"
     --env-file "${env_file_path}"
   )
@@ -196,11 +244,11 @@ if [[ "${FRESH}" == true ]]; then
     if ! require_operator_docker_env_file "${operator_env_file}"; then
       exit 1
     fi
-    docker compose -p "op_${op_num}" -f docker-compose.yml -f docker-compose.all.yml --env-file "${ENV_FILE}" --env-file "${operator_env_file}" down --volumes
+    docker compose -p "op_${op_num}" -f docker-compose.yml -f "$(compose_override_file)" --env-file "${ENV_FILE}" --env-file "${operator_env_file}" down --volumes
   done
 fi
 
-if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
+if [[ "${IS_STARTUP_COMMAND}" == true ]] && uses_shared_bitvmx_network; then
   NETWORK_NAME="bitvmx-shared-network"
   if ! docker network inspect "${NETWORK_NAME}" >/dev/null 2>&1; then
     echo "Creating docker network '${NETWORK_NAME}'..."

@@ -1,6 +1,6 @@
 # Operator Docker Runtime
 
-This document covers the Docker runtime for local operators only.
+This document covers the Docker runtime driven from this repo.
 
 ## Related Docs
 
@@ -16,11 +16,10 @@ In the examples below, `<project_root>` means the root of this repository checko
 This repo owns:
 
 - local multi-operator Docker runtime
+- env-file driven operator startup with selectable compose overrides
 - generated runtime artifacts under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/`
 - local `start-operators.sh` usage
 - local funding, logs, and troubleshooting
-
-Remote runtime environments such as alphanet and testnet are not covered here.
 
 ## Prerequisites
 
@@ -77,9 +76,9 @@ cd docker/local-infra
 ./start_bitvmx.sh --fresh up -d
 ```
 
-## 3. Start or Stop Local Operators
+## 3. Start or Stop Operators
 
-Use the local-only operator wrapper:
+Use the operator wrapper:
 
 ```bash
 cd docker/operator
@@ -93,19 +92,26 @@ bash start-operators.sh --ops 6 up -d
 # Clean and start again
 bash start-operators.sh --fresh up -d
 
+# Start a single operator using an external env file
+bash start-operators.sh --env-file /path/to/.env.alphanet up -d
+
 # Logs / status / stop
 bash start-operators.sh logs -f
 bash start-operators.sh ps
 bash start-operators.sh down
 ```
 
-Use `docker` for this local runtime.
+The selected env file chooses the compose shape through `OP_MODE`:
 
-## Local Environment File
+- `OP_MODE=all`: `docker-compose.all.yml`
+- `OP_MODE=one`: `docker-compose.one.yml`
+
+## Environment Files
 
 The Docker runtime uses:
 
 - tracked static environment file: [`docker/operator/.env.local`](.env.local)
+- optional external environment file passed with `--env-file`
 - generated per-operator runtime files: `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`
 
 `docker.env` is consumed only by Docker operator runs.
@@ -126,7 +132,8 @@ cd ../bitvmx-client
 
 ### Missing operator env file
 
-If `start-operators.sh` reports a missing `docker.env`, rerun:
+If `start-operators.sh` reports a missing `docker.env`, prepare the operator artifacts under
+`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/` and then rerun. For local bootstrap:
 
 ```bash
 ./cli-setup-operators.sh --ops 4
@@ -137,6 +144,7 @@ If `start-operators.sh` reports a missing `docker.env`, rerun:
 If `.union_bridge/op_N/bitvmx/` is missing or stale, delete the operator directory under
 `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/` and rerun `cli-setup-operators.sh`.
 
-### Docker runtime scope
+### Compose variants
 
-This document covers only the local Docker operator flow.
+- [`docker-compose.all.yml`](docker-compose.all.yml): local multi-operator flow with the shared BitVMX network
+- [`docker-compose.one.yml`](docker-compose.one.yml): single-operator-per-host flow with host-network BitVMX
