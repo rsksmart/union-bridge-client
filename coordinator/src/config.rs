@@ -325,7 +325,7 @@ mod tests {
                 .coordinator
                 .broker
                 .key_path
-                .ends_with("/.union_bridge/op_1/broker/coordinator.pem")
+                .ends_with("/.union_bridge/op_1/union-client/coordinator.pem")
         );
         assert!(!config.coordinator.storage_path.contains("{BASE_STORAGE_PATH}"));
         assert!(config.coordinator.storage_path.ends_with("/.union_bridge/op_1/database"));

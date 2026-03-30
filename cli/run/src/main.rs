@@ -806,7 +806,7 @@ mod tests {
     fn test_build_env_for_client_reads_pubkey_hash_file_references() {
         let _guard = TEST_MUTEX.lock().expect("lock");
         let base_storage_path = make_temp_dir();
-        let hash_rel_path = ".union_bridge/op_1/broker/block-indexer.pubkey_hash";
+        let hash_rel_path = ".union_bridge/op_1/union-client/block-indexer.pubkey_hash";
         let hash_abs_path = base_storage_path.join(hash_rel_path);
         fs::create_dir_all(hash_abs_path.parent().expect("parent")).expect("mkdir");
         fs::write(&hash_abs_path, "abc123\n").expect("write hash file");
@@ -816,11 +816,11 @@ mod tests {
         let env_map = HashMap::from([
             (
                 "UB__COORDINATOR__BLOCKS__PUBKEY_HASH_FILE_1".to_string(),
-                ".union_bridge/op_1/broker/block-indexer.pubkey_hash".to_string(),
+                ".union_bridge/op_1/union-client/block-indexer.pubkey_hash".to_string(),
             ),
             (
                 "UB__BLOCK_INDEXER__BROKER_KEY_PATH_1".to_string(),
-                ".union_bridge/op_1/broker/block-indexer.pem".to_string(),
+                ".union_bridge/op_1/union-client/block-indexer.pem".to_string(),
             ),
         ]);
 
@@ -833,7 +833,7 @@ mod tests {
         assert!(envs.contains(&(
             "UB__BLOCK_INDEXER__BROKER_KEY_PATH".to_string(),
             base_storage_path
-                .join(".union_bridge/op_1/broker/block-indexer.pem")
+                .join(".union_bridge/op_1/union-client/block-indexer.pem")
                 .display()
                 .to_string(),
         )));

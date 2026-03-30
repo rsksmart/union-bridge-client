@@ -47,8 +47,8 @@ cd <project_root>
 
 This creates or refreshes:
 
-- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/broker/<service>.pem`
-- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/broker/<service>.pubkey_hash`
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/<service>.pem`
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/<service>.pubkey_hash`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/...`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/keystore/{member,user}`
