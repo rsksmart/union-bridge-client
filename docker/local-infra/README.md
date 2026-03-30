@@ -6,7 +6,7 @@ Local development dependencies. Use this when running Union Client locally with 
 
 - [../README.md](../README.md): Docker flow selection
 - [../../CONTRIBUTING.md](../../CONTRIBUTING.md): contributor setup and local running order
-- [../operator/README.md](../operator/README.md): operator Docker flow
+- [../operator/README.md](../operator/README.md): local operator Docker flow
 
 ## `cli-infra.sh`
 
@@ -63,7 +63,7 @@ cd docker/local-infra
 
 # Generate local per-operator BitVMX config under ~/.union_bridge/op_N/bitvmx
 cd ../..
-./cli-setup-operators.sh --env local --ops 4
+./cli-setup-operators.sh --ops 4
 
 # Start 4 BitVMX clients
 cd docker/local-infra

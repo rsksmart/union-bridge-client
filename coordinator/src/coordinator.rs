@@ -37,8 +37,8 @@ pub struct Coordinator<M: MonitorApi, BC: BitVmxBrokerClientApi, S: CoordinatorS
     shutdown_flag: ShutdownFlag,
 }
 
-fn normalize_env_name(env_name: Option<&str>) -> Option<&str> {
-    env_name.map(|name| name.strip_prefix("docker-").unwrap_or(name))
+fn uses_fake_native_bridge(env_name: Option<&str>) -> bool {
+    matches!(env_name, None | Some("local" | "docker"))
 }
 
 impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi + 'static>
@@ -50,10 +50,15 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         rt_sync: &RuntimeSync,
         bridge_config: &BridgeConfig,
     ) -> NativeBridgeVerifier<CG> {
-        let normalized_env_name = normalize_env_name(env_name);
-        if let Some(normalized @ ("alphanet" | "regtest" | "testnet")) = normalized_env_name {
+        if uses_fake_native_bridge(env_name) {
             log::info!(
-                "Environment: {} (normalized: {normalized}) → Using Real Native Bridge Verifier",
+                "Environment: {} → Using Dummy Native Bridge Verifier (BitVMX confirmations only)",
+                env_name.unwrap_or("NONE")
+            );
+            NativeBridgeVerifier::Dummy
+        } else {
+            log::info!(
+                "Environment: {} → Using Real Native Bridge Verifier",
                 env_name.unwrap_or("NONE")
             );
             NativeBridgeVerifier::Real {
@@ -61,13 +66,6 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                 rt_sync: rt_sync.clone(),
                 min_tx_confirmations: bridge_config.native_bridge.min_tx_confirmations,
             }
-        } else {
-            log::info!(
-                "Environment: {} (normalized: {}) → Using Dummy Native Bridge Verifier (BitVMX confirmations only)",
-                env_name.unwrap_or("NONE"),
-                normalized_env_name.unwrap_or("NONE")
-            );
-            NativeBridgeVerifier::Dummy
         }
     }
 
@@ -415,13 +413,14 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn test_normalize_env_name_supports_docker_prefixed_values() {
-        assert_eq!(super::normalize_env_name(Some("regtest")), Some("regtest"));
-        assert_eq!(super::normalize_env_name(Some("docker-regtest")), Some("regtest"));
-        assert_eq!(super::normalize_env_name(Some("docker-testnet")), Some("testnet"));
-        assert_eq!(super::normalize_env_name(Some("docker-alphanet")), Some("alphanet"));
-        assert_eq!(super::normalize_env_name(Some("docker-local")), Some("local"));
-        assert_eq!(super::normalize_env_name(None), None);
+    fn test_uses_fake_native_bridge_only_for_local_modes() {
+        assert!(super::uses_fake_native_bridge(None));
+        assert!(super::uses_fake_native_bridge(Some("local")));
+        assert!(super::uses_fake_native_bridge(Some("docker")));
+
+        assert!(!super::uses_fake_native_bridge(Some("regtest")));
+        assert!(!super::uses_fake_native_bridge(Some("alphanet")));
+        assert!(!super::uses_fake_native_bridge(Some("testnet")));
     }
 
     #[test]

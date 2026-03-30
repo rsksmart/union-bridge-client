@@ -490,7 +490,7 @@ fn materialize_env_var(
         let resolved = read_env_file_value(base_storage_path, value).with_context(|| {
             format!(
                 "Missing BitVMX services pubkey hash file for local launch. \
-Run `./cli-setup-operators.sh --env local --ops 4` first (expected path from local-committee override: {value})"
+Run `./cli-setup-operators.sh --ops 4` first (expected path from local-committee override: {value})"
             )
         })?;
         return Ok(Some(("UB__COORDINATOR__BITVMX__PUBKEY_HASH".to_string(), resolved)));
@@ -588,7 +588,7 @@ fn validate_local_keystores(ids: &[u8]) -> Result<()> {
             let key_path = keystore_dir.join(key_name);
             if !key_path.exists() {
                 bail!(
-                    "Missing local keystore {}. Run `./cli-setup-operators.sh --env local --ops 4` to recreate local artifacts.",
+                    "Missing local keystore {}. Run `./cli-setup-operators.sh --ops 4` to recreate local artifacts.",
                     key_path.display()
                 );
             }
@@ -596,7 +596,7 @@ fn validate_local_keystores(ids: &[u8]) -> Result<()> {
             KeyManager::get_signer(&key_path).with_context(|| {
                 format!(
                     "Failed to decrypt local {key_name} keystore {}. \
-Check KEY_STORE_PASSWORD or rerun `./cli-setup-operators.sh --env local --ops 4` if the keystore was created with a different password.",
+Check KEY_STORE_PASSWORD or rerun `./cli-setup-operators.sh --ops 4` if the keystore was created with a different password.",
                     key_path.display()
                 )
             })?;

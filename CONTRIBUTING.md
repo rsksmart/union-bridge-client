@@ -7,8 +7,8 @@ CLI and Docker commands live in the lower-level docs that sit next to the script
 
 - [README.md](README.md): repository overview and documentation map.
 - [cli/README.md](cli/README.md): CLI commands for local development and operations.
-- [docker/README.md](docker/README.md): Docker-based local development and deployments.
-- [docker/operator/README.md](docker/operator/README.md): operator-focused Docker runtime flow.
+- [docker/README.md](docker/README.md): Docker-based local development flows.
+- [docker/operator/README.md](docker/operator/README.md): local operator-focused Docker runtime flow.
 - [docker/build/README.md](docker/build/README.md): Docker image build and registry operations.
 - [.github/WORKFLOWS.md](.github/WORKFLOWS.md): CI workflows and local `act` usage.
 
@@ -133,7 +133,7 @@ This will automatically load the environment variables defined in the `.envrc` o
 
 ### Operators Setup
 
-Use `./cli-setup-operators.sh` to set up operators for both local cargo and Docker workflows.
+Use `./cli-setup-operators.sh` to set up local operators for both cargo and Docker workflows.
 
 #### Bootstrap Local Operator State
 
@@ -141,7 +141,7 @@ Under the directory specified in `BASE_STORAGE_PATH`, create the base directory 
 
 ```bash
 mkdir -p "${BASE_STORAGE_PATH}/.union_bridge"
-./cli-setup-operators.sh --env local --ops 4
+./cli-setup-operators.sh --ops 4
 ```
 
 The bootstrap creates or reuses local Rootstock keystores, broker identities, and BitVMX runtime files under
@@ -306,7 +306,7 @@ This file is not the command reference for every runtime path. Use it for shared
 doc that owns the commands:
 
 - local cargo workflow: [cli/README.md](cli/README.md) plus [docker/local-infra/README.md](docker/local-infra/README.md)
-- Docker operator workflow: [docker/operator/README.md](docker/operator/README.md)
+- Local Docker operator workflow: [docker/operator/README.md](docker/operator/README.md)
 - Docker image build and registry operations: [docker/build/README.md](docker/build/README.md)
 
 ## Local Running Modes
@@ -333,36 +333,10 @@ There are 3 supported ways to run everything locally:
    Use this when you want BitVMX and Union Client operators running in containers.
 
    - Docker flow selection: [docker/README.md](docker/README.md)
-   - Full operator runtime flow: [docker/operator/README.md](docker/operator/README.md)
+   - Local operator runtime flow: [docker/operator/README.md](docker/operator/README.md)
 
 For the Docker-backed local flows, `./cli-infra.sh` is the quickest entry point for Bitcoin, Anvil, BitVMX, and
 background mining. Its local command reference lives in [docker/local-infra/README.md](docker/local-infra/README.md).
-
-## Private Regtest (Essentials)
-
-Access to regtest requires project-specific SSH credentials.
-
-Run from repository root:
-
-```bash
-./cli-infra.sh --start-regtest
-./cli-infra.sh --start-regtest --fresh
-bash tests/run-happy-path-regtest.sh
-```
-
-- `--start-regtest`: starts operators with existing deployed addresses/config.
-- `--start-regtest --fresh`: runs full remote fresh orchestration and clean operator restart.
-
-Important: if you change branch on the private regtest host, rebuild images tagged as `latest-regtest` before starting
-operators:
-
-```bash
-cd docker/build
-bash d-build-client.sh --tag=latest-regtest --no-cache
-```
-
-For the full Docker operator flow, environment files, and runtime artifact layout, see
-[docker/operator/README.md](docker/operator/README.md).
 
 ## Running the Union Client
 
@@ -518,7 +492,7 @@ You will have the following commands available:
 #### Force Flags for Testing
 
 The coordinator supports force flags to trigger specific behaviors during testing. These flags are **only active in
-non-production environments** (Local, LocalDocker, Regtest) and are automatically disabled in Alphanet and Testnet.
+non-production environments** (Local, Docker, Regtest).
 
 | Flag            | Description                                                                                                                                                                                       |
 |-----------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -597,7 +571,7 @@ configuration files.
 
 ## Rootstock Wallet Creation (Manual)
 
-This is automated by `./cli-setup-operators.sh --env local --ops 4`, but if you want to create a wallet manually, you
+This is automated by `./cli-setup-operators.sh --ops 4`, but if you want to create a wallet manually, you
 can use the `key-manager` crate for that.
 
 ```bash

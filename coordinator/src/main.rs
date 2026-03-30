@@ -52,7 +52,7 @@ fn parse_cli_args() -> Option<String> {
                 .short('e')
                 .long(ENV_CLI_FLAG)
                 .value_name("ENV")
-                .help("Environment name (e.g., local, alphanet, stage)"),
+                .help("Environment name (e.g., local, docker, alphanet)"),
         )
         .get_matches();
     Logger::init(matches.get_one::<String>(LOGGER_CLI_FLAG)).expect("Failed to load logger");
