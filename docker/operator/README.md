@@ -117,6 +117,10 @@ The Docker runtime uses:
   `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-compose.env`
   `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-service.env`
 
+`docker-deploy.env` can also override shared deployment paths such as `CONFIG_DIR` and
+`RESOURCES_DIR`. When unset, Docker falls back to the public repo copies under `../../config`
+and `../../resources`.
+
 `docker-compose.env` and `docker-service.env` are consumed only by Docker operator runs.
 Local cargo mode (`./cli-run.sh`) does not read those files.
 

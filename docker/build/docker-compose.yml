@@ -69,7 +69,7 @@ services:
       - ${CONFIG_DIR:-../../config}:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - keystore:/keystore
-      - ../../resources:/app/resources:ro
+      - ${RESOURCES_DIR:-../../resources}:/app/resources:ro
       - db-coordinator:/app/db/coordinator
     restart: no
     environment:

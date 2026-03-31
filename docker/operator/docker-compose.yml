@@ -15,7 +15,7 @@ services:
     volumes:
       - ${BITVMX_CONFIG_DIR}:/app/config
       - db-bitvmx:/tmp
-      - ../../resources:/app/resources:ro
+      - ${RESOURCES_DIR:-../../resources}:/app/resources:ro
     extends:
       file: ../bitvmx-client/docker-compose.yml
       service: bitvmx-client
