@@ -42,9 +42,10 @@ file. Typical times to run it:
 - After a new `FairgateLabs/docker-bitvmx` release to see what's changed.
 - Anytime you want to verify your `docker/bitvmx-client/docker-compose.yml` is aligned with upstream.
 
-Run the script:
+Run the script from the `docker/bitvmx-client/` directory:
 
 ```bash
+cd docker/bitvmx-client
 ./check_bitvmx_updates.sh
 ```
 
@@ -481,11 +482,12 @@ Use [`cli-operations.sh`](../../cli/README.md) to apply operators to a stream:
 
 ## Tags and images
 
-Currently, there are three main tags for the Docker images used in this setup:
+Currently, there are four main tags for the Docker images used in this setup:
 
 - `latest-anvil`: local/dev images aligned with anvil usage.
 - `latest-alphanet`: alphanet images aligned with the Alphanet infra.
 - `latest-testnet`: testnet images aligned with the Testnet infra.
+- `latest-regtest`: regtest images aligned with the Regtest infra.
 
 ## Troubleshooting
 
