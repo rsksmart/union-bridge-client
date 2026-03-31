@@ -71,7 +71,7 @@ services:
       - ${COORDINATOR_BROKER_PEM_PATH}:/app/broker.pem:ro
     environment:
       - UB__coordinator__bitvmx__host=${BITVMX_HOST:-dummy-bitvmx-host}
-      - UB__coordinator__bitvmx__port=${BITVMX_PORT:-dummy-bitvmx-port}
+      - UB__COORDINATOR__BITVMX__PORT=${UB__COORDINATOR__BITVMX__PORT:-dummy-bitvmx-port}
       - UB__COORDINATOR__BLOCKS__PUBKEY_HASH=${UB__COORDINATOR__BLOCKS__PUBKEY_HASH:-}
       - UB__COORDINATOR__LOGS__PUBKEY_HASH=${UB__COORDINATOR__LOGS__PUBKEY_HASH:-}
       - UB__COORDINATOR__USER__PUBKEY_HASH=${UB__COORDINATOR__USER__PUBKEY_HASH:-}

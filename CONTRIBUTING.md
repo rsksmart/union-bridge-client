@@ -109,11 +109,11 @@ The most important environment variables are:
   state, etc.). Pick a path that is writable and accessible by the user running the client.
 - `KEY_STORE_PASSWORD`: password used to create and unlock Rootstock keystore files. For Docker operator flows, you can
   export it before running `cli-setup-operators.sh`, or let setup prompt for it. Setup then writes it into
-  `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`.
+  `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-service.env`.
 - `USER_BITCOIN_WIF`: a Bitcoin private key WIF used for user endpoints such as peg-in and peg-out operations. You can
   generate one via the `bitcoin-wallet` with `generate_address`. For Docker operator flows, you can export it before
   running `cli-setup-operators.sh`, or let setup prompt for it. Setup then writes it into
-  `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`.
+  `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-service.env`.
   See [bitcoin-wallet README](cli/bitcoin-wallet/README.md)
   for more info.
 

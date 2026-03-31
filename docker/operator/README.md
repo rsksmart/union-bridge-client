@@ -33,7 +33,7 @@ export USER_BITCOIN_WIF=<your-user-wif>
 
 `BITCOIND_URL` is patched into the generated BitVMX operator YAMLs.
 `KEY_STORE_PASSWORD` and `USER_BITCOIN_WIF` are stored in each generated
-`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`.
+`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-service.env`.
 
 ## 1. Prepare Local Operator Artifacts
 
@@ -49,7 +49,8 @@ This creates or refreshes:
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/<service>.pem`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/<service>.pubkey_hash`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/...`
-- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-compose.env`
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-service.env`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/keystore/{member,user}`
 
 The setup script still patches the generated local BitVMX YAMLs with the current `BITCOIND_URL`, key-store password,
@@ -110,12 +111,14 @@ The selected env file chooses the compose shape through `OP_MODE`:
 
 The Docker runtime uses:
 
-- tracked static environment file: [`docker/operator/.env.local`](.env.local)
+- tracked static environment file: [`docker/operator/docker-deploy.env`](docker-deploy.env)
 - optional external environment file passed with `--env-file`
-- generated per-operator runtime files: `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`
+- generated per-operator files:
+  `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-compose.env`
+  `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-service.env`
 
-`docker.env` is consumed only by Docker operator runs.
-Local cargo mode (`./cli-run.sh`) does not read that file.
+`docker-compose.env` and `docker-service.env` are consumed only by Docker operator runs.
+Local cargo mode (`./cli-run.sh`) does not read those files.
 
 ## BitVMX Template Checks
 
@@ -132,7 +135,7 @@ cd ../bitvmx-client
 
 ### Missing operator env file
 
-If `start-operators.sh` reports a missing `docker.env`, prepare the operator artifacts under
+If `start-operators.sh` reports a missing `docker-compose.env` or `docker-service.env`, prepare the operator artifacts under
 `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/` and then rerun. For local bootstrap:
 
 ```bash

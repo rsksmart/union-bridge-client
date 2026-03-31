@@ -27,7 +27,7 @@ print_help() {
   echo ""
   echo "Creates or reuses host-side local operator artifacts:"
   echo "  - service identities under ${BASE_STORAGE_PATH}/.union_bridge/op_N/union-client/<service>.*"
-  echo "  - generated operator docker.env files under ${BASE_STORAGE_PATH}/.union_bridge/op_N/docker.env"
+  echo "  - generated operator docker-compose.env/docker-service.env files under ${BASE_STORAGE_PATH}/.union_bridge/op_N/"
   echo "  - local cargo-mode keystores under ${BASE_STORAGE_PATH}/.union_bridge/op_N/keystore/{member,user}"
   echo "  Existing operator env files are refreshed in place."
   echo ""
@@ -82,10 +82,16 @@ operator_root_path() {
   echo "${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}"
 }
 
-operator_docker_env_file_path() {
+operator_compose_env_file_path() {
   local op_num="$1"
 
-  echo "$(operator_root_path "${op_num}")/docker.env"
+  echo "$(operator_root_path "${op_num}")/docker-compose.env"
+}
+
+operator_runtime_env_file_path() {
+  local op_num="$1"
+
+  echo "$(operator_root_path "${op_num}")/docker-service.env"
 }
 
 bitvmx_template_dir() {
@@ -351,7 +357,8 @@ read_env_value() {
 
 resolve_key_store_password() {
   local op_num="$1"
-  local env_file="$2"
+  shift
+  local env_file
   local existing_password=""
 
   if [[ -n "${KEY_STORE_PASSWORD:-}" ]]; then
@@ -363,13 +370,15 @@ resolve_key_store_password() {
     return 0
   fi
 
-  if [[ -f "${env_file}" ]]; then
-    existing_password="$(read_env_value "${env_file}" "KEY_STORE_PASSWORD")"
-    if [[ -n "${existing_password}" ]]; then
-      RESOLVED_KEY_STORE_PASSWORD="${existing_password}"
-      return 0
+  for env_file in "$@"; do
+    if [[ -f "${env_file}" ]]; then
+      existing_password="$(read_env_value "${env_file}" "KEY_STORE_PASSWORD")"
+      if [[ -n "${existing_password}" ]]; then
+        RESOLVED_KEY_STORE_PASSWORD="${existing_password}"
+        return 0
+      fi
     fi
-  fi
+  done
 
   if [[ -z "${NEW_KEY_STORE_PASSWORD}" ]]; then
     while [[ -z "${NEW_KEY_STORE_PASSWORD}" ]]; do
@@ -386,20 +395,23 @@ resolve_key_store_password() {
 
 resolve_user_bitcoin_wif() {
   local op_num="$1"
-  local env_file="$2"
+  shift
+  local env_file
   local existing_wif=""
 
-  if [[ -f "${env_file}" ]]; then
-    existing_wif="$(read_env_value "${env_file}" "USER_BITCOIN_WIF")"
-    if [[ -n "${existing_wif}" ]]; then
-      RESOLVED_USER_BITCOIN_WIF="${existing_wif}"
-      return 0
-    fi
+  for env_file in "$@"; do
+    if [[ -f "${env_file}" ]]; then
+      existing_wif="$(read_env_value "${env_file}" "USER_BITCOIN_WIF")"
+      if [[ -n "${existing_wif}" ]]; then
+        RESOLVED_USER_BITCOIN_WIF="${existing_wif}"
+        return 0
+      fi
 
-    echo "Error: existing operator env file ${env_file} is missing USER_BITCOIN_WIF." >&2
-    echo "Fix the file or delete it and rerun cli-setup-operators.sh." >&2
-    exit 1
-  fi
+      echo "Error: existing operator env file ${env_file} is missing USER_BITCOIN_WIF." >&2
+      echo "Fix the file or delete it and rerun cli-setup-operators.sh." >&2
+      exit 1
+    fi
+  done
 
   if [[ -z "${NEW_USER_BITCOIN_WIF}" ]]; then
     while [[ -z "${NEW_USER_BITCOIN_WIF}" ]]; do
@@ -417,12 +429,9 @@ resolve_user_bitcoin_wif() {
   RESOLVED_USER_BITCOIN_WIF="${NEW_USER_BITCOIN_WIF}"
 }
 
-write_operator_env_file() {
+write_operator_compose_env_file() {
   local env_file_path="$1"
   local op_num="$2"
-  local user_bitcoin_wif="$3"
-  local key_store_password="$4"
-  local bitvmx_pubkey_hash="$5"
 
   mkdir -p "$(dirname "${env_file_path}")"
 
@@ -433,16 +442,32 @@ BLOCK_INDEXER_BROKER_PEM_PATH=$(broker_pem_path "block-indexer" "${op_num}")
 LOG_INDEXER_BROKER_PEM_PATH=$(broker_pem_path "log-indexer" "${op_num}")
 USER_API_BROKER_PEM_PATH=$(broker_pem_path "user-api" "${op_num}")
 COORDINATOR_BROKER_PEM_PATH=$(broker_pem_path "coordinator" "${op_num}")
+USER_API_PORT=$(operator_user_api_port "${op_num}")
+BITVMX_PORT=$(operator_bitvmx_port "${op_num}")
+BITVMX_P2P_HOST=$(operator_bitvmx_p2p_host "${op_num}")
+EOF
+
+  chmod 600 "${env_file_path}"
+}
+
+write_operator_runtime_env_file() {
+  local env_file_path="$1"
+  local op_num="$2"
+  local user_bitcoin_wif="$3"
+  local key_store_password="$4"
+  local bitvmx_pubkey_hash="$5"
+
+  mkdir -p "$(dirname "${env_file_path}")"
+
+  cat > "${env_file_path}" <<EOF
 UB__COORDINATOR__BLOCKS__PUBKEY_HASH=$(read_broker_pubkey_hash "block-indexer" "${op_num}")
 UB__COORDINATOR__LOGS__PUBKEY_HASH=$(read_broker_pubkey_hash "log-indexer" "${op_num}")
 UB__COORDINATOR__USER__PUBKEY_HASH=$(read_broker_pubkey_hash "user-api" "${op_num}")
 UB__COORDINATOR__BITVMX__PUBKEY_HASH=${bitvmx_pubkey_hash}
+UB__COORDINATOR__BITVMX__PORT=$(operator_bitvmx_port "${op_num}")
 UB__USER_API__COORDINATOR__PUBKEY_HASH=$(read_broker_pubkey_hash "coordinator" "${op_num}")
 KEY_STORE_PASSWORD=${key_store_password}
 USER_BITCOIN_WIF=${user_bitcoin_wif}
-USER_API_PORT=$(operator_user_api_port "${op_num}")
-BITVMX_PORT=$(operator_bitvmx_port "${op_num}")
-BITVMX_P2P_HOST=$(operator_bitvmx_p2p_host "${op_num}")
 EOF
 
   chmod 600 "${env_file_path}"
@@ -569,10 +594,11 @@ while IFS= read -r op_num; do
 done < <(seq 1 "${NUM_OPERATORS}")
 
 for op_num in "${OPERATORS_TO_RUN[@]}"; do
-  env_file_path="$(operator_docker_env_file_path "${op_num}")"
-  resolve_key_store_password "${op_num}" "${env_file_path}"
+  compose_env_file_path="$(operator_compose_env_file_path "${op_num}")"
+  runtime_env_file_path="$(operator_runtime_env_file_path "${op_num}")"
+  resolve_key_store_password "${op_num}" "${runtime_env_file_path}"
   key_store_password_value="${RESOLVED_KEY_STORE_PASSWORD}"
-  resolve_user_bitcoin_wif "${op_num}" "${env_file_path}"
+  resolve_user_bitcoin_wif "${op_num}" "${runtime_env_file_path}"
   user_bitcoin_wif_value="${RESOLVED_USER_BITCOIN_WIF}"
 
   echo "=== op_${op_num} ==="
@@ -582,13 +608,14 @@ for op_num in "${OPERATORS_TO_RUN[@]}"; do
   prepare_operator_bitvmx_config "${op_num}" "${key_store_password_value}"
   bitvmx_pubkey_hash="${RESOLVED_BITVMX_BROKER_PUBKEY_HASH}"
 
-  if [[ -f "${env_file_path}" ]]; then
+  if [[ -f "${compose_env_file_path}" || -f "${runtime_env_file_path}" ]]; then
     env_file_action="Updated"
   else
     env_file_action="Created"
   fi
-  write_operator_env_file "${env_file_path}" "${op_num}" "${user_bitcoin_wif_value}" "${key_store_password_value}" "${bitvmx_pubkey_hash}"
-  echo "- ${env_file_action} operator env file ${env_file_path}"
+  write_operator_compose_env_file "${compose_env_file_path}" "${op_num}"
+  write_operator_runtime_env_file "${runtime_env_file_path}" "${op_num}" "${user_bitcoin_wif_value}" "${key_store_password_value}" "${bitvmx_pubkey_hash}"
+  echo "- ${env_file_action} operator env files ${compose_env_file_path} and ${runtime_env_file_path}"
 
   echo ""
 done

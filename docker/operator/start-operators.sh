@@ -14,7 +14,7 @@ NUM_OPERATORS=""
 AUTO_CONFIRM=false
 FRESH=false
 BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
-DEFAULT_ENV_FILE="${SCRIPT_DIR}/.env.local"
+DEFAULT_ENV_FILE="${SCRIPT_DIR}/docker-deploy.env"
 ENV_FILE="${DEFAULT_ENV_FILE}"
 
 print_help() {
@@ -25,7 +25,7 @@ print_help() {
   echo ""
   echo "Options:"
   echo "  --ops <N>                Number of operators to start (1-10, default: 4)"
-  echo "  --env-file <PATH>        Compose env file to use instead of docker/operator/.env.local"
+  echo "  --env-file <PATH>        Compose env file to use instead of docker/operator/docker-deploy.env"
   echo "  --tag <TAG>              Override UC_TAG for this docker compose invocation only"
   echo "  --help                   Display this help message"
   echo "  --fresh                  Tear down operators (and volumes) before running the command"
@@ -67,7 +67,7 @@ require_key_store_password() {
 
   if [[ -z "${configured_password}" ]]; then
     echo "Error: KEY_STORE_PASSWORD is required for operator startup." >&2
-    echo "Export KEY_STORE_PASSWORD or define it in the operator docker.env before running startup commands." >&2
+    echo "Export KEY_STORE_PASSWORD or define it in the operator docker-service.env before running startup commands." >&2
     exit 1
   fi
 }
@@ -129,12 +129,52 @@ for arg in "${DOCKER_COMPOSE_ARGS[@]}"; do
   fi
 done
 
-operator_docker_env_file_path() {
+operator_compose_env_file_path() {
+  local op_num="$1"
+  echo "${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}/docker-compose.env"
+}
+
+operator_runtime_env_file_path() {
+  local op_num="$1"
+  echo "${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}/docker-service.env"
+}
+
+legacy_operator_docker_env_file_path() {
   local op_num="$1"
   echo "${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}/docker.env"
 }
 
-require_operator_docker_env_file() {
+resolved_operator_compose_env_file_path() {
+  local op_num="$1"
+  local compose_env_file
+  local legacy_env_file
+
+  compose_env_file="$(operator_compose_env_file_path "${op_num}")"
+  legacy_env_file="$(legacy_operator_docker_env_file_path "${op_num}")"
+
+  if [[ -f "${compose_env_file}" ]]; then
+    echo "${compose_env_file}"
+  else
+    echo "${legacy_env_file}"
+  fi
+}
+
+resolved_operator_runtime_env_file_path() {
+  local op_num="$1"
+  local runtime_env_file
+  local legacy_env_file
+
+  runtime_env_file="$(operator_runtime_env_file_path "${op_num}")"
+  legacy_env_file="$(legacy_operator_docker_env_file_path "${op_num}")"
+
+  if [[ -f "${runtime_env_file}" ]]; then
+    echo "${runtime_env_file}"
+  else
+    echo "${legacy_env_file}"
+  fi
+}
+
+require_operator_env_file() {
   local file_path="$1"
 
   if [[ ! -f "${file_path}" ]]; then
@@ -201,7 +241,8 @@ uses_shared_bitvmx_network() {
 
 run_compose_stack() {
   local project_name="$1"
-  local env_file_path="$2"
+  local compose_env_file_path="$2"
+  local runtime_env_file_path="$3"
   local compose_override
   compose_override="$(compose_override_file)"
   local -a compose_cmd=(
@@ -210,17 +251,18 @@ run_compose_stack() {
     -f docker-compose.yml
     -f "${compose_override}"
     --env-file "${ENV_FILE}"
-    --env-file "${env_file_path}"
+    --env-file "${compose_env_file_path}"
+    --env-file "${runtime_env_file_path}"
   )
 
   compose_cmd+=("${DOCKER_COMPOSE_ARGS[@]}")
 
   if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
-    require_key_store_password "${ENV_FILE}" "${env_file_path}"
+    require_key_store_password "${ENV_FILE}" "${runtime_env_file_path}"
   fi
 
   echo
-  echo "Running operator ${project_name} with env file ${env_file_path}"
+  echo "Running operator ${project_name} with env files ${compose_env_file_path} and ${runtime_env_file_path}"
   if [[ -n "${UC_TAG:-}" ]]; then
     printf "'UC_TAG=%q " "${UC_TAG}"
   else
@@ -248,11 +290,15 @@ if [[ "${FRESH}" == true ]]; then
 
   echo "Cleaning operator stacks (down --volumes)..."
   for op_num in $(seq 1 "$(resolved_num_operators)"); do
-    operator_env_file="$(operator_docker_env_file_path "${op_num}")"
-    if ! require_operator_docker_env_file "${operator_env_file}"; then
+    operator_compose_env_file="$(operator_compose_env_file_path "${op_num}")"
+    operator_runtime_env_file="$(operator_runtime_env_file_path "${op_num}")"
+    operator_compose_env_file="$(resolved_operator_compose_env_file_path "${op_num}")"
+    operator_runtime_env_file="$(resolved_operator_runtime_env_file_path "${op_num}")"
+    if ! require_operator_env_file "${operator_compose_env_file}" \
+      || ! require_operator_env_file "${operator_runtime_env_file}"; then
       exit 1
     fi
-    docker compose -p "op_${op_num}" -f docker-compose.yml -f "$(compose_override_file)" --env-file "${ENV_FILE}" --env-file "${operator_env_file}" down --volumes
+    docker compose -p "op_${op_num}" -f docker-compose.yml -f "$(compose_override_file)" --env-file "${ENV_FILE}" --env-file "${operator_compose_env_file}" --env-file "${operator_runtime_env_file}" down --volumes
   done
 fi
 
@@ -265,9 +311,11 @@ if [[ "${IS_STARTUP_COMMAND}" == true ]] && uses_shared_bitvmx_network; then
 fi
 
 for op_num in $(seq 1 "$(resolved_num_operators)"); do
-  operator_env_file="$(operator_docker_env_file_path "${op_num}")"
-  if ! require_operator_docker_env_file "${operator_env_file}"; then
+  operator_compose_env_file="$(resolved_operator_compose_env_file_path "${op_num}")"
+  operator_runtime_env_file="$(resolved_operator_runtime_env_file_path "${op_num}")"
+  if ! require_operator_env_file "${operator_compose_env_file}" \
+    || ! require_operator_env_file "${operator_runtime_env_file}"; then
     exit 1
   fi
-  run_compose_stack "op_${op_num}" "${operator_env_file}"
+  run_compose_stack "op_${op_num}" "${operator_compose_env_file}" "${operator_runtime_env_file}"
 done
