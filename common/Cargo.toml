@@ -18,7 +18,7 @@ alloy-sol-types = { workspace = true }
 alloy-transport = { workspace = true }
 anyhow = { workspace = true }
 bitcoin = { workspace = true }
-bitvmx-emulator = { git = "ssh://git@github.com/FairgateLabs/BitVMX-CPU.git", tag = "v0.5.11", package = "emulator" }
+bitvmx-emulator = { git = "https://github.com/FairgateLabs/BitVMX-CPU.git", tag = "v0.5.11", package = "emulator" }
 config = { workspace = true }
 hex = { workspace = true }
 log = { workspace = true }
