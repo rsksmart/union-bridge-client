@@ -39,7 +39,9 @@ print_help() {
   echo "  $0 logs -f"
   echo "  $0 down"
   echo ""
-  echo "The env file selects the compose override through OP_MODE=all|one."
+  echo "The compose override is derived from NUM_OPERATORS:"
+  echo "  1 -> docker-compose.one.yml"
+  echo "  2-10 -> docker-compose.all.yml"
   echo ""
   echo "Any additional arguments will be passed directly to docker compose."
   exit 0
@@ -152,13 +154,6 @@ require_operator_env_file() {
 resolved_num_operators() {
   local configured_count
   local default_count="4"
-  local compose_override
-
-  compose_override="$(compose_override_file)"
-
-  if [[ "${compose_override}" == "docker-compose.one.yml" ]]; then
-    default_count="1"
-  fi
 
   configured_count="${NUM_OPERATORS:-$(read_env_value "${ENV_FILE}" "NUM_OPERATORS")}"
   configured_count="${configured_count:-${default_count}}"
@@ -168,32 +163,15 @@ resolved_num_operators() {
     exit 1
   fi
 
-  if [[ "${compose_override}" == "docker-compose.one.yml" && "${configured_count}" != "1" ]]; then
-    echo "Error: OP_MODE=one requires exactly one operator." >&2
-    exit 1
-  fi
-
   echo "${configured_count}"
 }
 
 compose_override_file() {
-  local override_file
-
-  override_file="$(read_env_value "${ENV_FILE}" "OP_MODE")"
-  override_file="${override_file:-all}"
-
-  case "${override_file}" in
-    all)
-      echo "docker-compose.all.yml"
-      ;;
-    one)
-      echo "docker-compose.one.yml"
-      ;;
-    *)
-      echo "Error: unsupported OP_MODE '${override_file}' in ${ENV_FILE}. Use 'all' or 'one'." >&2
-      exit 1
-      ;;
-  esac
+  if [[ "$(resolved_num_operators)" == "1" ]]; then
+    echo "docker-compose.one.yml"
+  else
+    echo "docker-compose.all.yml"
+  fi
 }
 
 uses_shared_bitvmx_network() {

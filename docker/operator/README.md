@@ -16,7 +16,7 @@ In the examples below, `<project_root>` means the root of this repository checko
 This repo owns:
 
 - local multi-operator Docker runtime
-- env-file driven operator startup with selectable compose overrides
+- env-file driven operator startup with the compose override derived from operator count
 - generated runtime artifacts under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/`
 - local `start-operators.sh` usage
 - local funding, logs, and troubleshooting
@@ -102,10 +102,10 @@ bash start-operators.sh ps
 bash start-operators.sh down
 ```
 
-The selected env file chooses the compose shape through `OP_MODE`:
+The compose shape is derived from `NUM_OPERATORS`:
 
-- `OP_MODE=all`: `docker-compose.all.yml`
-- `OP_MODE=one`: `docker-compose.one.yml` and requires `NUM_OPERATORS=1`
+- `NUM_OPERATORS=1`: `docker-compose.one.yml`
+- `NUM_OPERATORS=2-10`: `docker-compose.all.yml`
 
 ## Environment Files
 
