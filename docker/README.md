@@ -34,7 +34,7 @@ Key files:
 
 - `docker-compose.yml`: base BitVMX client service definition
 - `config/local/`: tracked local BitVMX config template
-- `check_bitvmx_updates.sh`: compares the tracked compose file with upstream
+- `check-bitvmx-updates.sh`: compares the tracked compose file with upstream
 
 ### `operator/`
 

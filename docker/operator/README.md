@@ -70,11 +70,11 @@ Or run the lower-level scripts directly:
 
 ```bash
 cd docker/local-infra
-./start_blockchains.sh --fresh up -d
+./start-blockchains.sh --fresh up -d
 cd ../..
 ./cli-setup-operators.sh --ops 4
 cd docker/local-infra
-./start_bitvmx.sh --fresh up -d
+./start-bitvmx.sh --fresh up -d
 ```
 
 ## 3. Start or Stop Operators
@@ -139,8 +139,8 @@ If you need to compare it with upstream:
 
 ```bash
 cd ../bitvmx-client
-./check_bitvmx_updates.sh
-./check_bitvmx_updates.sh -r <branch-or-tag>
+./check-bitvmx-updates.sh
+./check-bitvmx-updates.sh -r <branch-or-tag>
 ```
 
 ## Troubleshooting
