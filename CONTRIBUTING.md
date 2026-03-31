@@ -550,15 +550,16 @@ to launch each service.
 
 ## Configuration Files
 
-Configuration files are located under the `config` directory, organized in environment folders. The final config is the
-composition of the following files in the defined order:
+Configuration files are located under the `config` directory. The final config is the composition of the following
+sources in the defined order:
 
-- `common.yaml`: common configuration for all environments.
-- `{crate_name}.yaml`: specific configuration for each crate.
+- `config/base.toml`: shared configuration for all environments.
+- `config/environment/{env}.toml`: environment-specific overrides (e.g. `local.toml`, `docker-local.toml`,
+  `docker-alphanet.toml`).
 
 ### Configuration Overrides
 
-Any configuration value in the YAML files can be overridden using environment variables with the `UB__` prefix. The
+Any configuration value in the TOML files can be overridden using environment variables with the `UB__` prefix. The
 environment variable name should match the nested structure of the configuration, using double underscores (`__`) to
 separate levels.
 
@@ -567,19 +568,18 @@ separate levels.
 - Nested structures use double underscores (`__`) as separators
 - Arrays/lists use semicolon (`;`) as separator in environment variables
 
-**Example YAML to Environment Variable Mapping:**
+**Example TOML to Environment Variable Mapping:**
 
-```yaml
-# config/common.yaml
-block_broker:
-  ip: "127.0.0.1"
-  port: 5672
-  username: "guest"
+```toml
+# config/base.toml
+[block_broker]
+ip = "127.0.0.1"
+port = 5672
+username = "guest"
 
-coordinator:
-  database:
-    url: "sqlite://coordinator.db"
-    max_connections: 10
+[coordinator.database]
+url = "sqlite://coordinator.db"
+max_connections = 10
 ```
 
 Corresponding environment variables:
@@ -692,11 +692,11 @@ we have some git hooks to enforce it (check `.hooks/README.md` for more info).
 
 Before contributing to the project, please run the following commands to set up the project:
 
-## 1. Install _rust_ and _cargo_
+### 1. Install Rust and Cargo
 
 https://www.rust-lang.org/tools/install
 
-### 2. Install _rusty-hook_
+### 2. Install rusty-hook
 
 This crate is used for commit hooks management. Run the following commands to install and initialize _rusty-hook_:
 
@@ -705,7 +705,7 @@ cargo install rusty-hook
 rusty-hook init
 ```
 
-## Install Formatting Tools
+### 3. Install Formatting Tools
 
 Install `rustfmt` nightly, as it supports features we use in `rustfmt.toml` like imports reorder and grouping:
 

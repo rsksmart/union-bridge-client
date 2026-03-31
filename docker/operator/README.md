@@ -63,10 +63,12 @@ It is safe to re-run at any time.
 
 ### 2) Choose your environment
 
-This setup supports four deployment environments:
+This setup supports five deployment environments:
 
 - **Local** (`.env.local`): Development environment that runs multiple operators on a single host with local Bitcoin and
   RSK nodes (default: 4, configurable via `<project_root>/cli-setup-operators.sh --ops` or `start_operators.sh --ops`)
+- **Local-docker** (`.env.local`): Same infrastructure as Local, but used by `cli-operations.sh` to indicate that
+  operators are running in Docker containers (affects how logs and addresses are collected). Uses `--env local-docker`.
 - **Alphanet** (`.env.alphanet`): Production-like environment where each host runs a single operator, connecting to the
   Alphanet testnet
 - **Testnet** (`.env.testnet`): Production-like environment where each host runs a single operator, connecting to the
@@ -349,41 +351,26 @@ bash start_operators.sh --op 1 --env testnet --tag latest-testnet up -d
 
 #### 4.4) Fund operator accounts (Rootstock and BitVMX Bitcoin accounts)
 
-After the stacks are up, you can fund the operators' accounts on both Rootstock and Bitcoin (BitVMX internal operator
-accounts).
+After the stacks are up, fund the operators on both Rootstock and Bitcoin using
+[`cli-operations.sh`](../../cli/README.md). A single `operator fund` command handles both chains:
 
-##### Fund Rootstock (RSK)
-
-You must pass the environment via `--env`.
-
-- `local`: actually sends funds on local Anvil via `cast`
-- `alphanet` or others: only prints the addresses to fund
+- `local` / `local-docker`: funds RSK via `cast` on Anvil and prints `bitcoin-wallet` CLI steps (or runs them with
+  `--execute`)
+- `alphanet` / `testnet`: prints the addresses to fund manually
 
 ```bash
-# local
-bash operator_scripts/fund_operators_rootstock.sh --env local
+# local (funds RSK automatically, prints Bitcoin wallet steps)
+<project_root>/cli-operations.sh operator fund --env local-docker
 
-# alphanet (prints addresses to fund)
-bash operator_scripts/fund_operators_rootstock.sh --env alphanet
+# local with automatic Bitcoin wallet execution
+<project_root>/cli-operations.sh operator fund --env local-docker --execute
+
+# alphanet (prints addresses to fund manually)
+<project_root>/cli-operations.sh operator fund --env alphanet
 ```
 
-##### Fund BitVMX Bitcoin accounts
-
-We use the `bitcoin-wallet` crate (CLI) included in this repository to interact with Bitcoin node (funding addresses,
-inspecting UTXOs, etc.). See the [`bitcoin-wallet` README](../../cli/bitcoin-wallet/README.md) for how to start and use
-the
-CLI.
-
-Use the helper script below to collect addresses and get ready-to-run `bitcoin-wallet` CLI commands. You must pass
-`--env`:
-
-```bash
-# local/dev (shows mine_utxo and mine_block steps)
-bash operator_scripts/fund_operators_bitcoin.sh --env local
-
-# alphanet (prints only send_to_address)
-bash operator_scripts/fund_operators_bitcoin.sh --env alphanet
-```
+See the [`bitcoin-wallet` README](../../cli/bitcoin-wallet/README.md) for how to start and use the wallet CLI
+interactively.
 
 Stop and remove everything:
 
@@ -464,32 +451,32 @@ If you start more operators with `--ops`, the pattern continues (`op_5` -> `:400
 
 #### Applying operators to a stream
 
-Use the `committee_setup.sh` script to apply operators to a stream:
+Use [`cli-operations.sh`](../../cli/README.md) to apply operators to a stream:
 
 **Local:** Apply all started operators:
 
 ```bash
-bash operator_scripts/committee_setup.sh --stream-id <STREAM_ID> --env local
+<project_root>/cli-operations.sh operator apply-stream --stream-id <STREAM_ID> --env local-docker
 ```
 
 **Alphanet:** Apply the single operator on this host with a specific role:
 
 ```bash
 # As Prover
-bash operator_scripts/committee_setup.sh --stream-id <STREAM_ID> --env alphanet --role Prover
+<project_root>/cli-operations.sh operator apply-stream --stream-id <STREAM_ID> --env alphanet --operator-id 1 --role prover
 
 # As Verifier
-bash operator_scripts/committee_setup.sh --stream-id <STREAM_ID> --env alphanet --role Verifier
+<project_root>/cli-operations.sh operator apply-stream --stream-id <STREAM_ID> --env alphanet --operator-id 1 --role verifier
 ```
 
 **Testnet:** Apply the single operator on this host with a specific role:
 
 ```bash
 # As Prover
-bash operator_scripts/committee_setup.sh --stream-id <STREAM_ID> --env testnet --role Prover
+<project_root>/cli-operations.sh operator apply-stream --stream-id <STREAM_ID> --env testnet --operator-id 1 --role prover
 
 # As Verifier
-bash operator_scripts/committee_setup.sh --stream-id <STREAM_ID> --env testnet --role Verifier
+<project_root>/cli-operations.sh operator apply-stream --stream-id <STREAM_ID> --env testnet --operator-id 1 --role verifier
 ```
 
 ## Tags and images

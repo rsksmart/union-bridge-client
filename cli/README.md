@@ -1,6 +1,6 @@
 # Union Bridge CLI Tools
 
-The project includes two CLI tools in the `cli/` workspace for managing local development and operator operations.
+The `cli/` workspace contains the CLI tools for local development, operator operations, and Bitcoin wallet management.
 
 ## Related Docs
 
@@ -159,20 +159,32 @@ The CLI tools are organized in a separate Cargo workspace under `cli/`:
 ```text
 cli/
 ├── Cargo.toml          # CLI workspace configuration with shared dependencies
-├── run/                # Local client launcher
+├── run/                # Local client launcher (cli-run.sh)
 │   ├── src/main.rs
 │   └── Cargo.toml
-└── operations/         # Operations toolkit
+├── operations/         # Operations toolkit (cli-operations.sh)
+│   ├── src/
+│   │   ├── main.rs
+│   │   ├── bitcoin_wallet.rs
+│   │   ├── broker_identity.rs
+│   │   ├── rsk_wallet.rs
+│   │   ├── committee.rs
+│   │   ├── pegin.rs
+│   │   ├── pegout.rs
+│   │   ├── environments.rs
+│   │   ├── constants.rs
+│   │   └── utils.rs
+│   └── Cargo.toml
+└── bitcoin-wallet/     # Interactive Bitcoin wallet (cli-bitcoin-wallet.sh)
     ├── src/
     │   ├── main.rs
-    │   ├── bitcoin_wallet.rs
-    │   ├── rsk_wallet.rs
-    │   ├── committee.rs
-    │   ├── pegin.rs
-    │   ├── pegout.rs
-    │   ├── environments.rs
-    │   ├── constants.rs
-    │   └── utils.rs
+    │   ├── lib.rs
+    │   ├── cli.rs
+    │   ├── config.rs
+    │   ├── wallet.rs
+    │   ├── utxo_store.rs
+    │   ├── pending_tx_store.rs
+    │   └── bitcoin/
     └── Cargo.toml
 ```
 

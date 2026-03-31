@@ -140,18 +140,6 @@ You can also use `cargo run` directly:
 cargo run --release --bin ub-wallet -- --mode user mine_block
 ```
 
-#### Testing Script
-
-A testing script with practical examples is provided:
-
-**bitcoin-wallet-test-examples.sh** - Demonstrates various command mode operations:
-```bash
-# requires USER_BITCOIN_WIF environment variable
-./bitcoin-wallet-test-examples.sh
-```
-
-The script requires the appropriate environment variable (`USER_BITCOIN_WIF` for user mode, `MEMBER_BITCOIN_WIF` for member mode).
-
 ## Important Notice
 
 ### Database Locking
