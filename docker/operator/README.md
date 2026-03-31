@@ -87,6 +87,9 @@ cd docker/operator
 # Start 4 operators
 bash start-operators.sh up -d
 
+# Start only the prepared operator under ~/.union_bridge/op_3
+bash start-operators.sh --op 3 up -d
+
 # Start a different count
 bash start-operators.sh --ops 6 up -d
 
@@ -102,8 +105,9 @@ bash start-operators.sh ps
 bash start-operators.sh down
 ```
 
-The compose shape is derived from `NUM_OPERATORS`:
+The compose shape is derived from the effective operator count:
 
+- `--op <ID>`: `docker-compose.one.yml`
 - `NUM_OPERATORS=1`: `docker-compose.one.yml`
 - `NUM_OPERATORS=2-10`: `docker-compose.all.yml`
 
@@ -120,6 +124,10 @@ The Docker runtime uses:
 `docker-deploy.env` can also override shared deployment paths such as `CONFIG_DIR` and
 `RESOURCES_DIR`. When unset, Docker falls back to the public repo copies under `../../config`
 and `../../resources`.
+
+`--op <ID>` selects which staged operator payload under
+`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_<ID>/` should be used. This is the
+intended path for one-operator-per-host deployments.
 
 `docker-compose.env` and `docker-service.env` are consumed only by Docker operator runs.
 Local cargo mode (`./cli-run.sh`) does not read those files.

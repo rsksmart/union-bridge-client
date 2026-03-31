@@ -59,8 +59,8 @@ The Docker setup uses two kinds of environment files:
 - generated per-operator files under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/{docker-compose.env,docker-service.env}`, created by
   `<project_root>/cli-setup-operators.sh`
 
-The operator compose override is derived from `NUM_OPERATORS`.
-`NUM_OPERATORS=1` selects the single-operator host-network variant; `NUM_OPERATORS=2-10` selects the shared multi-operator variant.
+The operator compose override is derived from the effective operator count.
+`--op <ID>` or `NUM_OPERATORS=1` selects the single-operator host-network variant; `NUM_OPERATORS=2-10` selects the shared multi-operator variant.
 
 `docker-compose.env` and `docker-service.env` are only consumed by local Docker operator runs (`start-operators.sh` / docker compose).
 Local cargo mode (`./cli-run.sh`) does not read those files.
