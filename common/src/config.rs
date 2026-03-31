@@ -16,11 +16,12 @@ use crate::types::{BlockHash, RskBlock};
 const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 // todo(fede) replace the /new folder with the final folder
 const BASE_CONFIG_PATH: &str = "config/base";
-const ENV_CONFIG_PATH: &str = "config/environment";
+const CONFIG_DIR_PATH: &str = "config";
 const EXTENSION_TYPE: &str = "toml";
 
 #[derive(Debug, Deserialize)]
 pub struct CommonConfig {
+    pub environment: String,
     pub indexer: IndexerConfig,
     pub provider: ProviderConfig,
     pub contracts: Vec<ContractConfig>,
@@ -152,12 +153,12 @@ impl CommonConfig {
     /// # Errors
     ///
     /// Returns an error if the config file cannot be read or parsed.
-    pub fn load_config<T: DeserializeOwned>(env: Option<String>) -> Result<T, ConfigError> {
-        let env = env.unwrap_or_default();
-        let (base_config_path, env_config_path) = Self::config_path_for(&env)?;
+    pub fn load_config<T: DeserializeOwned>(config_name: Option<String>) -> Result<T, ConfigError> {
+        let config_name = config_name.unwrap_or_default();
+        let (base_config_path, env_config_path) = Self::config_path_for(&config_name)?;
 
         trace!(
-            "Loading config: base.toml -> environment/{env}.toml -> environment variables with prefix UB__"
+            "Loading config: base.toml -> {config_name}.toml -> environment variables with prefix UB__"
         );
 
         // load base config file with placeholder replacement
@@ -205,17 +206,17 @@ impl CommonConfig {
         config_str
     }
 
-    fn config_path_for(env_name: &str) -> Result<(String, String), ConfigError> {
-        if env_name.is_empty() {
-            trace!("Empty environment name");
+    fn config_path_for(config_name: &str) -> Result<(String, String), ConfigError> {
+        if config_name.is_empty() {
+            trace!("Empty config name");
         }
 
-        if env_name.contains("..") || env_name.contains('/') || env_name.contains('\\') {
-            Err("{env_name}").map_err(|e| ConfigError::ConfigEnvError(e.to_string()))?;
+        if config_name.contains("..") || config_name.contains('/') || config_name.contains('\\') {
+            Err("{config_name}").map_err(|e| ConfigError::ConfigEnvError(e.to_string()))?;
         }
 
         let project_root = Self::project_root();
-        let env_config = format!("{ENV_CONFIG_PATH}/{env_name}.{EXTENSION_TYPE}");
+        let env_config = format!("{CONFIG_DIR_PATH}/{config_name}.{EXTENSION_TYPE}");
 
         Ok((
             format!("{project_root}/{BASE_CONFIG_PATH}.{EXTENSION_TYPE}"),

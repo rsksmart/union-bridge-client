@@ -31,8 +31,8 @@ impl Config {
     /// # Errors
     ///
     /// Returns `ConfigError` if the configuration file cannot be loaded or parsed
-    pub fn load(env_name: Option<String>) -> Result<Self, ConfigError> {
-        CommonConfig::load_config::<Self>(env_name)
+    pub fn load(config_name: Option<String>) -> Result<Self, ConfigError> {
+        CommonConfig::load_config::<Self>(config_name)
     }
 
     /// Load managed contracts from configuration

@@ -93,8 +93,8 @@ bash start-operators.sh --ops 6 up -d
 # Clean and start again
 bash start-operators.sh --fresh up -d
 
-# Start a single operator using an external env file
-bash start-operators.sh --env-file /path/to/.env.alphanet up -d
+# Start a single operator using an external deploy env file
+bash start-operators.sh --env-file /path/to/docker-deploy.env up -d
 
 # Logs / status / stop
 bash start-operators.sh logs -f

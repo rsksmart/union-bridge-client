@@ -16,6 +16,7 @@ const STREAM_MANAGER_CONTRACT_NAME: &str = "StreamManager";
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
+    pub environment: String,
     pub contracts: Vec<ContractConfig>,
     pub bitcoin_network: String, // loaded from common.yaml
     pub key_store: KeyStoreConfig,
@@ -241,9 +242,10 @@ impl Default for NativeBridgeConfig {
 impl Config {
     /// # Errors
     /// Returns an error if configuration loading fails.
-    pub fn load(env_name: Option<&str>) -> Result<Self, ConfigError> {
-        let mut config = CommonConfig::load_config::<Self>(env_name.map(str::to_string))?;
-        config.subscribe_fake_peg_manager = Self::should_subscribe_fake_peg_manager(env_name);
+    pub fn load(config_name: Option<&str>) -> Result<Self, ConfigError> {
+        let mut config = CommonConfig::load_config::<Self>(config_name.map(str::to_string))?;
+        config.subscribe_fake_peg_manager =
+            Self::should_subscribe_fake_peg_manager(&config.environment);
         Ok(config)
     }
 
@@ -271,8 +273,8 @@ impl Config {
             || contract.name == STREAM_MANAGER_CONTRACT_NAME
     }
 
-    fn should_subscribe_fake_peg_manager(env_name: Option<&str>) -> bool {
-        matches!(env_name, Some("regtest")) // we can support more rsk networks by adding more env names
+    fn should_subscribe_fake_peg_manager(runtime_environment: &str) -> bool {
+        runtime_environment.eq_ignore_ascii_case("regtest")
     }
 }
 
@@ -294,6 +296,7 @@ mod tests {
     use common::config::CommonConfig;
     use common::types::Address;
 
+    use crate::RUNTIME_ENV_LOCAL;
     use crate::config::{BridgeConfig, Config, CoordinatorFlowConfig};
 
     #[test]
@@ -307,6 +310,7 @@ mod tests {
     fn test_load_base_toml_config() {
         let config: Config = Config::load(None).expect("Failed to load base config");
 
+        assert_eq!(RUNTIME_ENV_LOCAL, config.environment);
         assert_eq!("0.0.0.0", config.coordinator.logs.host);
         assert_eq!(20001, config.coordinator.logs.port);
         assert_eq!("<to_patch_with_env>", config.coordinator.logs.pubkey_hash);
@@ -407,7 +411,10 @@ mod tests {
 
     #[test]
     fn test_get_contract_addresses_includes_fake_peg_manager_on_regtest() {
-        let config = Config::load(Some("regtest")).expect("Failed to load regtest config");
+        let mut config = Config::load(None).expect("Failed to load base config");
+        config.environment = "regtest".to_string();
+        config.subscribe_fake_peg_manager =
+            Config::should_subscribe_fake_peg_manager(&config.environment);
         let contract_addresses = config.get_contract_addresses();
 
         assert_eq!(7, contract_addresses.len());

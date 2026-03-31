@@ -231,7 +231,7 @@ The repository ships sample files under `resources/`:
    drp_program_definition = "/path/accessible/by/bitvmx/hello-world.yaml"
    ```
 
-2. For the normal local + Docker-backed BitVMX flow, `config/environment/local.toml` now defaults to:
+2. For the normal local + Docker-backed BitVMX flow, `config/local.toml` now defaults to:
 
     - `/app/resources/hello-world.yaml`
 

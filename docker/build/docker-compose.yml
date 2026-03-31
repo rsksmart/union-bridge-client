@@ -20,7 +20,7 @@ services:
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - db-blocks:/app/db/blocks
     environment:
-      - ENV_NAME=${ENV_NAME:-dummy-env-name}
+      - CONFIG=${CONFIG:-dummy-config-name}
     restart: no
     healthcheck:
       interval: 30s
@@ -28,7 +28,7 @@ services:
       retries: 3
       start_period: 10s
       test: ["CMD", "pgrep", "-f", "block-indexer"] # TODO improve with health endpoint
-    command: ["sh", "-c", "/app/block-indexer --env $ENV_NAME"]
+    command: ["sh", "-c", "/app/block-indexer --config $CONFIG"]
 
   log-indexer:
     platform: ${PLATFORM}
@@ -45,7 +45,7 @@ services:
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - db-logs:/app/db/logs
     environment:
-      - ENV_NAME=${ENV_NAME:-dummy-env-name}
+      - CONFIG=${CONFIG:-dummy-config-name}
     restart: no
     healthcheck:
       interval: 30s
@@ -53,7 +53,7 @@ services:
       retries: 3
       start_period: 10s
       test: ["CMD", "pgrep", "-f", "log-indexer"] # TODO improve with health endpoint
-    command: ["sh", "-c", "/app/log-indexer --env $ENV_NAME"]
+    command: ["sh", "-c", "/app/log-indexer --config $CONFIG"]
 
   coordinator:
     platform: ${PLATFORM}
@@ -75,7 +75,7 @@ services:
     environment:
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
       - BITCOIN_NETWORK=${BITCOIN_NETWORK:-dummy-bitcoin-network}
-      - ENV_NAME=${ENV_NAME:-dummy-env-name}
+      - CONFIG=${CONFIG:-dummy-config-name}
     healthcheck:
       interval: 30s
       timeout: 10s
@@ -83,7 +83,7 @@ services:
       start_period: 10s
       test: ["CMD", "pgrep", "-f", "coordinator"]
     entrypoint: ["sh", "/app/key-setup.sh"]
-    command: ["sh", "-c", "/app/coordinator --env $ENV_NAME"]
+    command: ["sh", "-c", "/app/coordinator --config $CONFIG"]
     depends_on:
       block-indexer:
         condition: service_healthy
@@ -108,7 +108,7 @@ services:
       - keystore:/keystore
     environment:
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
-      - ENV_NAME=${ENV_NAME:-dummy-env-name}
+      - CONFIG=${CONFIG:-dummy-config-name}
     restart: no
     healthcheck:
       interval: 30s
@@ -117,7 +117,7 @@ services:
       start_period: 10s
       test: ["CMD", "pgrep", "-f", "user-api"]
     entrypoint: ["sh", "/app/key-setup.sh"]
-    command: ["sh", "-c", "/app/user-api --env $ENV_NAME"]
+    command: ["sh", "-c", "/app/user-api --config $CONFIG"]
 
 volumes:
   keystore:

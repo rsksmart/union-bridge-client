@@ -35,7 +35,7 @@ print_help() {
   echo "  $0 up -d"
   echo "  $0 --ops 6 up -d"
   echo "  $0 --fresh up -d"
-  echo "  $0 --env-file /path/to/.env.alphanet up -d"
+  echo "  $0 --env-file /path/to/docker-deploy.env up -d"
   echo "  $0 logs -f"
   echo "  $0 down"
   echo ""

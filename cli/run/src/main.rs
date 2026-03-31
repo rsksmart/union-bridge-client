@@ -40,8 +40,8 @@
 //! 4. launches coordinator (orchestrates bitvmx protocol operations)
 //! 5. launches user-api (provides http api for pegin/pegout requests)
 //!
-//! each service reads from `config/base.toml` and environment-specific overrides
-//! in `config/environment/*.yaml`.
+//! each service reads from `config/base.toml` and profile-specific overrides
+//! in `config/*.toml`.
 //!
 //! ## process management
 //!
@@ -662,7 +662,7 @@ fn cargo_args_for_service(config: &RunConfig, svc: &Service) -> Vec<String> {
     }
 
     args.push("--".into());
-    args.push("--env".into());
+    args.push("--config".into());
     args.push("local".into());
     args
 }
