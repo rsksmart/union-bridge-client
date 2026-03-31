@@ -61,7 +61,7 @@ check_bitcoind_url() {
   fi
 }
 
-prepare_local_keystore_password() {
+ensure_local_cargo() {
   if [[ "${ENVIRONMENT}" != "local" ]]; then
     return 0
   fi
@@ -672,7 +672,7 @@ fi
 
 ensure_dependencies
 check_bitcoind_url
-prepare_local_keystore_password
+ensure_local_cargo
 
 case "${ENVIRONMENT}" in
   local|regtest)

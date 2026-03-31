@@ -391,10 +391,6 @@ Regtest fresh clean+up is supported:
 bash start_operators.sh --env regtest --fresh up -d
 ```
 
-`start_operators.sh --env regtest` now auto-syncs BitVMX `checkpoint_height` and `wallet.start_height`
-to current Bitcoin height (with timestamped backups) before startup commands, preventing stale-height
-failures after regtest resets.
-
 For full regtest fresh orchestration (wallet funding, contracts deploy, config update, bridge authorization, operators):
 
 ```bash
