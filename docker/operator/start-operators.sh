@@ -139,41 +139,6 @@ operator_runtime_env_file_path() {
   echo "${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}/docker-service.env"
 }
 
-legacy_operator_docker_env_file_path() {
-  local op_num="$1"
-  echo "${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}/docker.env"
-}
-
-resolved_operator_compose_env_file_path() {
-  local op_num="$1"
-  local compose_env_file
-  local legacy_env_file
-
-  compose_env_file="$(operator_compose_env_file_path "${op_num}")"
-  legacy_env_file="$(legacy_operator_docker_env_file_path "${op_num}")"
-
-  if [[ -f "${compose_env_file}" ]]; then
-    echo "${compose_env_file}"
-  else
-    echo "${legacy_env_file}"
-  fi
-}
-
-resolved_operator_runtime_env_file_path() {
-  local op_num="$1"
-  local runtime_env_file
-  local legacy_env_file
-
-  runtime_env_file="$(operator_runtime_env_file_path "${op_num}")"
-  legacy_env_file="$(legacy_operator_docker_env_file_path "${op_num}")"
-
-  if [[ -f "${runtime_env_file}" ]]; then
-    echo "${runtime_env_file}"
-  else
-    echo "${legacy_env_file}"
-  fi
-}
-
 require_operator_env_file() {
   local file_path="$1"
 
@@ -292,8 +257,6 @@ if [[ "${FRESH}" == true ]]; then
   for op_num in $(seq 1 "$(resolved_num_operators)"); do
     operator_compose_env_file="$(operator_compose_env_file_path "${op_num}")"
     operator_runtime_env_file="$(operator_runtime_env_file_path "${op_num}")"
-    operator_compose_env_file="$(resolved_operator_compose_env_file_path "${op_num}")"
-    operator_runtime_env_file="$(resolved_operator_runtime_env_file_path "${op_num}")"
     if ! require_operator_env_file "${operator_compose_env_file}" \
       || ! require_operator_env_file "${operator_runtime_env_file}"; then
       exit 1
@@ -311,8 +274,8 @@ if [[ "${IS_STARTUP_COMMAND}" == true ]] && uses_shared_bitvmx_network; then
 fi
 
 for op_num in $(seq 1 "$(resolved_num_operators)"); do
-  operator_compose_env_file="$(resolved_operator_compose_env_file_path "${op_num}")"
-  operator_runtime_env_file="$(resolved_operator_runtime_env_file_path "${op_num}")"
+  operator_compose_env_file="$(operator_compose_env_file_path "${op_num}")"
+  operator_runtime_env_file="$(operator_runtime_env_file_path "${op_num}")"
   if ! require_operator_env_file "${operator_compose_env_file}" \
     || ! require_operator_env_file "${operator_runtime_env_file}"; then
     exit 1
