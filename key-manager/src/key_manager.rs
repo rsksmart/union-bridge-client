@@ -8,7 +8,7 @@ use rand::rngs::OsRng;
 use rand::thread_rng;
 
 pub struct KeyManager {
-    // TODO(UB-86)
+    // TODO
 }
 
 impl KeyManager {

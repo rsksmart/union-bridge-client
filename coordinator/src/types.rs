@@ -42,8 +42,7 @@ use union_contracts::bindings::stream_manager::StreamManager::StreamManagerEvent
 
 use crate::user_requests::ApplyToStream;
 
-// TODO(UB-183)
-
+// TODO
 #[derive(Eq, PartialEq, Debug)]
 pub enum RskPegManagerEvents {
     RequestAdvanceFunds(RequestAdvanceFundsEvent), // temporarily mock, no need to test it

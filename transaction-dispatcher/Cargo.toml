@@ -5,7 +5,7 @@ license.workspace = true
 edition = "2024"
 
 [features]
-# TODO(UB-214) remove
+# TODO remove
 default = ["types"]
 types = []
 

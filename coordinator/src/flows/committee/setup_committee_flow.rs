@@ -973,7 +973,7 @@ where
 
         let result = self.bitvmx_broker.send(msg);
         if result.is_err() {
-            // TODO(UB-132)
+            // TODO handle retries or better error reporting
             error!("Failed to send msg to BitVMX: {result:?}");
         }
     }

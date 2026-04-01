@@ -35,7 +35,7 @@ sha3 = "0.10"
 signal-hook = "0.3"
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
-# TODO(jira) UB-176
+# TODO
 uuid = { version = "1.11.0", features = ["v4", "serde"] }
 
 [lints]

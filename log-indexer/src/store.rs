@@ -102,7 +102,7 @@ impl LogStore for RawLogStore {
     }
 
     fn save_logs(&self, logs: &[RskLog]) -> Result<()> {
-        // TODO(UB-113) add bulk write operation to storage backend
+        // TODO add bulk write operation to storage backend
         logs.iter().try_for_each(|log| self.save_log(log))
     }
 

@@ -19,8 +19,8 @@ pub struct BlockIndexer<P: RskProvider, S: BlockStore> {
     shutdown_flag: ShutdownFlag,
 }
 
-// TODO(UB-11) review this file and take care of transactionality on storage saving
-// TODO(UB-32) allow changing the initial_block_hash on a running instance
+// TODO review this file and take care of transactionality on storage saving
+// TODO allow changing the initial_block_hash on a running instance
 impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
     /// Create a new `BlockIndexer` with a notifier channel
     ///
@@ -176,7 +176,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 }
             };
 
-            // TODO(UB-24) do batched writes in backward sync
+            // TODO do batched writes in backward sync
             // no need to keep track of it between iters as it is cached and can be re-fetched
             let local_best_block = self
                 .store
@@ -227,7 +227,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         #[allow(clippy::collapsible_if)]
         if let Some(channel) = &self.new_block_sender {
             if let Err(e) = channel.send(RskBlockAndUncles::new(block, uncles)) {
-                // TODO(UB-127) this should be monitored and analysed
+                // TODO this should be monitored and analysed
                 error!("[notify_block] Failed to send best block through channel: {e:?}");
             }
         }
@@ -239,7 +239,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             return Ok(());
         }
 
-        // TODO(UB-132) think if it is feasible to send new-block notifications on backward sync or if it's better to provide a mechanism to requests past blocks in such situation when complete
+        // TODO think if it is feasible to send new-block notifications on backward sync or if it's better to provide a mechanism to requests past blocks in such situation when complete
 
         let store_best_block = self
             .store

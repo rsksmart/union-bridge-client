@@ -23,8 +23,7 @@ use crate::msg_broker::types::{FromServer, ToServer};
 pub const BROKER_SERVER_ID: u8 = 0;
 pub const BITVMX_L2_BROKER_CLIENT_ID: u8 = 0; // Should match the ID defined in the BitVMX Client
 
-// TODO(UB-213)
-
+// TODO
 #[automock]
 pub trait BrokerServerApi<S: Serialize, C: DeserializeOwned> {
     /// # Errors
@@ -76,7 +75,7 @@ impl BrokerServer {
     ///
     /// Returns an error if certificate loading fails or broker initialization fails.
     pub fn new(port: u16, key_path: &str) -> Result<Self, BrokerError> {
-        // TODO(UB-132) change to disk storage (broker feature)
+        // TODO change to disk storage (broker feature)
         debug!("Starting BrokerServer on port {port}");
 
         let cert = Cert::from_key_file(key_path)?;

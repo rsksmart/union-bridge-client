@@ -6,9 +6,6 @@
 - Please challenge me when appropriate, instead of just agreeing - I prefer critical thinking
 - Point out when you think my approach might be overcomplicating things, even if I didn’t ask explicitly
 
-## Team conventions
-- Every new TODO included should come with a Jira ticket
-
 # Rust
 
 ## General Standards
