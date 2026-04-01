@@ -973,7 +973,7 @@ where
 
         let result = self.bitvmx_broker.send(msg);
         if result.is_err() {
-            // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132
+            // TODO(UB-132)
             error!("Failed to send msg to BitVMX: {result:?}");
         }
     }

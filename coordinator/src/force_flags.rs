@@ -3,9 +3,8 @@
 //! These flags allow QA and developers to trigger advance funds and dispute
 //! mechanisms without waiting for normal timeouts or conditions.
 //!
-//! **IMPORTANT**: These flags are ONLY active in non-production environments
-//! (Local, `LocalDocker`, Regtest). They are automatically disabled in
-//! Alphanet and Testnet.
+//! **IMPORTANT**: These flags are enabled only when the loaded runtime
+//! environment is `local`.
 //!
 //! ## Activation Methods
 //!
@@ -34,8 +33,7 @@ use std::path::Path;
 
 use log::warn;
 
-/// Environments where force flags are BLOCKED (production-like)
-const BLOCKED_ENVIRONMENTS: [&str; 2] = ["alphanet", "testnet"];
+use crate::RUNTIME_ENV_LOCAL;
 
 /// File path for hot-reloadable `FORCE_ADVANCE` flag
 const FORCE_ADVANCE_FILE: &str = "/tmp/FORCE_ADVANCE";
@@ -45,16 +43,9 @@ const FORCE_DISPUTE_FILE: &str = "/tmp/FORCE_DISPUTE";
 
 /// Checks if the current environment allows force flags.
 ///
-/// Returns `true` for Local, `LocalDocker`, and Regtest environments.
-/// Returns `false` for Alphanet and Testnet (production-like environments).
-fn is_force_flags_allowed(env_name: Option<&str>) -> bool {
-    match env_name {
-        None => true, // Local development (no --env flag)
-        Some(env) => {
-            let env_lower = env.to_lowercase();
-            !BLOCKED_ENVIRONMENTS.iter().any(|&blocked| env_lower.contains(blocked))
-        }
-    }
+/// Returns `true` only for local runtime environments.
+fn is_force_flags_allowed(runtime_environment: Option<&str>) -> bool {
+    runtime_environment.is_some_and(|env| env.eq_ignore_ascii_case(RUNTIME_ENV_LOCAL))
 }
 
 /// Returns the Rootstock address targeted by `FORCE_ADVANCE`, if set.
@@ -67,10 +58,10 @@ fn is_force_flags_allowed(env_name: Option<&str>) -> bool {
 ///
 /// Checks file first (hot-reloadable), then falls back to environment variable.
 ///
-/// Only works in non-production environments (Local, `LocalDocker`, Regtest).
+/// Only works in local runtime environments.
 #[must_use]
-pub fn get_force_advance_address(env_name: Option<&str>) -> Option<String> {
-    if !is_force_flags_allowed(env_name) {
+pub fn get_force_advance_address(runtime_environment: Option<&str>) -> Option<String> {
+    if !is_force_flags_allowed(runtime_environment) {
         return None;
     }
 
@@ -88,7 +79,7 @@ pub fn get_force_advance_address(env_name: Option<&str>) -> Option<String> {
 
     if let Some(ref addr) = address {
         warn!(
-            "[FORCE_ADVANCE] Force advance funds targeting address {addr} in environment: {env_name:?}"
+            "[FORCE_ADVANCE] Force advance funds targeting address {addr} in environment: {runtime_environment:?}"
         );
     }
     address
@@ -101,10 +92,10 @@ pub fn get_force_advance_address(env_name: Option<&str>) -> Option<String> {
 ///
 /// Checks file first (hot-reloadable), then falls back to environment variable.
 ///
-/// Only works in non-production environments (Local, `LocalDocker`, Regtest).
+/// Only works in local runtime environments.
 #[must_use]
-pub fn is_force_dispute_enabled(env_name: Option<&str>) -> bool {
-    if !is_force_flags_allowed(env_name) {
+pub fn is_force_dispute_enabled(runtime_environment: Option<&str>) -> bool {
+    if !is_force_flags_allowed(runtime_environment) {
         return false;
     }
 
@@ -115,7 +106,7 @@ pub fn is_force_dispute_enabled(env_name: Option<&str>) -> bool {
             .is_some_and(|v| v.to_lowercase() == "true" || v == "1");
 
     if enabled {
-        warn!("[FORCE_DISPUTE] Force dispute is ENABLED for environment: {env_name:?}");
+        warn!("[FORCE_DISPUTE] Force dispute is ENABLED for environment: {runtime_environment:?}");
     }
     enabled
 }
@@ -151,29 +142,26 @@ mod tests {
         let _guard = lock_force_flags_test_state();
         clear_force_flags_state();
 
-        // Local (no env) should allow force flags
-        assert!(is_force_flags_allowed(None));
-
-        // Local environments should allow force flags
+        // Local runtime environment should allow force flags
         assert!(is_force_flags_allowed(Some("local")));
-        assert!(is_force_flags_allowed(Some("local-docker")));
-        assert!(is_force_flags_allowed(Some("docker-local")));
         assert!(is_force_flags_allowed(Some("LOCAL"))); // case insensitive
 
-        // Regtest should allow force flags
-        assert!(is_force_flags_allowed(Some("regtest")));
-        assert!(is_force_flags_allowed(Some("REGTEST")));
+        // Non-local runtime environments should not allow force flags
+        assert!(!is_force_flags_allowed(None));
+        assert!(!is_force_flags_allowed(Some("docker")));
+        assert!(!is_force_flags_allowed(Some("regtest")));
+        assert!(!is_force_flags_allowed(Some("REGTEST")));
+        assert!(!is_force_flags_allowed(Some("stage")));
     }
 
     #[test]
-    fn test_force_flags_blocked_production_environments() {
+    fn test_force_flags_blocked_non_local_environments() {
         let _guard = lock_force_flags_test_state();
         clear_force_flags_state();
 
         // Alphanet should block force flags
         assert!(!is_force_flags_allowed(Some("alphanet")));
         assert!(!is_force_flags_allowed(Some("ALPHANET")));
-        assert!(!is_force_flags_allowed(Some("docker-alphanet")));
 
         // Testnet should block force flags
         assert!(!is_force_flags_allowed(Some("testnet")));
@@ -189,22 +177,17 @@ mod tests {
             clear_force_flags_state();
 
             // Without env var set, should return None
-            assert!(get_force_advance_address(None).is_none());
             assert!(get_force_advance_address(Some("local")).is_none());
 
             // With env var set to an address in local, should return Some(address)
             std::env::set_var("FORCE_ADVANCE", "0xABCDEF1234567890");
-            assert_eq!(get_force_advance_address(None).as_deref(), Some("0xABCDEF1234567890"));
             assert_eq!(
                 get_force_advance_address(Some("local")).as_deref(),
                 Some("0xABCDEF1234567890")
             );
-            assert_eq!(
-                get_force_advance_address(Some("regtest")).as_deref(),
-                Some("0xABCDEF1234567890")
-            );
-
-            // In production, should return None regardless
+            // In non-local environments, should return None regardless
+            assert!(get_force_advance_address(Some("docker")).is_none());
+            assert!(get_force_advance_address(Some("regtest")).is_none());
             assert!(get_force_advance_address(Some("alphanet")).is_none());
             assert!(get_force_advance_address(Some("testnet")).is_none());
 
@@ -222,16 +205,14 @@ mod tests {
             clear_force_flags_state();
 
             // Without env var set, should return false
-            assert!(!is_force_dispute_enabled(None));
             assert!(!is_force_dispute_enabled(Some("local")));
 
             // With env var set to true in local, should return true
             std::env::set_var("FORCE_DISPUTE", "true");
-            assert!(is_force_dispute_enabled(None));
             assert!(is_force_dispute_enabled(Some("local")));
-            assert!(is_force_dispute_enabled(Some("regtest")));
-
-            // With env var set to true in production, should return false
+            // With env var set to true in non-local environments, should return false
+            assert!(!is_force_dispute_enabled(Some("docker")));
+            assert!(!is_force_dispute_enabled(Some("regtest")));
             assert!(!is_force_dispute_enabled(Some("alphanet")));
             assert!(!is_force_dispute_enabled(Some("testnet")));
 

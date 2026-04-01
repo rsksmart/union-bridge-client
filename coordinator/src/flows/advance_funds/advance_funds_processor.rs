@@ -112,7 +112,7 @@ where
 
         let updated = self.request_events.insert(pegout_id.clone(), event);
         if updated.is_some() {
-            // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
+            // TODO(UB-127) this should be monitored and analysed
             error!("RequestAdvanceFunds for pegout_id {pegout_id} already exists");
         }
     }
@@ -124,7 +124,7 @@ where
                 return;
             }
             Some(afc) => {
-                // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
+                // TODO(UB-127) this should be monitored
                 error!("A second advance funds was not expected. Closing {afc:?}");
                 let pegout_id = afc.borrow().pegout_id();
                 self.close_pegout(&pegout_id);
@@ -136,7 +136,7 @@ where
         if self.chain_view.get_tip().is_none() {
             // this happens when a AdvanceFunds is received before any block
             // it should not happen in real life because RequestAdvanceFunds must be received many blocks before AdvanceFunds
-            // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
+            // TODO(UB-127) this should be monitored and analysed
             error!("No blocks received yet, cannot start advance funds");
             return;
         }
@@ -165,7 +165,7 @@ where
 
     fn stop_monitoring_blocks_for_pegout(&mut self, pegout_id: &String) {
         if self.request_events.remove(pegout_id).is_none() {
-            // TODO(Jira) this should be monitored and analysed - https://rsklabs.atlassian.net/browse/UB-127
+            // TODO(UB-127) this should be monitored and analysed
             error!("Removing non-existing RequestAdvanceFunds for pegout_id {pegout_id}");
             return;
         }
@@ -253,8 +253,8 @@ where
             }
             Err(e) => {
                 error!("CheckFork rejected: {e}");
-                // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
-                // TODO(Jira) discuss with architects on error handling - https://rsklabs.atlassian.net/browse/UB-149
+                // TODO(UB-127) this should be monitored
+                // TODO(UB-149) discuss with architects on error handling
                 false
             }
         }
@@ -290,14 +290,14 @@ where
                 true
             }
             Ok(false) => {
-                // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
-                // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132
+                // TODO(UB-127) this should be monitored
+                // TODO(UB-132)
                 error!("Could not send GenerateCheckForkZKP, broker returned false");
                 false
             }
             Err(e) => {
-                // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
-                // TODO(Jira) https://rsklabs.atlassian.net/browse/UB-132
+                // TODO(UB-127) this should be monitored
+                // TODO(UB-132)
                 error!("Error sending GenerateCheckForkZKP: {e:?}");
                 false
             }
@@ -507,7 +507,7 @@ where
                 );
             }
             Err(e) => {
-                // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
+                // TODO(UB-127) this should be monitored
                 error!(
                     "Error notifying contracts about advance funds completion for {pegout_id}: {e}"
                 );
@@ -517,8 +517,8 @@ where
 
     fn serialize_guest_input<S: serde::Serialize>(data: &S) -> Result<Vec<u8>> {
         bincode::serialize(data).map_err(|e| {
-            // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
-            // TODO(Jira) discuss with architects on error handling - https://rsklabs.atlassian.net/browse/UB-149
+            // TODO(UB-127) this should be monitored
+            // TODO(UB-149) discuss with architects on error handling
             error!("Error serializing guest input: {e}");
             e.into()
         })
@@ -526,7 +526,7 @@ where
 
     fn pow_from_effort(effort: U256) -> U256 {
         U256::MAX.checked_div(effort).unwrap_or_else(|| {
-            // TODO(Jira) this should be monitored - https://rsklabs.atlassian.net/browse/UB-127
+            // TODO(UB-127) this should be monitored
             error!("CheckFork accepted with 0 effort",);
             U256::zero()
         })

@@ -14,7 +14,7 @@ use log_indexer::notifier::Notifier;
 use log_indexer::store::RawLogStore;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
-const ENV_CLI_FLAG: &str = "env";
+const CONFIG_CLI_FLAG: &str = "config";
 
 fn main() -> Result<()> {
     let matches = Command::new("Union Bridge Log Indexer")
@@ -26,26 +26,26 @@ fn main() -> Result<()> {
                 .help("Sets the path to the log4rs configuration file"),
         )
         .arg(
-            Arg::new(ENV_CLI_FLAG)
+            Arg::new(CONFIG_CLI_FLAG)
                 .short('e')
-                .long(ENV_CLI_FLAG)
-                .value_name("ENV")
-                .help("Environment name (e.g., local, alphanet, stage)"),
+                .long(CONFIG_CLI_FLAG)
+                .value_name("CONFIG")
+                .help("Configuration profile name (e.g., local, docker, alphanet)"),
         )
         .get_matches();
 
     let logger_cfg_path = matches.get_one::<String>(LOGGER_CLI_FLAG);
     Logger::init(logger_cfg_path).expect("Failed to load logger");
 
-    let env_name = matches.get_one::<String>(ENV_CLI_FLAG).cloned();
+    let config_name = matches.get_one::<String>(CONFIG_CLI_FLAG).cloned();
 
     info!(
-        "Loading configuration for environment: {}",
-        env_name.clone().unwrap_or_else(|| "NONE".to_string())
+        "Loading configuration profile: {}",
+        config_name.clone().unwrap_or_else(|| "NONE".to_string())
     );
     info!("Environment variables with prefix UB__ will override config values");
 
-    let config: Config = Config::load(env_name).expect("Failed to load config");
+    let config: Config = Config::load(config_name).expect("Failed to load config");
 
     let shutdown_flag = ShutdownFlag::init();
 

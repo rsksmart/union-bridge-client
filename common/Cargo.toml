@@ -18,7 +18,7 @@ alloy-sol-types = { workspace = true }
 alloy-transport = { workspace = true }
 anyhow = { workspace = true }
 bitcoin = { workspace = true }
-bitvmx-emulator = { git = "ssh://git@github.com/FairgateLabs/BitVMX-CPU.git", tag = "v0.5.11", package = "emulator" }
+bitvmx-emulator = { git = "https://github.com/FairgateLabs/BitVMX-CPU.git", tag = "v0.5.11", package = "emulator" }
 config = { workspace = true }
 hex = { workspace = true }
 log = { workspace = true }
@@ -35,7 +35,7 @@ sha3 = "0.10"
 signal-hook = "0.3"
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
-# TODO(jira) https://rsklabs.atlassian.net/browse/ub-176
+# TODO(jira) UB-176
 uuid = { version = "1.11.0", features = ["v4", "serde"] }
 
 [lints]

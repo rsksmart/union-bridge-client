@@ -62,11 +62,8 @@ jobs:
             org.opencontainers.image.description=${{ matrix.crate.description }}
             org.opencontainers.image.vendor=RSK
 
-      - name: Configure Git for private repositories
+      - name: Configure Git dependency cloning
         run: |
-          git config --global \
-            url."https://${{ secrets.FAIRGATE_GITHUB_TOKEN }}@github.com/FairgateLabs".insteadOf \
-            "ssh://git@github.com/FairgateLabs"
           git config --global \
             url."https://${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}@github.com/temp-rsk".insteadOf \
             "ssh://git@github.com/temp-rsk"
@@ -85,7 +82,6 @@ jobs:
           build-args: |
             CRATE=${{ matrix.crate.name }}
             FEATURES=anvil
-            FAIRGATE_GITHUB_TOKEN=${{ secrets.FAIRGATE_GITHUB_TOKEN }}
             UNION_CONTRACTS_GITHUB_TOKEN=${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
 
       - name: Clean up

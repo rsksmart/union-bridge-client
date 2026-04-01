@@ -1,0 +1,15 @@
+# ═══════════════════════════════════════════════════════
+# Indexers
+# ═══════════════════════════════════════════════════════
+
+[indexer]
+
+# Start from current provider tip in local runs; base initial_block_hash is ignored.
+start_from = "best"
+
+# ═══════════════════════════════════════════════════════
+# Bridge Flow Configuration
+# ═══════════════════════════════════════════════════════
+
+[bridge.committee]
+drp_program_definition = "/app/resources/hello-world.yaml"
