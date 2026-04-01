@@ -357,8 +357,7 @@ read_env_value() {
 
 resolve_key_store_password() {
   local op_num="$1"
-  shift
-  local env_file
+  local env_file="$2"
   local existing_password=""
 
   if [[ -n "${KEY_STORE_PASSWORD:-}" ]]; then
@@ -370,15 +369,13 @@ resolve_key_store_password() {
     return 0
   fi
 
-  for env_file in "$@"; do
-    if [[ -f "${env_file}" ]]; then
-      existing_password="$(read_env_value "${env_file}" "KEY_STORE_PASSWORD")"
-      if [[ -n "${existing_password}" ]]; then
-        RESOLVED_KEY_STORE_PASSWORD="${existing_password}"
-        return 0
-      fi
+  if [[ -f "${env_file}" ]]; then
+    existing_password="$(read_env_value "${env_file}" "KEY_STORE_PASSWORD")"
+    if [[ -n "${existing_password}" ]]; then
+      RESOLVED_KEY_STORE_PASSWORD="${existing_password}"
+      return 0
     fi
-  done
+  fi
 
   if [[ -z "${NEW_KEY_STORE_PASSWORD}" ]]; then
     while [[ -z "${NEW_KEY_STORE_PASSWORD}" ]]; do
@@ -395,23 +392,20 @@ resolve_key_store_password() {
 
 resolve_user_bitcoin_wif() {
   local op_num="$1"
-  shift
-  local env_file
+  local env_file="$2"
   local existing_wif=""
 
-  for env_file in "$@"; do
-    if [[ -f "${env_file}" ]]; then
-      existing_wif="$(read_env_value "${env_file}" "USER_BITCOIN_WIF")"
-      if [[ -n "${existing_wif}" ]]; then
-        RESOLVED_USER_BITCOIN_WIF="${existing_wif}"
-        return 0
-      fi
-
-      echo "Error: existing operator env file ${env_file} is missing USER_BITCOIN_WIF." >&2
-      echo "Fix the file or delete it and rerun cli-setup-operators.sh." >&2
-      exit 1
+  if [[ -f "${env_file}" ]]; then
+    existing_wif="$(read_env_value "${env_file}" "USER_BITCOIN_WIF")"
+    if [[ -n "${existing_wif}" ]]; then
+      RESOLVED_USER_BITCOIN_WIF="${existing_wif}"
+      return 0
     fi
-  done
+
+    echo "Error: existing operator env file ${env_file} is missing USER_BITCOIN_WIF." >&2
+    echo "Fix the file or delete it and rerun cli-setup-operators.sh." >&2
+    exit 1
+  fi
 
   if [[ -z "${NEW_USER_BITCOIN_WIF}" ]]; then
     while [[ -z "${NEW_USER_BITCOIN_WIF}" ]]; do
