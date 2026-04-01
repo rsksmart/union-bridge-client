@@ -23,7 +23,7 @@ jobs:
 
       # cannot be moved to common_setup action because its needed to find the action itself
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup
         uses: ./.github/actions/common_setup
@@ -50,7 +50,7 @@ jobs:
 
       # cannot be moved to common_setup action because its needed to find the action itself
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup
         uses: ./.github/actions/common_setup
