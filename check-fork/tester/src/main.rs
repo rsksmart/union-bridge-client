@@ -6,8 +6,6 @@ use clap::Parser;
 use methods::{CHECK_FORK_GUEST_ID, CHECK_FORK_GUEST_PATH};
 use primitive_types::U256;
 use zkvm_cli_serde::serialize_guest_input;
-
-// use zkvm_host::prove_stark_no_cli;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {

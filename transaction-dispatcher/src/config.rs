@@ -53,10 +53,6 @@ impl Config {
             .collect()
     }
 
-    // pub fn key_store(&self) -> &KeyStoreConfig {
-    //     &self.tx_dispatcher_config.key_store
-    // }
-
     #[must_use]
     pub fn transaction(&self) -> &TransactionConfig {
         &self.tx_dispatcher_config.transaction

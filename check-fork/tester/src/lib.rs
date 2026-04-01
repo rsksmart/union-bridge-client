@@ -160,8 +160,6 @@ pub async fn get_blocks(
         fetch_block_by_num(start_block_number, log_super_block, &client, &mut blocks, i).await?;
     }
 
-    // // Write blocks to the output file
-    // let serialized_blocks = serde_json::to_string(&blocks)?;
     if has_bridge_event {
         let result: Vec<RskBlock> = add_bridge_event(&blocks);
         return Ok(result);

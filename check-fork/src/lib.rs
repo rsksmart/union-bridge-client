@@ -238,25 +238,9 @@ fn validate_enough_effort_superblock(
         .ok_or("Overflow occurred multiplying difficulty by times")?;
     let actual_effort = calculate_block_effort(block)?;
 
-    // dbg!((
-    //     block.number,
-    //     &block.pow,
-    //     expected_effort,
-    //     actual_effort,
-    //     _block_type
-    // ));
-
     if actual_effort >= expected_effort {
         return Ok(());
     }
-
-    // TODO tmp, do not err if not super block for now (until Superchain), just log
-    // match _block_type {
-    //     "first" => Err("First block's PoW is less than the required difficulty"),
-    //     "consecutive" => Err("Consecutive Block's PoW is less than the required difficulty"),
-    //     "uncle" => Err("Uncle's Block PoW is less than the required difficulty"),
-    //     _ => panic!("Invalid block type"),
-    // }
 
     Ok(())
 }
