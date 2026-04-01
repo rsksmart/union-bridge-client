@@ -2,6 +2,8 @@
 **/.env
 **/.envrc
 **/.actrc
+cli/.env.*
+!cli/.env.sample
 
 # Build artifacts and runtime outputs
 **/target

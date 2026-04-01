@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Manages 4 BitVMX clients (no Union Client, no blockchains).
-# Prerequisites: Start blockchains first with: ./start_blockchains.sh up -d
+# Prerequisites: Start blockchains first with: ./start-blockchains.sh up -d
 
 set -euo pipefail
 
@@ -27,8 +27,8 @@ print_help() {
   echo "  $0 ps              # Status"
   echo ""
   echo "Prerequisites: Start blockchains first"
-  echo "  ./start_blockchains.sh --fresh up -d"
-  echo "  <project_root>/cli-setup-operators.sh --env local --ops 4"
+  echo "  ./start-blockchains.sh --fresh up -d"
+  echo "  <project_root>/cli-setup-operators.sh --ops 4"
   echo ""
   echo "Connect to:"
   echo "  op_1 -> localhost:22222"
@@ -78,7 +78,7 @@ ensure_generated_bitvmx_configs() {
     config_dir="${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}/bitvmx"
     if [[ ! -d "${config_dir}" ]]; then
       echo "Error: missing generated BitVMX config directory ${config_dir}" >&2
-      echo "Run <project_root>/cli-setup-operators.sh --env local --ops 4 before starting BitVMX." >&2
+      echo "Run <project_root>/cli-setup-operators.sh --ops 4 before starting BitVMX." >&2
       exit 1
     fi
   done

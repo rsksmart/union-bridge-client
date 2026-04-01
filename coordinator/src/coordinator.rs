@@ -11,6 +11,7 @@ use common::shutdown_flag::ShutdownFlag;
 use log::{debug, error, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 
+use crate::RUNTIME_ENV_LOCAL;
 use crate::config::{BridgeConfig, CoordinatorAdvanceFundsConfig};
 use crate::event_processor::EventProcessor;
 use crate::flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor;
@@ -37,37 +38,31 @@ pub struct Coordinator<M: MonitorApi, BC: BitVmxBrokerClientApi, S: CoordinatorS
     shutdown_flag: ShutdownFlag,
 }
 
-fn normalize_env_name(env_name: Option<&str>) -> Option<&str> {
-    env_name.map(|name| name.strip_prefix("docker-").unwrap_or(name))
+fn uses_fake_native_bridge(runtime_environment: &str) -> bool {
+    runtime_environment.eq_ignore_ascii_case(RUNTIME_ENV_LOCAL)
 }
 
 impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi + 'static>
     Coordinator<M, BC, S>
 {
     fn build_native_bridge_verifier<CG: RskContractsGatewayApi + 'static>(
-        env_name: Option<&str>,
+        runtime_environment: &str,
         contracts_arc: &Rc<CG>,
         rt_sync: &RuntimeSync,
         bridge_config: &BridgeConfig,
     ) -> NativeBridgeVerifier<CG> {
-        let normalized_env_name = normalize_env_name(env_name);
-        if let Some(normalized @ ("alphanet" | "regtest" | "testnet")) = normalized_env_name {
+        if uses_fake_native_bridge(runtime_environment) {
             log::info!(
-                "Environment: {} (normalized: {normalized}) → Using Real Native Bridge Verifier",
-                env_name.unwrap_or("NONE")
+                "Environment: {runtime_environment} → Using Dummy Native Bridge Verifier (BitVMX confirmations only)"
             );
+            NativeBridgeVerifier::Dummy
+        } else {
+            log::info!("Environment: {runtime_environment} → Using Real Native Bridge Verifier");
             NativeBridgeVerifier::Real {
                 contracts: contracts_arc.clone(),
                 rt_sync: rt_sync.clone(),
                 min_tx_confirmations: bridge_config.native_bridge.min_tx_confirmations,
             }
-        } else {
-            log::info!(
-                "Environment: {} (normalized: {}) → Using Dummy Native Bridge Verifier (BitVMX confirmations only)",
-                env_name.unwrap_or("NONE"),
-                normalized_env_name.unwrap_or("NONE")
-            );
-            NativeBridgeVerifier::Dummy
         }
     }
 
@@ -83,7 +78,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         store: S,
         shutdown_flag: ShutdownFlag,
         bitcoin_network: Network,
-        env_name: Option<&str>,
+        runtime_environment: &str,
         bridge_config: &BridgeConfig,
     ) -> Self {
         let contracts_arc = Rc::new(contracts_gateway);
@@ -105,8 +100,12 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             bridge_config.committee.clone(),
         );
 
-        let native_bridge_verifier =
-            Self::build_native_bridge_verifier(env_name, &contracts_arc, rt_sync, bridge_config);
+        let native_bridge_verifier = Self::build_native_bridge_verifier(
+            runtime_environment,
+            &contracts_arc,
+            rt_sync,
+            bridge_config,
+        );
 
         let processors: Vec<Box<dyn EventProcessor>> = vec![
             Box::new(AdvanceFundsProcessor::new(
@@ -136,7 +135,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     native_bridge_verifier.clone(),
                     bridge_config.pegout.clone(),
                     bridge_config.coordinator.required_confirmations,
-                    env_name,
+                    Some(runtime_environment),
                 )
                 // todo(fede) ideally this method should return a result
                 .expect("couldn't restore or create pegout flow processor"),
@@ -415,13 +414,14 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn test_normalize_env_name_supports_docker_prefixed_values() {
-        assert_eq!(super::normalize_env_name(Some("regtest")), Some("regtest"));
-        assert_eq!(super::normalize_env_name(Some("docker-regtest")), Some("regtest"));
-        assert_eq!(super::normalize_env_name(Some("docker-testnet")), Some("testnet"));
-        assert_eq!(super::normalize_env_name(Some("docker-alphanet")), Some("alphanet"));
-        assert_eq!(super::normalize_env_name(Some("docker-local")), Some("local"));
-        assert_eq!(super::normalize_env_name(None), None);
+    fn test_uses_fake_native_bridge_only_for_local_modes() {
+        assert!(super::uses_fake_native_bridge("local"));
+        assert!(super::uses_fake_native_bridge("LOCAL"));
+
+        assert!(!super::uses_fake_native_bridge("docker"));
+        assert!(!super::uses_fake_native_bridge("regtest"));
+        assert!(!super::uses_fake_native_bridge("alphanet"));
+        assert!(!super::uses_fake_native_bridge("testnet"));
     }
 
     #[test]
