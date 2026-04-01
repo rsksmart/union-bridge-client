@@ -103,7 +103,6 @@ cli/
 │   ├── src/
 │   │   ├── main.rs
 │   │   ├── bitcoin_wallet.rs
-│   │   ├── broker_identity.rs
 │   │   ├── rsk_wallet.rs
 │   │   ├── committee.rs
 │   │   ├── pegin.rs
