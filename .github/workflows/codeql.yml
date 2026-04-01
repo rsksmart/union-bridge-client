@@ -40,7 +40,6 @@ jobs:
       - name: Setup
         uses: ./.github/actions/common_setup
         with:
-          fairgate_github_token: ${{ secrets.FAIRGATE_GITHUB_TOKEN }}
           contracts_github_token: ${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
           cache-build: false
 

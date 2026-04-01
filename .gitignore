@@ -1,23 +1,38 @@
+# Environment and local shell configuration
 **/.env
 **/.envrc
 **/.actrc
-**/app.log*
-**/check_fork_args.bin
-**/stark-proof.bin
+cli/.env.*
+!cli/.env.sample
+
+# Build artifacts and runtime outputs
 **/target
-.vscode/*
-.DS_Store
-.idea
-.cursor
-config/qa-coordinator
+**/app.log*
+*.log
 **/logs/*
 **/.db
-**/.union-bridge-contracts
-**/.llmignore
 test_keystore
-*.log
 docs/local/
 docs/node_modules/
+
+# ZK artifacts
+**/check_fork_args.bin
+**/stark-proof.bin
+
+# Editor and OS files
+.vscode/*
+.idea
+.cursor
+.DS_Store
+
+# Local tooling
+**/.llmignore
 .junie/memory
-.union_bridge/
-broker/
+.union_bridge
+
+# Private keys and certificates
+**/*.key
+**/*.pem
+**/*.cert
+**/*.p12
+**/*.pfx

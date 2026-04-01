@@ -1,5 +1,8 @@
 # Union Bridge - Check Fork Function
 
+For repository-level setup and workflow context, start with [../README.md](../README.md) and
+[../CONTRIBUTING.md](../CONTRIBUTING.md). This README stays focused on the check-fork component itself.
+
 The `check_fork` function (stateless) verifies a sequence of consecutive Rootstock blocks, which are provided as input.
 This function plays a critical role in the validation processes of the **Union Bridge** implementation. Its primary
 tasks are to:

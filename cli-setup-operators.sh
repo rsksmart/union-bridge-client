@@ -10,31 +10,29 @@ cd "${SCRIPT_DIR}" || {
   exit 1
 }
 
-OPERATOR_ARG="${UC_OPERATOR_ID:-}"
-ENVIRONMENT="${UC_ENV:-}"
 NUM_OPERATORS=""
 BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
 OPERATORS_TO_RUN=()
 NEW_USER_BITCOIN_WIF="${USER_BITCOIN_WIF:-}"
 USED_EXPORTED_USER_BITCOIN_WIF=false
+NEW_KEY_STORE_PASSWORD="${KEY_STORE_PASSWORD:-}"
+USED_EXPORTED_KEY_STORE_PASSWORD=false
 BROKER_SERVICES=("block-indexer" "log-indexer" "user-api" "coordinator")
 RESOLVED_USER_BITCOIN_WIF=""
 RESOLVED_BITVMX_BROKER_PUBKEY_HASH=""
-KEY_STORE_PASSWORD_VALUE=""
+RESOLVED_KEY_STORE_PASSWORD=""
 
 print_help() {
-  echo "Usage: $0 [--env <ENV>] [--op <ID> | --ops <N>]"
+  echo "Usage: $0 [--ops <N>]"
   echo ""
-  echo "Creates or reuses host-side Docker operator artifacts:"
-  echo "  - broker identities under ${BASE_STORAGE_PATH}/.union_bridge/op_N/broker/<service>.*"
-  echo "  - generated operator docker.env files under ${BASE_STORAGE_PATH}/.union_bridge/op_N/docker.env"
-  echo "  - in --env local only: local cargo-mode keystores under ${BASE_STORAGE_PATH}/.union_bridge/op_N/keystore/{member,user}"
+  echo "Creates or reuses host-side local operator artifacts:"
+  echo "  - service identities under ${BASE_STORAGE_PATH}/.union_bridge/op_N/union-client/<service>.*"
+  echo "  - generated operator docker-compose.env/docker-service.env files under ${BASE_STORAGE_PATH}/.union_bridge/op_N/"
+  echo "  - local cargo-mode keystores under ${BASE_STORAGE_PATH}/.union_bridge/op_N/keystore/{member,user}"
   echo "  Existing operator env files are refreshed in place."
   echo ""
   echo "Options:"
-  echo "  --env <ENV>                Target environment: alphanet, testnet, local, local-docker, or regtest"
-  echo "  --op <ID>                  Operator ID (1-10) for alphanet/testnet"
-  echo "  --ops <N>                  Number of operators to prepare (1-10) for local/regtest"
+  echo "  --ops <N>                  Number of operators to prepare (1-10)"
   echo "  --help                     Display this help message"
   exit 0
 }
@@ -48,56 +46,19 @@ ensure_dependencies() {
     echo "Error: perl is required to patch generated BitVMX config."
     exit 1
   fi
-}
-
-prepare_local_keystore_password() {
-  if [[ "${ENVIRONMENT}" != "local" ]]; then
-    return 0
-  fi
-
   if ! command -v cargo >/dev/null 2>&1; then
-    echo "Error: cargo is required to create local keystores in --env local mode." >&2
-    exit 1
-  fi
-
-  KEY_STORE_PASSWORD_VALUE="${KEY_STORE_PASSWORD:-}"
-  if [[ -z "${KEY_STORE_PASSWORD_VALUE}" ]]; then
-    echo "Error: KEY_STORE_PASSWORD is required in --env local mode." >&2
-    echo "Export KEY_STORE_PASSWORD and rerun <project_root>/cli-setup-operators.sh." >&2
+    echo "Error: cargo is required to create local keystores." >&2
     exit 1
   fi
 }
 
-prompt_environment() {
-  local response=""
-
-  while [[ -z "${response}" ]]; do
-    read -r -p "Environment [local]: " response
-    response="${response:-local}"
-    case "${response}" in
-      alphanet|testnet|local|local-docker|regtest)
-        ENVIRONMENT="${response}"
-        ;;
-      *)
-        echo "Error: environment must be one of alphanet, testnet, local, local-docker, or regtest."
-        response=""
-        ;;
-    esac
-  done
-}
-
-prompt_operator_id() {
-  local response=""
-
-  while [[ -z "${response}" ]]; do
-    read -r -p "Operator ID (1-10): " response
-    if [[ "${response}" =~ ^(10|[1-9])$ ]]; then
-      OPERATOR_ARG="${response}"
-    else
-      echo "Error: operator ID must be between 1 and 10."
-      response=""
-    fi
-  done
+check_bitcoind_url() {
+  if [[ -z "${BITCOIND_URL:-}" ]]; then
+    echo "Error: BITCOIND_URL is required." >&2
+    echo "Export BITCOIND_URL and rerun <project_root>/cli-setup-operators.sh." >&2
+    echo "The generated BitVMX operator YAMLs are patched from the current shell environment." >&2
+    exit 1
+  fi
 }
 
 prompt_num_operators() {
@@ -121,14 +82,20 @@ operator_root_path() {
   echo "${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}"
 }
 
-operator_docker_env_file_path() {
+operator_compose_env_file_path() {
   local op_num="$1"
 
-  echo "$(operator_root_path "${op_num}")/docker.env"
+  echo "$(operator_root_path "${op_num}")/docker-compose.env"
+}
+
+operator_runtime_env_file_path() {
+  local op_num="$1"
+
+  echo "$(operator_root_path "${op_num}")/docker-service.env"
 }
 
 bitvmx_template_dir() {
-  echo "${SCRIPT_DIR}/../bitvmx-client/config/${ENVIRONMENT}"
+  echo "${SCRIPT_DIR}/../bitvmx-client/config/local"
 }
 
 operator_bitvmx_root_path() {
@@ -151,10 +118,8 @@ operator_bitvmx_keys_dir() {
 
 operator_bitvmx_yaml_path() {
   local op_num="$1"
-  local client_op
 
-  client_op="$(operator_client_op "${op_num}")"
-  echo "$(operator_bitvmx_config_dir "${op_num}")/${client_op}.yaml"
+  echo "$(operator_bitvmx_config_dir "${op_num}")/op_${op_num}.yaml"
 }
 
 prune_extra_bitvmx_operator_yaml_files() {
@@ -166,71 +131,45 @@ prune_extra_bitvmx_operator_yaml_files() {
   for yaml_file in "${target_dir}"/*.yaml; do
     [[ -e "${yaml_file}" ]] || continue
     yaml_name="$(basename "${yaml_file}")"
-    if [[ "${yaml_file}" != "${cfg_file}" ]] && [[ "${yaml_name}" =~ ^(op_[0-9]+|testnet_op_[0-9]+)\.yaml$ ]]; then
+    if [[ "${yaml_file}" != "${cfg_file}" ]] && [[ "${yaml_name}" =~ ^op_[0-9]+\.yaml$ ]]; then
       rm -f "${yaml_file}"
     fi
   done
-}
-
-project_name_for_operator() {
-  local op_num="$1"
-
-  if [[ "${ENVIRONMENT}" == "local" || "${ENVIRONMENT}" == "regtest" ]]; then
-    echo "op_${op_num}"
-  else
-    echo "union-operator"
-  fi
-}
-
-operator_client_op() {
-  local op_num="$1"
-
-  if [[ "${ENVIRONMENT}" == "local" || "${ENVIRONMENT}" == "regtest" ]]; then
-    echo "op_${op_num}"
-  else
-    echo "testnet_op_${op_num}"
-  fi
 }
 
 operator_user_api_port() {
   local op_num="$1"
   local -a ports=(40001 40002 40003 40004 40005 40006 40007 40008 40009 40010)
 
-  if [[ "${ENVIRONMENT}" == "local" || "${ENVIRONMENT}" == "regtest" ]]; then
-    echo "${ports[$((op_num - 1))]}"
-  fi
+  echo "${ports[$((op_num - 1))]}"
 }
 
 operator_bitvmx_port() {
   local op_num="$1"
   local -a ports=(22222 33333 44444 55554 55555 55556 55557 55558 55559 55560)
 
-  if [[ "${ENVIRONMENT}" == "local" || "${ENVIRONMENT}" == "regtest" ]]; then
-    echo "${ports[$((op_num - 1))]}"
-  fi
+  echo "${ports[$((op_num - 1))]}"
 }
 
 operator_bitvmx_p2p_host() {
   local op_num="$1"
   local -a hosts=("172.20.0.11" "172.20.0.12" "172.20.0.13" "172.20.0.14" "172.20.0.15" "172.20.0.16" "172.20.0.17" "172.20.0.18" "172.20.0.19" "172.20.0.20")
 
-  if [[ "${ENVIRONMENT}" == "local" || "${ENVIRONMENT}" == "regtest" ]]; then
-    echo "${hosts[$((op_num - 1))]}"
-  fi
+  echo "${hosts[$((op_num - 1))]}"
 }
 
 broker_pem_path() {
   local service="$1"
   local op_num="$2"
 
-  echo "$(operator_root_path "${op_num}")/broker/${service}.pem"
+  echo "$(operator_root_path "${op_num}")/union-client/${service}.pem"
 }
 
 broker_pubkey_hash_path() {
   local service="$1"
   local op_num="$2"
 
-  echo "$(operator_root_path "${op_num}")/broker/${service}.pubkey_hash"
+  echo "$(operator_root_path "${op_num}")/union-client/${service}.pubkey_hash"
 }
 
 compute_pubkey_hash() {
@@ -251,16 +190,16 @@ generate_private_key() {
 
 provision_operator_broker_identities() {
   local op_num="$1"
-  local broker_dir pem_path pubkey_hash_path action service
+  local identity_dir pem_path pubkey_hash_path action service
 
-  echo "- Preparing broker identities for op_${op_num}:"
+  echo "- Preparing service identities for op_${op_num}:"
 
   for service in "${BROKER_SERVICES[@]}"; do
-    broker_dir="$(operator_root_path "${op_num}")/broker"
-    pem_path="${broker_dir}/${service}.pem"
-    pubkey_hash_path="${broker_dir}/${service}.pubkey_hash"
+    identity_dir="$(operator_root_path "${op_num}")/union-client"
+    pem_path="${identity_dir}/${service}.pem"
+    pubkey_hash_path="${identity_dir}/${service}.pubkey_hash"
 
-    mkdir -p "${broker_dir}"
+    mkdir -p "${identity_dir}"
 
     if [[ -f "${pem_path}" ]]; then
       action="Reusing"
@@ -272,6 +211,26 @@ provision_operator_broker_identities() {
     compute_pubkey_hash "${pem_path}" > "${pubkey_hash_path}"
     echo "  - ${action} ${service} key at ${pem_path} (pubkey_hash: $(cat "${pubkey_hash_path}"))"
   done
+}
+
+patch_bitvmx_key_storage_password() {
+  local cfg_file="$1"
+  local password="$2"
+
+  if grep -q '^[[:space:]]*key_storage:' "${cfg_file}" && grep -q '^[[:space:]]*password:' "${cfg_file}"; then
+    BITVMX_KEY_STORAGE_PASSWORD="${password}" \
+      perl -0pi -e 's/(key_storage:\s*\n\s*password:\s*)[^\n]+/${1}$ENV{BITVMX_KEY_STORAGE_PASSWORD}/m' "${cfg_file}"
+  fi
+}
+
+patch_bitvmx_bitcoin_url() {
+  local cfg_file="$1"
+  local bitcoin_url="$2"
+
+  if grep -q '^[[:space:]]*bitcoin:' "${cfg_file}" && grep -q '^[[:space:]]*url:' "${cfg_file}"; then
+    BITVMX_BITCOIN_URL="${bitcoin_url}" \
+      perl -0pi -e 's/(bitcoin:\s*\n(?:\s+.*\n)*?\s+url:\s*)[^\n]+/${1}$ENV{BITVMX_BITCOIN_URL}/m' "${cfg_file}"
+  fi
 }
 
 patch_bitvmx_component_pubkey_hash() {
@@ -396,10 +355,44 @@ read_env_value() {
   awk -F= -v key="${key}" '$1 == key {print substr($0, index($0, "=") + 1); exit}' "${env_file}"
 }
 
+resolve_key_store_password() {
+  local op_num="$1"
+  local env_file="$2"
+  local existing_password=""
+
+  if [[ -n "${KEY_STORE_PASSWORD:-}" ]]; then
+    if [[ "${USED_EXPORTED_KEY_STORE_PASSWORD}" != true ]]; then
+      echo "Using exported KEY_STORE_PASSWORD for operator env files." >&2
+      USED_EXPORTED_KEY_STORE_PASSWORD=true
+    fi
+    RESOLVED_KEY_STORE_PASSWORD="${KEY_STORE_PASSWORD}"
+    return 0
+  fi
+
+  if [[ -f "${env_file}" ]]; then
+    existing_password="$(read_env_value "${env_file}" "KEY_STORE_PASSWORD")"
+    if [[ -n "${existing_password}" ]]; then
+      RESOLVED_KEY_STORE_PASSWORD="${existing_password}"
+      return 0
+    fi
+  fi
+
+  if [[ -z "${NEW_KEY_STORE_PASSWORD}" ]]; then
+    while [[ -z "${NEW_KEY_STORE_PASSWORD}" ]]; do
+      read -r -s -p "Please enter KEY_STORE_PASSWORD for op_${op_num}: " NEW_KEY_STORE_PASSWORD
+      echo ""
+      if [[ -z "${NEW_KEY_STORE_PASSWORD}" ]]; then
+        echo "Error: KEY_STORE_PASSWORD is required."
+      fi
+    done
+  fi
+
+  RESOLVED_KEY_STORE_PASSWORD="${NEW_KEY_STORE_PASSWORD}"
+}
+
 resolve_user_bitcoin_wif() {
   local op_num="$1"
-  local project_name="$2"
-  local env_file="$3"
+  local env_file="$2"
   local existing_wif=""
 
   if [[ -f "${env_file}" ]]; then
@@ -416,7 +409,7 @@ resolve_user_bitcoin_wif() {
 
   if [[ -z "${NEW_USER_BITCOIN_WIF}" ]]; then
     while [[ -z "${NEW_USER_BITCOIN_WIF}" ]]; do
-      read -r -s -p "Please enter USER_BITCOIN_WIF for ${project_name} (op_${op_num}): " NEW_USER_BITCOIN_WIF
+      read -r -s -p "Please enter USER_BITCOIN_WIF for op_${op_num}: " NEW_USER_BITCOIN_WIF
       echo ""
       if [[ -z "${NEW_USER_BITCOIN_WIF}" ]]; then
         echo "Error: USER_BITCOIN_WIF is required."
@@ -430,49 +423,46 @@ resolve_user_bitcoin_wif() {
   RESOLVED_USER_BITCOIN_WIF="${NEW_USER_BITCOIN_WIF}"
 }
 
-write_operator_env_file() {
+write_operator_compose_env_file() {
   local env_file_path="$1"
   local op_num="$2"
-  local user_bitcoin_wif="$3"
-  local bitvmx_pubkey_hash="$4"
-  local client_op
 
   mkdir -p "$(dirname "${env_file_path}")"
 
-  client_op="$(operator_client_op "${op_num}")"
-
   cat > "${env_file_path}" <<EOF
-CLIENT_OP=${client_op}
+CLIENT_OP=op_${op_num}
 BITVMX_CONFIG_DIR=$(operator_bitvmx_config_dir "${op_num}")
 BLOCK_INDEXER_BROKER_PEM_PATH=$(broker_pem_path "block-indexer" "${op_num}")
 LOG_INDEXER_BROKER_PEM_PATH=$(broker_pem_path "log-indexer" "${op_num}")
 USER_API_BROKER_PEM_PATH=$(broker_pem_path "user-api" "${op_num}")
 COORDINATOR_BROKER_PEM_PATH=$(broker_pem_path "coordinator" "${op_num}")
+USER_API_PORT=$(operator_user_api_port "${op_num}")
+BITVMX_PORT=$(operator_bitvmx_port "${op_num}")
+BITVMX_P2P_HOST=$(operator_bitvmx_p2p_host "${op_num}")
+EOF
+
+  chmod 600 "${env_file_path}"
+}
+
+write_operator_runtime_env_file() {
+  local env_file_path="$1"
+  local op_num="$2"
+  local user_bitcoin_wif="$3"
+  local key_store_password="$4"
+  local bitvmx_pubkey_hash="$5"
+
+  mkdir -p "$(dirname "${env_file_path}")"
+
+  cat > "${env_file_path}" <<EOF
 UB__COORDINATOR__BLOCKS__PUBKEY_HASH=$(read_broker_pubkey_hash "block-indexer" "${op_num}")
 UB__COORDINATOR__LOGS__PUBKEY_HASH=$(read_broker_pubkey_hash "log-indexer" "${op_num}")
 UB__COORDINATOR__USER__PUBKEY_HASH=$(read_broker_pubkey_hash "user-api" "${op_num}")
 UB__COORDINATOR__BITVMX__PUBKEY_HASH=${bitvmx_pubkey_hash}
+UB__COORDINATOR__BITVMX__PORT=$(operator_bitvmx_port "${op_num}")
 UB__USER_API__COORDINATOR__PUBKEY_HASH=$(read_broker_pubkey_hash "coordinator" "${op_num}")
+KEY_STORE_PASSWORD=${key_store_password}
 USER_BITCOIN_WIF=${user_bitcoin_wif}
 EOF
-
-  local user_api_port
-  local bitvmx_port
-  local bitvmx_p2p_host
-
-  user_api_port="$(operator_user_api_port "${op_num}")"
-  bitvmx_port="$(operator_bitvmx_port "${op_num}")"
-  bitvmx_p2p_host="$(operator_bitvmx_p2p_host "${op_num}")"
-
-  if [[ -n "${user_api_port}" ]]; then
-    printf 'USER_API_PORT=%s\n' "${user_api_port}" >> "${env_file_path}"
-  fi
-  if [[ -n "${bitvmx_port}" ]]; then
-    printf 'BITVMX_PORT=%s\n' "${bitvmx_port}" >> "${env_file_path}"
-  fi
-  if [[ -n "${bitvmx_p2p_host}" ]]; then
-    printf 'BITVMX_P2P_HOST=%s\n' "${bitvmx_p2p_host}" >> "${env_file_path}"
-  fi
 
   chmod 600 "${env_file_path}"
 }
@@ -480,6 +470,7 @@ EOF
 create_or_reuse_local_keystore() {
   local op_num="$1"
   local wallet_name="$2"
+  local key_store_password="$3"
   local keystore_dir
   local target_path
   local cmd_output
@@ -497,7 +488,7 @@ create_or_reuse_local_keystore() {
 
   cmd_output="$(
     cd "${PROJECT_ROOT}" && cargo run --quiet --manifest-path key-manager/Cargo.toml -- \
-      new-key -p "${KEY_STORE_PASSWORD_VALUE}" -d "${keystore_dir}"
+      new-key -p "${key_store_password}" -d "${keystore_dir}"
   )"
 
   generated_path="$(printf '%s\n' "${cmd_output}" | sed -n 's/^Generated key @ \([^,]*\),.*/\1/p')"
@@ -512,25 +503,22 @@ create_or_reuse_local_keystore() {
   echo "  - Created local ${wallet_name} keystore at ${target_path}"
 }
 
-prepare_local_keystores_if_needed() {
+prepare_local_keystores() {
   local op_num="$1"
-
-  if [[ "${ENVIRONMENT}" != "local" ]]; then
-    return 0
-  fi
+  local key_store_password="$2"
 
   echo "- Preparing local cargo-mode keystores for op_${op_num}:"
-  create_or_reuse_local_keystore "${op_num}" "member"
-  create_or_reuse_local_keystore "${op_num}" "user"
+  create_or_reuse_local_keystore "${op_num}" "member" "${key_store_password}"
+  create_or_reuse_local_keystore "${op_num}" "user" "${key_store_password}"
 }
 
 prepare_operator_bitvmx_config() {
   local op_num="$1"
+  local key_store_password="$2"
   local template_dir
   local target_dir
   local cfg_file
   local coordinator_pubkey_hash
-  local client_op
   local target_keys_dir
   local config_action
   local -a referenced_key_files=()
@@ -539,7 +527,6 @@ prepare_operator_bitvmx_config() {
   target_dir="$(operator_bitvmx_root_path "${op_num}")"
   cfg_file="$(operator_bitvmx_yaml_path "${op_num}")"
   coordinator_pubkey_hash="$(read_broker_pubkey_hash "coordinator" "${op_num}")"
-  client_op="$(operator_client_op "${op_num}")"
   target_keys_dir="$(operator_bitvmx_keys_dir "${op_num}")"
 
   if [[ -d "${target_dir}" ]]; then
@@ -552,32 +539,25 @@ prepare_operator_bitvmx_config() {
 
   prune_extra_bitvmx_operator_yaml_files "${target_dir}" "${cfg_file}"
 
-  mapfile -t referenced_key_files < <(grep -Eo 'config/keys/[^[:space:]]+' "${cfg_file}" | sed 's#config/keys/##' | sort -u)
+  referenced_key_files=()
+  while IFS= read -r key_file; do
+    referenced_key_files+=("${key_file}")
+  done < <(grep -Eo 'config/keys/[^[:space:]]+' "${cfg_file}" | sed 's#config/keys/##' | sort -u)
   generate_operator_bitvmx_keys "${target_keys_dir}" "${referenced_key_files[@]}"
   write_operator_bitvmx_pubkey_hash_files "${target_keys_dir}"
   patch_operator_bitvmx_identity_hashes "${cfg_file}" "${coordinator_pubkey_hash}" "${target_keys_dir}"
+  patch_bitvmx_key_storage_password "${cfg_file}" "${key_store_password}"
+  patch_bitvmx_bitcoin_url "${cfg_file}" "${BITCOIND_URL}"
 
   rm -rf "${target_dir}/broker"
 
-  echo "- ${config_action} BitVMX config for ${client_op} at ${cfg_file} (coordinator pubkey_hash: ${coordinator_pubkey_hash})"
+  echo "- ${config_action} BitVMX config for op_${op_num} at ${cfg_file} (coordinator pubkey_hash: ${coordinator_pubkey_hash})"
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --help)
       print_help
-      ;;
-    --env)
-      ENVIRONMENT="$2"
-      shift 2
-      ;;
-    --op)
-      OPERATOR_ARG="$2"
-      if ! [[ "${OPERATOR_ARG}" =~ ^(10|[1-9])$ ]]; then
-        echo "Error: --op must be between 1 and 10"
-        exit 1
-      fi
-      shift 2
       ;;
     --ops)
       NUM_OPERATORS="$2"
@@ -595,64 +575,41 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "${ENVIRONMENT}" ]]; then
-  prompt_environment
-fi
-
-if [[ "${ENVIRONMENT}" == "local-docker" ]]; then
-  ENVIRONMENT="local"
-fi
-
 ensure_dependencies
-prepare_local_keystore_password
+check_bitcoind_url
 
-case "${ENVIRONMENT}" in
-  local|regtest)
-    if [[ -n "${OPERATOR_ARG}" ]]; then
-      echo "Error: --op is not allowed for ${ENVIRONMENT}. Use --ops instead."
-      exit 1
-    fi
-    if [[ -z "${NUM_OPERATORS}" ]]; then
-      prompt_num_operators
-    fi
-    mapfile -t OPERATORS_TO_RUN < <(seq 1 "${NUM_OPERATORS}")
-    ;;
-  alphanet|testnet)
-    if [[ -n "${NUM_OPERATORS}" ]]; then
-      echo "Error: --ops is not allowed for ${ENVIRONMENT}. Use --op instead."
-      exit 1
-    fi
-    if [[ -z "${OPERATOR_ARG}" ]]; then
-      prompt_operator_id
-    fi
-    OPERATORS_TO_RUN=("${OPERATOR_ARG}")
-    ;;
-  *)
-    echo "Error: invalid environment '${ENVIRONMENT}'."
-    exit 1
-    ;;
-esac
+if [[ -z "${NUM_OPERATORS}" ]]; then
+  prompt_num_operators
+fi
+
+OPERATORS_TO_RUN=()
+while IFS= read -r op_num; do
+  OPERATORS_TO_RUN+=("${op_num}")
+done < <(seq 1 "${NUM_OPERATORS}")
 
 for op_num in "${OPERATORS_TO_RUN[@]}"; do
-  project_name="$(project_name_for_operator "${op_num}")"
-  env_file_path="$(operator_docker_env_file_path "${op_num}")"
-  resolve_user_bitcoin_wif "${op_num}" "${project_name}" "${env_file_path}"
+  compose_env_file_path="$(operator_compose_env_file_path "${op_num}")"
+  runtime_env_file_path="$(operator_runtime_env_file_path "${op_num}")"
+  resolve_key_store_password "${op_num}" "${runtime_env_file_path}"
+  key_store_password_value="${RESOLVED_KEY_STORE_PASSWORD}"
+  resolve_user_bitcoin_wif "${op_num}" "${runtime_env_file_path}"
   user_bitcoin_wif_value="${RESOLVED_USER_BITCOIN_WIF}"
 
-  echo "=== op_${op_num} (${ENVIRONMENT}) ==="
+  echo "=== op_${op_num} ==="
   provision_operator_broker_identities "${op_num}"
-  prepare_local_keystores_if_needed "${op_num}"
+  prepare_local_keystores "${op_num}" "${key_store_password_value}"
 
-  prepare_operator_bitvmx_config "${op_num}"
+  prepare_operator_bitvmx_config "${op_num}" "${key_store_password_value}"
   bitvmx_pubkey_hash="${RESOLVED_BITVMX_BROKER_PUBKEY_HASH}"
 
-  if [[ -f "${env_file_path}" ]]; then
-    write_operator_env_file "${env_file_path}" "${op_num}" "${user_bitcoin_wif_value}" "${bitvmx_pubkey_hash}"
-    echo "- Updated operator env file ${env_file_path}"
+  if [[ -f "${compose_env_file_path}" || -f "${runtime_env_file_path}" ]]; then
+    env_file_action="Updated"
   else
-    write_operator_env_file "${env_file_path}" "${op_num}" "${user_bitcoin_wif_value}" "${bitvmx_pubkey_hash}"
-    echo "- Created operator env file ${env_file_path}"
+    env_file_action="Created"
   fi
+  write_operator_compose_env_file "${compose_env_file_path}" "${op_num}"
+  write_operator_runtime_env_file "${runtime_env_file_path}" "${op_num}" "${user_bitcoin_wif_value}" "${key_store_password_value}" "${bitvmx_pubkey_hash}"
+  echo "- ${env_file_action} operator env files ${compose_env_file_path} and ${runtime_env_file_path}"
 
   echo ""
 done

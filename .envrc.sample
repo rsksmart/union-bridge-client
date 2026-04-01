@@ -1,8 +1,9 @@
 ############################################################
 # Local Github Actions (Act)
 ############################################################
-export FAIRGATE_GITHUB_TOKEN="<ask_your_colleagues>"
-export UNION_CONTRACTS_GITHUB_TOKEN="<ask_your_colleagues>"
+# Optional: only needed if you want to reproduce CI or Docker builds over HTTPS
+# for the private contracts dependency.
+export UNION_CONTRACTS_GITHUB_TOKEN="<your_contracts_github_token>"
 
 ############################################################
 # For GitHub Container Registry
@@ -24,13 +25,15 @@ export CHECK_FORK_REQUIRED_NUM_BLOCKS=5
 # Deployment and Operations (Multi-host environments)
 ############################################################
 # Default environment for start_operators.sh and cli-operations.sh
-# Options: local, local-docker, regtest, alphanet, testnet (for start_operators.sh)
-#          local, local-docker, alphanet, testnet (for cli-operations.sh)
+# Options: local, docker, or a remote profile name such as alphanet
 # export UC_ENV="local"
 # Deployment variables (can be overridden via command-line flags)
 # export UC_TAG="latest-anvil"
 # export UC_OPERATOR_ID=1
 # export UC_OPERATOR_ROLE="prover"
+#
+# Remote CLI profiles use cli/.env.<profile>.
+# Copy cli/.env.sample to cli/.env.alphanet, cli/.env.testnet, etc.
 
 ############################################################
 # Bitcoin
@@ -40,3 +43,5 @@ export USER_BITCOIN_WIF="<user_wif_private_key>"
 # Member/Operator WIF for BitVMX operations
 export MEMBER_BITCOIN_WIF="<member_wif_private_key>"
 export BITCOIN_NETWORK=regtest
+# Bitcoind url
+export BITCOIND_URL="<to_set_in_local>"

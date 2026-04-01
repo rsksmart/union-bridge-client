@@ -1,5 +1,8 @@
 # Key Manager
 
+For repository-level setup and workflow context, start with [../README.md](../README.md) and
+[../CONTRIBUTING.md](../CONTRIBUTING.md). This README only covers the crate-specific commands below.
+
 To generate a key pair, please run:
 
 ```

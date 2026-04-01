@@ -20,8 +20,8 @@ This workflow triggers E2E smoke tests in `union_bridge_e2e_framework`.
 
 ## Setup
 
-1. **union-bridge-client:** Secret `E2E_FRAMEWORK_GITHUB_TOKEN` (PAT with `repo` + `workflow`, access to `union_bridge_e2e_framework`). Needed to trigger the e2e workflow (else 404). Already set by QA team.
+1. **union-bridge-client:** Secret `E2E_FRAMEWORK_GITHUB_TOKEN` (PAT with `repo` + `workflow`, access to `union_bridge_e2e_framework`). Needed to trigger the e2e workflow (else 404). Configure it in repository settings.
 2. **union-bridge-client:** Branch protection for `main` → require status check `e2e-smoke-tests` (optional until enforced).
-3. **union_bridge_e2e_framework:** Secrets `TOKEN_CONTRACTS`, `TOKEN_FAIRGATE`, `USER_BITCOIN_WIF`, `MEMBER_BITCOIN_WIF`. Optional: `GHCR_USERNAME` if PAT owner differs from `github.actor`.
+3. **union_bridge_e2e_framework:** Secrets `TOKEN_CONTRACTS`, `USER_BITCOIN_WIF`, `MEMBER_BITCOIN_WIF`. `TOKEN_CONTRACTS` is the PAT for the private `temp-rsk/bitvmx-union-bridge-contracts` dependency used by this workspace. Optional: `GHCR_USERNAME` if PAT owner differs from `github.actor`.
 
 Full guide (client + e2e secrets, tokens, multi-arch contracts image): [union_bridge_e2e_framework/.github/workflows/E2E-SMOKE-TESTS.md](https://github.com/rsksmart/union_bridge_e2e_framework/blob/main/.github/workflows/E2E-SMOKE-TESTS.md).

@@ -1,8 +1,11 @@
 #############################
-# MANY OP PER HOST OVERRIDE
+# SINGLE-OP PER HOST OVERRIDE
 #############################
 
 services:
   bitvmx-client:
-    # One operator per host, needs network_mode host due to how bitvmx-client binds broker host
+    # One operator per host, needs network_mode host due to how bitvmx-client binds broker host.
+    # This mode expects host-network-ready BitVMX artifacts prepared externally.
+    # It is not compatible with the default local-generated BitVMX configs, which use
+    # docker-network comms addresses such as 172.20.0.x.
     network_mode: host

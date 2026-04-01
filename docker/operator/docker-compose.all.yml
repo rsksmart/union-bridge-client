@@ -1,13 +1,13 @@
-############################
-# ONE OP PER HOST OVERRIDE
-############################
+#############################
+# LOCAL MULTI-OP OVERRIDE
+#############################
 
 services:
   bitvmx-client:
     networks:
       # so each op coordinator can access bitvmx-client via service name
       union-network:
-      # for bitvmx p2p communication between operators (only needed in local with all 4 operators)
+      # for bitvmx p2p communication between local operators
       bitvmx-shared-network:
         ipv4_address: ${BITVMX_P2P_HOST}
 
@@ -21,4 +21,3 @@ networks:
     ipam:
       config:
         - subnet: 172.20.0.0/16
-
