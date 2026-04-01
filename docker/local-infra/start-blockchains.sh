@@ -178,6 +178,16 @@ if [[ "${FRESH}" == true ]]; then
   eval "$cmd"
 fi
 
+# Force a no-cache rebuild when using a local contracts source on a fresh startup.
+# Otherwise Docker may reuse cached layers and deploy stale contract artifacts.
+if [[ "${FRESH}" == true && "${IS_UP_COMMAND}" == true && "${CONTRACTS_IMAGE_TAG}" == "${CONTRACTS_TAG_LOCAL_BUILD}" ]]; then
+  echo "Rebuilding deploy-contracts image (no cache) so it picks up current contract sources..."
+  if ! docker compose -p blockchains --env-file "$ENV_PATH" -f "$COMPOSE_FILE" build --no-cache deploy-contracts; then
+    echo "Error: Failed to build deploy-contracts image."
+    exit 1
+  fi
+fi
+
 BITCOIND_CONTAINER="bitcoind"
 RUNNING_COUNT=$(docker compose -p blockchains --env-file "$ENV_PATH" -f "$COMPOSE_FILE" --profile local ps --status running -q ${BITCOIND_CONTAINER} anvil | wc -l | tr -d ' ')
 
