@@ -16,7 +16,7 @@ use log::{debug, error, info};
 use transaction_dispatcher::config::Config as TxDispatcherConfig;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
-const ENV_CLI_FLAG: &str = "env";
+const CONFIG_CLI_FLAG: &str = "config";
 
 fn create_broker(
     host: String,
@@ -48,30 +48,31 @@ fn parse_cli_args() -> Option<String> {
                 .help("Sets the path to the log4rs configuration file"),
         )
         .arg(
-            Arg::new(ENV_CLI_FLAG)
+            Arg::new(CONFIG_CLI_FLAG)
                 .short('e')
-                .long(ENV_CLI_FLAG)
-                .value_name("ENV")
-                .help("Environment name (e.g., local, docker, alphanet)"),
+                .long(CONFIG_CLI_FLAG)
+                .value_name("CONFIG")
+                .help("Configuration profile name (e.g., local, docker, alphanet)"),
         )
         .get_matches();
     Logger::init(matches.get_one::<String>(LOGGER_CLI_FLAG)).expect("Failed to load logger");
-    matches.get_one::<String>(ENV_CLI_FLAG).cloned()
+    matches.get_one::<String>(CONFIG_CLI_FLAG).cloned()
 }
 
 fn main() -> Result<()> {
-    let env_name = parse_cli_args();
+    let config_name = parse_cli_args();
 
     info!(
-        "Loading configuration for environment: {}. Env vars with prefix UB__ will override config values",
-        env_name.clone().unwrap_or_else(|| "NONE".to_string())
+        "Loading configuration profile: {}. Env vars with prefix UB__ will override config values",
+        config_name.clone().unwrap_or_else(|| "NONE".to_string())
     );
 
-    let config: Config = Config::load(env_name.as_deref()).expect("Failed to load config");
+    let config: Config = Config::load(config_name.as_deref()).expect("Failed to load config");
+    info!("Loaded runtime environment: {}", config.environment);
 
     let bitcoin_network = CommonConfig::parse_bitcoin_network(&config.bitcoin_network)?;
 
-    let tx_dispatcher_config: TxDispatcherConfig = TxDispatcherConfig::load(env_name.clone())
+    let tx_dispatcher_config: TxDispatcherConfig = TxDispatcherConfig::load(config_name.clone())
         .expect("Failed to load transaction dispatcher config");
 
     let contract_addresses = config.get_contract_addresses();
@@ -163,7 +164,7 @@ fn main() -> Result<()> {
         store,
         shutdown_flag.clone(),
         bitcoin_network,
-        env_name.as_deref(),
+        &config.environment,
         &config.bridge,
     );
     coordinator.run().inspect_err(|e| {

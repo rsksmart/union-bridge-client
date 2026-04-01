@@ -74,8 +74,8 @@ where
     native_bridge_verifier: NativeBridgeVerifier<CG>,
     config: PegoutConfig,
     required_confirmations: u32,
-    // Environment name for force flags (only active in local environments)
-    env_name: Option<String>,
+    // Runtime environment for force flags (only active when config.environment is local)
+    environment: Option<String>,
 }
 
 impl<CG, BC, S>
@@ -101,7 +101,7 @@ where
         native_bridge_verifier: NativeBridgeVerifier<CG>,
         config: PegoutConfig,
         required_confirmations: u32,
-        env_name: Option<&str>,
+        environment: Option<&str>,
     ) -> Self {
         let factory = BtcSignatureSubFlowFactory::new(
             contracts_gateway.clone(),
@@ -127,7 +127,7 @@ where
             native_bridge_verifier,
             config,
             required_confirmations,
-            env_name: env_name.map(String::from),
+            environment: environment.map(String::from),
         }
     }
 
@@ -141,7 +141,7 @@ where
         native_bridge_verifier: NativeBridgeVerifier<CG>,
         config: PegoutConfig,
         required_confirmations: u32,
-        env_name: Option<&str>,
+        environment: Option<&str>,
     ) -> Result<Self> {
         let mut processor = Self::new(
             contracts_gateway,
@@ -152,7 +152,7 @@ where
             native_bridge_verifier,
             config,
             required_confirmations,
-            env_name,
+            environment,
         );
 
         let flow_factory = |saved_state: State| {
@@ -675,7 +675,7 @@ where
                 // skip the signature sub-flow so signatures never complete and the
                 // advance funds timeout triggers naturally.
                 let skip_signatures =
-                    crate::force_flags::get_force_advance_address(self.env_name.as_deref())
+                    crate::force_flags::get_force_advance_address(self.environment.as_deref())
                         .is_some_and(|force_addr| {
                             let my_addr = self.contracts_gateway.my_address();
                             let matches = format!("{my_addr}").to_lowercase()

@@ -34,7 +34,7 @@ Key files:
 
 - `docker-compose.yml`: base BitVMX client service definition
 - `config/local/`: tracked local BitVMX config template
-- `check_bitvmx_updates.sh`: compares the tracked compose file with upstream
+- `check-bitvmx-updates.sh`: compares the tracked compose file with upstream
 
 ### `operator/`
 
@@ -54,16 +54,16 @@ This directory owns image builds, builder images, GHCR pulls, and pushes.
 
 The Docker setup uses two kinds of environment files:
 
-- tracked static environment file: [`docker/operator/.env.local`](operator/.env.local)
+- tracked static environment file: [`docker/operator/docker-deploy.env`](operator/docker-deploy.env)
 - optional external environment file passed to `start-operators.sh --env-file <path>`
-- generated per-operator runtime files under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`, created by
+- generated per-operator files under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/{docker-compose.env,docker-service.env}`, created by
   `<project_root>/cli-setup-operators.sh`
 
-The selected env file chooses the operator compose override through `OP_MODE=all|one`.
-`OP_MODE=one` is the single-operator host-network variant and requires `NUM_OPERATORS=1`.
+The operator compose override is derived from the effective operator count.
+`--op <ID>` or `NUM_OPERATORS=1` selects the single-operator host-network variant; `NUM_OPERATORS=2-10` selects the shared multi-operator variant.
 
-`docker.env` is only consumed by local Docker operator runs (`start-operators.sh` / docker compose).
-Local cargo mode (`./cli-run.sh`) does not read this file.
+`docker-compose.env` and `docker-service.env` are only consumed by local Docker operator runs (`start-operators.sh` / docker compose).
+Local cargo mode (`./cli-run.sh`) does not read those files.
 
 ## Troubleshooting
 

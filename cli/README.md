@@ -147,7 +147,7 @@ The CLI workspace is independent from the main Union Bridge workspace, allowing 
 ```
 
 `cli-setup-operators.sh` creates the local keystores consumed by `./cli-run.sh`.
-Docker operator mode uses `docker.env` and container keystore paths instead of these cargo-mode keystore files.
+Docker operator mode uses `docker-compose.env` / `docker-service.env` and container keystore paths instead of these cargo-mode keystore files.
 
 ## Docker Integration
 

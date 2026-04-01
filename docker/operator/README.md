@@ -16,7 +16,7 @@ In the examples below, `<project_root>` means the root of this repository checko
 This repo owns:
 
 - local multi-operator Docker runtime
-- env-file driven operator startup with selectable compose overrides
+- env-file driven operator startup with the compose override derived from operator count
 - generated runtime artifacts under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/`
 - local `start-operators.sh` usage
 - local funding, logs, and troubleshooting
@@ -33,7 +33,7 @@ export USER_BITCOIN_WIF=<your-user-wif>
 
 `BITCOIND_URL` is patched into the generated BitVMX operator YAMLs.
 `KEY_STORE_PASSWORD` and `USER_BITCOIN_WIF` are stored in each generated
-`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`.
+`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-service.env`.
 
 ## 1. Prepare Local Operator Artifacts
 
@@ -49,7 +49,8 @@ This creates or refreshes:
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/<service>.pem`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/<service>.pubkey_hash`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/...`
-- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-compose.env`
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-service.env`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/keystore/{member,user}`
 
 The setup script still patches the generated local BitVMX YAMLs with the current `BITCOIND_URL`, key-store password,
@@ -69,11 +70,11 @@ Or run the lower-level scripts directly:
 
 ```bash
 cd docker/local-infra
-./start_blockchains.sh --fresh up -d
+./start-blockchains.sh --fresh up -d
 cd ../..
 ./cli-setup-operators.sh --ops 4
 cd docker/local-infra
-./start_bitvmx.sh --fresh up -d
+./start-bitvmx.sh --fresh up -d
 ```
 
 ## 3. Start or Stop Operators
@@ -86,14 +87,17 @@ cd docker/operator
 # Start 4 operators
 bash start-operators.sh up -d
 
+# Start only the prepared operator under ~/.union_bridge/op_3
+bash start-operators.sh --op 3 up -d
+
 # Start a different count
 bash start-operators.sh --ops 6 up -d
 
 # Clean and start again
 bash start-operators.sh --fresh up -d
 
-# Start a single operator using an external env file
-bash start-operators.sh --env-file /path/to/.env.alphanet up -d
+# Start a single operator using an external deploy env file
+bash start-operators.sh --env-file /path/to/docker-deploy.env up -d
 
 # Logs / status / stop
 bash start-operators.sh logs -f
@@ -101,21 +105,32 @@ bash start-operators.sh ps
 bash start-operators.sh down
 ```
 
-The selected env file chooses the compose shape through `OP_MODE`:
+The compose shape is derived from the effective operator count:
 
-- `OP_MODE=all`: `docker-compose.all.yml`
-- `OP_MODE=one`: `docker-compose.one.yml` and requires `NUM_OPERATORS=1`
+- `--op <ID>`: `docker-compose.one.yml`
+- `NUM_OPERATORS=1`: `docker-compose.one.yml`
+- `NUM_OPERATORS=2-10`: `docker-compose.all.yml`
 
 ## Environment Files
 
 The Docker runtime uses:
 
-- tracked static environment file: [`docker/operator/.env.local`](.env.local)
+- tracked static environment file: [`docker/operator/docker-deploy.env`](docker-deploy.env)
 - optional external environment file passed with `--env-file`
-- generated per-operator runtime files: `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`
+- generated per-operator files:
+  `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-compose.env`
+  `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-service.env`
 
-`docker.env` is consumed only by Docker operator runs.
-Local cargo mode (`./cli-run.sh`) does not read that file.
+`docker-deploy.env` can also override shared deployment paths such as `CONFIG_DIR` and
+`RESOURCES_DIR`. When unset, Docker falls back to the public repo copies under `../../config`
+and `../../resources`.
+
+`--op <ID>` selects which staged operator payload under
+`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_<ID>/` should be used. This is the
+intended path for one-operator-per-host deployments.
+
+`docker-compose.env` and `docker-service.env` are consumed only by Docker operator runs.
+Local cargo mode (`./cli-run.sh`) does not read those files.
 
 ## BitVMX Template Checks
 
@@ -124,15 +139,15 @@ If you need to compare it with upstream:
 
 ```bash
 cd ../bitvmx-client
-./check_bitvmx_updates.sh
-./check_bitvmx_updates.sh -r <branch-or-tag>
+./check-bitvmx-updates.sh
+./check-bitvmx-updates.sh -r <branch-or-tag>
 ```
 
 ## Troubleshooting
 
 ### Missing operator env file
 
-If `start-operators.sh` reports a missing `docker.env`, prepare the operator artifacts under
+If `start-operators.sh` reports a missing `docker-compose.env` or `docker-service.env`, prepare the operator artifacts under
 `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/` and then rerun. For local bootstrap:
 
 ```bash

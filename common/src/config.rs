@@ -16,11 +16,12 @@ use crate::types::{BlockHash, RskBlock};
 const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 // todo(fede) replace the /new folder with the final folder
 const BASE_CONFIG_PATH: &str = "config/base";
-const ENV_CONFIG_PATH: &str = "config/environment";
+const CONFIG_DIR_PATH: &str = "config";
 const EXTENSION_TYPE: &str = "toml";
 
 #[derive(Debug, Deserialize)]
 pub struct CommonConfig {
+    pub environment: String,
     pub indexer: IndexerConfig,
     pub provider: ProviderConfig,
     pub contracts: Vec<ContractConfig>,
@@ -152,12 +153,12 @@ impl CommonConfig {
     /// # Errors
     ///
     /// Returns an error if the config file cannot be read or parsed.
-    pub fn load_config<T: DeserializeOwned>(env: Option<String>) -> Result<T, ConfigError> {
-        let env = env.unwrap_or_default();
-        let (base_config_path, env_config_path) = Self::config_path_for(&env)?;
+    pub fn load_config<T: DeserializeOwned>(config_name: Option<String>) -> Result<T, ConfigError> {
+        let config_name = config_name.unwrap_or_default();
+        let (base_config_path, config_profile_path) = Self::config_path_for(&config_name)?;
 
         trace!(
-            "Loading config: base.toml -> environment/{env}.toml -> environment variables with prefix UB__"
+            "Loading config: base.toml -> {config_name}.toml -> environment variables with prefix UB__"
         );
 
         // load base config file with placeholder replacement
@@ -165,11 +166,17 @@ impl CommonConfig {
         let mut builder = config::Config::builder()
             .add_source(config::File::from_str(&base_config, config::FileFormat::Toml));
 
+        if !config_name.is_empty() && !Path::new(&config_profile_path).exists() {
+            return Err(ConfigError::ConfigEnvError(format!(
+                "Missing config profile '{config_name}' at {config_profile_path}"
+            )));
+        }
+
         // add environment-specific config if it exists
-        if Path::new(&env_config_path).exists() {
-            let env_config = Self::read_and_process_config(&env_config_path)?;
-            builder =
-                builder.add_source(config::File::from_str(&env_config, config::FileFormat::Toml));
+        if Path::new(&config_profile_path).exists() {
+            let config_profile = Self::read_and_process_config(&config_profile_path)?;
+            builder = builder
+                .add_source(config::File::from_str(&config_profile, config::FileFormat::Toml));
         }
 
         // add environment variables and deserialize
@@ -205,21 +212,23 @@ impl CommonConfig {
         config_str
     }
 
-    fn config_path_for(env_name: &str) -> Result<(String, String), ConfigError> {
-        if env_name.is_empty() {
-            trace!("Empty environment name");
+    fn config_path_for(config_name: &str) -> Result<(String, String), ConfigError> {
+        if config_name.is_empty() {
+            trace!("Empty config name");
         }
 
-        if env_name.contains("..") || env_name.contains('/') || env_name.contains('\\') {
-            Err("{env_name}").map_err(|e| ConfigError::ConfigEnvError(e.to_string()))?;
+        if config_name.contains("..") || config_name.contains('/') || config_name.contains('\\') {
+            return Err(ConfigError::ConfigEnvError(format!(
+                "Invalid configuration profile name: '{config_name}'. Profile names must not contain '..', '/', or '\\\\'."
+            )));
         }
 
         let project_root = Self::project_root();
-        let env_config = format!("{ENV_CONFIG_PATH}/{env_name}.{EXTENSION_TYPE}");
+        let config_profile = format!("{CONFIG_DIR_PATH}/{config_name}.{EXTENSION_TYPE}");
 
         Ok((
             format!("{project_root}/{BASE_CONFIG_PATH}.{EXTENSION_TYPE}"),
-            format!("{project_root}/{env_config}"),
+            format!("{project_root}/{config_profile}"),
         ))
     }
 
@@ -419,5 +428,22 @@ mod tests {
         assert_eq!("mainnet", config.bitcoin_network); // UB__ override
 
         cleanup_env_vars();
+    }
+
+    #[test]
+    fn test_explicit_missing_config_profile_errors() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+
+        let err = CommonConfig::load_config::<CommonConfig>(Some("alphanet".to_string()))
+            .expect_err("missing explicit config profile should fail");
+
+        match err {
+            ConfigError::ConfigEnvError(message) => {
+                assert!(message.contains("Missing config profile 'alphanet'"));
+            }
+            other @ ConfigError::ConfigFileError(_) => {
+                panic!("unexpected error variant: {other:?}");
+            }
+        }
     }
 }

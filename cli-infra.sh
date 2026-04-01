@@ -162,20 +162,20 @@ start_blockchains() {
             fi
         fi
     done
-    docker/local-infra/start_blockchains.sh "$@" up -d
+    docker/local-infra/start-blockchains.sh "$@" up -d
 }
 
 stop_blockchains() {
-    docker/local-infra/start_blockchains.sh down
+    docker/local-infra/start-blockchains.sh down
 }
 
 start_bitvmx() {
     shift
-    docker/local-infra/start_bitvmx.sh "$@" up -d
+    docker/local-infra/start-bitvmx.sh "$@" up -d
 }
 
 stop_bitvmx() {
-    docker/local-infra/start_bitvmx.sh down
+    docker/local-infra/start-bitvmx.sh down
 }
 
 start_all() {
@@ -204,8 +204,8 @@ start_all() {
                 ;;
         esac
     done
-    docker/local-infra/start_blockchains.sh "${BLOCKCHAINS_OPTS[@]}" up -d
-    docker/local-infra/start_bitvmx.sh "${BITVMX_OPTS[@]}" up -d
+    docker/local-infra/start-blockchains.sh "${BLOCKCHAINS_OPTS[@]}" up -d
+    docker/local-infra/start-bitvmx.sh "${BITVMX_OPTS[@]}" up -d
 
     log "Starting mining..."
     start_mining
@@ -216,8 +216,8 @@ stop_all() {
     stop_mining
 
     log "Stopping docker infrastructure..."
-    docker/local-infra/start_bitvmx.sh down
-    docker/local-infra/start_blockchains.sh down
+    docker/local-infra/start-bitvmx.sh down
+    docker/local-infra/start-blockchains.sh down
 }
 
 case "${1:-}" in

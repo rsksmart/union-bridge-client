@@ -37,7 +37,7 @@ usage() {
     echo "Usage: $0 [--env <local|docker>] [--ops <1-10>]"
     echo ""
     echo "  --env    Environment: local or docker (default: from UC_ENV or local)"
-    echo "  --ops    Number of operators (1-10, default: from .env.local or 4)"
+    echo "  --ops    Number of operators (1-10, default: from docker-deploy.env or 4)"
     exit 1
 }
 
@@ -78,12 +78,12 @@ fi
 # change to project root (parent of tests directory)
 cd "$(dirname "$0")/.."
 
-# Load NUM_OPERATORS: --ops flag > .env.local > default (4)
+# Load NUM_OPERATORS: --ops flag > docker-deploy.env > default (4)
 if [[ -n "$OPS_FROM_FLAG" ]]; then
     NUM_OPERATORS="$OPS_FROM_FLAG"
 else
     NUM_OPERATORS=4
-    _env_local="docker/operator/.env.local"
+    _env_local="docker/operator/docker-deploy.env"
     if [[ -f "$_env_local" ]]; then
         _num=$(grep -E '^\s*NUM_OPERATORS=' "$_env_local" | tail -1 | cut -d= -f2 | tr -d ' "'\''')
         if [[ -n "$_num" ]] && [[ "$_num" =~ ^[0-9]+$ ]] && [[ "$_num" -ge 1 ]] && [[ "$_num" -le 10 ]]; then

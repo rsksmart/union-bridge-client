@@ -11,7 +11,7 @@ Local development dependencies. Use this when running Union Client locally with 
 ## `cli-infra.sh`
 
 If you want the simplest local entry point, use `./cli-infra.sh` from the repository root. It wraps the
-`start_blockchains.sh`, `start_bitvmx.sh`, and mining flows.
+`start-blockchains.sh`, `start-bitvmx.sh`, and mining flows.
 
 ```text
 # Start all docker infra (blockchains + bitvmx) + mining
@@ -44,12 +44,12 @@ Docker.
 
 ## Scripts
 
-- `start_blockchains.sh` - Starts bitcoind (regtest) + anvil + deploys contracts
-- `start_bitvmx.sh` - Starts 4 BitVMX client instances
+- `start-blockchains.sh` - Starts bitcoind (regtest) + anvil + deploys contracts
+- `start-bitvmx.sh` - Starts 4 BitVMX client instances
 
 ## Contracts Version
 
-By default, `start_blockchains.sh` uses the contracts version from `Cargo.toml` (pulls from registry; if the image
+By default, `start-blockchains.sh` uses the contracts version from `Cargo.toml` (pulls from registry; if the image
 digest changed, runs a fresh deploy automatically). Override with `--contracts-tag local-build` to build from a local
 contracts checkout (no digest-based auto-fresh; use `--fresh` when local contracts change).
 
@@ -59,7 +59,7 @@ contracts checkout (no digest-based auto-fresh; use `--fresh` when local contrac
 cd docker/local-infra
 
 # Start blockchains (first time or fresh start)
-./start_blockchains.sh --fresh up -d
+./start-blockchains.sh --fresh up -d
 
 # Generate local per-operator BitVMX config under ~/.union_bridge/op_N/bitvmx
 cd ../..
@@ -67,7 +67,7 @@ cd ../..
 
 # Start 4 BitVMX clients
 cd docker/local-infra
-./start_bitvmx.sh --fresh up -d
+./start-bitvmx.sh --fresh up -d
 
 # Then run Union Client locally with cargo (from project root)
 cd ../..
@@ -85,20 +85,20 @@ cd ../..
 
 ```bash
 # Check status
-./start_blockchains.sh ps
-./start_bitvmx.sh ps
+./start-blockchains.sh ps
+./start-bitvmx.sh ps
 
 # View logs
-./start_blockchains.sh logs -f
-./start_bitvmx.sh logs -f
+./start-blockchains.sh logs -f
+./start-bitvmx.sh logs -f
 
 # Stop
-./start_blockchains.sh down
-./start_bitvmx.sh down
+./start-blockchains.sh down
+./start-bitvmx.sh down
 
 # Stop and remove volumes (clean state)
-./start_blockchains.sh down --volumes
-./start_bitvmx.sh down --volumes
+./start-blockchains.sh down --volumes
+./start-bitvmx.sh down --volumes
 ```
 
 ## Troubleshooting
@@ -121,8 +121,8 @@ This usually means BitVMX database is out of sync with Bitcoin. Run a fresh star
 
 ```bash
 cd docker/local-infra
-./start_blockchains.sh --fresh up -d
-./start_bitvmx.sh --fresh up -d
+./start-blockchains.sh --fresh up -d
+./start-bitvmx.sh --fresh up -d
 ```
 
 ### Container won't start
