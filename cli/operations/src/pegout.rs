@@ -32,7 +32,7 @@ pub async fn request_pegout(
     validate_usr_pub_key(&usr_pub_key)?;
     let amount_in_wei = sats_to_wei(value);
 
-    let rsk_address = get_user_rsk_address(environment, true)?
+    let rsk_address = get_user_rsk_address(&environment, true)?
         .unwrap_or_else(|| "<unknown - check user-api logs>".to_string());
 
     println!("Requesting pegout: {} sats ({} wei)", value, amount_in_wei);
@@ -40,7 +40,7 @@ pub async fn request_pegout(
     println!("  Destination: Bitcoin (public key: {})", usr_pub_key);
 
     let user_api_base = environment
-        .user_api_endpoints()
+        .user_api_endpoints()?
         .first()
         .expect("No user-api endpoints configured; please review your config")
         .to_string();

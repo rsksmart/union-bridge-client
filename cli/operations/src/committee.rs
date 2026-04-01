@@ -74,10 +74,10 @@ pub async fn run_committee_setup(
 ) -> Result<()> {
     let client = Client::new();
 
-    let endpoints = environment.user_api_endpoints();
+    let endpoints = environment.user_api_endpoints()?;
 
     match environment {
-        Environment::Local | Environment::LocalDocker => {
+        Environment::Local | Environment::Docker => {
             if role.is_some() {
                 eprintln!("Warning: --role is ignored in local environment");
             }
@@ -86,20 +86,20 @@ pub async fn run_committee_setup(
                 let role =
                     if idx % 2 == 0 { CommitteeRole::Prover } else { CommitteeRole::Verifier };
 
-                post_apply(&client, stream_id, endpoint, role, environment).await?;
+                post_apply(&client, stream_id, endpoint, role, &environment).await?;
 
-                if idx + 1 != environment.user_api_endpoints().len() {
+                if idx + 1 != endpoints.len() {
                     sleep(Duration::from_secs(2)).await;
                 }
             }
 
             println!(
                 "Done. Applied {} operators to stream {} (2 Provers, 2 Verifiers)",
-                environment.user_api_endpoints().len(),
+                endpoints.len(),
                 stream_id
             );
         }
-        Environment::Alphanet | Environment::Testnet | Environment::Regtest => {
+        Environment::Remote(_) => {
             let role = role.ok_or_else(|| {
                 anyhow!("--role is required when using --env {}", environment.get_name())
             })?;
@@ -114,7 +114,7 @@ pub async fn run_committee_setup(
                 .get((op_id - 1) as usize)
                 .ok_or_else(|| anyhow!("Invalid operator-id {}", op_id))?;
 
-            post_apply(&client, stream_id, endpoint, role, environment).await?;
+            post_apply(&client, stream_id, endpoint, role, &environment).await?;
 
             println!("Done. Applied operator {} to stream {} as {}", op_id, stream_id, role);
         }
@@ -128,7 +128,7 @@ async fn post_apply(
     stream_id: u64,
     endpoint: &str,
     role: CommitteeRole,
-    environment: Environment,
+    environment: &Environment,
 ) -> Result<()> {
     let payload = ApplyStreamRequest {
         apply_to_stream: ApplyToStream {

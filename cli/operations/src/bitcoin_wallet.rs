@@ -5,7 +5,7 @@ use std::process::Command;
 use std::time::Duration;
 use tokio::time::sleep;
 
-use crate::constants::{operator_ids, ONE_OPERATOR_COMPOSE_PROJECT, REMOTE_SSH_USER};
+use crate::constants::{operator_ids, ONE_OPERATOR_COMPOSE_PROJECT};
 use crate::environments::*;
 use crate::utils::command_to_string;
 
@@ -17,15 +17,13 @@ pub async fn handle_bitcoin_funding(
     amount: u64,
 ) -> Result<()> {
     if execute && environment.is_remote() {
-        bail!("--execute flag is only supported for local environments (local/local-docker). For remote environments, please run the wallet commands manually.");
+        bail!("--execute flag is only supported for local environments (`local`/`docker`). For remote environments, please run the wallet commands manually.");
     }
 
-    let addresses = match environment {
+    let addresses = match &environment {
         Environment::Local => collect_local_addresses().await?,
-        Environment::LocalDocker => collect_local_docker_addresses().await?,
-        Environment::Alphanet | Environment::Testnet | Environment::Regtest => {
-            collect_remote_addresses(environment).await?
-        }
+        Environment::Docker => collect_local_docker_addresses().await?,
+        Environment::Remote(_) => collect_remote_addresses(&environment).await?,
     };
 
     if addresses.is_empty() {
@@ -39,14 +37,14 @@ pub async fn handle_bitcoin_funding(
         println!();
         execute_wallet_command(&addresses, amount)?;
     } else {
-        print_instructions(environment, &addresses, amount);
+        print_instructions(&environment, &addresses, amount);
     }
 
     Ok(())
 }
 
 async fn collect_local_addresses() -> Result<Vec<String>> {
-    request_bitvmx_address_user_api(Environment::Local).await?;
+    request_bitvmx_address_user_api(&Environment::Local).await?;
 
     let logs_dir = cargo_logs_dir()?;
     let mut addresses = Vec::new();
@@ -77,19 +75,20 @@ async fn collect_local_addresses() -> Result<Vec<String>> {
 }
 
 async fn collect_local_docker_addresses() -> Result<Vec<String>> {
-    request_bitvmx_address_user_api(Environment::LocalDocker).await?;
+    request_bitvmx_address_user_api(&Environment::Docker).await?;
 
     let projects: Vec<String> = operator_ids().iter().map(|id| format!("op_{}", id)).collect();
     collect_addresses_from_logs(projects, |project| run_docker_compose_logs(project))
 }
 
-async fn collect_remote_addresses(env: Environment) -> Result<Vec<String>> {
+async fn collect_remote_addresses(env: &Environment) -> Result<Vec<String>> {
     request_bitvmx_address_user_api(env).await?;
 
-    let hosts = env.hosts();
+    let hosts = env.hosts()?;
+    let ssh_user = env.remote_ssh_user()?;
 
     collect_addresses_from_logs(hosts, |host| {
-        let target = format!("{}@{}", REMOTE_SSH_USER, host);
+        let target = format!("{}@{}", ssh_user, host);
         run_ssh_docker_compose_logs(&target, ONE_OPERATOR_COMPOSE_PROJECT)
     })
 }
@@ -117,8 +116,8 @@ where
     Ok(addresses)
 }
 
-async fn request_bitvmx_address_user_api(environment: Environment) -> Result<()> {
-    let endpoints = environment.user_api_endpoints();
+async fn request_bitvmx_address_user_api(environment: &Environment) -> Result<()> {
+    let endpoints = environment.user_api_endpoints()?;
 
     println!("Triggering BitVMX endpoints: {} ...", endpoints.join(", "));
 
@@ -207,19 +206,19 @@ fn cargo_logs_dir() -> Result<PathBuf> {
     Ok(project_root.join("logs"))
 }
 
-fn print_instructions(env: Environment, addresses: &[String], amount: u64) {
+fn print_instructions(env: &Environment, addresses: &[String], amount: u64) {
     let joined = addresses.join(",");
     println!("Note: See the bitcoin-wallet README for how to start and use the CLI: ../cli/bitcoin-wallet/README.md\n");
 
     match env {
-        Environment::Regtest | Environment::Alphanet | Environment::Testnet => {
+        Environment::Remote(_) => {
             println!(
                 "Run the following command in your bitcoin-wallet or wallet tooling for {}:",
                 env.get_name()
             );
             println!("  send_to_address {} {}\n", joined, amount);
         }
-        Environment::LocalDocker | Environment::Local => {
+        Environment::Docker | Environment::Local => {
             println!("Run the following commands in the bitcoin-wallet CLI (Regtest):");
             println!("1 =>    clear_db   (if you see a misaligned utxos error)");
             println!("2 =>    mine_utxo 900000000");

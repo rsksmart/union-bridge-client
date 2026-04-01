@@ -1259,7 +1259,7 @@ dependencies = [
 [[package]]
 name = "bitcoin-script-riscv"
 version = "0.5.1"
-source = "git+ssh://git@github.com/FairgateLabs/BitVMX-CPU.git?tag=v0.5.11#cb7f9b9b7c8ec9be3ff56b7fcd1c5dd76ff9f08a"
+source = "git+https://github.com/FairgateLabs/BitVMX-CPU.git?tag=v0.5.11#cb7f9b9b7c8ec9be3ff56b7fcd1c5dd76ff9f08a"
 dependencies = [
  "bitcoin 0.32.6",
  "bitcoin-script",
@@ -1393,7 +1393,7 @@ dependencies = [
 [[package]]
 name = "bitvmx-broker"
 version = "0.5.1"
-source = "git+ssh://git@github.com/FairgateLabs/rust-bitvmx-broker.git?tag=v0.5.1#73189f31b3d93d42fed7c304b52df9cd37edf48d"
+source = "git+https://github.com/FairgateLabs/rust-bitvmx-broker.git?tag=v0.5.1#73189f31b3d93d42fed7c304b52df9cd37edf48d"
 dependencies = [
  "anyhow",
  "clap",
@@ -1422,7 +1422,7 @@ dependencies = [
 [[package]]
 name = "bitvmx-cpu-definitions"
 version = "0.5.1"
-source = "git+ssh://git@github.com/FairgateLabs/BitVMX-CPU.git?tag=v0.5.11#cb7f9b9b7c8ec9be3ff56b7fcd1c5dd76ff9f08a"
+source = "git+https://github.com/FairgateLabs/BitVMX-CPU.git?tag=v0.5.11#cb7f9b9b7c8ec9be3ff56b7fcd1c5dd76ff9f08a"
 dependencies = [
  "blake3",
  "config",
@@ -2372,7 +2372,7 @@ dependencies = [
 [[package]]
 name = "emulator"
 version = "0.5.1"
-source = "git+ssh://git@github.com/FairgateLabs/BitVMX-CPU.git?tag=v0.5.11#cb7f9b9b7c8ec9be3ff56b7fcd1c5dd76ff9f08a"
+source = "git+https://github.com/FairgateLabs/BitVMX-CPU.git?tag=v0.5.11#cb7f9b9b7c8ec9be3ff56b7fcd1c5dd76ff9f08a"
 dependencies = [
  "bitcoin-script-riscv",
  "bitvmx-cpu-definitions",
@@ -4980,7 +4980,7 @@ dependencies = [
 [[package]]
 name = "rust-bitvmx-storage-backend"
 version = "0.1.1"
-source = "git+ssh://git@github.com/FairgateLabs/rust-bitvmx-storage-backend.git?rev=16a01bfe316266bdac080828e260cd191fcb3cde#16a01bfe316266bdac080828e260cd191fcb3cde"
+source = "git+https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git?rev=16a01bfe316266bdac080828e260cd191fcb3cde#16a01bfe316266bdac080828e260cd191fcb3cde"
 dependencies = [
  "clap",
  "cocoon",

@@ -40,8 +40,8 @@
 //! 4. launches coordinator (orchestrates bitvmx protocol operations)
 //! 5. launches user-api (provides http api for pegin/pegout requests)
 //!
-//! each service reads from `config/base.toml` and environment-specific overrides
-//! in `config/environment/*.yaml`.
+//! each service reads from `config/base.toml` and profile-specific overrides
+//! in `config/*.toml`.
 //!
 //! ## process management
 //!
@@ -490,7 +490,7 @@ fn materialize_env_var(
         let resolved = read_env_file_value(base_storage_path, value).with_context(|| {
             format!(
                 "Missing BitVMX services pubkey hash file for local launch. \
-Run `./cli-setup-operators.sh --env local --ops 4` first (expected path from local-committee override: {value})"
+Run `./cli-setup-operators.sh --ops 4` first (expected path from local-committee override: {value})"
             )
         })?;
         return Ok(Some(("UB__COORDINATOR__BITVMX__PUBKEY_HASH".to_string(), resolved)));
@@ -588,7 +588,7 @@ fn validate_local_keystores(ids: &[u8]) -> Result<()> {
             let key_path = keystore_dir.join(key_name);
             if !key_path.exists() {
                 bail!(
-                    "Missing local keystore {}. Run `./cli-setup-operators.sh --env local --ops 4` to recreate local artifacts.",
+                    "Missing local keystore {}. Run `./cli-setup-operators.sh --ops 4` to recreate local artifacts.",
                     key_path.display()
                 );
             }
@@ -596,7 +596,7 @@ fn validate_local_keystores(ids: &[u8]) -> Result<()> {
             KeyManager::get_signer(&key_path).with_context(|| {
                 format!(
                     "Failed to decrypt local {key_name} keystore {}. \
-Check KEY_STORE_PASSWORD or rerun `./cli-setup-operators.sh --env local --ops 4` if the keystore was created with a different password.",
+Check KEY_STORE_PASSWORD or rerun `./cli-setup-operators.sh --ops 4` if the keystore was created with a different password.",
                     key_path.display()
                 )
             })?;
@@ -662,7 +662,7 @@ fn cargo_args_for_service(config: &RunConfig, svc: &Service) -> Vec<String> {
     }
 
     args.push("--".into());
-    args.push("--env".into());
+    args.push("--config".into());
     args.push("local".into());
     args
 }
@@ -806,7 +806,7 @@ mod tests {
     fn test_build_env_for_client_reads_pubkey_hash_file_references() {
         let _guard = TEST_MUTEX.lock().expect("lock");
         let base_storage_path = make_temp_dir();
-        let hash_rel_path = ".union_bridge/op_1/broker/block-indexer.pubkey_hash";
+        let hash_rel_path = ".union_bridge/op_1/union-client/block-indexer.pubkey_hash";
         let hash_abs_path = base_storage_path.join(hash_rel_path);
         fs::create_dir_all(hash_abs_path.parent().expect("parent")).expect("mkdir");
         fs::write(&hash_abs_path, "abc123\n").expect("write hash file");
@@ -816,11 +816,11 @@ mod tests {
         let env_map = HashMap::from([
             (
                 "UB__COORDINATOR__BLOCKS__PUBKEY_HASH_FILE_1".to_string(),
-                ".union_bridge/op_1/broker/block-indexer.pubkey_hash".to_string(),
+                ".union_bridge/op_1/union-client/block-indexer.pubkey_hash".to_string(),
             ),
             (
                 "UB__BLOCK_INDEXER__BROKER_KEY_PATH_1".to_string(),
-                ".union_bridge/op_1/broker/block-indexer.pem".to_string(),
+                ".union_bridge/op_1/union-client/block-indexer.pem".to_string(),
             ),
         ]);
 
@@ -833,7 +833,7 @@ mod tests {
         assert!(envs.contains(&(
             "UB__BLOCK_INDEXER__BROKER_KEY_PATH".to_string(),
             base_storage_path
-                .join(".union_bridge/op_1/broker/block-indexer.pem")
+                .join(".union_bridge/op_1/union-client/block-indexer.pem")
                 .display()
                 .to_string(),
         )));

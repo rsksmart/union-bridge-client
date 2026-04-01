@@ -29,7 +29,7 @@ fi
 
 # Initialize SCRIPT_ENV from UC_ENV if set and valid, otherwise default to "local"
 if [[ -n "${UC_ENV:-}" ]]; then
-    if [[ "$UC_ENV" == "local" || "$UC_ENV" == "local-docker" ]]; then
+    if [[ "$UC_ENV" == "local" || "$UC_ENV" == "docker" ]]; then
         SCRIPT_ENV="$UC_ENV"
     else
         SCRIPT_ENV="local"
@@ -39,10 +39,10 @@ else
 fi
 
 usage() {
-    echo "Usage: $0 [--env <local|local-docker>] [--ops <1-10>]"
+    echo "Usage: $0 [--env <local|docker>] [--ops <1-10>]"
     echo ""
-    echo "  --env    Environment: local or local-docker (default: from UC_ENV or local)"
-    echo "  --ops    Number of operators (1-10, default: from .env.local or 4)"
+    echo "  --env    Environment: local or docker (default: from UC_ENV or local)"
+    echo "  --ops    Number of operators (1-10, default: from docker-deploy.env or 4)"
     exit 1
 }
 
@@ -54,8 +54,8 @@ while [[ $# -gt 0 ]]; do
         if [[ -z "$SCRIPT_ENV" ]]; then
             usage
         fi
-        if [[ "$SCRIPT_ENV" != "local" && "$SCRIPT_ENV" != "local-docker" ]]; then
-            echo "Error: --env must be 'local' or 'local-docker'"
+        if [[ "$SCRIPT_ENV" != "local" && "$SCRIPT_ENV" != "docker" ]]; then
+            echo "Error: --env must be 'local' or 'docker'"
             usage
         fi
         shift 2
@@ -75,20 +75,20 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Final validation that SCRIPT_ENV is valid
-if [[ "$SCRIPT_ENV" != "local" && "$SCRIPT_ENV" != "local-docker" ]]; then
-    echo "Error: SCRIPT_ENV must be 'local' or 'local-docker'"
+if [[ "$SCRIPT_ENV" != "local" && "$SCRIPT_ENV" != "docker" ]]; then
+    echo "Error: SCRIPT_ENV must be 'local' or 'docker'"
     exit 1
 fi
 
 # change to project root (parent of tests directory)
 cd "$(dirname "$0")/.."
 
-# Load NUM_OPERATORS: --ops flag > .env.local > default (4)
+# Load NUM_OPERATORS: --ops flag > docker-deploy.env > default (4)
 if [[ -n "$OPS_FROM_FLAG" ]]; then
     NUM_OPERATORS="$OPS_FROM_FLAG"
 else
     NUM_OPERATORS=4
-    _env_local="docker/operator/.env.local"
+    _env_local="docker/operator/docker-deploy.env"
     if [[ -f "$_env_local" ]]; then
         _num=$(grep -E '^\s*NUM_OPERATORS=' "$_env_local" | tail -1 | cut -d= -f2 | tr -d ' "'\''')
         if [[ -n "$_num" ]] && [[ "$_num" =~ ^[0-9]+$ ]] && [[ "$_num" -ge 1 ]] && [[ "$_num" -le 10 ]]; then
@@ -395,7 +395,7 @@ wait_for_log_with_block_timeout() {
 
         # Check for log pattern in coordinator logs
         local result=""
-        if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
+        if [[ "$SCRIPT_ENV" == "docker" ]]; then
             result=$(find_recent_docker_log_match "$pattern")
         else
             result=$(find_recent_file_log_match "$pattern")
@@ -416,7 +416,7 @@ wait_for_log_with_block_timeout() {
         if [ $current_height -ge $target_height ]; then
             echo ""  # newline after the progress display
             warn "Log pattern not found after $max_blocks blocks (height: $start_height -> $current_height)"
-            if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
+            if [[ "$SCRIPT_ENV" == "docker" ]]; then
                 warn "Check Docker logs manually: docker compose -p op_{1..$NUM_OPERATORS} logs coordinator"
             else
                 warn "Check logs/coordinator-*.log manually"
@@ -452,7 +452,7 @@ wait_for_log_in_all_operators() {
         local found_count="${#found_operators[@]}"
         echo -ne "\r  Blocks mined: $blocks_mined/$max_blocks | Operators matched: $found_count/$operator_count  "
 
-        if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
+        if [[ "$SCRIPT_ENV" == "docker" ]]; then
             for op_id in $(seq 1 $operator_count); do
                 [[ -n "${found_operators[$op_id]:-}" ]] && continue
                 local project="op_${op_id}"
@@ -523,7 +523,7 @@ wait_for_log_with_time_timeout() {
         echo -ne "\r  Elapsed: ${elapsed}s/${timeout_secs}s | Checking logs...  "
 
         local result=""
-        if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
+        if [[ "$SCRIPT_ENV" == "docker" ]]; then
             result=$(find_recent_docker_log_match "$pattern")
         else
             result=$(find_recent_file_log_match "$pattern")
@@ -542,7 +542,7 @@ wait_for_log_with_time_timeout() {
         if [ $elapsed -ge $timeout_secs ]; then
             echo ""
             warn "Log pattern not found after ${timeout_secs}s"
-            if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
+            if [[ "$SCRIPT_ENV" == "docker" ]]; then
                 warn "Check Docker logs manually: docker compose -p op_{1..$NUM_OPERATORS} logs coordinator"
             else
                 warn "Check logs/coordinator-*.log manually"

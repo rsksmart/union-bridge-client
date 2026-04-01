@@ -12,7 +12,7 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     Committee, CommunicationData, RSAPublicKey, UTXO,
 };
 use union_contracts::bindings::member_registry::MemberRegistry::RSAPublicKey as MemberRSAPublicKey;
-// TODO(Jira) https://rsklabs.atlassian.net/browse/UB-214
+// TODO(UB-214)
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct BitcoinTransaction {

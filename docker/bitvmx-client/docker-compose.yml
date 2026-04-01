@@ -1,5 +1,6 @@
 services:
   bitvmx-client:
+    # Published by the upstream BitVMX client project; override if you mirror the image or need a different ref.
     image: ghcr.io/fairgatelabs/rust-bitvmx-workspace/bitvmx-client:v0.5.3-alpha
     # container_name: bitvmx-client-container
     restart: unless-stopped

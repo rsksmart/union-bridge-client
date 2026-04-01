@@ -11,8 +11,7 @@ created.
 
 **Required Secrets**:
 
-- `FAIRGATE_GITHUB_TOKEN`: GitHub token for accessing FairgateLabs repositories
-- `UNION_CONTRACTS_GITHUB_TOKEN`: GitHub token for accessing temp-rsk contracts repository
+- `UNION_CONTRACTS_GITHUB_TOKEN`: GitHub PAT with read access to the private `union-contracts` repository referenced from `Cargo.toml`
 - `REGISTRY_TOKEN`: Personal Access Token with `write:packages` scope for GHCR authentication
 
 **Usage**:
@@ -37,7 +36,7 @@ created.
 - `ghcr.io/rsksmart/union-client-user-api:v1.0.0` (AMD64)
 
 **Dockerfile**: Uses `docker/build/Dockerfile.github-actions` - a GitHub Actions optimized version that uses HTTPS
-authentication instead of SSH for private repository access.
+authentication instead of SSH, with a token only for the private contracts repository.
 
 ---
 
@@ -125,19 +124,18 @@ act push --workflows .github/workflows/docker-release.yml --dryrun
 - **Artifact performance**: Uploading and downloading artifacts is slow locally, but fast on the CI.
 
 **Note**: Local testing requires Docker to be running and may not fully replicate the GitHub Actions environment,
-especially for private repository access.
+especially for the private contracts repository access.
 
 ## Setup Requirements
 
 ### GitHub Token Setup
 
-The Docker build process requires access to private repositories using GitHub tokens (same as other workflows in this
-project):
+The Docker build process requires access to the private contracts repository using a GitHub token (same as other
+workflows in this project):
 
-1. **FAIRGATE_GITHUB_TOKEN**: Already configured for FairgateLabs repositories
-2. **UNION_CONTRACTS_GITHUB_TOKEN**: Already configured for temp-rsk contracts repository
+1. **UNION_CONTRACTS_GITHUB_TOKEN**: Used for the private contracts repository referenced by `union-contracts`
 
-These tokens are already set up and used by other workflows in the project.
+Configure this secret as a repository or organization secret before running the workflows.
 
 ### GHCR Authentication
 
@@ -148,16 +146,16 @@ scope. The token should be configured as a repository secret.
 
 ### Build Failures
 
-- **Authentication issues**: Verify `FAIRGATE_GITHUB_TOKEN` and `UNION_CONTRACTS_GITHUB_TOKEN` are properly configured
+- **Authentication issues**: Verify `UNION_CONTRACTS_GITHUB_TOKEN` is properly configured
 - **Dependency issues**: Check that all dependencies are properly specified in `Cargo.toml`
 - **Docker build issues**: Check GitHub Actions logs for specific error messages
-- **Private repository access**: Ensure tokens have access to `FairgateLabs` and `temp-rsk` repositories
+- **Private repository access**: Ensure the token has access to the `temp-rsk` repository
 
 ### Permission Issues
 
 - **GHCR push failures**: Ensure the repository has `packages: write` and `id-token: write` permissions
-- **Token permissions**: Verify that `REGISTRY_TOKEN` has `write:packages` scope and other GitHub tokens have sufficient
-  permissions for private repository access
+- **Token permissions**: Verify that `REGISTRY_TOKEN` has `write:packages` scope and that
+  `UNION_CONTRACTS_GITHUB_TOKEN` has read access to the private contracts repository
 - **Organization settings**: Check that the `rsksmart` organization allows package publishing
 
 ### Tag Issues

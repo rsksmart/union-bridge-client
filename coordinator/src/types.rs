@@ -42,7 +42,7 @@ use union_contracts::bindings::stream_manager::StreamManager::StreamManagerEvent
 
 use crate::user_requests::ApplyToStream;
 
-// TODO(Jira) https://rsklabs.atlassian.net/browse/UB-183
+// TODO(UB-183)
 
 #[derive(Eq, PartialEq, Debug)]
 pub enum RskPegManagerEvents {

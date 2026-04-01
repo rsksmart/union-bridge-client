@@ -1,5 +1,9 @@
 # Wallet CLI
 
+For repository-level setup and workflow context, start with [../../README.md](../../README.md),
+[../../CONTRIBUTING.md](../../CONTRIBUTING.md), and [../README.md](../README.md). This README covers the wallet-specific
+commands and behavior.
+
 Simple interactive command-line wallet for crafting P2WPKH transactions using the [
 `bitcoin`](https://crates.io/crates/bitcoin) crate.
 
@@ -40,9 +44,9 @@ Registered UTXOs are persisted in a RocksDB database at a path determined as fol
 
 ## Configuration
 
-At start-up the CLI looks for `wallet.toml` inside a `config/` directory placed next to the executable (falling back to
-one in the current working directory). Select which environment config to use via `--env` or `WALLET_ENV` (e.g.,
-`regtest`, `testnet`).
+At start-up the CLI loads `config/{env}.toml` (where `{env}` defaults to `regtest`) from a `config/` directory placed
+next to the executable (falling back to the current working directory). Select which environment config to use via
+`--env` (e.g., `regtest`, `testnet`).
 If the chosen config file is missing the CLI aborts.
 All configuration values can also be provided via environment variables or command-line flags, with the following
 precedence:
@@ -68,7 +72,7 @@ Environment variable and CLI shortcuts:
 
 The wallet exits if any RPC value is missing after config resolution.
 
-Example `config/wallet.toml`:
+Example `config/regtest.toml`:
 
 ```toml
 network = "regtest"
@@ -135,18 +139,6 @@ You can also use `cargo run` directly:
 ```bash
 cargo run --release --bin ub-wallet -- --mode user mine_block
 ```
-
-#### Testing Script
-
-A testing script with practical examples is provided:
-
-**bitcoin-wallet-test-examples.sh** - Demonstrates various command mode operations:
-```bash
-# requires USER_BITCOIN_WIF environment variable
-./bitcoin-wallet-test-examples.sh
-```
-
-The script requires the appropriate environment variable (`USER_BITCOIN_WIF` for user mode, `MEMBER_BITCOIN_WIF` for member mode).
 
 ## Important Notice
 
