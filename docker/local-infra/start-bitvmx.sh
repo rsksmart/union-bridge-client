@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Manages 4 BitVMX clients (no Union Client, no blockchains).
-# Prerequisites: Start blockchains first with: ./start_blockchains.sh up -d
+# Prerequisites: Start blockchains first with: ./start-blockchains.sh up -d
 
 set -euo pipefail
 
@@ -27,7 +27,7 @@ print_help() {
   echo "  $0 ps              # Status"
   echo ""
   echo "Prerequisites: Start blockchains first"
-  echo "  ./start_blockchains.sh --fresh up -d"
+  echo "  ./start-blockchains.sh --fresh up -d"
   echo "  <project_root>/cli-setup-operators.sh --ops 4"
   echo ""
   echo "Connect to:"

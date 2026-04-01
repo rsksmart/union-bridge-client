@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Setup BitVMX docker
 # Usage:
-#   ./check_bitvmx_updates.sh [-r|--ref <branch-or-tag>]
+#   ./check-bitvmx-updates.sh [-r|--ref <branch-or-tag>]
 # Defaults to 'main' when not provided.
 
 print_help() {

@@ -15,7 +15,7 @@ services:
     volumes:
       - ${BITVMX_CONFIG_DIR}:/app/config
       - db-bitvmx:/tmp
-      - ../../resources:/app/resources:ro
+      - ${RESOURCES_DIR:-../../resources}:/app/resources:ro
     extends:
       file: ../bitvmx-client/docker-compose.yml
       service: bitvmx-client
@@ -54,8 +54,8 @@ services:
     volumes:
       - ${USER_API_BROKER_PEM_PATH}:/app/broker.pem:ro
     environment:
-      - UB__USER_API__COORDINATOR__PUBKEY_HASH=${UB__USER_API__COORDINATOR__PUBKEY_HASH:-}
-      - USER_BITCOIN_WIF=${USER_BITCOIN_WIF:-}
+      - UB__USER_API__COORDINATOR__PUBKEY_HASH
+      - USER_BITCOIN_WIF
     ports:
       - "${USER_API_PORT:-40001}:40001"
     extra_hosts:
@@ -70,12 +70,12 @@ services:
     volumes:
       - ${COORDINATOR_BROKER_PEM_PATH}:/app/broker.pem:ro
     environment:
-      - UB__coordinator__bitvmx__host=${BITVMX_HOST:-dummy-bitvmx-host}
-      - UB__COORDINATOR__BITVMX__PORT=${UB__COORDINATOR__BITVMX__PORT:-dummy-bitvmx-port}
-      - UB__COORDINATOR__BLOCKS__PUBKEY_HASH=${UB__COORDINATOR__BLOCKS__PUBKEY_HASH:-}
-      - UB__COORDINATOR__LOGS__PUBKEY_HASH=${UB__COORDINATOR__LOGS__PUBKEY_HASH:-}
-      - UB__COORDINATOR__USER__PUBKEY_HASH=${UB__COORDINATOR__USER__PUBKEY_HASH:-}
-      - UB__COORDINATOR__BITVMX__PUBKEY_HASH=${UB__COORDINATOR__BITVMX__PUBKEY_HASH:-}
+      - UB__COORDINATOR__BITVMX__HOST=${BITVMX_HOST:-dummy-bitvmx-host}
+      - UB__COORDINATOR__BITVMX__PORT
+      - UB__COORDINATOR__BLOCKS__PUBKEY_HASH
+      - UB__COORDINATOR__LOGS__PUBKEY_HASH
+      - UB__COORDINATOR__USER__PUBKEY_HASH
+      - UB__COORDINATOR__BITVMX__PUBKEY_HASH
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

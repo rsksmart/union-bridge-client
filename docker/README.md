@@ -34,7 +34,7 @@ Key files:
 
 - `docker-compose.yml`: base BitVMX client service definition
 - `config/local/`: tracked local BitVMX config template
-- `check_bitvmx_updates.sh`: compares the tracked compose file with upstream
+- `check-bitvmx-updates.sh`: compares the tracked compose file with upstream
 
 ### `operator/`
 
@@ -59,8 +59,8 @@ The Docker setup uses two kinds of environment files:
 - generated per-operator files under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/{docker-compose.env,docker-service.env}`, created by
   `<project_root>/cli-setup-operators.sh`
 
-The selected env file chooses the operator compose override through `OP_MODE=all|one`.
-`OP_MODE=one` is the single-operator host-network variant and requires `NUM_OPERATORS=1`.
+The operator compose override is derived from the effective operator count.
+`--op <ID>` or `NUM_OPERATORS=1` selects the single-operator host-network variant; `NUM_OPERATORS=2-10` selects the shared multi-operator variant.
 
 `docker-compose.env` and `docker-service.env` are only consumed by local Docker operator runs (`start-operators.sh` / docker compose).
 Local cargo mode (`./cli-run.sh`) does not read those files.
