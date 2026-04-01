@@ -24,8 +24,8 @@ impl Config {
     /// # Errors
     ///
     /// Returns `ConfigError` if the configuration file cannot be loaded or parsed
-    pub fn load(env_name: Option<String>) -> Result<Self, ConfigError> {
-        CommonConfig::load_config::<Self>(env_name)
+    pub fn load(config_name: Option<String>) -> Result<Self, ConfigError> {
+        CommonConfig::load_config::<Self>(config_name)
     }
 }
 
@@ -67,7 +67,7 @@ mod tests {
             config
                 .block_indexer_config
                 .broker_key_path
-                .ends_with("/.union_bridge/op_1/broker/block-indexer.pem")
+                .ends_with("/.union_bridge/op_1/union-client/block-indexer.pem")
         );
     }
 

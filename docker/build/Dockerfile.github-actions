@@ -46,13 +46,13 @@ ENV CARGO_TERM_QUIET=true
 # while FairgateLabs dependencies are fetched anonymously over HTTPS.
 ARG UNION_CONTRACTS_GITHUB_TOKEN
 
-RUN mkdir -p .cargo && \
+RUN export GIT_CONFIG_GLOBAL="$(mktemp)" && \
+    mkdir -p .cargo && \
     echo '[net]\ngit-fetch-with-cli = true' > .cargo/config.toml && \
     git config --global url."https://${UNION_CONTRACTS_GITHUB_TOKEN}@github.com/temp-rsk".insteadOf "ssh://git@github.com/temp-rsk" && \
     git config --global url."https://github.com/FairgateLabs".insteadOf "ssh://git@github.com/FairgateLabs" && \
     cargo fetch --locked && \
-    # Clear the token from build args to avoid security warnings
-    unset UNION_CONTRACTS_GITHUB_TOKEN
+    rm -f "${GIT_CONFIG_GLOBAL}"
 
 # two build modes:
 # 1) build the entire workspace and reuse among containers, to reduce build time

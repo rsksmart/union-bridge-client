@@ -240,13 +240,13 @@ mod tests {
         let parsed = Cli::parse_from([
             "mocks",
             "--rpc-url",
-            "ws://node-use2-1.regtest.rskcomputing.net:4445",
+            "ws://example-regtest-node:4445",
             "--fake-peg-manager-address",
             "0x7Cd31D33302B6f5Bc45763487195Ae329a915beB",
             "--no-deploy",
         ]);
 
-        assert_eq!(parsed.rpc_url, "ws://node-use2-1.regtest.rskcomputing.net:4445");
+        assert_eq!(parsed.rpc_url, "ws://example-regtest-node:4445");
         assert!(parsed.no_deploy);
         assert_eq!(
             parsed.fake_peg_manager_address.as_deref(),

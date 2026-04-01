@@ -7,8 +7,8 @@ CLI and Docker commands live in the lower-level docs that sit next to the script
 
 - [README.md](README.md): repository overview and documentation map.
 - [cli/README.md](cli/README.md): CLI commands for local development and operations.
-- [docker/README.md](docker/README.md): Docker-based local development and deployments.
-- [docker/operator/README.md](docker/operator/README.md): operator-focused Docker runtime flow.
+- [docker/README.md](docker/README.md): Docker-based local development flows.
+- [docker/operator/README.md](docker/operator/README.md): local operator-focused Docker runtime flow.
 - [docker/build/README.md](docker/build/README.md): Docker image build and registry operations.
 - [.github/WORKFLOWS.md](.github/WORKFLOWS.md): CI workflows and local `act` usage.
 
@@ -109,11 +109,11 @@ The most important environment variables are:
   state, etc.). Pick a path that is writable and accessible by the user running the client.
 - `KEY_STORE_PASSWORD`: password used to create and unlock Rootstock keystore files. For Docker operator flows, you can
   export it before running `cli-setup-operators.sh`, or let setup prompt for it. Setup then writes it into
-  `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`.
+  `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-service.env`.
 - `USER_BITCOIN_WIF`: a Bitcoin private key WIF used for user endpoints such as peg-in and peg-out operations. You can
   generate one via the `bitcoin-wallet` with `generate_address`. For Docker operator flows, you can export it before
   running `cli-setup-operators.sh`, or let setup prompt for it. Setup then writes it into
-  `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker.env`.
+  `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-service.env`.
   See [bitcoin-wallet README](cli/bitcoin-wallet/README.md)
   for more info.
 
@@ -133,7 +133,7 @@ This will automatically load the environment variables defined in the `.envrc` o
 
 ### Operators Setup
 
-Use `./cli-setup-operators.sh` to set up operators for both local cargo and Docker workflows.
+Use `./cli-setup-operators.sh` to set up local operators for both cargo and Docker workflows.
 
 #### Bootstrap Local Operator State
 
@@ -141,22 +141,22 @@ Under the directory specified in `BASE_STORAGE_PATH`, create the base directory 
 
 ```bash
 mkdir -p "${BASE_STORAGE_PATH}/.union_bridge"
-./cli-setup-operators.sh --env local --ops 4
+./cli-setup-operators.sh --ops 4
 ```
 
-The bootstrap creates or reuses local Rootstock keystores, broker identities, and BitVMX runtime files under
+The bootstrap creates or reuses local Rootstock keystores, service identities, and BitVMX runtime files under
 `BASE_STORAGE_PATH`, for example:
 
-- `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/block-indexer.pem`
-- `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/block-indexer.pubkey_hash`
-- `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/log-indexer.pem`
-- `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/user-api.pem`
-- `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/coordinator.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/union-client/block-indexer.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/union-client/block-indexer.pubkey_hash`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/union-client/log-indexer.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/union-client/user-api.pem`
+- `${BASE_STORAGE_PATH}/.union_bridge/op_1/union-client/coordinator.pem`
 - `${BASE_STORAGE_PATH}/.union_bridge/op_1/keystore/user`
 - `${BASE_STORAGE_PATH}/.union_bridge/op_1/keystore/member`
 - `${BASE_STORAGE_PATH}/.union_bridge/op_1/bitvmx/keys/services.pubkey_hash`
 
-Note: local keystores (`op_N/keystore/{member,user}`) are created only in `--env local` bootstrap runs and are used by
+Note: local keystores (`op_N/keystore/{member,user}`) are created by the bootstrap helper and are used by
 local cargo mode (`./cli-run.sh`). Docker operator runs use container keystore paths and do not consume these
 host-side cargo keystore files.
 
@@ -183,8 +183,8 @@ identity.
 For example:
 
 ```bash
-cat ${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/coordinator.pubkey_hash
-cat ${BASE_STORAGE_PATH}/.union_bridge/op_2/broker/coordinator.pubkey_hash
+cat ${BASE_STORAGE_PATH}/.union_bridge/op_1/union-client/coordinator.pubkey_hash
+cat ${BASE_STORAGE_PATH}/.union_bridge/op_2/union-client/coordinator.pubkey_hash
 ```
 
 **2. Update BitVMX client config files manually, operator by operator**
@@ -201,10 +201,10 @@ components:
 
 Examples:
 
-- `config/op_1.yaml` -> coordinator `${BASE_STORAGE_PATH}/.union_bridge/op_1/broker/coordinator.pubkey_hash`
-- `config/op_2.yaml` -> coordinator `${BASE_STORAGE_PATH}/.union_bridge/op_2/broker/coordinator.pubkey_hash`
-- `config/op_3.yaml` -> coordinator `${BASE_STORAGE_PATH}/.union_bridge/op_3/broker/coordinator.pubkey_hash`
-- `config/op_4.yaml` -> coordinator `${BASE_STORAGE_PATH}/.union_bridge/op_4/broker/coordinator.pubkey_hash`
+- `config/op_1.yaml` -> coordinator `${BASE_STORAGE_PATH}/.union_bridge/op_1/union-client/coordinator.pubkey_hash`
+- `config/op_2.yaml` -> coordinator `${BASE_STORAGE_PATH}/.union_bridge/op_2/union-client/coordinator.pubkey_hash`
+- `config/op_3.yaml` -> coordinator `${BASE_STORAGE_PATH}/.union_bridge/op_3/union-client/coordinator.pubkey_hash`
+- `config/op_4.yaml` -> coordinator `${BASE_STORAGE_PATH}/.union_bridge/op_4/union-client/coordinator.pubkey_hash`
 
 This step is still manual for local BitVMX setup. Union Client and BitVMX do not share the same broker keystore.
 This ensures that messages from the BitVMX client are correctly routed back to the coordinator.
@@ -231,7 +231,7 @@ The repository ships sample files under `resources/`:
    drp_program_definition = "/path/accessible/by/bitvmx/hello-world.yaml"
    ```
 
-2. For the normal local + Docker-backed BitVMX flow, `config/environment/local.toml` now defaults to:
+2. For the normal local + Docker-backed BitVMX flow, `config/local.toml` now defaults to:
 
     - `/app/resources/hello-world.yaml`
 
@@ -306,7 +306,7 @@ This file is not the command reference for every runtime path. Use it for shared
 doc that owns the commands:
 
 - local cargo workflow: [cli/README.md](cli/README.md) plus [docker/local-infra/README.md](docker/local-infra/README.md)
-- Docker operator workflow: [docker/operator/README.md](docker/operator/README.md)
+- Local Docker operator workflow: [docker/operator/README.md](docker/operator/README.md)
 - Docker image build and registry operations: [docker/build/README.md](docker/build/README.md)
 
 ## Local Running Modes
@@ -333,36 +333,10 @@ There are 3 supported ways to run everything locally:
    Use this when you want BitVMX and Union Client operators running in containers.
 
    - Docker flow selection: [docker/README.md](docker/README.md)
-   - Full operator runtime flow: [docker/operator/README.md](docker/operator/README.md)
+   - Local operator runtime flow: [docker/operator/README.md](docker/operator/README.md)
 
 For the Docker-backed local flows, `./cli-infra.sh` is the quickest entry point for Bitcoin, Anvil, BitVMX, and
 background mining. Its local command reference lives in [docker/local-infra/README.md](docker/local-infra/README.md).
-
-## AWS Regtest (Essentials)
-
-Access to regtest requires SSH credentials for `ubuntu@union-bridge-use2-1.regtest.rskcomputing.net`.
-
-Run from repository root:
-
-```bash
-./cli-infra.sh --start-regtest
-./cli-infra.sh --start-regtest --fresh
-bash tests/run-happy-path-regtest.sh
-```
-
-- `--start-regtest`: starts operators with existing deployed addresses/config.
-- `--start-regtest --fresh`: runs full remote fresh orchestration and clean operator restart.
-
-Important: if you change branch on the regtest host (`~/union-bridge-client`), rebuild images tagged as
-`latest-regtest` before starting operators:
-
-```bash
-cd docker/build
-bash d-build-client.sh --tag=latest-regtest --no-cache
-```
-
-For the full Docker operator flow, environment files, and runtime artifact layout, see
-[docker/operator/README.md](docker/operator/README.md).
 
 ## Running the Union Client
 
@@ -404,7 +378,7 @@ configuration paths for each client instance (1-4). This ensures no collisions b
 - HTTP server ports
 - Database paths
 - Rootstock keystore paths
-- Broker identity paths and broker pubkey_hash file references
+- Service identity paths and broker pubkey_hash file references
 - BitVMX broker ports
 
 You can run 4 clients simultaneously using the `./cli-run.sh` script:
@@ -495,7 +469,7 @@ For regtest, use `attach` mode (`--no-deploy`) and pass the predeployed address:
 
 ```bash
 ./cli-mocking.sh \
-  --rpc-url ws://node-use2-1.regtest.rskcomputing.net:4445 \
+  --rpc-url ws://<private-regtest-rpc>:4445 \
   --fake-peg-manager-address 0x... \
   --no-deploy
 ```
@@ -518,7 +492,7 @@ You will have the following commands available:
 #### Force Flags for Testing
 
 The coordinator supports force flags to trigger specific behaviors during testing. These flags are **only active in
-non-production environments** (Local, LocalDocker, Regtest) and are automatically disabled in Alphanet and Testnet.
+local environments** (`local` and `docker`).
 
 | Flag            | Description                                                                                                                                                                                       |
 |-----------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -597,7 +571,7 @@ configuration files.
 
 ## Rootstock Wallet Creation (Manual)
 
-This is automated by `./cli-setup-operators.sh --env local --ops 4`, but if you want to create a wallet manually, you
+This is automated by `./cli-setup-operators.sh --ops 4`, but if you want to create a wallet manually, you
 can use the `key-manager` crate for that.
 
 ```bash

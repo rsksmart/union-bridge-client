@@ -1,18 +1,13 @@
 # ═══════════════════════════════════════════════════════
-# Indexers
+# Common Configuration
 # ═══════════════════════════════════════════════════════
 
-[indexer]
-
-# Start from current provider tip in local runs; base initial_block_hash is ignored.
-start_from = "best"
+environment = "local"
 
 # ═══════════════════════════════════════════════════════
-# Bridge Flow Configuration
+# Key Store
 # ═══════════════════════════════════════════════════════
 
-[bridge.pegout]
-advance_funds_timeout_secs = 30
-
-[bridge.committee]
-drp_program_definition = "/app/resources/hello-world.yaml"
+[key_store]
+user_path = "test_keystore/user-keyfile"
+member_path = "test_keystore/member-keyfile"

@@ -5,7 +5,7 @@ license.workspace = true
 edition = "2024"
 
 [features]
-# TODO(Jira) remove in scope of https://rsklabs.atlassian.net/browse/UB-214
+# TODO(UB-214) remove
 default = ["types"]
 types = []
 

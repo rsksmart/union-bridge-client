@@ -113,7 +113,7 @@ wait_for_log_with_block_timeout() {
 
         # Check for log pattern in coordinator logs
         local result=""
-        if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
+        if [[ "$SCRIPT_ENV" == "docker" ]]; then
             # Would use find_recent_docker_log_match in real scenario
             result=""
         else
@@ -135,7 +135,7 @@ wait_for_log_with_block_timeout() {
         if [ $current_height -ge $target_height ]; then
             echo ""  # newline after the progress display
             warn "Log pattern not found after $max_blocks blocks (height: $start_height -> $current_height)"
-            if [[ "$SCRIPT_ENV" == "local-docker" ]]; then
+            if [[ "$SCRIPT_ENV" == "docker" ]]; then
                 warn "Check Docker logs manually: docker compose -p op_{1..4} logs coordinator"
             else
                 warn "Check logs manually in: $TEST_LOG_DIR"
@@ -294,4 +294,3 @@ else
     error "Some tests failed!"
     exit 1
 fi
-

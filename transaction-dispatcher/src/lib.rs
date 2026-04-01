@@ -110,7 +110,7 @@ async fn create_contracts_gateway_impl_with_role(
     let ws = WsConnect::new(rsk_url);
 
     let provider = ProviderBuilder::new()
-        //TODO (JIRA) https://rsklabs.atlassian.net/browse/UB-318 to be removed when no op accounts would be used from the user-api
+        // TODO(UB-318) to be removed when no op accounts would be used from the user-api
         .with_simple_nonce_management()
         .wallet(wallet)
         .connect_ws(ws)

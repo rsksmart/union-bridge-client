@@ -29,7 +29,7 @@ pub async fn create_pegin_tx(
     execute: bool,
 ) -> Result<()> {
     if execute && environment.is_remote() {
-        bail!("--execute flag is only supported for local environments (local/local-docker). For remote environments, please run the wallet commands manually.");
+        bail!("--execute flag is only supported for local environments (`local`/`docker`). For remote environments, please run the wallet commands manually.");
     }
 
     validate_rsk_address(&rsk_address)?;
@@ -43,7 +43,7 @@ pub async fn create_pegin_tx(
     };
 
     let user_api_base = environment
-        .user_api_endpoints()
+        .user_api_endpoints()?
         .first()
         .expect("No local user-api endpoints configured; please review your config")
         .to_string();

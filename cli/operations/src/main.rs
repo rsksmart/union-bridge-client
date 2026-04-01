@@ -8,10 +8,10 @@
 //! - `fund`: displays operator bitcoin addresses and funds rootstock wallets
 //!   - prints bitcoin addresses that need to be funded manually in bitcoin-wallet cli
 //!   - with `--execute` flag: runs the wallet commands programmatically via cli-bitcoin-wallet.sh
-//!   - automatically funds rootstock addresses via anvil (local) or faucet (testnet/alphanet)
+//!   - automatically funds rootstock addresses via anvil in local mode
 //! - `apply-stream`: registers operator(s) to a stream for committee participation
 //!   - local: applies all 4 operators automatically
-//!   - alphanet/testnet: requires `--operator-id` (1-10) and `--role` (prover/verifier)
+//!   - remote profiles: require `--operator-id` (1-10) and `--role` (prover/verifier)
 //!
 //! ## user
 //! funding, pegin and pegout transaction commands
@@ -45,7 +45,7 @@
 //! cargo run -- operator apply-stream -s 0 --env local
 //! ```
 //!
-//! apply operator to stream (alphanet - single operator):
+//! apply operator to stream (remote profile - single operator):
 //! ```bash
 //! cargo run -- operator apply-stream -s 1 --env alphanet -o 1 -r prover
 //! ```
@@ -108,8 +108,8 @@ enum Commands {
 enum OperatorCommands {
     /// Fund operators
     Fund {
-        /// Environment to target (local, local-docker, alphanet, testnet)
-        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local, env = "UC_ENV")]
+        /// Environment to target (`local`, `docker`, or a remote profile name such as `alphanet`)
+        #[arg(long = "env", short = 'e', default_value = "local", env = "UC_ENV")]
         env: Environment,
 
         /// Execute the wallet commands programmatically instead of just printing them
@@ -127,20 +127,20 @@ enum OperatorCommands {
     },
     /// Whitelist member addresses on the CommitteeRegistry contract
     Whitelist {
-        /// Environment to target (local, local-docker, regtest, alphanet, testnet)
-        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local)]
+        /// Environment to target (`local`, `docker`, or a remote profile name such as `alphanet`)
+        #[arg(long = "env", short = 'e', default_value = "local")]
         env: Environment,
 
         /// CommitteeRegistry contract address
         #[arg(long = "contract-address", value_name = "ADDRESS")]
         contract_address: String,
 
-        /// Sender address to use with `cast send --from ... --unlocked` in local/local-docker.
+        /// Sender address to use with `cast send --from ... --unlocked` in local/docker.
         /// Defaults to the local anvil account if not provided.
         #[arg(long = "from", value_name = "ADDRESS", conflicts_with = "private_key")]
         from_address: Option<String>,
 
-        /// Private key to use in regtest/alphanet/testnet.
+        /// Private key to use in remote profile mode.
         /// If omitted in remote environments, it is prompted interactively.
         #[arg(long = "private-key", value_name = "HEX_KEY", conflicts_with = "from_address")]
         private_key: Option<String>,
@@ -152,11 +152,11 @@ enum OperatorCommands {
         #[arg(short = 's', long = "stream-id", value_name = "STREAM_ID")]
         stream_id: u64,
 
-        /// Target environment (local, alphanet, testnet)
-        #[arg(short = 'e', long = "env", value_enum, default_value_t = Environment::Local, env = "UC_ENV")]
+        /// Target environment (`local`, `docker`, or a remote profile name such as `alphanet`)
+        #[arg(short = 'e', long = "env", default_value = "local", env = "UC_ENV")]
         env: Environment,
 
-        /// Operator ID (1-10) when applying on alphanet or testnet
+        /// Operator ID (1-10) when applying in remote profile mode
         #[arg(
             short = 'o',
             long = "operator-id",
@@ -165,7 +165,7 @@ enum OperatorCommands {
         )]
         operator_id: Option<u8>,
 
-        /// Operator role when applying on alphanet or testnet
+        /// Operator role when applying in remote profile mode
         #[arg(short = 'r', long = "role", value_enum, env = "UC_OPERATOR_ROLE")]
         role: Option<CommitteeRole>,
     },
@@ -175,14 +175,14 @@ enum OperatorCommands {
 enum UserCommands {
     /// Display user addresses and funding instructions
     Fund {
-        /// Environment to target (local, local-docker, alphanet, testnet)
-        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local, env = "UC_ENV")]
+        /// Environment to target (`local`, `docker`, or a remote profile name such as `alphanet`)
+        #[arg(long = "env", short = 'e', default_value = "local", env = "UC_ENV")]
         env: Environment,
     },
     /// Request a pegin address and print bitcoin-wallet CLI instructions
     Pegin {
-        /// Environment to target (local, local-docker, alphanet, testnet)
-        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local, env = "UC_ENV")]
+        /// Environment to target (`local`, `docker`, or a remote profile name such as `alphanet`)
+        #[arg(long = "env", short = 'e', default_value = "local", env = "UC_ENV")]
         env: Environment,
 
         /// Rootstock deposit address
@@ -203,8 +203,8 @@ enum UserCommands {
     },
     /// Request a pegout (withdraw from Rootstock to Bitcoin)
     Pegout {
-        /// Environment to target (local, local-docker, alphanet, testnet)
-        #[arg(long = "env", short = 'e', value_enum, default_value_t = Environment::Local, env = "UC_ENV")]
+        /// Environment to target (`local`, `docker`, or a remote profile name such as `alphanet`)
+        #[arg(long = "env", short = 'e', default_value = "local", env = "UC_ENV")]
         env: Environment,
 
         /// Value in satoshis
@@ -232,7 +232,7 @@ async fn main() -> Result<()> {
         Commands::Operator { command } => match command {
             OperatorCommands::Fund { env, execute, fund_amount } => {
                 println!("\n=== Funding Rootstock wallets ===");
-                rsk_wallet::handle_operator_funding(env).await?;
+                rsk_wallet::handle_operator_funding(env.clone()).await?;
                 println!("=== Funding Bitcoin addresses ===");
                 bitcoin_wallet::handle_bitcoin_funding(env, execute, fund_amount).await?;
             }
