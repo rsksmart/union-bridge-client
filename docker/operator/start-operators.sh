@@ -11,6 +11,7 @@ cd "${SCRIPT_DIR}" || {
 
 DOCKER_COMPOSE_ARGS=()
 NUM_OPERATORS=""
+OPERATOR_ARG=""
 AUTO_CONFIRM=false
 FRESH=false
 BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
@@ -24,6 +25,7 @@ print_help() {
   echo "  <project_root>/cli-setup-operators.sh --ops 4"
   echo ""
   echo "Options:"
+  echo "  --op <ID>                Start only the prepared operator under .union_bridge/op_<ID> (1-10)"
   echo "  --ops <N>                Number of operators to start (1-10, default: 4)"
   echo "  --env-file <PATH>        Compose env file to use instead of docker/operator/docker-deploy.env"
   echo "  --tag <TAG>              Override UC_TAG for this docker compose invocation only"
@@ -33,13 +35,17 @@ print_help() {
   echo ""
   echo "Examples:"
   echo "  $0 up -d"
+  echo "  $0 --op 3 up -d"
   echo "  $0 --ops 6 up -d"
   echo "  $0 --fresh up -d"
   echo "  $0 --env-file /path/to/docker-deploy.env up -d"
   echo "  $0 logs -f"
   echo "  $0 down"
   echo ""
-  echo "The env file selects the compose override through OP_MODE=all|one."
+  echo "The compose override is derived from NUM_OPERATORS:"
+  echo "  --op <ID> -> docker-compose.one.yml"
+  echo "  1 -> docker-compose.one.yml"
+  echo "  2-10 -> docker-compose.all.yml"
   echo ""
   echo "Any additional arguments will be passed directly to docker compose."
   exit 0
@@ -77,6 +83,14 @@ while [[ $# -gt 0 ]]; do
     --help)
       print_help
       ;;
+    --op)
+      OPERATOR_ARG="$2"
+      if ! [[ "$OPERATOR_ARG" =~ ^(10|[1-9])$ ]]; then
+        echo "Error: --op must be between 1 and 10"
+        exit 1
+      fi
+      shift 2
+      ;;
     --ops)
       NUM_OPERATORS="$2"
       if ! [[ "$NUM_OPERATORS" =~ ^(10|[1-9])$ ]]; then
@@ -110,6 +124,11 @@ done
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "Error: missing env file ${ENV_FILE}" >&2
+  exit 1
+fi
+
+if [[ -n "${OPERATOR_ARG}" && -n "${NUM_OPERATORS}" ]]; then
+  echo "Error: --op and --ops cannot be used together." >&2
   exit 1
 fi
 
@@ -152,12 +171,10 @@ require_operator_env_file() {
 resolved_num_operators() {
   local configured_count
   local default_count="4"
-  local compose_override
 
-  compose_override="$(compose_override_file)"
-
-  if [[ "${compose_override}" == "docker-compose.one.yml" ]]; then
-    default_count="1"
+  if [[ -n "${OPERATOR_ARG}" ]]; then
+    echo "1"
+    return
   fi
 
   configured_count="${NUM_OPERATORS:-$(read_env_value "${ENV_FILE}" "NUM_OPERATORS")}"
@@ -168,32 +185,34 @@ resolved_num_operators() {
     exit 1
   fi
 
-  if [[ "${compose_override}" == "docker-compose.one.yml" && "${configured_count}" != "1" ]]; then
-    echo "Error: OP_MODE=one requires exactly one operator." >&2
-    exit 1
-  fi
-
   echo "${configured_count}"
 }
 
 compose_override_file() {
-  local override_file
+  if [[ "$(resolved_num_operators)" == "1" ]]; then
+    echo "docker-compose.one.yml"
+  else
+    echo "docker-compose.all.yml"
+  fi
+}
 
-  override_file="$(read_env_value "${ENV_FILE}" "OP_MODE")"
-  override_file="${override_file:-all}"
+resolved_operator_ids() {
+  if [[ -n "${OPERATOR_ARG}" ]]; then
+    echo "${OPERATOR_ARG}"
+  else
+    seq 1 "$(resolved_num_operators)"
+  fi
+}
 
-  case "${override_file}" in
-    all)
-      echo "docker-compose.all.yml"
-      ;;
-    one)
-      echo "docker-compose.one.yml"
-      ;;
-    *)
-      echo "Error: unsupported OP_MODE '${override_file}' in ${ENV_FILE}. Use 'all' or 'one'." >&2
-      exit 1
-      ;;
-  esac
+compose_project_name_for_operator() {
+  local op_num="$1"
+  local configured_project_name=""
+
+  if [[ -n "${OPERATOR_ARG}" ]]; then
+    configured_project_name="$(read_env_value "${ENV_FILE}" "COMPOSE_PROJECT_NAME")"
+  fi
+
+  echo "${configured_project_name:-op_${op_num}}"
 }
 
 uses_shared_bitvmx_network() {
@@ -254,14 +273,15 @@ if [[ "${FRESH}" == true ]]; then
   fi
 
   echo "Cleaning operator stacks (down --volumes)..."
-  for op_num in $(seq 1 "$(resolved_num_operators)"); do
+  for op_num in $(resolved_operator_ids); do
     operator_compose_env_file="$(operator_compose_env_file_path "${op_num}")"
     operator_runtime_env_file="$(operator_runtime_env_file_path "${op_num}")"
+    project_name="$(compose_project_name_for_operator "${op_num}")"
     if ! require_operator_env_file "${operator_compose_env_file}" \
       || ! require_operator_env_file "${operator_runtime_env_file}"; then
       exit 1
     fi
-    docker compose -p "op_${op_num}" -f docker-compose.yml -f "$(compose_override_file)" --env-file "${ENV_FILE}" --env-file "${operator_compose_env_file}" --env-file "${operator_runtime_env_file}" down --volumes
+    docker compose -p "${project_name}" -f docker-compose.yml -f "$(compose_override_file)" --env-file "${ENV_FILE}" --env-file "${operator_compose_env_file}" --env-file "${operator_runtime_env_file}" down --volumes
   done
 fi
 
@@ -273,12 +293,13 @@ if [[ "${IS_STARTUP_COMMAND}" == true ]] && uses_shared_bitvmx_network; then
   fi
 fi
 
-for op_num in $(seq 1 "$(resolved_num_operators)"); do
+for op_num in $(resolved_operator_ids); do
+  project_name="$(compose_project_name_for_operator "${op_num}")"
   operator_compose_env_file="$(operator_compose_env_file_path "${op_num}")"
   operator_runtime_env_file="$(operator_runtime_env_file_path "${op_num}")"
   if ! require_operator_env_file "${operator_compose_env_file}" \
     || ! require_operator_env_file "${operator_runtime_env_file}"; then
     exit 1
   fi
-  run_compose_stack "op_${op_num}" "${operator_compose_env_file}" "${operator_runtime_env_file}"
+  run_compose_stack "${project_name}" "${operator_compose_env_file}" "${operator_runtime_env_file}"
 done

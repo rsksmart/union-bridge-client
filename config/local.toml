@@ -11,8 +11,5 @@ start_from = "best"
 # Bridge Flow Configuration
 # ═══════════════════════════════════════════════════════
 
-[bridge.pegout]
-advance_funds_timeout_secs = 30
-
 [bridge.committee]
 drp_program_definition = "/app/resources/hello-world.yaml"

@@ -16,7 +16,7 @@ In the examples below, `<project_root>` means the root of this repository checko
 This repo owns:
 
 - local multi-operator Docker runtime
-- env-file driven operator startup with selectable compose overrides
+- env-file driven operator startup with the compose override derived from operator count
 - generated runtime artifacts under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/`
 - local `start-operators.sh` usage
 - local funding, logs, and troubleshooting
@@ -70,11 +70,11 @@ Or run the lower-level scripts directly:
 
 ```bash
 cd docker/local-infra
-./start_blockchains.sh --fresh up -d
+./start-blockchains.sh --fresh up -d
 cd ../..
 ./cli-setup-operators.sh --ops 4
 cd docker/local-infra
-./start_bitvmx.sh --fresh up -d
+./start-bitvmx.sh --fresh up -d
 ```
 
 ## 3. Start or Stop Operators
@@ -86,6 +86,9 @@ cd docker/operator
 
 # Start 4 operators
 bash start-operators.sh up -d
+
+# Start only the prepared operator under ~/.union_bridge/op_3
+bash start-operators.sh --op 3 up -d
 
 # Start a different count
 bash start-operators.sh --ops 6 up -d
@@ -102,10 +105,11 @@ bash start-operators.sh ps
 bash start-operators.sh down
 ```
 
-The selected env file chooses the compose shape through `OP_MODE`:
+The compose shape is derived from the effective operator count:
 
-- `OP_MODE=all`: `docker-compose.all.yml`
-- `OP_MODE=one`: `docker-compose.one.yml` and requires `NUM_OPERATORS=1`
+- `--op <ID>`: `docker-compose.one.yml`
+- `NUM_OPERATORS=1`: `docker-compose.one.yml`
+- `NUM_OPERATORS=2-10`: `docker-compose.all.yml`
 
 ## Environment Files
 
@@ -121,6 +125,10 @@ The Docker runtime uses:
 `RESOURCES_DIR`. When unset, Docker falls back to the public repo copies under `../../config`
 and `../../resources`.
 
+`--op <ID>` selects which staged operator payload under
+`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_<ID>/` should be used. This is the
+intended path for one-operator-per-host deployments.
+
 `docker-compose.env` and `docker-service.env` are consumed only by Docker operator runs.
 Local cargo mode (`./cli-run.sh`) does not read those files.
 
@@ -131,8 +139,8 @@ If you need to compare it with upstream:
 
 ```bash
 cd ../bitvmx-client
-./check_bitvmx_updates.sh
-./check_bitvmx_updates.sh -r <branch-or-tag>
+./check-bitvmx-updates.sh
+./check-bitvmx-updates.sh -r <branch-or-tag>
 ```
 
 ## Troubleshooting
