@@ -5,9 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::constants::{
-    operator_ids, LOCAL_ANVIL_ADDRESS, ONE_OPERATOR_COMPOSE_PROJECT, REMOTE_SSH_USER,
-};
+use crate::constants::{operator_ids, LOCAL_ANVIL_ADDRESS, ONE_OPERATOR_COMPOSE_PROJECT};
 use crate::environments::*;
 use crate::utils::command_to_string;
 
@@ -29,9 +27,11 @@ pub fn handle_whitelist(
 
     let member_signers = match env {
         Environment::Local => collect_local_signers_from_logs(MEMBER_LOG_MARKER)?,
-        Environment::LocalDocker => collect_local_signers(MEMBER_LOG_MARKER)?,
-        Environment::Alphanet | Environment::Testnet | Environment::Regtest => {
-            collect_remote_member_addresses(&env.hosts())?
+        Environment::Docker => collect_local_signers(MEMBER_LOG_MARKER)?,
+        Environment::Remote(_) => {
+            let hosts = env.hosts()?;
+            let ssh_user = env.remote_ssh_user()?;
+            collect_remote_member_addresses(&hosts, &ssh_user)?
         }
     };
 
@@ -52,10 +52,10 @@ pub fn handle_whitelist(
     println!();
 
     let addr_array = format!("[{}]", unique.join(","));
-    let rpc_url = env.rpc_url();
+    let rpc_url = env.rpc_url()?;
 
     match env {
-        Environment::Local | Environment::LocalDocker => {
+        Environment::Local | Environment::Docker => {
             let from_address = resolve_local_whitelist_sender(from_address, private_key)?;
             println!(
                 "Running: cast send --rpc-url {} --from {} {} \"whitelistAddresses(address[])\" \"{}\" --unlocked",
@@ -82,7 +82,7 @@ pub fn handle_whitelist(
 
             println!("{}", String::from_utf8_lossy(&output.stdout));
         }
-        Environment::Alphanet | Environment::Testnet | Environment::Regtest => {
+        Environment::Remote(_) => {
             let key = match resolve_remote_whitelist_private_key(from_address, private_key)? {
                 Some(key) => key,
                 None => {
@@ -131,7 +131,7 @@ fn resolve_local_whitelist_sender(
 ) -> Result<String> {
     if private_key.is_some() {
         bail!(
-            "`--private-key` is not supported for `operator whitelist` in local/local-docker. Use `--from <address>` or rely on the default unlocked anvil account."
+            "`--private-key` is not supported for `operator whitelist` in local/docker. Use `--from <address>` or rely on the default unlocked anvil account."
         );
     }
 
@@ -146,7 +146,7 @@ fn resolve_remote_whitelist_private_key(
 ) -> Result<Option<String>> {
     if from_address.is_some() {
         bail!(
-            "`--from` is only supported for `operator whitelist` in local/local-docker. Use `--private-key <hex-key>` in regtest/alphanet/testnet."
+            "`--from` is only supported for `operator whitelist` in local/docker. Use `--private-key <hex-key>` in remote mode."
         );
     }
 
@@ -188,12 +188,10 @@ pub async fn handle_operator_funding(env: Environment) -> Result<()> {
         Environment::Local => {
             fund_local()?;
         }
-        Environment::LocalDocker => {
+        Environment::Docker => {
             fund_local_docker()?;
         }
-        Environment::Alphanet | Environment::Testnet | Environment::Regtest => {
-            print_instructions(env)?;
-        }
+        Environment::Remote(_) => print_instructions(&env)?,
     }
     Ok(())
 }
@@ -205,10 +203,8 @@ pub fn handle_user_funding(env: Environment) -> Result<()> {
     // collect user RSK addresses from logs (all operators for funding display)
     let user_addresses = match env {
         Environment::Local => collect_user_rsk_addresses_from_cargo_logs(false)?,
-        Environment::LocalDocker => collect_user_rsk_addresses_from_local_docker(false)?,
-        Environment::Alphanet | Environment::Testnet | Environment::Regtest => {
-            collect_user_rsk_addresses_from_remote(env, false)?
-        }
+        Environment::Docker => collect_user_rsk_addresses_from_local_docker(false)?,
+        Environment::Remote(_) => collect_user_rsk_addresses_from_remote(&env, false)?,
     };
 
     // print RSK funding instructions
@@ -223,9 +219,9 @@ pub fn handle_user_funding(env: Environment) -> Result<()> {
         }
         println!();
 
-        let rpc_url = env.rpc_url();
+        let rpc_url = env.rpc_url()?;
         match env {
-            Environment::Local | Environment::LocalDocker => {
+            Environment::Local | Environment::Docker => {
                 println!("Fund using (local anvil):");
                 for (_, address) in &user_addresses {
                     println!(
@@ -234,7 +230,7 @@ pub fn handle_user_funding(env: Environment) -> Result<()> {
                     );
                 }
             }
-            Environment::Alphanet | Environment::Testnet | Environment::Regtest => {
+            Environment::Remote(_) => {
                 let private_key = prompt_password("Enter Cow Private Key: ")
                     .context("failed to read private key")?
                     .trim()
@@ -269,13 +265,11 @@ pub fn handle_user_funding(env: Environment) -> Result<()> {
 
 /// returns the first user RSK address found in logs (for the current environment)
 /// when `first_only` is true, only queries operator 1 (used for pegout)
-pub fn get_user_rsk_address(env: Environment, first_only: bool) -> Result<Option<String>> {
+pub fn get_user_rsk_address(env: &Environment, first_only: bool) -> Result<Option<String>> {
     let addresses = match env {
         Environment::Local => collect_user_rsk_addresses_from_cargo_logs(first_only)?,
-        Environment::LocalDocker => collect_user_rsk_addresses_from_local_docker(first_only)?,
-        Environment::Alphanet | Environment::Testnet | Environment::Regtest => {
-            collect_user_rsk_addresses_from_remote(env, first_only)?
-        }
+        Environment::Docker => collect_user_rsk_addresses_from_local_docker(first_only)?,
+        Environment::Remote(_) => collect_user_rsk_addresses_from_remote(env, first_only)?,
     };
     Ok(addresses.into_iter().next().map(|(_, addr)| addr))
 }
@@ -333,10 +327,10 @@ fn collect_user_rsk_addresses_from_local_docker(first_only: bool) -> Result<Vec<
 }
 
 fn collect_user_rsk_addresses_from_remote(
-    env: Environment,
+    env: &Environment,
     first_only: bool,
 ) -> Result<Vec<(String, String)>> {
-    let all_hosts = env.hosts();
+    let all_hosts = env.hosts()?;
     let hosts: Vec<&String> = if first_only {
         all_hosts.first().into_iter().collect()
     } else {
@@ -345,7 +339,7 @@ fn collect_user_rsk_addresses_from_remote(
     let mut addresses = Vec::new();
 
     for host in hosts {
-        let target = format!("{}@{}", REMOTE_SSH_USER, host);
+        let target = format!("{}@{}", env.remote_ssh_user()?, host);
 
         let mut cmd = Command::new("ssh");
         cmd.arg(&target).args([
@@ -475,14 +469,15 @@ fn fund_local_docker() -> Result<()> {
     Ok(())
 }
 
-fn print_instructions(env: Environment) -> Result<()> {
+fn print_instructions(env: &Environment) -> Result<()> {
     let env_name = env.get_name();
 
-    let hosts = env.hosts();
-    let rpc_url = env.rpc_url();
+    let hosts = env.hosts()?;
+    let rpc_url = env.rpc_url()?;
 
     println!("[docker-fund] gathering operator wallets from {} hosts", env_name);
-    let signers = collect_remote_member_addresses(&hosts)?;
+    let ssh_user = env.remote_ssh_user()?;
+    let signers = collect_remote_member_addresses(&hosts, &ssh_user)?;
     let unique = unique_addresses(&signers);
     let expected = hosts.len();
     if unique.len() < expected {
@@ -590,10 +585,13 @@ fn collect_local_signers(marker: &str) -> Result<Vec<(String, String)>> {
     Ok(signers)
 }
 
-fn collect_remote_member_addresses(hosts: &[String]) -> Result<Vec<(String, String)>> {
+fn collect_remote_member_addresses(
+    hosts: &[String],
+    ssh_user: &str,
+) -> Result<Vec<(String, String)>> {
     let mut signers = Vec::new();
     for host in hosts {
-        let target = format!("{}@{}", REMOTE_SSH_USER, host);
+        let target = format!("{}@{}", ssh_user, host);
 
         let mut cmd = Command::new("ssh");
         cmd.arg(&target).args(["docker", "compose", "-p", ONE_OPERATOR_COMPOSE_PROJECT, "logs"]);
@@ -663,7 +661,7 @@ fn cargo_logs_dir() -> Result<PathBuf> {
 }
 
 fn run_cast_send_local(address: &str) -> Result<()> {
-    let rpc_url = Environment::Local.rpc_url();
+    let rpc_url = Environment::Local.rpc_url()?;
     eprintln!(
         "  Running: cast send --rpc-url {} --from {} {} --value 1ether --unlocked",
         rpc_url, LOCAL_ANVIL_ADDRESS, address

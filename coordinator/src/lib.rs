@@ -8,3 +8,5 @@ pub mod monitor;
 pub mod store;
 mod types;
 mod user_requests;
+
+pub const RUNTIME_ENV_LOCAL: &str = "local";
