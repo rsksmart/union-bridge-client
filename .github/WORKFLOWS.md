@@ -153,7 +153,7 @@ scope. The token should be configured as a repository secret.
 
 ### Permission Issues
 
-- **GHCR push failures**: Ensure the repository has `packages: write` and `id-token: write` permissions
+- **GHCR push failures**: Ensure the repository has `packages: write` permissions
 - **Token permissions**: Verify that `REGISTRY_TOKEN` has `write:packages` scope and that
   `UNION_CONTRACTS_GITHUB_TOKEN` has read access to the private contracts repository
 - **Organization settings**: Check that the `rsksmart` organization allows package publishing
