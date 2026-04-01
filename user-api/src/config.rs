@@ -40,8 +40,8 @@ pub struct HttpConfig {
 }
 
 impl Config {
-    pub fn load(env_name: Option<String>) -> Result<Self, ConfigError> {
-        CommonConfig::load_config::<Self>(env_name)
+    pub fn load(config_name: Option<String>) -> Result<Self, ConfigError> {
+        CommonConfig::load_config::<Self>(config_name)
     }
 }
 
@@ -69,7 +69,7 @@ mod tests {
         assert!(config
             .user_api_config
             .broker_key_path
-            .ends_with("/.union_bridge/op_1/broker/user-api.pem"));
+            .ends_with("/.union_bridge/op_1/union-client/user-api.pem"));
         assert_eq!(30001, config.user_api_config.notifier.port);
         assert_eq!(40001, config.user_api_config.http.port);
     }

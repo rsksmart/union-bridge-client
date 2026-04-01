@@ -38,10 +38,10 @@ If the images will connect to a local Anvil node, build with the `anvil` feature
 bash d-build-client.sh --features=anvil
 ```
 
-For normal Docker runtime usage:
+For public-repo Docker runtime usage:
 
 1. build images from here with `d-build-client.sh`
-2. run operators from [../operator/README.md](../operator/README.md)
+2. run local operators from [../operator/README.md](../operator/README.md)
 
 If you still run `docker compose` manually from this directory, export any required variables in your shell first, such
 as `KEY_STORE_PASSWORD`.
@@ -68,4 +68,5 @@ echo "$GITHUB_REGISTRY_TOKEN" | docker login ghcr.io -u <your_user> --password-s
 
 ## Next Step
 
-After building or pulling images, switch to [../operator/README.md](../operator/README.md) for runtime commands.
+After building or pulling images, switch to [../operator/README.md](../operator/README.md) for local runtime commands.
+Remote deployments are maintained outside this repository.

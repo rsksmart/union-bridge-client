@@ -64,7 +64,7 @@ Higher-level docs route to lower-level ones:
 | understand contributor setup, shared configuration, and developer conventions | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | run the client locally or use the operations wrappers | [cli/README.md](cli/README.md) |
 | choose a Docker workflow | [docker/README.md](docker/README.md) |
-| run full operators in Docker | [docker/operator/README.md](docker/operator/README.md) |
+| run local operators in Docker | [docker/operator/README.md](docker/operator/README.md) |
 | build or publish Docker images | [docker/build/README.md](docker/build/README.md) |
 | dive into component-specific detail | component READMEs close to the implementation, such as [check-fork/README.md](check-fork/README.md), [transaction-dispatcher/README.md](transaction-dispatcher/README.md), [key-manager/README.md](key-manager/README.md), and [cli/bitcoin-wallet/README.md](cli/bitcoin-wallet/README.md) |
 
@@ -74,7 +74,7 @@ For detailed end-to-end flow documentation, see [docs/e2e/README.md](docs/e2e/RE
 
 ## Contributing
 
-- [CONTRIBUTING.md](CONTRIBUTING.md): contributor setup, local and regtest flows, runtime configuration, and
+- [CONTRIBUTING.md](CONTRIBUTING.md): contributor setup, local flows, runtime configuration, and
   developer-oriented documentation.
 
 ## License
