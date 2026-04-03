@@ -56,10 +56,7 @@ impl StoredTransaction {
             deserialize(&tx_bytes).context("failed to decode transaction")?;
 
         let change = match (self.change_outpoint, self.change_value) {
-            (Some(outpoint), Some(value_sat)) => Some(Utxo {
-                outpoint,
-                value_sat,
-            }),
+            (Some(outpoint), Some(value_sat)) => Some(Utxo { outpoint, value_sat }),
             _ => None,
         };
 
@@ -67,10 +64,7 @@ impl StoredTransaction {
             .spent_outpoints
             .iter()
             .zip(self.spent_values.iter())
-            .map(|(outpoint, value_sat)| Utxo {
-                outpoint: *outpoint,
-                value_sat: *value_sat,
-            })
+            .map(|(outpoint, value_sat)| Utxo { outpoint: *outpoint, value_sat: *value_sat })
             .collect();
 
         // reconstruct spent_indices - we don't actually need these for RBF,
@@ -120,10 +114,8 @@ impl PendingTransactionStore {
         network: bitcoin::Network,
     ) -> Result<Option<CreatedTransaction>> {
         let key = pending_tx_key(txid);
-        let stored: Option<StoredTransaction> = self
-            .db
-            .get(&key)
-            .map_err(|e| anyhow!("failed to read pending transaction: {e}"))?;
+        let stored: Option<StoredTransaction> =
+            self.db.get(&key).map_err(|e| anyhow!("failed to read pending transaction: {e}"))?;
 
         match stored {
             Some(s) => Ok(Some(s.to_created(network)?)),
@@ -150,9 +142,7 @@ impl PendingTransactionStore {
 
     pub fn remove(&self, txid: &Txid) -> Result<()> {
         let key = pending_tx_key(txid);
-        self.db
-            .delete(&key)
-            .map_err(|e| anyhow!("failed to delete pending transaction: {e}"))
+        self.db.delete(&key).map_err(|e| anyhow!("failed to delete pending transaction: {e}"))
     }
 
     pub fn clear(&self) -> Result<()> {

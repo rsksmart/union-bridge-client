@@ -456,39 +456,6 @@ For Docker-based deployments, see [docker/README.md](docker/README.md) which cov
 - **Full operator deployment**: Running everything (BitVMX + Union Client) in Docker
 - **Building images**: Creating and pushing Union Client Docker images
 
-### Development/Testing Setup
-
-Optionally, you can run `./cli-mocking.sh` in another terminal before starting the clients with `./cli-run.sh`. This
-will:
-
-#### Mocking Advance Funds Events via FakePegManager
-
-By default (`deploy` mode), the CLI deploys `FakePegManager` against local anvil.
-
-For regtest, use `attach` mode (`--no-deploy`) and pass the predeployed address:
-
-```bash
-./cli-mocking.sh \
-  --rpc-url ws://<private-regtest-rpc>:4445 \
-  --fake-peg-manager-address 0x... \
-  --no-deploy
-```
-
-You can also provide values through env vars:
-
-- `MOCKS_PRIVATE_KEY`
-- `FAKE_PEG_MANAGER_ADDRESS`
-- `CHECK_FORK_REQUIRED_NUM_BLOCKS` (optional, defaults to `5`)
-
-You will have the following commands available:
-
-- `raf` or `invoke-request-advance-funds`: start monitoring blocks for advance funds (emits RequestAdvanceFunds event)
-    - copy the printed `pegout_id`, you will need it for the next step
-- `kaf` or `invoke-advance-funds`: generate a fake advance-funds event that triggers the advance funds in Coordinator
-    - you need to provide the `pegout_id` from the previous step
-
-(check cli help for more info)
-
 #### Force Flags for Testing
 
 The coordinator supports force flags to trigger specific behaviors during testing. These flags are **only active in

@@ -40,10 +40,7 @@ pub fn fetch_utxo_amount(
         .context("failed to fetch transaction from RPC")?;
     let raw = Vec::<u8>::from_hex(&tx_hex).context("invalid transaction hex from RPC")?;
     let tx: Transaction = deserialize(&raw).context("failed to decode transaction")?;
-    let tx_out = tx
-        .output
-        .get(vout as usize)
-        .context("specified vout not found in transaction")?;
+    let tx_out = tx.output.get(vout as usize).context("specified vout not found in transaction")?;
     Ok(tx_out.value.to_sat())
 }
 
@@ -51,9 +48,7 @@ pub fn wait_for_ready(bitcoind: &Bitcoind) -> Result<()> {
     let timeout = std::time::Duration::from_secs(20);
     let start = std::time::Instant::now();
     loop {
-        let client = bitcoind
-            .rpc_client()
-            .context("create RPC client during readiness check")?;
+        let client = bitcoind.rpc_client().context("create RPC client during readiness check")?;
         match client.get_block_count() {
             Ok(_) => return Ok(()),
             Err(err) if start.elapsed() > timeout => {
@@ -83,9 +78,7 @@ pub fn ensure_wallet(bitcoind: &Bitcoind) -> Result<Client> {
         Err(err) => return Err(anyhow!("failed to create regtest wallet: {err}")),
     }
 
-    bitcoind
-        .wallet_client()
-        .context("failed to create wallet RPC client")
+    bitcoind.wallet_client().context("failed to create wallet RPC client")
 }
 
 pub fn find_vout_for_address(
@@ -94,10 +87,7 @@ pub fn find_vout_for_address(
     address: &bitcoin::Address,
 ) -> Result<u32> {
     let verbose: serde_json::Value = client
-        .call(
-            "getrawtransaction",
-            &[serde_json::json!(txid_hex), serde_json::json!(true)],
-        )
+        .call("getrawtransaction", &[serde_json::json!(txid_hex), serde_json::json!(true)])
         .context("failed to fetch funding transaction")?;
     let vouts = verbose
         .get("vout")
@@ -106,16 +96,10 @@ pub fn find_vout_for_address(
 
     let script_hex = bytes_to_hex(address.script_pubkey().as_bytes());
     for entry in vouts {
-        if entry
-            .get("scriptPubKey")
-            .and_then(|spk| spk.get("hex"))
-            .and_then(|h| h.as_str())
+        if entry.get("scriptPubKey").and_then(|spk| spk.get("hex")).and_then(|h| h.as_str())
             == Some(script_hex.as_str())
         {
-            let vout = entry
-                .get("n")
-                .and_then(|n| n.as_u64())
-                .context("vout entry missing 'n'")?;
+            let vout = entry.get("n").and_then(|n| n.as_u64()).context("vout entry missing 'n'")?;
             return Ok(u32::try_from(vout).context("vout does not fit in u32")?);
         }
     }

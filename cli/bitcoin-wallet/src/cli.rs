@@ -148,10 +148,7 @@ impl Completer for CliHelper {
         _ctx: &RustyContext<'_>,
     ) -> RustyResult<(usize, Vec<Pair>)> {
         let upto_cursor = &line[..pos];
-        let start = upto_cursor
-            .rfind(char::is_whitespace)
-            .map(|idx| idx + 1)
-            .unwrap_or(0);
+        let start = upto_cursor.rfind(char::is_whitespace).map(|idx| idx + 1).unwrap_or(0);
         let prefix = &upto_cursor[start..];
         let head = upto_cursor[..start].trim_end();
         let tokens: Vec<&str> = head.split_whitespace().collect();
