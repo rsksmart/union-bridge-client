@@ -17,7 +17,7 @@ use crate::flows::committee::common::{CommitteeData, get_dispute_channel_pid, se
 use crate::flows::committee::setup_committee_flow::NO_LEADER_IDX;
 use crate::types::MemberOfCommittee;
 
-const DRP_TIMELOCK_BLOCKS: u16 = 15; // TODO: move to config?
+const DRP_TIMELOCK_BLOCKS: u16 = 15;
 
 #[derive(Clone, Copy)]
 struct OperatorSetupParams<'a> {

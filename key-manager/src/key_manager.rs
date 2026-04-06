@@ -7,9 +7,7 @@ use anyhow::{Context, Result, anyhow};
 use rand::rngs::OsRng;
 use rand::thread_rng;
 
-pub struct KeyManager {
-    // TODO
-}
+pub struct KeyManager {}
 
 impl KeyManager {
     /// Generate a new signing key and save it to a keystore file

@@ -487,9 +487,7 @@ where
         Ok(())
     }
 
-    fn shutdown(&mut self) {
-        // TODO handle shutdown logic if necessary
-    }
+    fn shutdown(&mut self) {}
 }
 
 #[cfg(test)]

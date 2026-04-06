@@ -15,10 +15,7 @@ impl<C: PegManagerContractApi> NotifyCheckForkCompleteInvoke<C> {
         Self { contract, gas_bumps }
     }
 
-    pub async fn run(
-        &self,
-        input: &str, // TODO proper type for input
-    ) -> Result<(), DomainErrors> {
+    pub async fn run(&self, input: &str) -> Result<(), DomainErrors> {
         info!("Init NotifyCheckForkComplete for: {input:?}");
 
         let tx_hash = self.contract.notify_check_fork_completion(input, self.gas_bumps).await?;

@@ -212,7 +212,6 @@ where
     }
 
     /// Start the next step and log the transition
-    // TODO: Make start_step non-public and expose explicit transition APIs only.
     pub fn start_step(&mut self, next_step: Steps) -> Result<()> {
         let previous_step = self.state.ctx.step;
         self.state.ctx.step = next_step;

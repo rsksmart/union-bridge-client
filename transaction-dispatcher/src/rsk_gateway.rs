@@ -258,7 +258,6 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
     /// Returns an error if any contract address is missing, invalid, or has no deployed code.
     #[allow(clippy::too_many_lines)]
     pub async fn new(
-        // TODO make provider an Rc so we avoid more expensive cloning
         provider: P,
         managed_contracts: HashMap<String, ContractInfo>,
         tx_config: &TransactionConfig,
@@ -307,8 +306,6 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
                 ));
             }
         }
-
-        // TODO make these contracts Rc so we avoid more expensive cloning
 
         let pegin_manager_contract =
             PeginManagerContract::new(provider.clone(), pegin_contract_address.into());

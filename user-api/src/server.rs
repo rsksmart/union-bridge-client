@@ -104,7 +104,6 @@ impl Server {
     ) -> impl IntoResponse {
         info!("Received bitvmx_address for destination: {destination}",);
 
-        // TODO send a proper type
         let res = broker.send(&FromServer::MemberRequest, &destination);
         match res {
             Ok(_) => (StatusCode::OK, Json(json!({ "result": "ok" }))),
@@ -122,7 +121,6 @@ impl Server {
             destination, payload
         );
 
-        // TODO send a proper type instead of Value
         let res = broker.send(&FromServer::UserRequest(payload), &destination);
         match res {
             Ok(_) => (StatusCode::OK, Json(json!({ "result": "ok" }))),

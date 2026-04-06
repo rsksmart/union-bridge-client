@@ -74,8 +74,6 @@ impl RskBlockHeader {
             return Err("minimum_gas_price is None");
         };
 
-        // TODO: remove this when REED810 is activated in mainnet
-        // logs bloom will be replaced by exten
         let extension_field = if self.rsk_pte_edges.is_some() {
             self.compressed_extension_data_v1()?
         } else {

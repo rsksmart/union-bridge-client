@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::block_header::RskBlockHeader;
 
-// TODO configurable
 pub const SUPERBLOCK_TIMES_DIFFICULTY: u8 = 20;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -249,14 +248,6 @@ fn validate_enough_effort_superblock(
     if actual_effort >= expected_effort {
         return Ok(());
     }
-
-    // TODO tmp, do not err if not super block for now (until Superchain), just log
-    // match _block_type {
-    //     "first" => Err("First block's PoW is less than the required difficulty"),
-    //     "consecutive" => Err("Consecutive Block's PoW is less than the required difficulty"),
-    //     "uncle" => Err("Uncle's Block PoW is less than the required difficulty"),
-    //     _ => panic!("Invalid block type"),
-    // }
 
     Ok(())
 }

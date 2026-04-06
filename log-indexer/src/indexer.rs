@@ -264,7 +264,6 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                     continue;
                 }
                 Err(RskSubscriptionError::Lagged(err)) => {
-                    // TODO trigger backward sync
                     error!(
                         "[subscribe_logs] Subscription lagged, a backward_sync will be needed: {err:?}"
                     );
@@ -301,7 +300,6 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
             }
 
             self.store.save_log(&new_log).context("Saving new log")?;
-            // TODO avoid double writes for sync checkpoint in log indexer listener
             self.store.set_sync_checkpoint(&new_log).context("Setting new log checkpoint")?;
 
             #[allow(clippy::collapsible_if)]

@@ -558,7 +558,6 @@ where
             }
 
             let Err(err) = flow.complete_step(&StepData::RetryAcceptPegin) else {
-                // TODO: verify that the pegin is accepted
                 info!("Accept pegin succeeded on retry for flow {flow_id}");
                 continue;
             };
