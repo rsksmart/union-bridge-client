@@ -2,6 +2,8 @@
 
 The `cli/` workspace contains the CLI tools for local development, operator operations, and Bitcoin wallet management.
 
+> **Disclaimer:** These CLI tools are intended for development testing and validation only. They are **not** designed or supported for production usage.
+
 ## Related Docs
 
 - [../CONTRIBUTING.md](../CONTRIBUTING.md): contributor setup, shared configuration, and local validation flows
