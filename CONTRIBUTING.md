@@ -399,16 +399,16 @@ complete flow:
 # - Bitcoin regtest node running with RPC enabled
 # - Contracts deployed
 # - USER_BITCOIN_WIF and MEMBER_BITCOIN_WIF environment variables set (for deriving public keys)
-# - Background mining running (start with: ./cli-run.sh --start-mine)
+# - Background mining running (start with: ./cli-infra.sh --start-mine)
 
 # Start background mining (in a separate terminal or before running the test)
-./cli-run.sh --start-mine
+./cli-infra.sh --start-mine
 
 # Run automated happy path test
 bash tests/run-happy-path.sh
 
 # Stop background mining when done
-./cli-run.sh --stop-mine
+./cli-infra.sh --stop-mine
 ```
 
 This test will automatically:
@@ -492,7 +492,7 @@ You will have the following commands available:
 #### Force Flags for Testing
 
 The coordinator supports force flags to trigger specific behaviors during testing. These flags are **only active in
-local environments** (`local` and `docker`).
+the `local` environment**.
 
 | Flag            | Description                                                                                                                                                                                       |
 |-----------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -528,8 +528,7 @@ Configuration files are located under the `config` directory. The final config i
 sources in the defined order:
 
 - `config/base.toml`: shared configuration for all environments.
-- `config/environment/{env}.toml`: environment-specific overrides (e.g. `local.toml`, `docker-local.toml`,
-  `docker-alphanet.toml`).
+- `config/{env}.toml`: environment-specific overrides (e.g. `local.toml`, `docker.toml`, `ci.toml`).
 
 ### Configuration Overrides
 
@@ -581,7 +580,7 @@ cargo run --bin key-manager new-key -p <YOUR_PASSWORD> -d <PATH_TO_STORE_IT>
 
 This will output:
 
-- the local path to your key: you will have to set it in the corresponding `transaction-dispatcher.yaml` config file
+- the local path to your key: you will have to set it in the corresponding TOML config file or via `UB__` env var override
 - the public key
 - the address (this will be automatically used by the wallet setup commands)
 
