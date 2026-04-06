@@ -70,7 +70,6 @@ where
         let gas_limit = calculate_gas_limit_with_cap(estimated_gas, bumps)?;
 
         let gas_price = provider.get_gas_price().await?;
-        // let tx_builder = build_tx().gas(gas_limit).gas_price(gas_price).legacy();
         let tx_builder = build_tx().gas(gas_limit).gas_price(gas_price);
 
         debug!(

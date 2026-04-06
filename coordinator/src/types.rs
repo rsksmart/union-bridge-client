@@ -687,28 +687,8 @@ impl<K: Eq + Hash + Clone> TimeBasedScheduler<K> {
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Utxo {
-    // temporarily omitted for Regtest stage
-    // pub txid: String,
-    // temporarily omitted for Regtest stage
-    // pub vout: u32,
     pub value: u64,
 }
-
-// temporarily omitted for Regtest stage
-// impl TryFrom<Utxo> for UTXO {
-//     type Error = anyhow::Error;
-//
-//     fn try_from(utxo: Utxo) -> Result<Self, Self::Error> {
-//         Ok(UTXO {
-//             txid: utxo
-//                 .txid
-//                 .parse()
-//                 .context("Failed to parse String txid to FixedBytes<32>")?,
-//             outputIndex: utxo.vout,
-//             amount: utxo.value,
-//         })
-//     }
-// }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemberOfCommittee {
