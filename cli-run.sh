@@ -6,8 +6,6 @@
 #        ./cli-run.sh --bitvmx-mode repo
 #        ./cli-run.sh --help
 #        ./cli-run.sh --logs
-#        ./cli-run.sh --start-mine    # start background mining (anvil + bitcoin)
-#        ./cli-run.sh --stop-mine     # stop background mining
 #        ./cli-run.sh --kill          # kill all existing running services and exit
 
 set -euo pipefail

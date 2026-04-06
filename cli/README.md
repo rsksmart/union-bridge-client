@@ -27,8 +27,6 @@ Launches one or more Union Bridge clients locally for development and testing.
 ./cli-run.sh --bitvmx-mode repo
 ./cli-run.sh --logs
 ./cli-run.sh --kill
-./cli-run.sh --start-mine
-./cli-run.sh --stop-mine
 ```
 
 ## `cli-operations.sh`
@@ -96,6 +94,8 @@ The CLI tools are organized in a separate Cargo workspace under `cli/`:
 ```text
 cli/
 ├── Cargo.toml          # CLI workspace configuration with shared dependencies
+├── Cargo.lock
+├── .env.sample         # Template for remote CLI profiles (copy to .env.<profile>)
 ├── run/                # Local client launcher (cli-run.sh)
 │   ├── src/main.rs
 │   └── Cargo.toml
@@ -111,6 +111,12 @@ cli/
 │   │   ├── environments.rs
 │   │   ├── constants.rs
 │   │   └── utils.rs
+│   └── Cargo.toml
+├── mocks/              # Advance-funds mocking tool (cli-mocking.sh)
+│   ├── src/
+│   │   ├── main.rs
+│   │   ├── lib.rs
+│   │   └── events.rs
 │   └── Cargo.toml
 └── bitcoin-wallet/     # Interactive Bitcoin wallet (cli-bitcoin-wallet.sh)
     ├── src/
