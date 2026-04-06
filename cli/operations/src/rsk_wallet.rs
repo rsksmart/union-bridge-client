@@ -231,21 +231,11 @@ pub fn handle_user_funding(env: Environment) -> Result<()> {
                 }
             }
             Environment::Remote(_) => {
-                let private_key = prompt_password("Enter Cow Private Key: ")
-                    .context("failed to read private key")?
-                    .trim()
-                    .to_string();
-                println!();
-
-                if private_key.is_empty() {
-                    bail!("private key is required");
-                }
-
-                println!("Fund using:");
+                println!("Fund with `cast` using a key you control. Replace <PRIVATE_KEY> locally:");
                 for (_, address) in &user_addresses {
                     println!(
-                        "  cast send {} --value 0.25ether --private-key {} --rpc-url {}",
-                        address, private_key, rpc_url
+                        "  cast send {} --value 0.25ether --private-key <PRIVATE_KEY> --rpc-url {}",
+                        address, rpc_url
                     );
                 }
             }
@@ -494,21 +484,11 @@ fn print_instructions(env: &Environment) -> Result<()> {
     }
     println!();
 
-    let private_key = prompt_password("Enter Cow Private Key: ")
-        .context("failed to read private key")?
-        .trim()
-        .to_string();
-    println!();
-
-    if private_key.is_empty() {
-        bail!("private key is required");
-    }
-
-    println!("Fund using:");
+    println!("Fund with `cast` using a key you control. Replace <PRIVATE_KEY> locally:");
     for address in unique {
         println!(
-            "  cast send {} --value 0.25ether --private-key {} --rpc-url {}",
-            address, private_key, rpc_url
+            "  cast send {} --value 0.25ether --private-key <PRIVATE_KEY> --rpc-url {}",
+            address, rpc_url
         );
     }
 
