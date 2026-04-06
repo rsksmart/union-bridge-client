@@ -32,6 +32,13 @@ jobs:
           - name: user-api
             title: Union Client User API
             description: Union Bridge Client User API Service
+        features:
+          - variant: prod
+            cargo_features: ""
+            suffix: ""
+          - variant: anvil
+            cargo_features: anvil
+            suffix: "-anvil"
 
     steps:
       - name: Checkout repository
@@ -52,8 +59,10 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-${{ matrix.crate.name }}
+          flavor: |
+            latest=false
           tags: |
-            type=ref,event=tag
+            type=ref,event=tag,suffix=${{ matrix.features.suffix }}
           labels: |
             org.opencontainers.image.title=${{ matrix.crate.title }}
             org.opencontainers.image.description=${{ matrix.crate.description }}
@@ -65,7 +74,7 @@ jobs:
             url."https://${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}@github.com/temp-rsk".insteadOf \
             "ssh://git@github.com/temp-rsk"
 
-      - name: Build and push ${{ matrix.crate.name }}
+      - name: Build and push ${{ matrix.crate.name }} (${{ matrix.features.variant }})
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -78,7 +87,7 @@ jobs:
           cache-to: type=gha,mode=min
           build-args: |
             CRATE=${{ matrix.crate.name }}
-            FEATURES=anvil
+            FEATURES=${{ matrix.features.cargo_features }}
             UNION_CONTRACTS_GITHUB_TOKEN=${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
 
       - name: Clean up
