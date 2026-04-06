@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::block_header::RskBlockHeader;
 
-// TODO configurable
 pub const SUPERBLOCK_TIMES_DIFFICULTY: u8 = 20;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

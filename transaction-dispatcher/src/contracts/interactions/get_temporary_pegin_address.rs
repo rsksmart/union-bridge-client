@@ -6,7 +6,6 @@ use crate::contracts::stream_manager::StreamManagerContractApi;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{PeginAddressInput, PeginAddressOutput};
 
-// TODO(UB-108) generate TryFrom for the input struct like in the other cases
 #[derive(Clone)]
 pub(crate) struct GetTemporaryPeginAddressCall<
     C: PeginManagerContractApi,

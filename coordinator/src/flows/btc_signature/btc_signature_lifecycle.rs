@@ -36,8 +36,6 @@ pub(crate) trait BtcSignatureLifecycleApi {
     fn get_hash_to_sign(&self) -> Option<Hash256>;
 
     fn blockchain_view(&self) -> &BlockchainView;
-
-    // TODO implement auto-clean after inactivity to cover cases where .close_flow() is not called
 }
 
 pub(crate) struct State {

@@ -42,8 +42,6 @@ use union_contracts::bindings::stream_manager::StreamManager::StreamManagerEvent
 
 use crate::user_requests::ApplyToStream;
 
-// TODO(UB-183)
-
 #[derive(Eq, PartialEq, Debug)]
 pub enum RskPegManagerEvents {
     RequestAdvanceFunds(RequestAdvanceFundsEvent), // temporarily mock, no need to test it
@@ -484,7 +482,6 @@ impl EventDecoder {
         tx_hash: TxHash,
     ) -> RskPegManagerEvents {
         // StreamManager events don't have specific handlers yet
-        // TODO: Implement proper conversion when event variants are identified
         let variant = Self::event_variant_name(event);
         debug!("Ignored StreamManager event ({variant}): block={block_num}, tx={tx_hash}");
         RskPegManagerEvents::IgnoredEvent
@@ -541,7 +538,6 @@ impl EventDecoder {
         tx_hash: TxHash,
     ) -> RskPegManagerEvents {
         // BitcoinManager events don't have specific handlers yet
-        // TODO: Implement proper conversion when event variants are identified
         let variant = Self::event_variant_name(event);
         debug!("Ignored BitcoinManager event ({variant}): block={block_num}, tx={tx_hash}");
         RskPegManagerEvents::IgnoredEvent

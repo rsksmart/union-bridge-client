@@ -93,7 +93,6 @@ impl MyCommittees {
         self.committees.borrow().clone()
     }
 
-    // TODO call when leaving a committee or when a committee is disbanded
     pub fn _remove(&self, committee_id: &CommitteeId) {
         self.committees.borrow_mut().remove(committee_id);
     }

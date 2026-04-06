@@ -141,7 +141,6 @@ impl BlockchainView {
     /// # Panics
     /// Panics if blocks are already borrowed or if block validation fails.
     ///
-    /// TODO try to receive a reference to avoid cloning the block
     pub fn update(&self, new_block: &RskBlockAndUncles) {
         let prev_tip = self.get_tip();
 
@@ -313,7 +312,6 @@ impl BlockchainView {
     }
 }
 
-// TODO use this type for all confirmable events in the Coordinator
 pub struct ConfirmableEvent {
     id: String,
     chain_view: BlockchainView,

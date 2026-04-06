@@ -7,13 +7,13 @@
 - Point out when you think my approach might be overcomplicating things, even if I didn’t ask explicitly
 
 ## Team conventions
-- Every new TODO included should come with a Jira ticket
+- No new TODOs — use Jira tickets instead
 
 # Rust
 
 ## General Standards
 - Follow Rust API Guidelines and naming conventions (snake_case for functions/variables, PascalCase for types)
-- Use `rustfmt` for consistent formatting (TODO: not yet - and `clippy` for linting)
+- Use `rustfmt` for consistent formatting and `clippy` for linting
 - Prefer composition over inheritance when designing structs and traits
 - Always handle `Result` and `Option` types explicitly - avoid `.unwrap()` in production code except where panic is intentional
 - Use `?` operator for error propagation instead of manual unwrap/match when appropriate

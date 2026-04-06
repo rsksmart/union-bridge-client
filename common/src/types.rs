@@ -327,7 +327,6 @@ impl BlockPow {
         // compute the effort by inverting the pow
         // U256::MAX, the "difficulty 1" target, represents the easiest possible target
         U256::MAX.checked_div(pow).unwrap_or_else(|| {
-            // TODO(UB-127) this should be monitored and analysed
             error!("0 division on pow_to_effort");
             U256::zero()
         })

@@ -12,7 +12,6 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     Committee, CommunicationData, RSAPublicKey, UTXO,
 };
 use union_contracts::bindings::member_registry::MemberRegistry::RSAPublicKey as MemberRSAPublicKey;
-// TODO(UB-214)
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct BitcoinTransaction {
@@ -253,7 +252,6 @@ pub struct GetCommitteeOutput {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetCommunicationDataInput {
     pub committee_id: CommitteeId,
-    // TODO rethink if this is needed or a member should only request its own communication data and therefore this param is not required
     pub member_address: Address,
 }
 

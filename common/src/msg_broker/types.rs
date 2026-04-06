@@ -3,12 +3,8 @@ use serde_json::Value;
 
 use crate::types::{Address, RskBlockAndUncles, RskLog};
 
-// TODO(UB-213)
-
 #[derive(Serialize, Deserialize, Debug)]
 pub enum ToServer {
-    // TODO(UB-132) add a limit time for receiving a response?
-
     // block-indexer
     SubscribeBlocks,
     UnsubscribeBlocks,

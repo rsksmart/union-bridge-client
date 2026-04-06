@@ -233,7 +233,6 @@ where
     pub fn complete_step(&mut self, data: &StepData) -> Result<()> {
         let current_step: Steps = self.state.step;
 
-        //TODO we are reaching here with done step with no sense, fix the flow to avoid this
         info!(
             "PegoutFlow {}: Completing step {} with data: {:?} for flow_id {}",
             self.state.flow_id,

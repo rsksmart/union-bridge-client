@@ -525,7 +525,6 @@ where
             committee_id: Uuid::from_u128(*self.state.trigger_data.committee_id),
             slot_index: self.state.trigger_data.slot_index,
             pegout_id,
-            //TODO Extracted from the examples. Pending to add config for regtest vs testnet.
             fee: 335,
             user_pubkey: self.state.trigger_data.user_pubkey,
             my_take_pubkey: operator_pubkey,

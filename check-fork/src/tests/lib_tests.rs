@@ -563,8 +563,6 @@ fn fails_if_extension_data_is_precompressed_v1() {
     assert_eq!(err, "unsupported extension_data format: expected RPC logsBloom (256 bytes)");
 }
 
-// TODO add more complex tests, ie: with more than 2 blocks, with more uncles, with more real block data, etc.
-
 fn create_base_block(number: u64, bridge_event: bool, parent: Option<H256>) -> RskBlock {
     let difficulty = U256::from(DEFAULT_DIFFICULTY);
     let timestamp = DEFAULT_TIMESTAMP;

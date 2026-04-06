@@ -65,7 +65,6 @@ pub fn send_bitvmx_msg<BC: BitVmxBrokerClientApi>(
         .send(msg)
         .map(|_| ())
         .map_err(|e| {
-            // TODO(UB-132)
             error!("Failed to send msg to BitVMX: {e:?}");
             anyhow::Error::from(e)
         })

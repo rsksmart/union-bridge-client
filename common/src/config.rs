@@ -14,7 +14,6 @@ use crate::rsk_provider::RskProvider;
 use crate::types::{BlockHash, RskBlock};
 
 const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
-// todo(fede) replace the /new folder with the final folder
 const BASE_CONFIG_PATH: &str = "config/base";
 const CONFIG_DIR_PATH: &str = "config";
 const EXTENSION_TYPE: &str = "toml";
@@ -79,7 +78,6 @@ pub struct RootstockConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ContractConfig {
-    // TODO(Jira-RethinkContractHandling) convert into a map
     pub name: String,
     pub address: String,
 }

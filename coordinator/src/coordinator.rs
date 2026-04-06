@@ -212,8 +212,6 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             Instant::now().checked_sub(self.bitvmx_ping_after_silence).unwrap_or_else(Instant::now);
         let mut bitvmx_ping: Option<Instant> = None;
 
-        // TODO we will need to think what happens if we accumulate messages of a certain type
-
         let result = (|| -> Result<()> {
             loop {
                 if !self.is_running() {
@@ -255,9 +253,6 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     message_received = true;
                 }
 
-                // TODO(UB-132)
-                //  if block monitor restarted, this is not realising and keeps waiting logs forever
-                //  maybe using persistent storage instead of memory fixes it?
                 if let Some(event) = self.monitor.try_rsk_event().context("Error getting event")? {
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
@@ -270,9 +265,6 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     message_received = true;
                 }
 
-                // TODO(UB-132) if block monitor restarted, this is not realising and keeps waiting blocks forever
-                //  if block monitor restarted, this is not realising and keeps waiting logs forever
-                //  maybe using persistent storage instead of memory fixes it?
                 if let Some(block) = self.monitor.try_block().context("Error getting block")? {
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_new_block(&block) {
@@ -315,7 +307,6 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         #[allow(clippy::collapsible_if)]
         if let Some(ping) = bitvmx_ping {
             if ping.elapsed() > self.bitvmx_not_responding_threshold {
-                // TODO in the future we have to properly handle this situation
                 warn!("BitVMX is not responding");
                 *bitvmx_ping = None;
             }
@@ -335,7 +326,6 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         let result = self.bitvmx_broker.send(IncomingBitVMXApiMessages::Ping(ping_id));
 
         if result.is_err() {
-            // TODO we need to handle this situation properly
             error!("Failed to send Ping to BitVMX: {result:?}");
         }
     }

@@ -109,7 +109,6 @@ pub(crate) trait SetupCommitteeFlowFactoryApi<
     fn create_flow_from_saved_state(&self, saved_state: State) -> SetupCommitteeFlow<CG, BC, S>;
 }
 
-// TODO improve with structs instead of tuples, using tuples for now for validation
 type PubKeyReq = Option<(Uuid, Option<PublicKey>, Option<Uuid>, Option<SignedPublicKey>)>; // request id key, raw pub key, req id signing, signed pub key
 type AggKeyReq = Option<(Uuid, Option<PublicKey>)>; // request id, response data
 type SetupCoreReq = Vec<(Uuid, CommitteeId, bool)>; // request id, committee id, response data
@@ -922,8 +921,6 @@ where
         key_type: &str,
         member_addr: Address,
     ) -> Result<PublicKey> {
-        // TODO revisit this, we are encoding bytes to hex string in the contracts to then decode it back to bytes here
-
         trace!(
             "Parsing {key_type} key for member {member_addr} (len={}): {key_str}",
             key_str.len()
@@ -973,7 +970,6 @@ where
 
         let result = self.bitvmx_broker.send(msg);
         if result.is_err() {
-            // TODO(UB-132)
             error!("Failed to send msg to BitVMX: {result:?}");
         }
     }
@@ -993,7 +989,7 @@ where
             REGTEST_FEE_RATE
         } else {
             DEFAULT_FEE_RATE
-        }; // TODO copied from get_fee_rate on BitVMX client
+        };
 
         let public_key = self.ctx().get_my_dispute_key(&self.global_context)?.public_key;
 
@@ -1028,11 +1024,7 @@ where
             self.ctx().get_committee_data().context("Get Communication Data")?.committee_id.clone();
 
         let my_address: Address = self.my_address().into();
-        let input = GetCommunicationDataInput {
-            // TODO rethink if this is needed or a member should only request its own communication data and therefore this param is not required
-            member_address: my_address,
-            committee_id,
-        };
+        let input = GetCommunicationDataInput { member_address: my_address, committee_id };
 
         let comm_data = self.rt_sync.run(self.contracts.get_committee_communication_data(input))?;
 
@@ -2156,7 +2148,6 @@ where
     }
 }
 
-// TODO commonize with other flows
 impl<CG, BC, S> SetupCommitteeFlowFactoryApi<CG, BC, S> for SetupCommitteeFlowFactory<CG, BC, S>
 where
     CG: RskContractsGatewayApi,

@@ -70,7 +70,6 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
             DomainErrors::InvalidPublicKey(format!("{e:?}"))
         }
         BitcoinManagerErrors::InvalidValue(e) => DomainErrors::InvalidValue(format!("{e:?}")),
-        // TODO handle more based on needs
         _ => DomainErrors::UnhandledContractError(format!("{e:?}")),
     })
 }

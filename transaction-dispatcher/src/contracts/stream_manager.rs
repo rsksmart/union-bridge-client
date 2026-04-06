@@ -76,7 +76,6 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
             DomainErrors::PacketOutOfBound(format!("{e:?}"))
         }
         StreamManagerErrors::InvalidRole(e) => DomainErrors::InvalidRole(format!("{e:?}")),
-        // TODO handle more based on needs
         _ => DomainErrors::UnhandledContractError(format!("{e:?}")),
     })
 }

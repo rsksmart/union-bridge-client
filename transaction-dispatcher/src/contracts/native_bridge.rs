@@ -497,8 +497,6 @@ mod tests {
         }
     }
 
-    /// Call Native Bridge precompiled contract with real regtest data.
-    /// TODO: this is an 'integration' test and shouldn't be here.
     #[tokio::test]
     #[ignore = "this test can only be used when regtest environment is on"]
     async fn test_call_native_bridge_regtest_accept_pegin() {
