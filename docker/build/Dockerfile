@@ -37,6 +37,9 @@ COPY key-manager key-manager
 COPY check-fork check-fork
 COPY coordinator coordinator
 COPY user-api user-api
+# Workspace members required for cargo fetch (integration test crates; excluded from release build)
+COPY tests/block-indexer-runner tests/block-indexer-runner
+COPY tests/block-indexer-validator tests/block-indexer-validator
 
 ENV RUST_LOG=error
 ENV CARGO_TERM_QUIET=true
@@ -51,7 +54,7 @@ RUN --mount=type=ssh,id=default mkdir -p .cargo && \
 # 2) build just one crate for speed
 # optionally builds with --features if provided
 # we also exclude key-manager, which is built always in the next step even if only a couple of crates require it
-ARG EXCLUDES="--exclude check-fork --exclude check-fork-zkp --exclude key-manager --exclude mocks"
+ARG EXCLUDES="--exclude check-fork --exclude check-fork-zkp --exclude key-manager --exclude block-indexer-runner --exclude block-indexer-validator --exclude mocks"
 # TODO when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips) via Dockerfile_coordinator
 # EXCLUDES="--exclude coordinator--exclude check-fork --exclude check-fork-zkp --exclude key-manager --exclude mocks"
 RUN --mount=type=ssh,id=default cargo build --workspace --quiet --release ${EXCLUDES}${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES};

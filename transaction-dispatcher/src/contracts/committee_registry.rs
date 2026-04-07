@@ -166,3 +166,57 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
         _ => DomainErrors::CommitteeError(format!("{decoded_err:?}")),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use union_contracts::bindings::committee_registry::CommitteeRegistry::{
+        CommitteeRegistryErrors, MemberAlreadyDepositedCommunicationData,
+        MemberInfoAlreadyDeposited,
+    };
+
+    use super::*;
+    use crate::contracts::common::tests::generate_contract_revert_error;
+    use crate::rsk_gateway::DomainErrors;
+
+    #[test]
+    fn test_member_already_deposited_communication_data_error() {
+        let err_data = CommitteeRegistryErrors::MemberAlreadyDepositedCommunicationData(
+            MemberAlreadyDepositedCommunicationData {
+                committeeId: 1,
+                memberAddress: alloy_primitives::Address::default(),
+                communicationDataLenght: alloy_primitives::U256::from(3),
+            },
+        );
+
+        let result = generate_contract_revert_error(&err_data);
+        let domain_error = decode_error(&result).unwrap();
+        assert!(matches!(domain_error, DomainErrors::MemberAlreadyDepositedCommunicationData(_)));
+    }
+
+    #[test]
+    fn test_member_info_already_deposited_error() {
+        let err_data =
+            CommitteeRegistryErrors::MemberInfoAlreadyDeposited(MemberInfoAlreadyDeposited {
+                committeeId: 1,
+                memberAddress: alloy_primitives::Address::default(),
+            });
+
+        let result = generate_contract_revert_error(&err_data);
+        let domain_error = decode_error(&result).unwrap();
+        assert!(matches!(domain_error, DomainErrors::MemberInfoAlreadyDeposited(_)));
+    }
+
+    #[test]
+    fn test_unhandled_error_maps_to_committee_error() {
+        use union_contracts::bindings::committee_registry::CommitteeRegistry::ERC1967InvalidImplementation;
+
+        let err_data =
+            CommitteeRegistryErrors::ERC1967InvalidImplementation(ERC1967InvalidImplementation {
+                implementation: alloy_primitives::Address::default(),
+            });
+
+        let result = generate_contract_revert_error(&err_data);
+        let domain_error = decode_error(&result).unwrap();
+        assert!(matches!(domain_error, DomainErrors::CommitteeError(_)));
+    }
+}
