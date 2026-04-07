@@ -41,7 +41,7 @@ alloy-signer-local = { version = "1.0.37" }
 alloy-sol-types = "1.4.0"
 alloy-transport = "1.0.37"
 #
-anyhow = "1.0.94"
+anyhow = "1.0.100"
 axum = "0.8.1"
 bincode = { version = "2.0.1", features = ["serde"] }
 # Version pinned to 0.32.6 for compatibility with bitvmx-emulator crate
@@ -56,8 +56,8 @@ message-broker = { package = "bitvmx-broker", git = "https://github.com/Fairgate
 mockall = "0.13.1"
 musig2 = { version = "0.2.3", features = ["serde", "rand"] }
 primitive-types = { version = "0.13.1", features = ["std", "serde"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
 serde_yaml = "0.9.33"
 sha2 = "0.10.9"
 storage-backend = { package = "rust-bitvmx-storage-backend", git = "https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git", rev = "16a01bfe316266bdac080828e260cd191fcb3cde" }
