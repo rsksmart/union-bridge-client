@@ -83,8 +83,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=min
+          cache-from: type=gha,scope=${{ matrix.crate.name }}-${{ matrix.features.variant }}
+          cache-to: type=gha,mode=min,scope=${{ matrix.crate.name }}-${{ matrix.features.variant }}
           build-args: |
             CRATE=${{ matrix.crate.name }}
             FEATURES=${{ matrix.features.cargo_features }}
