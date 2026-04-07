@@ -330,14 +330,13 @@ mod tests {
         assert_eq!(100, config.indexer.sync.batch_size);
         assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
         assert_eq!("regtest", config.bitcoin_network);
-        assert_eq!(11, config.contracts.len());
+        assert_eq!(10, config.contracts.len());
         let contract_names: Vec<&String> = config.contracts.iter().map(|c| &c.name).collect();
         let expected_names = vec![
             "TestContractDyn",
             "TestContractCompiled",
             "PeginManager",
             "PegoutManager",
-            "FakePegManager",
             "SignatureManager",
             "CommitteeRegistry",
             "MemberRegistry",
@@ -350,13 +349,12 @@ mod tests {
         assert_eq!("0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc", config.contracts[1].address);
         assert_eq!("0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE", config.contracts[2].address);
         assert_eq!("0x3Aa5ebB10DC797CAC828524e59A333d0A371443c", config.contracts[3].address);
-        assert_eq!("0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f", config.contracts[4].address);
-        assert_eq!("0x0B306BF915C4d645ff596e518fAf3F9669b97016", config.contracts[5].address);
-        assert_eq!("0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82", config.contracts[6].address);
-        assert_eq!("0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e", config.contracts[7].address);
-        assert_eq!("0x0165878A594ca255338adfa4d48449f69242Eb8F", config.contracts[8].address);
-        assert_eq!("0x59b670e9fA9D0A427751Af201D676719a970857b", config.contracts[9].address);
-        assert_eq!("0x0000000000000000000000000000000001000006", config.contracts[10].address);
+        assert_eq!("0x0B306BF915C4d645ff596e518fAf3F9669b97016", config.contracts[4].address);
+        assert_eq!("0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82", config.contracts[5].address);
+        assert_eq!("0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e", config.contracts[6].address);
+        assert_eq!("0x0165878A594ca255338adfa4d48449f69242Eb8F", config.contracts[7].address);
+        assert_eq!("0x59b670e9fA9D0A427751Af201D676719a970857b", config.contracts[8].address);
+        assert_eq!("0x0000000000000000000000000000000001000006", config.contracts[9].address);
     }
 
     #[test]
@@ -376,7 +374,7 @@ mod tests {
         assert_eq!(1000, config.indexer.cache.size);
         assert_eq!("ws://host.docker.internal:8545", config.provider.rootstock.url);
         assert_eq!("regtest", config.bitcoin_network);
-        assert_eq!(11, config.contracts.len());
+        assert_eq!(10, config.contracts.len());
     }
 
     #[test]

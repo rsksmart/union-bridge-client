@@ -23,10 +23,6 @@ name = "PegoutManager"
 address = "0x3Aa5ebB10DC797CAC828524e59A333d0A371443c"
 
 [[contracts]]
-name = "FakePegManager"
-address = "0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f"
-
-[[contracts]]
 name = "SignatureManager"
 address = "0x0B306BF915C4d645ff596e518fAf3F9669b97016"
 
@@ -101,10 +97,6 @@ bitvmx.pubkey_hash = "1d10fa43ebbf6674d74caa3e9032711ade09d98ea7d20f89459f61152b
 broker.client_id = 101
 broker.key_path = "/{BASE_STORAGE_PATH}/.union_bridge/op_1/union-client/coordinator.pem"
 storage_path = "/{BASE_STORAGE_PATH}/.union_bridge/op_1/database"
-
-[coordinator.advance_funds]
-check_fork_guest_elf_path = "/app/config/check-fork-guest.bin"
-max_zkp_status_retries = 99999999
 
 # ═══════════════════════════════════════════════════════
 # Key Store

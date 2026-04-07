@@ -90,7 +90,7 @@ mod tests {
         assert!(config.indexer.storage.path.ends_with("/.union_bridge/op_1/database"));
         assert_eq!(1000, config.indexer.cache.size);
         assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
-        assert_eq!(11, config.contracts.len());
+        assert_eq!(10, config.contracts.len());
         assert!(
             config
                 .log_indexer_config
@@ -105,7 +105,7 @@ mod tests {
             CommonConfig::load_config::<Config>(None).expect("Failed to load config");
         let contracts = config.load_managed_contracts();
 
-        assert_eq!(11, contracts.len());
+        assert_eq!(10, contracts.len());
     }
 
     #[test]

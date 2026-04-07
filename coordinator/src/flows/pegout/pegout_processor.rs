@@ -865,17 +865,19 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
+
     use alloy_primitives::{Bytes, FixedBytes, U256 as AlloyU256};
     use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
     use common::msg_broker::broker::MockBrokerClientApi;
-    use primitive_types::U256 as RskU256;
+    use common::test_utils::rsk_block_generator::FakeBlockGenerator;
     use union_contracts::bindings::pegout_manager::PegoutManager::{
         BitcoinSignatureData, BtcTransaction,
     };
 
     use super::*;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
-    use crate::flows::advance_funds::test_utils::create_fake_block;
     use crate::flows::pegout::pegout_flow::FlowContext;
     use crate::store::MockCoordinatorStoreApi;
 
@@ -1008,10 +1010,12 @@ mod tests {
         let signature_flow = harness.create_completed_sig_flow(flow_id);
         harness.processor.signature_flows.insert(flow_id, signature_flow);
 
-        let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-            BlockNumber::from(100),
-            RskU256::from(50),
-        ));
+        let block_generator = FakeBlockGenerator::new(None, Arc::new(AtomicBool::new(false)), None);
+        let block = RskBlockAndUncles::new_no_uncles(
+            block_generator
+                .generate_block(BlockNumber::from(100), None)
+                .expect("failed to generate test block"),
+        );
 
         let result = harness.processor.process_unhandled_confirmed_sig_flow_events(&block);
         assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
