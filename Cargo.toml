@@ -46,7 +46,7 @@ axum = "0.8.1"
 bincode = { version = "2.0.1", features = ["serde"] }
 # Version pinned to 0.32.6 for compatibility with bitvmx-emulator crate
 bitcoin = { version = "=0.32.6", features = ["std", "rand-std", "serde"] }
-clap = "4.5.30"
+clap = "4.5.51"
 config = "0.15.8"
 env_logger = "0.11.6"
 hex = "0.4.3"
