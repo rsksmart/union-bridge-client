@@ -10,7 +10,7 @@ hex.workspace = true
 primitive-types = { workspace = true }
 # dependencies are temporary
 serde = { workspace = true, features = ["derive"] }
-serde_json = "1.0.104"
+serde_json = "1.0.145"
 sha3 = "0.10.8"
 
 [dev-dependencies]
