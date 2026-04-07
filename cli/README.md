@@ -113,12 +113,6 @@ cli/
 │   │   ├── constants.rs
 │   │   └── utils.rs
 │   └── Cargo.toml
-├── mocks/              # Advance-funds mocking tool (cli-mocking.sh)
-│   ├── src/
-│   │   ├── main.rs
-│   │   ├── lib.rs
-│   │   └── events.rs
-│   └── Cargo.toml
 └── bitcoin-wallet/     # Interactive Bitcoin wallet (cli-bitcoin-wallet.sh)
     ├── src/
     │   ├── main.rs
