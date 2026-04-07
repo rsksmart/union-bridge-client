@@ -12,7 +12,7 @@ name = "check-fork-tester"
 bitcoin = { workspace = true }
 check-fork = { path = ".." }
 chrono = "0.4.40"
-clap = { version = "4.5.30", features = ["derive"] }
+clap = { version = "4.5.51", features = ["derive"] }
 hex = "0.4.3"
 methods = { package = "check-fork-zkp", path = "../zkp" }
 primitive-types = { version = "0.13.1", features = ["serde"] }
