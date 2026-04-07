@@ -1935,7 +1935,7 @@ checksum = "b94f61472cee1439c0b966b47e3aca9ae07e45d070759512cd390ea2bebc6675"
 [[package]]
 name = "cli_serde"
 version = "0.1.0"
-source = "git+https://github.com/FairgateLabs/rust-bitvmx-zk-proof.git?branch=main#903d8c4fd6bc1e04054bd41e5bdfbbf7dcfaff9f"
+source = "git+https://github.com/FairgateLabs/rust-bitvmx-zk-proof.git?tag=v0.6.1#c7aa788f9e79cab3a2c5a0cfbb0cacb50d698d9e"
 dependencies = [
  "bincode",
  "hex",
