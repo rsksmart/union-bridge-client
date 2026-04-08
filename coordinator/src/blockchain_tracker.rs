@@ -144,49 +144,41 @@ impl BlockchainView {
     pub fn update(&self, new_block: &RskBlockAndUncles) {
         let prev_tip = self.get_tip();
 
-        let removed_block = self.blocks.borrow_mut().insert(new_block.number(), new_block.clone());
-
-        // new tip without reorg
-        if removed_block.is_none() {
+        if self
+            .blocks
+            .borrow()
+            .get(&new_block.number())
+            .is_some_and(|stored| stored.hash() == new_block.hash())
+        {
             debug!(
-                "Adding new tip {} ({}) to BlockchainView",
+                "Ignoring already-known block {} ({}) in BlockchainView",
                 new_block.number(),
                 new_block.hash()
             );
-
-            if let Some(prev_tip) = prev_tip {
-                Self::validate_consecutive_block(new_block.block(), prev_tip.block());
-            }
-
-            self.notify_added_block(new_block);
-
             return;
         }
 
-        let removed_block = removed_block.unwrap();
-
-        let stored_tip =
-            self.get_tip().expect("There should be a tip block after adding a new block");
-
-        // tip replacement
-        if new_block.number() == stored_tip.number() {
+        if let Some(ref prev_tip) = prev_tip
+            && new_block.number() <= prev_tip.number()
+        {
             info!(
-                "Replacing tip block {} ({}) with {} ({}) in BlockchainView",
-                stored_tip.number(),
-                stored_tip.hash(),
+                "Reorg to block {} ({}): rolling back view from {} ({})",
                 new_block.number(),
-                new_block.hash()
+                new_block.hash(),
+                prev_tip.number(),
+                prev_tip.hash()
             );
-
-            // update all visitors of the replacement
-            self.notify_removed_block(&removed_block);
-            self.notify_added_block(new_block);
-
+            self.rollback_to(new_block);
             return;
         }
 
-        // reorg
-        self.rollback_to(new_block, &removed_block);
+        // normal new tip
+        self.blocks.borrow_mut().insert(new_block.number(), new_block.clone());
+        if let Some(ref prev_tip) = prev_tip {
+            Self::validate_consecutive_block(new_block.block(), prev_tip.block());
+        }
+        debug!("Adding new tip {} ({}) to BlockchainView", new_block.number(), new_block.hash());
+        self.notify_added_block(new_block);
     }
 
     #[must_use]
@@ -208,33 +200,37 @@ impl BlockchainView {
         self.observers.borrow_mut().clear();
     }
 
-    fn rollback_to(&self, new_tip: &RskBlockAndUncles, removed_block: &RskBlockAndUncles) {
-        debug!(
-            "Reorg detected, rolling back BlockchainView to {} ({})",
-            new_tip.number(),
-            new_tip.hash()
-        );
+    fn rollback_to(&self, new_tip: &RskBlockAndUncles) {
+        let tip_parent_opt = self
+            .blocks
+            .borrow()
+            .range(..new_tip.number())
+            .next_back()
+            .map(|(_, block)| block.clone());
 
-        let mut blocks_to_rollback = Vec::new();
-        for (_, block) in self.blocks.borrow().iter().rev() {
-            // new tip is already in the chain, so we stop as soon as we reach it
-            if block.number() <= new_tip.number() {
-                break;
-            }
-            blocks_to_rollback.push(block.clone());
+        if let Some(ref tip_parent) = tip_parent_opt {
+            Self::validate_consecutive_block(new_tip.block(), tip_parent.block());
         }
 
-        for btr in &blocks_to_rollback {
-            debug!("Rolling back block {} ({}) in BlockchainView", btr.number(), btr.hash());
+        let replaced_block_opt = self.blocks.borrow_mut().insert(new_tip.number(), new_tip.clone());
+        let next_height_value = new_tip
+            .number()
+            .value()
+            .checked_add(1)
+            .expect("block number overflow while rolling back BlockchainView");
+        let next_height = BlockNumber::from(next_height_value);
+        let blocks_to_remove = self.blocks.borrow_mut().split_off(&next_height);
 
-            self.blocks.borrow_mut().remove(&btr.number());
-
-            // notify observers about the removal
-            self.notify_removed_block(btr);
+        for (_, block) in blocks_to_remove.into_iter().rev() {
+            debug!("Rolling back block {} ({}) in BlockchainView", block.number(), block.hash());
+            self.notify_removed_block(&block);
         }
 
-        // notify observers about the new tip
-        self.notify_removed_block(removed_block);
+        // notify the replaced block (old new tip)
+        if let Some(replaced_block) = replaced_block_opt {
+            self.notify_removed_block(&replaced_block);
+        }
+
         self.notify_added_block(new_tip);
 
         info!(
@@ -497,11 +493,35 @@ mod tests_blockchain_view {
         let block_number = BlockNumber::from(number);
         // different hash to make it an alternative block
         let block_hash = BlockHash::from(H256::from_low_u64_be(number + 1000));
-        let parent_hash = BlockHash::from(H256::from_low_u64_be((number + 1000).saturating_sub(1)));
+        let parent_hash = BlockHash::from(H256::from_low_u64_be(number.saturating_sub(1)));
         let timestamp = BlockTimestamp::from(number * 1000);
         let difficulty = BlockDifficulty::from(U256::from(500));
         let total_difficulty = difficulty.mul(BlockDifficulty::from(U256::from(1000)));
         let pow = BlockPow::from(H256::from_low_u64_be(number + 1000));
+        let uncles = vec![];
+
+        let block = RskBlock::new(
+            block_number,
+            block_hash,
+            parent_hash,
+            timestamp,
+            difficulty,
+            total_difficulty,
+            pow,
+            uncles,
+        );
+
+        RskBlockAndUncles::new_no_uncles(block)
+    }
+
+    fn create_disconnected_alt_test_block(number: u64) -> RskBlockAndUncles {
+        let block_number = BlockNumber::from(number);
+        let block_hash = BlockHash::from(H256::from_low_u64_be(number + 2000));
+        let parent_hash = BlockHash::from(H256::from_low_u64_be((number + 2000).saturating_sub(1)));
+        let timestamp = BlockTimestamp::from(number * 1000);
+        let difficulty = BlockDifficulty::from(U256::from(500));
+        let total_difficulty = difficulty.mul(BlockDifficulty::from(U256::from(1000)));
+        let pow = BlockPow::from(H256::from_low_u64_be(number + 2000));
         let uncles = vec![];
 
         let block = RskBlock::new(
@@ -585,6 +605,38 @@ mod tests_blockchain_view {
         // verify the replacement block is actually different
         assert_ne!(alt_block_102.hash(), block_102.hash()); // different hashes
         assert_eq!(alt_block_102.number(), block_102.number()); // same block number
+    }
+
+    #[test]
+    fn test_blockchain_view_duplicate_known_historical_block_is_ignored() {
+        let chain_view = BlockchainView::new();
+        let tracker = Rc::new(RefCell::new(NotificationTracker::new("test")));
+        chain_view.add_observer(tracker.clone());
+
+        let block_100 = create_test_block(100);
+        let block_101 = create_test_block(101);
+        let block_102 = create_test_block(102);
+
+        chain_view.update(&block_100);
+        chain_view.update(&block_101);
+        chain_view.update(&block_102);
+
+        tracker.borrow().clear();
+
+        // The indexer can re-notify a canonical block after emitting it but before
+        // persisting progress. Re-delivery of an already-known historical block
+        // must not trigger a rollback.
+        chain_view.update(&block_101);
+
+        let tracker_ref = tracker.borrow();
+        assert!(tracker_ref.get_added_blocks().is_empty());
+        assert!(tracker_ref.get_removed_blocks().is_empty());
+
+        assert_eq!(chain_view.len(), 3);
+        assert_eq!(chain_view.get_at(&BlockNumber::from(100)), Some(block_100.clone()));
+        assert_eq!(chain_view.get_at(&BlockNumber::from(101)), Some(block_101.clone()));
+        assert_eq!(chain_view.get_at(&BlockNumber::from(102)), Some(block_102.clone()));
+        assert_eq!(chain_view.get_tip(), Some(block_102));
     }
 
     #[test]
@@ -687,7 +739,7 @@ mod tests_blockchain_view {
         tracker.borrow().clear();
 
         // simulate reorg at block 102
-        let alt_block_102 = create_alt_test_block(102);
+        let alt_block_102 = create_disconnected_alt_test_block(102);
 
         chain_view.update(&alt_block_102);
     }
@@ -734,6 +786,53 @@ mod tests_blockchain_view {
         assert_ne!(alt_block_102.hash(), blocks[2].hash()); // different from original block 102
         assert_eq!(alt_block_102.number(), blocks[2].number()); // same block number
     }
+
+    #[test]
+    fn test_out_of_order_block_triggers_rollback() {
+        // Block N arrives first, then block N-1 arrives late — triggers rollback to N-1
+        let chain_view = BlockchainView::new();
+        let tracker = Rc::new(RefCell::new(NotificationTracker::new("test")));
+        chain_view.add_observer(tracker.clone());
+
+        let block_10 = create_test_block(10);
+        let block_9 = create_test_block(9);
+
+        chain_view.update(&block_10);
+        assert_eq!(chain_view.get_tip().map(|b| b.number()), Some(BlockNumber::from(10)));
+
+        tracker.borrow().clear();
+
+        // late block N-1 arrives after N — triggers rollback
+        chain_view.update(&block_9);
+        assert_eq!(chain_view.get_tip().map(|b| b.number()), Some(BlockNumber::from(9)));
+
+        // block_10 should be removed, block_9 should be stored
+        assert_eq!(chain_view.get_at(&BlockNumber::from(10)), None);
+        assert_eq!(chain_view.get_at(&BlockNumber::from(9)), Some(block_9.clone()));
+        assert_eq!(chain_view.len(), 1);
+
+        let tracker_ref = tracker.borrow();
+        assert_eq!(tracker_ref.get_removed_blocks(), vec![block_10.clone()]);
+        assert_eq!(tracker_ref.get_added_blocks(), vec![block_9.clone()]);
+    }
+
+    #[test]
+    #[should_panic(expected = "Non-consecutive block or parent hash mismatch")]
+    fn test_rollback_rejects_unconnected_reorg_block() {
+        let chain_view = BlockchainView::new();
+
+        let block_8 = create_test_block(8);
+        let block_9 = create_test_block(9);
+        let block_10 = create_test_block(10);
+
+        chain_view.update(&block_8);
+        chain_view.update(&block_9);
+        chain_view.update(&block_10);
+
+        let invalid_reorg_block_9 = create_disconnected_alt_test_block(9);
+
+        chain_view.update(&invalid_reorg_block_9);
+    }
 }
 
 #[cfg(test)]
@@ -741,7 +840,7 @@ mod confirmable_event_tests {
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
 
-    use common::test_utils::rsk_block_generator::FakeBlockGenerator;
+    use common::test_utils::rsk_block_generator::{FakeBlockGenerator, create_block_from_template};
     use common::types::{BlockNumber, RskBlockAndUncles};
     use uuid::Uuid;
 
@@ -1078,12 +1177,12 @@ mod confirmable_event_tests {
     }
 
     fn create_alt_test_block(block_number: BlockNumber) -> RskBlockAndUncles {
-        // create a generator with a reorg flag set to true to generate alternative blocks
-        let generator =
-            FakeBlockGenerator::new(Some(block_number - 1), Arc::new(AtomicBool::new(true)), None);
-        let block = generator
-            .generate_block(block_number, None)
-            .expect("Failed to generate alternative test block");
+        let generator = FakeBlockGenerator::new(None, Arc::new(AtomicBool::new(false)), None);
+        let template =
+            generator.generate_block(block_number, None).expect("Failed to generate test block");
+        let alt_hash = generator.generate_hash(block_number, "alt");
+        let block =
+            create_block_from_template(&template, &alt_hash, template.parent_hash(), vec![]);
 
         RskBlockAndUncles::new_no_uncles(block)
     }
