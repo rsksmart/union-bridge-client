@@ -23,7 +23,7 @@ config = { workspace = true }
 hex = { workspace = true }
 log = { workspace = true }
 log4rs = { workspace = true }
-lru = "0.13.0"
+lru = "0.16"
 message-broker = { workspace = true }
 mockall = { workspace = true }
 musig2 = { workspace = true }
