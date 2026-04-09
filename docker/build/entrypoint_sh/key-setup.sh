@@ -55,6 +55,3 @@ if [ -n "${KEY_STORE_PASSWORD:-}" ]; then
 else
   echo "[key-setup] KEY_STORE_PASSWORD not set, skipping user/member key generation."
 fi
-
-# Forward to command
-exec "$@"

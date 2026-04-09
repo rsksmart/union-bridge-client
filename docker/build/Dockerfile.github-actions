@@ -86,7 +86,9 @@ ARG CRATE
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         ca-certificates \
+        gosu \
         procps \
+        openssl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -104,7 +106,10 @@ ENV RISC0_HOME=/opt/risc0
 
 # copy always even if only needed for one crate, as it's cheap
 COPY docker/build/entrypoint_sh/key-setup.sh /app/key-setup.sh
+COPY docker/build/entrypoint_sh/runtime-entrypoint.sh /app/runtime-entrypoint.sh
+
+RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 LABEL org.opencontainers.image.source=https://github.com/rsksmart/union-bridge-client
 
-# ENTRYPOINT is handled in docker-compose.yml
+ENTRYPOINT ["sh", "/app/runtime-entrypoint.sh"]
