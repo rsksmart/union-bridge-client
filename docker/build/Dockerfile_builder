@@ -13,10 +13,6 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# setup SSH for private repositories
-RUN mkdir -p -m 0700 ~/.ssh && \
-    ssh-keyscan github.com >> ~/.ssh/known_hosts
-
 # [coordinator Specific] Install Risc0 toolchain
 # Just needed for build stage, so it won't impact the final runtime image size, therefore is safe to install it always
 RUN set -e && \

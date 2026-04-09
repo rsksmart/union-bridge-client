@@ -8,7 +8,8 @@ services. Its job is to hide chain-specific transaction construction and submiss
 other components duplicate that logic.
 
 This crate depends on the Union Bridge contract bindings provided by the `union-contracts` crate, which is sourced from
-the private `temp-rsk/bitvmx-union-bridge-contracts` repository.
+the [rsksmart/union-bridge-contracts](https://github.com/rsksmart/union-bridge-contracts) repository. `forge-bind` is
+used under the hood to generate the bindings.
 
 Keep this README crate-scoped. User-facing HTTP routes belong to the `user-api` crate and should be documented there,
 not here.

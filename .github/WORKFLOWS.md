@@ -11,7 +11,6 @@ This file is the narrow reference for the workflow files currently tracked under
 - Purpose: build and push `block-indexer`, `log-indexer`, `coordinator`, and `user-api` images to GHCR
 - Variants: `prod` and `anvil`
 - Required secrets:
-  - `UNION_CONTRACTS_GITHUB_TOKEN`
   - `REGISTRY_TOKEN`
 
 ### `tests.yml`
@@ -95,8 +94,6 @@ Adjust `.actrc` to match your local Docker/runner preferences before relying on 
 
 ## Secrets and Auth Notes
 
-- `UNION_CONTRACTS_GITHUB_TOKEN`: GitHub Personal Access Token (PAT) with read access to the private contracts
-  repository used by the workspace and Docker builds.
 - `REGISTRY_TOKEN`: GitHub Personal Access Token (PAT) with `write:packages` scope for GHCR authentication in
   `docker-release.yml`. This is the CI secret name; local Docker helper scripts use the shell variable
   `GITHUB_REGISTRY_TOKEN` instead.
@@ -108,9 +105,6 @@ Adjust `.actrc` to match your local Docker/runner preferences before relying on 
 ## Troubleshooting
 
 - `docker-release.yml` did not start: confirm the pushed tag matches the `v*` pattern used by the workflow
-- dependency checkout failures: verify `UNION_CONTRACTS_GITHUB_TOKEN`
-- private contracts checkout failures during Docker builds: verify `UNION_CONTRACTS_GITHUB_TOKEN` can read the private
-  contracts repository reached through `github.com/temp-rsk`
 - GHCR push failures: verify `REGISTRY_TOKEN`, `write:packages` scope, workflow `packages: write` permission, and
   package permissions
 - missing `e2e-smoke-tests` status on a PR: confirm the PR targets `main` and is not draft

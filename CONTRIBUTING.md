@@ -53,14 +53,14 @@ brew install act
 This workspace depends on:
 
 1. Public BitVMX client: [FairgateLabs/rust-bitvmx-client](https://github.com/FairgateLabs/rust-bitvmx-client)
-2. Private contracts repository: `temp-rsk/bitvmx-union-bridge-contracts`
+2. Contracts repository: [rsksmart/union-bridge-contracts](https://github.com/rsksmart/union-bridge-contracts)
 
-The public BitVMX repo is needed for repo-mode and for understanding the wider system. The private contracts repo is
-needed for full workspace builds, Docker image builds, and CI reproduction.
+The public BitVMX repo is needed for repo-mode and for understanding the wider system. The contracts repo is
+needed for full workspace builds, Docker image builds, local tests, and CI reproduction.
 
 ```bash
 git clone https://github.com/FairgateLabs/rust-bitvmx-client.git
-git clone git@github.com:temp-rsk/bitvmx-union-bridge-contracts.git
+git clone https://github.com/rsksmart/union-bridge-contracts.git
 ```
 
 ## Shared Configuration Model

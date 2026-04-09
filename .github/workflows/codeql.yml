@@ -40,7 +40,6 @@ jobs:
       - name: Setup
         uses: ./.github/actions/common_setup
         with:
-          contracts_github_token: ${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
           cache-build: false
 
       # required due to check-fork/zkp/build.rs
