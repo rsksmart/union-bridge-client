@@ -6,14 +6,14 @@ edition = "2024"
 
 [dependencies]
 alloy-primitives = "1.4.1"
-alloy-provider = "1.0.38"
-alloy-eips = "1.0.38"
-alloy-signer = "1.0.37"
-alloy-signer-local = "1.0.37"
+alloy-provider = "1.0.42"
+alloy-eips = "1.0.42"
+alloy-signer = "1.0.42"
+alloy-signer-local = "1.0.42"
 anyhow = { workspace = true }
 clap = { workspace = true }
 rustyline = "17.0.2"
-tokio = { version = "1.41.1" }
+tokio = { version = "1.47.1" }
 
 common = { path = "../../common" }
 key-manager = { path = "../../key-manager" }

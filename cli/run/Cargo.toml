@@ -9,5 +9,5 @@ anyhow = { workspace = true }
 clap = { workspace = true }
 key-manager = { workspace = true }
 nix = { workspace = true }
-sysinfo = "0.32"
+sysinfo = "0.32.1"
 tokio = { workspace = true }
