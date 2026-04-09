@@ -629,6 +629,7 @@ where
 #[cfg(test)]
 mod tests {
     use alloy_primitives::U256 as AlloyU256;
+    use check_fork::block_header::RskBlockHeader;
     use common::mocks::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
     use common::msg_broker::broker::MockBrokerClientApi;
@@ -638,7 +639,9 @@ mod tests {
 
     use super::*;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
-    use crate::flows::advance_funds::test_utils::create_fake_block;
+    use crate::flows::advance_funds::test_utils::{
+        create_fake_block, create_fake_block_with_parent,
+    };
     use crate::types::EventWithBlock;
 
     type MockBitVmxBroker =
@@ -663,6 +666,34 @@ mod tests {
             original_block.pow(),
             original_block.uncles().clone(),
         )
+    }
+
+    fn create_alternative_block(
+        number: BlockNumber,
+        effort: U256,
+        prev_block: &RskBlock,
+    ) -> RskBlockAndUncles {
+        let template = create_fake_block_with_parent(number, effort, Some(prev_block));
+        let timestamp = template.timestamp().value() + 1;
+        let alt_header = RskBlockHeader {
+            number: template.number().value(),
+            difficulty: template.difficulty().value(),
+            parent: template.parent_hash().value(),
+            timestamp,
+            ..Default::default()
+        };
+        let block = RskBlock::new(
+            template.number(),
+            BlockHash::from(alt_header.calculate_block_hash().expect("hash calculation")),
+            template.parent_hash(),
+            common::types::BlockTimestamp::from(timestamp),
+            template.difficulty(),
+            template.total_difficulty(),
+            template.pow(),
+            template.uncles(),
+        );
+
+        RskBlockAndUncles::new_no_uncles(block)
     }
 
     fn create_fake_advance_funds_event(pegout_id: &str) -> AdvanceFunds {
@@ -1865,7 +1896,7 @@ mod tests {
 
         // first alternative block (replaces original_blocks[1])
         let alt_block_1 =
-            RskBlockAndUncles::new_no_uncles(create_fake_block(reorg_point, higher_effort));
+            create_alternative_block(reorg_point, higher_effort, original_blocks[0].block());
 
         // process the alternative block - this should trigger reorg detection
         processor.process_new_block(&alt_block_1).expect("Should handle reorg");
@@ -1909,8 +1940,9 @@ mod tests {
         // continue building the alternative chain
         let mut alt_blocks = vec![alt_block_1];
         for i in 1..=5 {
-            let block =
-                RskBlockAndUncles::new_no_uncles(create_fake_block(reorg_point + i, higher_effort));
+            let prev_block =
+                alt_blocks.last().expect("Alternative chain should not be empty").block();
+            let block = create_alternative_block(reorg_point + i, higher_effort, prev_block);
             alt_blocks.push(block.clone());
             processor.process_new_block(&block).expect("Should process alternative block");
 
@@ -1935,10 +1967,10 @@ mod tests {
             let mut additional_blocks_needed = 10; // arbitrary limit to prevent infinite loop
 
             for i in 6..=15 {
-                let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-                    reorg_point + i,
-                    higher_effort,
-                ));
+                let prev_block =
+                    alt_blocks.last().expect("Alternative chain should not be empty").block();
+                let block = create_alternative_block(reorg_point + i, higher_effort, prev_block);
+                alt_blocks.push(block.clone());
                 processor.process_new_block(&block).expect("Should process additional block");
 
                 // check if advance funds completed
@@ -2014,13 +2046,12 @@ mod tests {
 
         // create alternative blocks
         let mut alternative_blocks = Vec::new();
+        let mut prev_alt_block = request_block.block().clone();
         for i in 0..=7 {
             // more blocks than original to ensure higher total difficulty
-            // use a different block number offset to make them truly different
-            let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-                reorg_point + i,
-                higher_difficulty,
-            ));
+            let block =
+                create_alternative_block(reorg_point + i, higher_difficulty, &prev_alt_block);
+            prev_alt_block = block.block().clone();
             alternative_blocks.push(block.clone());
             processor.process_new_block(&block).expect("Should handle deep reorg");
         }
@@ -2181,14 +2212,23 @@ mod tests {
 
         // create alternative chain with higher effort that will complete the advance funds
         let mut alternative_blocks = Vec::new();
+        let mut prev_alt_block = processor
+            .chain_view
+            .get_at(&(reorg_point - 1))
+            .expect("Previous canonical block should exist")
+            .block()
+            .clone();
+
         for i in 0..required_blocks_plus_confirmations {
             if processor.pending_zkp.is_some() {
                 break;
             }
-            let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
+            let block = create_alternative_block(
                 reorg_point + u64::from(i),
                 higher_effort,
-            ));
+                &prev_alt_block,
+            );
+            prev_alt_block = block.block().clone();
             alternative_blocks.push(block.clone());
             processor.process_new_block(&block).expect("Should handle reorg during confirmation");
         }
