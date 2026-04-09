@@ -9,6 +9,7 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     branches:
       - main
+      - chore/v0.3.0
   # Allow manual triggering for testing
   workflow_dispatch:
     inputs:
@@ -35,10 +36,15 @@ jobs:
     steps:
       - name: Call E2E Framework Workflow
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        # Custom e2e-ref (workflow input or PR label e2e-ref:...) is allowed only for members of
+        # the repo-owner org team whose slug is in variable E2E_TRUSTED_TEAM_SLUG.
+        # Secret E2E_FRAMEWORK_GITHUB_TOKEN must be able to read team membership: classic PAT read:org,
+        # or fine-grained PAT with Organization permission "Members: Read".
         env:
           CLIENT_REF: ${{ inputs.client_ref || github.event.pull_request.head.sha || github.sha }}
           E2E_REF: ${{ inputs.e2e_ref }}
           PR_HEAD_SHA: ${{ inputs.pr_head_sha || github.event.pull_request.head.sha || github.sha }}
+          TRUSTED_TEAM_SLUG: ${{ vars.E2E_TRUSTED_TEAM_SLUG }}
         with:
           github-token: ${{ secrets.E2E_FRAMEWORK_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
@@ -52,23 +58,64 @@ jobs:
             const prNumber = pr?.number;
 
             const E2E_REF_DEFAULT = 'main';
-            const TRUSTED_ACTORS = ['illuque', 'apancorb', 'f-javier-aguerri', 'LordCheta', 'asoto-iov', 'fedejinich', 'javicoin'];
             const actor = context.actor || '';
-            if (e2eRefInput && !TRUSTED_ACTORS.includes(actor)) {
-              const msg = 'Only trusted actors can specify e2e-ref / e2e_ref. Remove the PR label or clear the input.';
-              if (prHeadSha) {
-                await octokit.rest.repos.createCommitStatus({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  sha: prHeadSha,
-                  state: 'error',
-                  target_url: `https://github.com/rsksmart/union_bridge_e2e_framework/actions`,
-                  description: msg,
-                  context: 'e2e-smoke-tests'
+            const org = context.repo.owner;
+            const trustedTeamSlug = (process.env.TRUSTED_TEAM_SLUG || '').trim();
+
+            async function actorIsTrustedTeamMember(octokit, org, teamSlug, username) {
+              try {
+                const { data } = await octokit.rest.teams.getMembershipForUserInOrg({
+                  org,
+                  team_slug: teamSlug,
+                  username,
                 });
+                return data.state === 'active';
+              } catch (e) {
+                if (e.status === 404) return false;
+                if (e.status === 403) {
+                  throw new Error(
+                    'Token cannot verify org team membership (403). Configure secret E2E_FRAMEWORK_GITHUB_TOKEN with read:org, or fine-grained "Members: Read" on the organization.'
+                  );
+                }
+                throw e;
               }
-              core.setFailed(msg);
-              throw new Error(msg);
+            }
+
+            if (e2eRefInput) {
+              if (!trustedTeamSlug) {
+                const msg =
+                  'Custom e2e-ref requires repository or organization variable E2E_TRUSTED_TEAM_SLUG (GitHub team slug).';
+                if (prHeadSha) {
+                  await octokit.rest.repos.createCommitStatus({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    sha: prHeadSha,
+                    state: 'error',
+                    target_url: `https://github.com/rsksmart/union_bridge_e2e_framework/actions`,
+                    description: msg.slice(0, 140),
+                    context: 'e2e-smoke-tests'
+                  });
+                }
+                core.setFailed(msg);
+                throw new Error(msg);
+              }
+              const trusted = await actorIsTrustedTeamMember(octokit, org, trustedTeamSlug, actor);
+              if (!trusted) {
+                const msg = `Only members of team ${org}/${trustedTeamSlug} can specify e2e-ref / e2e_ref. Remove the PR label or clear the input.`;
+                if (prHeadSha) {
+                  await octokit.rest.repos.createCommitStatus({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    sha: prHeadSha,
+                    state: 'error',
+                    target_url: `https://github.com/rsksmart/union_bridge_e2e_framework/actions`,
+                    description: msg.length > 140 ? msg.slice(0, 137) + '...' : msg,
+                    context: 'e2e-smoke-tests'
+                  });
+                }
+                core.setFailed(msg);
+                throw new Error(msg);
+              }
             }
             const e2eDispatchRef = e2eRefInput || E2E_REF_DEFAULT;
 
