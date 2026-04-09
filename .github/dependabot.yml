@@ -9,3 +9,15 @@ updates:
     directory: "/zkp/guest" # guest workspace directory
     schedule:
       interval: "daily"
+  - package-ecosystem: "github-actions"
+    directory: "/" # GitHub workflows and composite actions
+    schedule:
+      interval: "daily"
+  - package-ecosystem: "docker"
+    directory: "/docker/build" # build and runtime images
+    schedule:
+      interval: "daily"
+  - package-ecosystem: "docker"
+    directory: "/docker/local-infra" # local infra images
+    schedule:
+      interval: "daily"
