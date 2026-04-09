@@ -68,7 +68,7 @@ if [[ $DRY_RUN -eq 1 ]]; then
   echo "🔍 DRY RUN: Would pull images with tag: $UC_TAG for platform: $PLATFORM"
   echo ""
   echo "Commands that would be executed:"
-  echo "  docker pull ghcr.io/rsksmart/union-client-builder:rust-1.88-v1 --platform $PLATFORM"
+  echo "  docker pull ghcr.io/rsksmart/union-client-builder:rust-1.91-v1 --platform $PLATFORM"
   echo "  docker pull ghcr.io/rsksmart/union-client-block-indexer:$UC_TAG --platform $PLATFORM"
   echo "  docker pull ghcr.io/rsksmart/union-client-log-indexer:$UC_TAG --platform $PLATFORM"
   echo "  docker pull ghcr.io/rsksmart/union-client-coordinator:$UC_TAG --platform $PLATFORM"
@@ -79,7 +79,7 @@ else
   echo "📥 Pulling images with tag: $UC_TAG for platform: $PLATFORM"
 
   # order seems to matter (same order as defined in compose file)
-  docker pull ghcr.io/rsksmart/union-client-builder:rust-1.88-v1 --platform $PLATFORM
+  docker pull ghcr.io/rsksmart/union-client-builder:rust-1.91-v1 --platform $PLATFORM
   docker pull ghcr.io/rsksmart/union-client-block-indexer:$UC_TAG --platform $PLATFORM
   docker pull ghcr.io/rsksmart/union-client-log-indexer:$UC_TAG --platform $PLATFORM
   docker pull ghcr.io/rsksmart/union-client-coordinator:$UC_TAG --platform $PLATFORM
