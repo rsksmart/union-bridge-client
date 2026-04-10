@@ -699,6 +699,18 @@ where
         Ok(())
     }
 
+    fn ensure_member_whitelisted(&self) -> Result<()> {
+        let my_address: Address = self.my_address().into();
+        let is_whitelisted = self.rt_sync.run(self.contracts.is_whitelisted())?;
+        if !is_whitelisted {
+            bail!(
+                "Member address {my_address} is not whitelisted in the CommitteeRegistry contract"
+            );
+        }
+        info!("Whitelist check passed for address {my_address}");
+        Ok(())
+    }
+
     fn validate_rsk_balance(&mut self) -> Result<()> {
         let my_address: Address = self.my_address().into();
 
@@ -1501,6 +1513,7 @@ where
             Steps::Init => {
                 debug!("Init");
                 self.ctx_mut().user_input = Some(data.into_user_input()?);
+                self.ensure_member_whitelisted()?;
                 self.start_step(Steps::ValidateBalances)?;
             }
             Steps::ValidateBalances => {
@@ -1706,15 +1719,6 @@ where
     }
 
     fn apply_to_stream(&self) -> Result<()> {
-        let my_address: Address = self.my_address().into();
-        let is_whitelisted = self.rt_sync.run(self.contracts.is_whitelisted())?;
-        if !is_whitelisted {
-            bail!(
-                "Member address {my_address} is not whitelisted in the CommitteeRegistry contract"
-            );
-        }
-        info!("Whitelist check passed for address {my_address}");
-
         let utxo = self.build_funding_utxo()?;
 
         let stream_id = self.ctx().get_stream_id()?;
