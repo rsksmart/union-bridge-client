@@ -1,5 +1,5 @@
 # Custom Rust builder image
-FROM rust:1.88-slim-bookworm
+FROM rust:1.91-slim-bookworm
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \

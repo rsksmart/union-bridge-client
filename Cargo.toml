@@ -16,6 +16,7 @@ members = [
 [workspace.package]
 version = "0.3.0"
 license = "MIT"
+rust-version = "1.91"
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }

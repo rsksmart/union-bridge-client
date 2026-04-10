@@ -82,8 +82,7 @@ services:
       retries: 3
       start_period: 10s
       test: ["CMD", "pgrep", "-f", "coordinator"]
-    entrypoint: ["sh", "/app/key-setup.sh"]
-    command: ["sh", "-c", "/app/coordinator --config $CONFIG"]
+    command: ["sh", "-c", "/app/key-setup.sh && exec /app/coordinator --config $CONFIG"]
     depends_on:
       block-indexer:
         condition: service_healthy
@@ -116,8 +115,7 @@ services:
       retries: 3
       start_period: 10s
       test: ["CMD", "pgrep", "-f", "user-api"]
-    entrypoint: ["sh", "/app/key-setup.sh"]
-    command: ["sh", "-c", "/app/user-api --config $CONFIG"]
+    command: ["sh", "-c", "/app/key-setup.sh && exec /app/user-api --config $CONFIG"]
 
 volumes:
   keystore:
