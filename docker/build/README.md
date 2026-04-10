@@ -43,6 +43,10 @@ echo "$GITHUB_REGISTRY_TOKEN" | docker login ghcr.io -u <your_user> --password-s
 bash d-ghcr-push.sh
 ```
 
+If you bypass `start-operators.sh` and run `docker compose` manually from this directory, export the required
+variables in your shell first (`KEY_STORE_PASSWORD`) and point `KEYSTORE_DIR` at an existing host keystore directory
+containing `user` and `member` files.
+
 ## Next Step
 
 After building or pulling images, switch to the [Operator Docker Runtime Guide](../operator/README.md) for local runtime commands.

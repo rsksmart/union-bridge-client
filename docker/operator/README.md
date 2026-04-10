@@ -36,16 +36,25 @@ export USER_BITCOIN_WIF=<your-user-wif>
 
 The generated files include:
 
-- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/<service>.pem`
-- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/<service>.pubkey_hash`
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/broker/<service>.pem`
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/broker/<service>.pubkey_hash`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/...`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-compose.env`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-service.env`
-- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/keystore/{member,user}`
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/keystore/{member,user}`
+
+`docker-compose.env` includes `KEYSTORE_DIR=${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/keystore`.
+`start-operators.sh` loads that file automatically, so local operator runs do not need you to export `KEYSTORE_DIR`
+by hand.
 
 The setup flow also patches the generated local BitVMX YAMLs with the current `BITCOIND_URL`, the keystore password,
 and the required broker pubkey hashes. `KEY_STORE_PASSWORD` and `USER_BITCOIN_WIF` are written into each operator's
 `docker-service.env`.
+
+The coordinator and user-api containers bind-mount
+`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/keystore/` as `/keystore` and reuse the existing host
+files. The same keystores serve local cargo mode. Containers do not generate replacement keys; `cli-setup-operators.sh`
+creates or reuses them ahead of time via the `key-manager` crate.
 
 ## Local Startup
 
@@ -88,6 +97,9 @@ bash start-operators.sh ps
 bash start-operators.sh down
 ```
 
+`--fresh` removes Docker volumes and databases for the operator stack but does not rotate Rootstock keys, because the
+keystores come from the host `op_N/union-client/keystore/` directory prepared by `cli-setup-operators.sh`.
+
 Compose selection is derived from the effective operator count:
 
 - `--op <ID>` -> `docker-compose.one.yml`
@@ -111,7 +123,10 @@ falls back to the tracked repo copies under `../../config` and `../../resources`
 entry point for one-operator-per-host deployments.
 
 `docker-compose.env` and `docker-service.env` are Docker operator runtime artifacts only. They are not read by the
-local cargo client launched with `./cli-run.sh`.
+local cargo client launched with `./cli-run.sh`. The generated env files point Docker at the host keystore directory
+under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/keystore/`. `start-operators.sh` expects those
+keystore files to already exist and fails fast if they are missing. If you bypass `start-operators.sh` and run
+`docker compose` manually, export `KEYSTORE_DIR` yourself first.
 
 ## Operator Count Boundary
 

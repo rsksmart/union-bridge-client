@@ -143,7 +143,10 @@ cli/bitcoin-wallet/
 └── tests/
 ```
 
+
 ## Docker Integration
 
 `docker-compose.env` and `docker-service.env` are Docker operator runtime artifacts. They are not read by
 `./cli-run.sh`, which uses the local cargo-mode keystores staged under `BASE_STORAGE_PATH`.
+Docker operator mode reuses the same host `op_N/union-client/keystore/{user,member}` files via bind mounts, so the
+keystores created by `cli-setup-operators.sh` serve both local cargo mode and the operator containers.
