@@ -135,7 +135,40 @@ There are three supported local modes:
 | cargo client + external or repo BitVMX | advanced debugging or BitVMX development | this doc + [CLI Tools Guide](cli/README.md) |
 | all Docker | operator-focused container runtime | this doc + [Operator Docker Runtime Guide](docker/operator/README.md) |
 
-The rest of this document is written around the first mode.
+### Mode: Cargo Client + Docker Infra
+
+Use the [Local Development - Recommended Path](#local-development---recommended-path) section below.
+
+### Mode: Cargo Client + External or Repo BitVMX
+
+Use this when BitVMX runs outside the default Docker-backed local stack.
+
+```bash
+export BASE_STORAGE_PATH="$HOME"
+export KEY_STORE_PASSWORD=<your-password>
+export USER_BITCOIN_WIF=<your-user-wif>
+./cli-infra.sh --start-blockchains [--fresh]
+# start BitVMX outside this repo
+./cli-run.sh --bitvmx-mode repo [--fresh]
+```
+
+Use the [CLI Tools Guide](cli/README.md) for follow-up commands.
+
+### Mode: All Docker
+
+Use this mode when the Union Bridge services run from the operator Docker runtime.
+
+```bash
+export BITCOIND_URL=http://user:password@localhost:18443
+export KEY_STORE_PASSWORD=<your-password>
+export USER_BITCOIN_WIF=<your-user-wif>
+./cli-infra.sh --start-blockchains [--fresh]
+./cli-setup-operators.sh --ops 4
+cd docker/operator
+bash start-operators.sh [--fresh] up -d
+```
+
+Use the [Operator Docker Runtime Guide](docker/operator/README.md) for runtime flags and troubleshooting.
 
 ## Local Development - Recommended Path
 

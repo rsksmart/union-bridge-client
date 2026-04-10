@@ -47,8 +47,30 @@ The setup flow also patches the generated local BitVMX YAMLs with the current `B
 and the required broker pubkey hashes. `KEY_STORE_PASSWORD` and `USER_BITCOIN_WIF` are written into each operator's
 `docker-service.env`.
 
-For the blockchains + BitVMX startup order, go back to the [Contributing Guide](../../CONTRIBUTING.md) or the
-[Local Infra Guide](../local-infra/README.md). Do not rebuild that sequence from this file.
+## Local Startup
+
+Use this mode when blockchains come from `docker/local-infra`, but the Union Bridge services and BitVMX run from the
+operator Docker runtime in this directory.
+
+```bash
+# 1. Start only the blockchains
+./cli-infra.sh --start-blockchains --fresh
+
+# 2. Prepare operator runtime artifacts
+./cli-setup-operators.sh --ops 4
+
+# 3. Start the operator Docker runtime from docker/operator/
+bash start-operators.sh --fresh up -d
+```
+
+Notes:
+
+- This sequence starts only the blockchains from `docker/local-infra`.
+- `start-operators.sh` includes the `bitvmx-client` service in the operator compose stack.
+- `bash start-operators.sh up -d` reuses the current operator containers and volumes.
+
+For broader workflow context, go back to the [Contributing Guide](../../CONTRIBUTING.md) or the
+[Local Infra Guide](../local-infra/README.md).
 
 ## `start-operators.sh`
 
