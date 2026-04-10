@@ -43,7 +43,7 @@ pub enum IncomingBitVMXApiMessages {
     Setup(ProgramId, String, Vec<CommsAddress>, u16),
     SubscribeToTransaction(Uuid, Txid),
     SubscribeUTXO(Uuid),
-    SubscribeToRskPegin(),
+    SubscribeToRskPegin(Option<u32>),
     GetSPVProof(Txid),
     DispatchTransaction(Uuid, Transaction),
     DispatchTransactionName(Uuid, String),
@@ -329,6 +329,21 @@ impl AdvanceFundsRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvanceFundsRegistered {
+    pub committee_id: Uuid,
+    pub slot_index: usize,
+    pub txid: Txid,
+    pub pegout_id: Vec<u8>,
+    pub operator_pubkey: PublicKey,
+}
+
+impl AdvanceFundsRegistered {
+    pub fn name(slot_index: usize) -> String {
+        format!("advance_funds_registered_{slot_index}")
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FundsAdvanceSPV {
     pub txid: Txid,
     pub committee_id: Uuid,
@@ -389,6 +404,9 @@ pub struct Committee {
     pub dispute_aggregated_key: PublicKey,
     pub packet_size: u32,
     pub stream_denomination: u64,
+    pub pegin_confirmations: u32,
+    pub pegout_confirmations: u32,
+    pub reject_pegin_confirmations: u32,
 }
 
 impl Committee {

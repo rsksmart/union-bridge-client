@@ -10,14 +10,14 @@ use super::bitvmx_types::{
 pub struct DisputeConfiguration {
     pub id: Uuid,
     pub operators_aggregated_pub: PublicKey,
-    pub protocol_connection: (PartialUtxo, Vec<usize>),
+    pub protocol_connection: (PartialUtxo, usize),
     pub prover_actions: Vec<(PartialUtxo, Vec<usize>)>,
     pub prover_enablers: Vec<OutputType>,
     pub verifier_actions: Vec<(PartialUtxo, Vec<usize>)>,
     pub verifier_enablers: Vec<OutputType>,
     pub timelock_blocks: u16,
     pub program_definition: String,
-    pub fail_force_config: Option<ConfigResults>,
+    pub fail_force_config: Option<ForceFailConfiguration>,
     pub notify_protocol: Vec<(String, Uuid)>,
     pub auto_dispatch_input: Option<u8>,
 }
@@ -30,14 +30,14 @@ impl DisputeConfiguration {
     pub fn new(
         id: Uuid,
         operators_aggregated_pub: PublicKey,
-        protocol_connection: (PartialUtxo, Vec<usize>),
+        protocol_connection: (PartialUtxo, usize),
         prover_actions: Vec<(PartialUtxo, Vec<usize>)>,
         prover_enablers: Vec<OutputType>,
         verifier_actions: Vec<(PartialUtxo, Vec<usize>)>,
         verifier_enablers: Vec<OutputType>,
         timelock_blocks: u16,
         program_definition: String,
-        fail_force_config: Option<ConfigResults>,
+        fail_force_config: Option<ForceFailConfiguration>,
         notify_protocol: Vec<(String, Uuid)>,
         auto_dispatch_input: Option<u8>,
     ) -> Self {
@@ -67,7 +67,9 @@ pub struct ConfigResult {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
-pub struct ConfigResults {
+pub struct ForceFailConfiguration {
+    pub prover_force_second_nary: bool,
+    pub fail_input_tx: Option<String>,
     pub main: ConfigResult,
     pub read: ConfigResult, // for read challenge (2nd n-ary search)
 }
@@ -79,6 +81,17 @@ impl Default for ConfigResult {
             fail_config_verifier: None,
             force_challenge: ForceChallenge::No,
             force_condition: ForceCondition::No,
+        }
+    }
+}
+
+impl Default for ForceFailConfiguration {
+    fn default() -> Self {
+        Self {
+            prover_force_second_nary: false,
+            fail_input_tx: None,
+            main: ConfigResult::default(),
+            read: ConfigResult::default(),
         }
     }
 }

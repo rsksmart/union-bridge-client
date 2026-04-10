@@ -5,8 +5,8 @@ use bitcoin::PublicKey;
 use bitcoin::key::Parity::Even;
 use bitcoin::secp256k1::XOnlyPublicKey;
 use common::msg_broker::bitvmx_types::{
-    AdvanceFundsRequest, BtcTxSPVProof, CommsAddress, FundsAdvanceSPV, IncomingBitVMXApiMessages,
-    VariableTypes,
+    AdvanceFundsRegistered, AdvanceFundsRequest, BtcTxSPVProof, CommsAddress, FundsAdvanceSPV,
+    IncomingBitVMXApiMessages, VariableTypes,
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
@@ -21,7 +21,6 @@ use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_
 use crate::types::OperatorTakeTriggeredEvent;
 
 pub const PROGRAM_TYPE_ADVANCE_FUNDS: &str = "advance_funds";
-pub const SELECTED_OPERATOR_PUBKEY_VAR_PREFIX: &str = "SELECTED_OPERATOR_PUBKEY_";
 pub const ADVANCE_FUNDS_REQUEST_VAR_NAME: &str = "advance_funds_request";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -333,6 +332,7 @@ where
                 Ok(Steps::RegisterAdvanceFunds)
             }
             (Steps::RegisterAdvanceFunds, StepData::AdvanceFundsConfirmed) => {
+                self.publish_advance_funds_registered()?;
                 Ok(Steps::WaitForReimbursementKickoffSpv)
             }
             (
@@ -375,20 +375,9 @@ where
 
     fn setup_advance_funds_protocol(&mut self) -> Result<()> {
         let committee_id: CommitteeId = self.state.trigger_data.committee_id.clone();
-        let slot_index = self.state.trigger_data.slot_index;
         let operator_address = self.state.trigger_data.take_operator_address;
 
         let operator_pubkey = self.state.trigger_data.operator_take_pubkey;
-        let var_name = format!("{SELECTED_OPERATOR_PUBKEY_VAR_PREFIX}{slot_index}");
-        let committee_id_uuid = Uuid::from_u128(*committee_id);
-        debug!(
-            "Publishing selected operator pubkey for committee {committee_id} slot {slot_index}",
-        );
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
-            committee_id_uuid,
-            var_name,
-            VariableTypes::PubKey(operator_pubkey),
-        ))?;
 
         let my_address = self.contracts.my_address();
         if my_address != operator_address {
@@ -419,6 +408,26 @@ where
             PROGRAM_TYPE_ADVANCE_FUNDS.to_string(),
             participants,
             0,
+        ))
+    }
+
+    fn publish_advance_funds_registered(&self) -> Result<()> {
+        let txid = self.state.advance_funds_spv.as_ref().map(|spv| spv.txid).ok_or_else(|| {
+            anyhow!("Advance funds SPV data missing when publishing registration")
+        })?;
+
+        let data = AdvanceFundsRegistered {
+            committee_id: Uuid::from_u128(*self.state.trigger_data.committee_id),
+            slot_index: self.state.trigger_data.slot_index,
+            txid,
+            pegout_id: self.state.trigger_data.pegout_id.value().as_bytes().to_vec(),
+            operator_pubkey: self.state.trigger_data.operator_take_pubkey,
+        };
+
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
+            data.committee_id,
+            AdvanceFundsRegistered::name(data.slot_index),
+            VariableTypes::String(serde_json::to_string(&data)?),
         ))
     }
 

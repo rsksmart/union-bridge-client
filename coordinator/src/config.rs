@@ -144,13 +144,19 @@ impl CoordinatorFlowConfig {
 pub struct PeginConfig {
     /// Minimum BTC transaction confirmations for pegin (default: 1)
     pub min_tx_confirmations: u32,
+    /// Confirmation threshold sent to `SubscribeToRskPegin(Some(x))` (default: 1)
+    pub rsk_pegin_confirmation_threshold: u32,
     /// Blocks delay before rechecking transaction status (default: 20)
     pub blocks_delay_for_tx_check: u32,
 }
 
 impl Default for PeginConfig {
     fn default() -> Self {
-        Self { min_tx_confirmations: 1, blocks_delay_for_tx_check: 20 }
+        Self {
+            min_tx_confirmations: 1,
+            rsk_pegin_confirmation_threshold: 1,
+            blocks_delay_for_tx_check: 20,
+        }
     }
 }
 
@@ -210,6 +216,12 @@ pub struct CommitteeConfig {
     pub min_rsk_balance: u64,
     /// Path to the DRP program definition YAML file
     pub drp_program_definition: String,
+    /// Confirmations used in `committee.pegin_confirmations` sent to BitVMX
+    pub pegin_confirmations: u32,
+    /// Confirmations used in `committee.pegout_confirmations` sent to BitVMX
+    pub pegout_confirmations: u32,
+    /// Confirmations used in `committee.reject_pegin_confirmations` sent to BitVMX
+    pub reject_pegin_confirmations: u32,
 }
 
 impl Default for CommitteeConfig {
@@ -218,6 +230,9 @@ impl Default for CommitteeConfig {
             min_funding_balance: 20_002_000,
             min_rsk_balance: 1_000_000_000_500_000,
             drp_program_definition: String::new(),
+            pegin_confirmations: 1,
+            pegout_confirmations: 1,
+            reject_pegin_confirmations: 1,
         }
     }
 }
@@ -358,6 +373,7 @@ mod tests {
 
         // Pegin defaults (was MIN_TX_CONFIRMATIONS = 1, BLOCKS_DELAY_FOR_TX_CHECK = 20)
         assert_eq!(config.pegin.min_tx_confirmations, 1);
+        assert_eq!(config.pegin.rsk_pegin_confirmation_threshold, 1);
         assert_eq!(config.pegin.blocks_delay_for_tx_check, 20);
 
         // Pegout defaults
@@ -372,6 +388,9 @@ mod tests {
         // Committee defaults (was MIN_FUNDING_BALANCE = 20_002_000, MIN_RSK_BALANCE = 100_000 * 10^10 + 500_000)
         assert_eq!(config.committee.min_funding_balance, 20_002_000);
         assert_eq!(config.committee.min_rsk_balance, 1_000_000_000_500_000);
+        assert_eq!(config.committee.pegin_confirmations, 1);
+        assert_eq!(config.committee.pegout_confirmations, 1);
+        assert_eq!(config.committee.reject_pegin_confirmations, 1);
 
         // Native bridge defaults (was MIN_TX_CONFIRMATIONS = 2)
         assert_eq!(config.native_bridge.min_tx_confirmations, 2);
@@ -393,6 +412,7 @@ mod tests {
         // Verify bridge config uses defaults
         assert_eq!(config.bridge.coordinator.required_confirmations, 5);
         assert_eq!(config.bridge.pegin.min_tx_confirmations, 1);
+        assert_eq!(config.bridge.pegin.rsk_pegin_confirmation_threshold, 1);
         assert_eq!(config.bridge.pegout.spv_proof_min_confirmations, 1);
     }
 

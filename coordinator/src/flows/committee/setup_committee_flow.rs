@@ -2026,7 +2026,12 @@ where
 
         let committee_data = self.ctx().get_committee_data()?;
 
-        let dispute_core = DisputeCoreSetup::new(self.bitvmx_broker.clone());
+        let dispute_core = DisputeCoreSetup::new_with_confirmations(
+            self.bitvmx_broker.clone(),
+            self.config.pegin_confirmations,
+            self.config.pegout_confirmations,
+            self.config.reject_pegin_confirmations,
+        );
 
         let partial_utxo = self
             .state

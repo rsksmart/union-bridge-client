@@ -23,11 +23,28 @@ pub struct AggregatedKeys {
 
 pub struct DisputeCoreSetup<BC: BitVmxBrokerClientApi> {
     broker_client: Rc<BC>,
+    pegin_confirmations: u32,
+    pegout_confirmations: u32,
+    reject_pegin_confirmations: u32,
 }
 
 impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
     pub fn new(broker_client: Rc<BC>) -> Self {
-        Self { broker_client }
+        Self::new_with_confirmations(broker_client, 1, 1, 1)
+    }
+
+    pub fn new_with_confirmations(
+        broker_client: Rc<BC>,
+        pegin_confirmations: u32,
+        pegout_confirmations: u32,
+        reject_pegin_confirmations: u32,
+    ) -> Self {
+        Self {
+            broker_client,
+            pegin_confirmations,
+            pegout_confirmations,
+            reject_pegin_confirmations,
+        }
     }
 
     pub fn setup(
@@ -53,6 +70,9 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
             dispute_aggregated_key: aggregated_keys.dispute,
             packet_size: 10,
             stream_denomination,
+            pegin_confirmations: self.pegin_confirmations,
+            pegout_confirmations: self.pegout_confirmations,
+            reject_pegin_confirmations: self.reject_pegin_confirmations,
         };
 
         let committee_id = committee_data.committee_uuid();
