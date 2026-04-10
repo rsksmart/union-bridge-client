@@ -1,123 +1,118 @@
 # Local Infra
 
-Local development dependencies. Use this when running Union Client locally with `cargo` and you need the supporting infrastructure (blockchains + BitVMX) in Docker.
+This doc owns the Docker-backed local infrastructure used when Union Bridge runs locally with `cargo`.
+
+For the full startup order, shared env rules, and the recommended local workflow, start with the
+[Contributing Guide](../../CONTRIBUTING.md).
 
 ## Related Docs
 
-- [../README.md](../README.md): Docker flow selection
-- [../../CONTRIBUTING.md](../../CONTRIBUTING.md): contributor setup and local running order
-- [../operator/README.md](../operator/README.md): local operator Docker flow
+- [Docker Guide](../README.md): Docker flow selection
+- [Contributing Guide](../../CONTRIBUTING.md): canonical local workflow
+- [Operator Docker Runtime Guide](../operator/README.md): local operator Docker runtime
 
 ## `cli-infra.sh`
 
-If you want the simplest local entry point, use `./cli-infra.sh` from the repository root. It wraps the
-`start-blockchains.sh`, `start-bitvmx.sh`, and mining flows.
+Run this wrapper from the repository root when you want the quickest entry point for local blockchains, BitVMX, and
+background mining.
 
 ```text
-# Start all docker infra (blockchains + bitvmx) + mining
+# Start all Docker infra (blockchains + bitvmx) + mining
 ./cli-infra.sh --start [--fresh] [--contracts-tag TAG]
 
-# Stop mining + all docker infra
+# Stop mining + all Docker infra
 ./cli-infra.sh --stop
 
-# Start blockchains docker containers only
+# Start blockchains only
 ./cli-infra.sh --start-blockchains [--fresh] [--contracts-tag TAG]
 
-# Stop blockchains docker containers only
+# Stop blockchains only
 ./cli-infra.sh --stop-blockchains
 
-# Start bitvmx docker containers only
+# Start BitVMX only
 ./cli-infra.sh --start-bitvmx [--fresh]
 
-# Stop bitvmx docker containers only
+# Stop BitVMX only
 ./cli-infra.sh --stop-bitvmx
 
-# Start background mining (anvil + bitcoin)
+# Start or stop background mining
 ./cli-infra.sh --start-mine
-
-# Stop background mining
 ./cli-infra.sh --stop-mine
 ```
 
-This is the easiest path for the local mode where Union Client runs with `cargo` and Bitcoin, Anvil, and BitVMX run in
-Docker.
-
 ## Scripts
 
-- `start-blockchains.sh` - Starts bitcoind (regtest) + anvil + deploys contracts
-- `start-bitvmx.sh` - Starts 4 BitVMX client instances
+- `start-blockchains.sh`: starts bitcoind (regtest) + anvil + deploys contracts
+- `start-bitvmx.sh`: starts 4 BitVMX client instances
 
 ## Contracts Version
 
-By default, `start-blockchains.sh` uses the contracts version from `Cargo.toml` (pulls from registry; if the image
-digest changed, runs a fresh deploy automatically). Override with `--contracts-tag local-build` to build from a local
-contracts checkout (no digest-based auto-fresh; use `--fresh` when local contracts change).
+By default, `start-blockchains.sh` uses the contracts version from `Cargo.toml`. Override with `--contracts-tag
+local-build` when you want to use a local contracts checkout instead of the registry image.
 
-## Typical Workflow
+## Scope
 
-```bash
-cd docker/local-infra
+The documented local infra flow is still a 4-client BitVMX setup:
 
-# Start blockchains (first time or fresh start)
-./start-blockchains.sh --fresh up -d
+- `op_1` -> `localhost:22222`
+- `op_2` -> `localhost:33333`
+- `op_3` -> `localhost:44444`
+- `op_4` -> `localhost:55554`
 
-# Generate local per-operator BitVMX config under ~/.union_bridge/op_N/bitvmx
-cd ../..
-./cli-setup-operators.sh --ops 4
-
-# Start 4 BitVMX clients
-cd docker/local-infra
-./start-bitvmx.sh --fresh up -d
-
-# Then run Union Client locally with cargo (from project root)
-cd ../..
-./cli-run.sh --id 1
-```
-
-## BitVMX Client Ports
-
-- op_1 -> localhost:22222
-- op_2 -> localhost:33333
-- op_3 -> localhost:44444
-- op_4 -> localhost:55554
+If you need the full run sequence, do not rebuild it here. Use the [Contributing Guide](../../CONTRIBUTING.md) and come
+back to this doc for flags, ports, and troubleshooting.
 
 ## Useful Commands
 
+Run these from `docker/local-infra/`:
+
 ```bash
-# Check status
 ./start-blockchains.sh ps
 ./start-bitvmx.sh ps
 
-# View logs
 ./start-blockchains.sh logs -f
 ./start-bitvmx.sh logs -f
 
-# Stop
 ./start-blockchains.sh down
 ./start-bitvmx.sh down
 
-# Stop and remove volumes (clean state)
 ./start-blockchains.sh down --volumes
 ./start-bitvmx.sh down --volumes
 ```
 
+## Direct Script Entry Points
+
+If you need to debug the lower-level scripts directly instead of using `./cli-infra.sh`, the minimal sequence is:
+
+```bash
+cd docker/local-infra
+./start-blockchains.sh --fresh up -d
+cd ../..
+./cli-setup-operators.sh --ops 4
+cd docker/local-infra
+./start-bitvmx.sh --fresh up -d
+```
+
+That direct path is useful for isolating whether the problem is in blockchain bootstrap, operator artifact generation,
+or the BitVMX stack itself.
+
 ## Troubleshooting
 
-### Port conflicts
+### Port Conflicts
 
 Ensure these ports are free before starting:
 
 | Service | Ports |
-|---------|-------|
+| --- | --- |
 | Bitcoind | 18443 |
 | Anvil | 8545 |
 | BitVMX P2P | 22222, 33333, 44444, 55554 |
 | BitVMX broker | 61180-61183 |
 | User API | 40001-40004 |
 
-### BitVMX "Inconsistent blockchain state" error
+### BitVMX "Inconsistent blockchain state" Error
 
-This usually means BitVMX database is out of sync with Bitcoin. Run a fresh start:
+This usually means the BitVMX database is out of sync with Bitcoin. Run a fresh start:
 
 ```bash
 cd docker/local-infra
@@ -125,12 +120,12 @@ cd docker/local-infra
 ./start-bitvmx.sh --fresh up -d
 ```
 
-### Container won't start
+### Container Won't Start
 
-Check logs for the specific container:
+Check logs for the failing container:
 
 ```bash
 docker logs <container_name>
 ```
 
-For coordinator issues, it may need BitVMX to be healthy first. Try restarting after BitVMX is up.
+If coordinator-related services fail, verify that BitVMX is healthy first.
