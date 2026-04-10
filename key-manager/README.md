@@ -1,25 +1,24 @@
 # Key Manager
 
-For repository-level setup and workflow context, start with [../README.md](../README.md) and
-[../CONTRIBUTING.md](../CONTRIBUTING.md). This README only covers the crate-specific commands below.
+For repository-level setup and workflow context, start with the [Repository README](../README.md) and the
+[Contributing Guide](../CONTRIBUTING.md). This README only covers the crate-specific commands below.
 
-To generate a key pair, please run:
+Run these commands from the repository root:
 
-```
-cargo run new-key -p test -d <PATH_TO_STORE_IT>
-```
-
-To derive a key pair from a mnemonic, please run:
-
-```
-cargo run derive-public-data -p test -k <PATH_TO_KEY>
+```bash
+cargo run --bin key-manager -- --help
 ```
 
-Alternative options to local storage exist (check [here](https://alloy.rs/examples/wallets/keystore_signer.html)), but
-they are not implemented yet:
+Generate a new key pair:
 
-- Yubi
-- Trezor
-- Ledger
-- AWS
-- etc
+```bash
+cargo run --bin key-manager -- new-key -p test -d <PATH_TO_STORE_IT>
+```
+
+Derive the public data from an existing key:
+
+```bash
+cargo run --bin key-manager -- derive-public-data -p test -k <PATH_TO_KEY>
+```
+
+Alternative storage backends may exist in upstream libraries, but they are not implemented in this crate.

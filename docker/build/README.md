@@ -1,72 +1,48 @@
 # Docker Build
 
-This directory is only for building and publishing Union Client images. It does not own operator runtime
-documentation.
+This directory only covers image build and registry operations. It does not own local runtime setup.
+
+For the full local development procedure, start with the [Contributing Guide](../../CONTRIBUTING.md). For local Docker
+runtime usage after building images, use the [Operator Docker Runtime Guide](../operator/README.md).
 
 ## Related Docs
 
-- [../README.md](../README.md): Docker doc index
-- [../operator/README.md](../operator/README.md): run operators with the built images
-- [../../CONTRIBUTING.md](../../CONTRIBUTING.md): shared configuration override rules
+- [Docker Guide](../README.md): Docker doc index
+- [Operator Docker Runtime Guide](../operator/README.md): run operators with the built images
+- [Contributing Guide](../../CONTRIBUTING.md): shared configuration rules and runtime map
 
 ## Config
 
-No local `.env` file is required for the supported flow in this directory.
+No local `.env` file is required for the supported build flow in this directory.
 
-The build compose uses the repository `config/` tree. Runtime overrides still follow the shared `UB__...` environment
-variable mapping documented in [../../CONTRIBUTING.md](../../CONTRIBUTING.md#configuration-overrides).
+The build compose uses the repository `config/` tree. Runtime overrides still follow the shared `UB__...`
+configuration model documented in the [Contributing Guide](../../CONTRIBUTING.md).
+
+For GHCR authentication, this directory uses the local shell variable `GITHUB_REGISTRY_TOKEN`. That is separate from
+the GitHub Actions secret `REGISTRY_TOKEN` documented in the [Workflow Guide](../../.github/WORKFLOWS.md).
 
 ## Build Builder Images
 
-`d-build-builder.sh` builds the Union Client builder images.
-
 ```bash
+# Build builder images
 bash d-build-builder.sh --help
-```
 
-## Build Service Images
-
-`d-build-client.sh` builds the Union Client runtime images.
-
-```bash
+# Build service images
 bash d-build-client.sh --help
-```
 
-If the images will connect to a local Anvil node, build with the `anvil` feature enabled:
-
-```bash
+# Optional: enable the anvil feature for local Anvil-connected images
 bash d-build-client.sh --features=anvil
-```
 
-For public-repo Docker runtime usage:
-
-1. build images from here with `d-build-client.sh`
-2. run local operators from [../operator/README.md](../operator/README.md)
-
-If you still run `docker compose` manually from this directory, export any required variables in your shell first, such
-as `KEY_STORE_PASSWORD`.
-
-## Registry Operations
-
-Pull images:
-
-```bash
+# Pull images from GHCR
 bash d-ghcr-pull.sh
-```
 
-Push images:
-
-```bash
-bash d-ghcr-push.sh
-```
-
-Both require GHCR authentication first:
-
-```bash
+# Login to GHCR before pushing with the local shell variable
 echo "$GITHUB_REGISTRY_TOKEN" | docker login ghcr.io -u <your_user> --password-stdin
+
+# Push images to GHCR
+bash d-ghcr-push.sh
 ```
 
 ## Next Step
 
-After building or pulling images, switch to [../operator/README.md](../operator/README.md) for local runtime commands.
-Remote deployments are maintained outside this repository.
+After building or pulling images, switch to the [Operator Docker Runtime Guide](../operator/README.md) for local runtime commands.
