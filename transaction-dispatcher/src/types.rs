@@ -176,7 +176,8 @@ impl From<TxOut> for BitcoinTransactionOut {
 impl From<Transaction> for BitcoinTransaction {
     fn from(tx: Transaction) -> Self {
         BitcoinTransaction {
-            version: u32::try_from(tx.version.0).expect("Transaction version must fit in u32"),
+            // Preserve Bitcoin's raw 32-bit version field, including valid negative i32 values.
+            version: tx.version.0.cast_unsigned(),
             lock_time: tx.lock_time.to_consensus_u32(),
             inputs: tx.input.into_iter().map(Into::into).collect(),
             outputs: tx.output.into_iter().map(Into::into).collect(),
@@ -436,6 +437,11 @@ impl P2PAddressParser {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::Transaction;
+    use bitcoin::absolute::LockTime;
+    use bitcoin::consensus::deserialize;
+    use bitcoin::transaction::Version;
+
     use super::*;
 
     fn roundtrip_p2p_addr_parser(addr: &str) {
@@ -470,6 +476,65 @@ mod tests {
     #[test]
     fn roundtrip_dns_udp() {
         roundtrip_p2p_addr_parser("/dns4/example.com/udp/12000");
+    }
+
+    #[test]
+    fn bitcoin_transaction_preserves_positive_versions() {
+        for version in [0, 1, 2, i32::MAX] {
+            let tx = Transaction {
+                version: Version(version),
+                lock_time: LockTime::ZERO,
+                input: vec![],
+                output: vec![],
+            };
+
+            let converted = BitcoinTransaction::from(tx);
+            assert_eq!(converted.version, version.cast_unsigned());
+        }
+    }
+
+    #[test]
+    fn bitcoin_transaction_reinterprets_negative_versions_as_u32() {
+        let test_cases = [(-1, u32::MAX), (i32::MIN, 2_147_483_648)];
+
+        for (version, expected) in test_cases {
+            let tx = Transaction {
+                version: Version(version),
+                lock_time: LockTime::ZERO,
+                input: vec![],
+                output: vec![],
+            };
+
+            let converted = BitcoinTransaction::from(tx);
+            assert_eq!(converted.version, expected);
+        }
+    }
+
+    #[test]
+    fn bitcoin_transaction_preserves_negative_mainnet_version_bits() {
+        let raw_tx = hex::decode(
+            "f0b47b9a01ecf5e5c3bbf2cf1f71ecdc7f708b0b222432e914b394e24aad1494\
+             a42990ddfc000000008b483045022100852744642305a99ad74354e9495bf43a1f\
+             96ded470c256cd32e129290f1fa191022030c11d294af6a61b3da6ed2c0c296251\
+             d21d113cfd71ec11126517034b0dcb70014104a0fe6e4a600f859a0932f701d3af\
+             8e0ecd4be886d91045f06a5a6b931b95873aea1df61da281ba29cadb560dad4fc0\
+             47cf47b4f7f2570da4c0b810b3dfa7e500ffffffff0240420f00000000001976a9\
+             147eeacb8a9265cd68c92806611f704fc55a21e1f588ac05f00d0000000000197\
+             6a914eb3bd8ccd3ba6f1570f844b59ba3e0a667024a6a88acff7f0000",
+        )
+        .expect("valid hex");
+
+        let tx: Transaction = deserialize(&raw_tx).expect("valid bitcoin transaction");
+
+        assert_eq!(
+            tx.compute_txid().to_string(),
+            "c659729a7fea5071361c2c1a68551ca2bf77679b27086cc415adeeb03852e369"
+        );
+        assert_eq!(tx.version.0, -1_703_168_784);
+        assert!(u32::try_from(tx.version.0).is_err(), "legacy conversion should fail");
+
+        let converted = BitcoinTransaction::from(tx);
+        assert_eq!(converted.version, 2_591_798_512);
     }
     #[test]
     fn roundtrip_addr_ending_zero() {
