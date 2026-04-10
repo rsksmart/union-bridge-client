@@ -150,16 +150,28 @@ This is the canonical local flow for contributors:
 Use repo-root commands only:
 
 ```bash
+# Shared local environment
 export BASE_STORAGE_PATH="$HOME"
 export KEY_STORE_PASSWORD=<your-password>
 export USER_BITCOIN_WIF=<your-user-wif>
 export BITCOIND_URL=http://user:password@localhost:18443
 
+# Generate or refresh operator runtime artifacts
 ./cli-setup-operators.sh --ops 4
+
+# Start the local blockchain and BitVMX stack
 ./cli-infra.sh --start --fresh
+
+# Start the Rust client against the local stack
 ./cli-run.sh --fresh
+
+# Fund operators for the happy path
 ./cli-operations.sh operator fund
+
+# Whitelist operator committee member addresses
 ./cli-operations.sh operator whitelist --contract-address <COMMITTEE_REGISTRY_ADDRESS>
+
+# Apply operators to the stream
 ./cli-operations.sh operator apply-stream -s 1
 ```
 
@@ -305,9 +317,16 @@ and uses local hooks. See the [Hooks Guide](.hooks/README.md) for hook-specific 
 Recommended local setup:
 
 ```bash
+# Install the hook runner used by this repo
 cargo install rusty-hook
+
+# Install the git hooks declared in rusty-hook.toml
 rusty-hook init
+
+# Install nightly rustfmt for the formatting hook
 rustup component add rustfmt --toolchain nightly
+
+# Install cargo-sort for Cargo.toml normalization
 cargo install cargo-sort
 ```
 
@@ -331,7 +350,9 @@ Then set that value in the matching BitVMX config:
 ```yaml
 components:
   l2:
+    # Operator coordinator pubkey hash used by this local BitVMX config entry
     pubkey_hash: <operator-coordinator-pubkey-hash>
+    # L2 operator identifier for this local config entry
     id: 0
 ```
 

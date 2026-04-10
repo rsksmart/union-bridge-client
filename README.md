@@ -29,8 +29,6 @@ contract state, broker messaging, BitVMX interactions, and timeout handling.
 
 ## Documentation Map
 
-Start with the contributor runbook, then drop to the lower-level docs that own a specific surface:
-
 | If you need to... | Read |
 | --- | --- |
 | get the recommended local setup, shared env rules, and contributor workflow | [Contributing Guide](CONTRIBUTING.md) |
