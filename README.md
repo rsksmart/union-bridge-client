@@ -29,16 +29,16 @@ contract state, broker messaging, BitVMX interactions, and timeout handling.
 
 ## Documentation Map
 
-| If you need to... | Read |
-| --- | --- |
-| get the recommended local setup, shared env rules, and contributor workflow | [Contributing Guide](CONTRIBUTING.md) |
-| use the local wrappers and operations CLI | [CLI Tools Guide](cli/README.md) |
-| choose a Docker flow | [Docker Guide](docker/README.md) |
-| run local blockchains and BitVMX in Docker | [Local Infra Guide](docker/local-infra/README.md) |
-| run local operators in Docker | [Operator Docker Runtime Guide](docker/operator/README.md) |
-| build or publish Docker images | [Docker Build Guide](docker/build/README.md) |
-| read detailed protocol flow notes | [E2E Flow Notes](docs/e2e/README.md) |
-| inspect crate-specific detail | nearby component READMEs such as [CheckFork Guide](check-fork/README.md), [Transaction Dispatcher Guide](transaction-dispatcher/README.md), [Key Manager Guide](key-manager/README.md), and [Wallet CLI Guide](cli/bitcoin-wallet/README.md) |
+| If you need to...                                                           | Read                                                                                                                                                                                                                                         |
+|-----------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| get the recommended local setup, shared env rules, and contributor workflow | [Contributing Guide](CONTRIBUTING.md)                                                                                                                                                                                                        |
+| use the local wrappers and operations CLI                                   | [CLI Tools Guide](cli/README.md)                                                                                                                                                                                                             |
+| choose a Docker flow                                                        | [Docker Guide](docker/README.md)                                                                                                                                                                                                             |
+| run local blockchains and BitVMX in Docker                                  | [Local Infra Guide](docker/local-infra/README.md)                                                                                                                                                                                            |
+| run local operators in Docker                                               | [Operator Docker Runtime Guide](docker/operator/README.md)                                                                                                                                                                                   |
+| build or publish Docker images                                              | [Docker Build Guide](docker/build/README.md)                                                                                                                                                                                                 |
+| read detailed e2e flow documentation                                        | [E2E Flow Documentation](docs/e2e/README.md)                                                                                                                                                                                                 |
+| inspect crate-specific detail                                               | nearby component READMEs such as [CheckFork Guide](check-fork/README.md), [Transaction Dispatcher Guide](transaction-dispatcher/README.md), [Key Manager Guide](key-manager/README.md), and [Wallet CLI Guide](cli/bitcoin-wallet/README.md) |
 
 ## Contributing
 
