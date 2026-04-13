@@ -994,7 +994,7 @@ where
         let public_key = self.ctx().get_my_dispute_key(&self.global_context)?.public_key;
 
         let funding_utxo_val = self.ctx().get_user_input()?.funding_utxo.value;
-        let speedup_utxo_val = self.ctx().get_user_input()?.funding_utxo.value;
+        let speedup_utxo_val = self.ctx().get_user_input()?.speed_up_utxo.value;
         let advance_funds_utxo_val =
             calculate_advance_funds_value(self.ctx().get_user_input()?.advance_funds.value);
 
@@ -2626,6 +2626,71 @@ mod tests {
         TestFlow::request_bitvmx_key_signing(&mut req, &broker).expect("request signing");
 
         assert!(req.expect("request").2.is_some());
+    }
+
+    #[test]
+    fn test_fund_protocol_uses_speedup_value_for_first_send_funds_output() {
+        let dispute_key = test_signed_pubkey(42, 27);
+        let expected_pubkey = dispute_key.public_key;
+        let expected_speedup = 10_000_000;
+        let expected_funding = 30_000_000;
+        let expected_advance = calculate_advance_funds_value(2_000_000);
+
+        let mut broker = MockBitVmxBroker::new();
+        broker
+            .expect_send()
+            .with(function(move |msg: &IncomingBitVMXApiMessages| {
+                if let IncomingBitVMXApiMessages::SendFunds(
+                    _,
+                    Destination::Batch(destinations),
+                    Some(fee_rate),
+                ) = msg
+                {
+                    if *fee_rate != REGTEST_FEE_RATE {
+                        return false;
+                    }
+
+                    // The funding outputs must keep the contract order used by the flow.
+                    match destinations.as_slice() {
+                        [
+                            Destination::P2WPKH(pubkey0, amount0),
+                            Destination::P2WPKH(pubkey1, amount1),
+                            Destination::P2WPKH(pubkey2, amount2),
+                        ] => {
+                            *pubkey0 == expected_pubkey
+                                && *pubkey1 == expected_pubkey
+                                && *pubkey2 == expected_pubkey
+                                && *amount0 == expected_speedup
+                                && *amount1 == expected_funding
+                                && *amount2 == expected_advance
+                        }
+                        _ => false,
+                    }
+                } else {
+                    false
+                }
+            }))
+            .times(1)
+            .returning(|_| Ok(true));
+
+        let global_context = GlobalContext::new();
+        global_context.my_keys().set_dispute_key(dispute_key);
+
+        let mut flow = SetupCommitteeFlow::new(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            RuntimeSync::new().expect("runtime"),
+            Rc::new(broker),
+            global_context,
+            Uuid::new_v4(),
+            Network::Regtest,
+            Rc::new(MockCoordinatorStoreApi::new()),
+            CommitteeConfig::default(),
+        );
+        flow.state.ctx.user_input = Some(test_apply_to_stream(55));
+
+        flow.fund_protocol().expect("fund protocol");
+
+        assert!(matches!(flow.state.ctx.send_funds_req, Some((_req_id, None))));
     }
 
     #[test]
