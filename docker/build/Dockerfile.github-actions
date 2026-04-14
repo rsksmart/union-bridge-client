@@ -80,10 +80,10 @@ ENV RUST_LOG=debug
 # it does not harm to have it always defined, so we leave it common
 ENV RISC0_HOME=/opt/risc0
 
-COPY docker/build/entrypoint_sh/runtime-entrypoint.sh /app/runtime-entrypoint.sh
+COPY docker/build/entrypoint_sh/db-entrypoint.sh /app/db-entrypoint.sh
 
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 LABEL org.opencontainers.image.source=https://github.com/rsksmart/union-bridge-client
 
-ENTRYPOINT ["sh", "/app/runtime-entrypoint.sh"]
+ENTRYPOINT ["sh", "/app/db-entrypoint.sh"]

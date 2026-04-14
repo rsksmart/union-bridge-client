@@ -62,7 +62,7 @@ services:
     volumes:
       - ${CONFIG_DIR:-../../config}:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
-      - ${KEYSTORE_DIR}:/keystore
+      - ${KEYSTORE_DIR}:/keystore-src:ro
       - ${RESOURCES_DIR:-../../resources}:/app/resources:ro
       - db-coordinator:/app/db/coordinator
     restart: no
@@ -76,6 +76,7 @@ services:
       retries: 3
       start_period: 10s
       test: ["CMD", "pgrep", "-f", "coordinator"]
+    entrypoint: ["sh", "/app/keystore-entrypoint.sh"]
     command: ["sh", "-c", "exec /app/coordinator --config $$CONFIG"]
     depends_on:
       block-indexer:
@@ -96,7 +97,7 @@ services:
     volumes:
       - ${CONFIG_DIR:-../../config}:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
-      - ${KEYSTORE_DIR}:/keystore
+      - ${KEYSTORE_DIR}:/keystore-src:ro
     environment:
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
       - CONFIG=${CONFIG:-dummy-config-name}
@@ -107,6 +108,7 @@ services:
       retries: 3
       start_period: 10s
       test: ["CMD", "pgrep", "-f", "user-api"]
+    entrypoint: ["sh", "/app/keystore-entrypoint.sh"]
     command: ["sh", "-c", "exec /app/user-api --config $$CONFIG"]
 
 volumes:
