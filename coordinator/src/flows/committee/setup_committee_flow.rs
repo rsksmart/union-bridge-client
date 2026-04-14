@@ -263,7 +263,9 @@ impl FlowContext {
         let advance_funds_utxo_val =
             calculate_advance_funds_value(self.get_user_input()?.advance_funds.value);
 
-        let wpkh = public_key.wpubkey_hash().expect("key is compressed");
+        let wpkh = public_key
+            .wpubkey_hash()
+            .context("Failed to get wpubkey_hash from dispute public key")?;
         let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
         let speedup_ot = OutputType::SegwitPublicKey {
             value: Amount::from_sat(speedup_utxo_val),
