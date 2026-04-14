@@ -114,7 +114,10 @@ where
             global_context,
             btc_sig_subflow_factory: factory,
             pegout_flows: HashMap::new(),
-            confirming_events: ConfirmingEvents::new(required_confirmations),
+            confirming_events: ConfirmingEvents::with_name(
+                "PegoutProcessor",
+                required_confirmations,
+            ),
             signature_flows: HashMap::new(),
             tx_status_scheduler: TickScheduler::new(),
             advance_funds_timeout_scheduler: TimeBasedScheduler::new(),

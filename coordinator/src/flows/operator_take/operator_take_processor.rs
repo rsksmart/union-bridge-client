@@ -80,7 +80,10 @@ where
             bitvmx_broker,
             global_context,
             flows: HashMap::new(),
-            confirming_events: ConfirmingEvents::new(required_confirmations),
+            confirming_events: ConfirmingEvents::with_name(
+                "OperatorTakeProcessor",
+                required_confirmations,
+            ),
             required_confirmations,
             native_bridge_verifier,
             unconfirmed_register_advance_funds: HashMap::new(),

@@ -66,7 +66,7 @@ where
         BtcSignatureLifeCycle {
             contracts: contracts_gateway,
             rt_sync,
-            blockchain_view: BlockchainView::new(),
+            blockchain_view: BlockchainView::with_name(format!("BtcSignatureLifeCycle/{flow_id}")),
             state: State { flow_id, data: None, nonce_step: None, signature_step: None },
             required_confirmations,
         }

@@ -121,7 +121,10 @@ where
             global_context,
             btc_sig_subflow_factory: factory,
             pegin_flows: HashMap::new(),
-            confirming_events: ConfirmingEvents::new(required_confirmations),
+            confirming_events: ConfirmingEvents::with_name(
+                "PeginProcessor",
+                required_confirmations,
+            ),
             signature_flows: HashMap::new(),
             tx_status_scheduler: TickScheduler::new(),
             pegin_request_tracker: HashSet::new(),

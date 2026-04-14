@@ -70,7 +70,10 @@ where
             flow_factory,
             flows: HashMap::new(),
             global_context,
-            confirming_events: ConfirmingEvents::new(required_confirmations),
+            confirming_events: ConfirmingEvents::with_name(
+                "SetupCommitteeProcessor",
+                required_confirmations,
+            ),
             store: Rc::clone(store),
             required_confirmations,
         };

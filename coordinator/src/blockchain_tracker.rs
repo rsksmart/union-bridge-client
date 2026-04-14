@@ -88,6 +88,7 @@ type ObserverMap = HashMap<String, Rc<RefCell<dyn BlockchainObserver>>>;
 
 #[derive(Clone)]
 pub struct BlockchainView {
+    name: String,
     blocks: Rc<RefCell<BTreeMap<BlockNumber, RskBlockAndUncles>>>,
     observers: Rc<RefCell<ObserverMap>>, // Rc<RefCell<...>> is necessary for shared mutable access to trait objects
 }
@@ -102,9 +103,19 @@ impl BlockchainView {
     #[must_use]
     pub fn new() -> Self {
         Self {
+            name: String::new(),
             blocks: Rc::new(RefCell::new(BTreeMap::new())),
             observers: Rc::new(RefCell::new(HashMap::new())),
         }
+    }
+
+    #[must_use]
+    pub fn with_name(name: impl Into<String>) -> Self {
+        Self { name: name.into(), ..Self::new() }
+    }
+
+    fn name_display(&self) -> &str {
+        if self.name.is_empty() { "BlockchainView" } else { &self.name }
     }
 
     /// # Panics
@@ -112,7 +123,7 @@ impl BlockchainView {
     pub fn add_observer(&self, observer: Rc<RefCell<dyn BlockchainObserver>>) {
         let observer_id = observer.borrow().get_id();
 
-        debug!("Adding observer to BlockchainView: {observer_id}");
+        debug!("Adding observer to {}: {observer_id}", self.name_display());
 
         // Check for duplicates with defensive borrowing
         {
@@ -149,9 +160,10 @@ impl BlockchainView {
         // new tip without reorg
         if removed_block.is_none() {
             debug!(
-                "Adding new tip {} ({}) to BlockchainView",
+                "Adding new tip {} ({}) to {}",
                 new_block.number(),
-                new_block.hash()
+                new_block.hash(),
+                self.name_display()
             );
 
             if let Some(prev_tip) = prev_tip {
@@ -171,11 +183,12 @@ impl BlockchainView {
         // tip replacement
         if new_block.number() == stored_tip.number() {
             info!(
-                "Replacing tip block {} ({}) with {} ({}) in BlockchainView",
+                "Replacing tip block {} ({}) with {} ({}) in {}",
                 stored_tip.number(),
                 stored_tip.hash(),
                 new_block.number(),
-                new_block.hash()
+                new_block.hash(),
+                self.name_display()
             );
 
             // update all visitors of the replacement
@@ -210,7 +223,8 @@ impl BlockchainView {
 
     fn rollback_to(&self, new_tip: &RskBlockAndUncles, removed_block: &RskBlockAndUncles) {
         debug!(
-            "Reorg detected, rolling back BlockchainView to {} ({})",
+            "Reorg detected, rolling back {} to {} ({})",
+            self.name_display(),
             new_tip.number(),
             new_tip.hash()
         );
@@ -225,7 +239,12 @@ impl BlockchainView {
         }
 
         for btr in &blocks_to_rollback {
-            debug!("Rolling back block {} ({}) in BlockchainView", btr.number(), btr.hash());
+            debug!(
+                "Rolling back block {} ({}) in {}",
+                btr.number(),
+                btr.hash(),
+                self.name_display()
+            );
 
             self.blocks.borrow_mut().remove(&btr.number());
 
@@ -238,7 +257,8 @@ impl BlockchainView {
         self.notify_added_block(new_tip);
 
         info!(
-            "Reorg fixed, rolled back BlockchainView to {} ({})",
+            "Reorg fixed, rolled back {} to {} ({})",
+            self.name_display(),
             new_tip.number(),
             new_tip.hash()
         );
@@ -372,6 +392,14 @@ impl ConfirmingEvents {
             events: HashMap::new(),
             blockchain_view: BlockchainView::new(),
             required_confirmations,
+        }
+    }
+
+    #[must_use]
+    pub fn with_name(name: impl Into<String>, required_confirmations: u32) -> Self {
+        Self {
+            blockchain_view: BlockchainView::with_name(name),
+            ..Self::new(required_confirmations)
         }
     }
 

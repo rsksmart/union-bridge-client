@@ -77,7 +77,7 @@ where
             pending_zkp: None,
             check_fork_guest_elf_path: config.check_fork_guest_elf_path,
             max_zkp_status_retries: config.max_zkp_status_retries,
-            chain_view: BlockchainView::new(),
+            chain_view: BlockchainView::with_name("AdvanceFundsProcessor"),
             required_confirmations,
         }
     }
