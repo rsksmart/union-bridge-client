@@ -2,6 +2,7 @@
 name = "coordinator"
 version.workspace = true
 license.workspace = true
+rust-version.workspace = true
 edition = "2024"
 
 [features]

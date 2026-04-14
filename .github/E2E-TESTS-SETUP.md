@@ -1,27 +1,49 @@
 # E2E Smoke Tests
 
-This workflow triggers E2E smoke tests in `union_bridge_e2e_framework`. 
-- On PR open/update it runs automatically and posts a status check (`e2e-smoke-tests`). 
-- Manual runs: Actions → E2E Smoke Tests → Run workflow.
+This document explains how this repo's `e2e-smoke-tests.yml` workflow triggers smoke tests in
+`union_bridge_e2e_framework`.
 
-**Flow:** Client workflow runs → calls e2e repo via API → e2e workflow runs tests → updates status check on the PR.
+Flow: client workflow runs, dispatches the external E2E workflow, the E2E repo executes the smoke test, and then
+updates the `e2e-smoke-tests` status on the client PR.
 
-## Refs (what gets tested)
+## Trigger Rules
+
+- pull requests to `main`
+- PR actions: `opened`, `synchronize`, `reopened`, `ready_for_review`
+- manual runs through `workflow_dispatch`
+
+Important: draft PRs do not run the job. The workflow file gates execution with:
+
+- `workflow_dispatch`, or
+- `pull_request.draft == false`
+
+## Refs
 
 | Ref | PR run | Manual run |
-| ----- | ----- | ----- |
-| **client** | PR head (branch/SHA). Not overridable. | Input `client_ref`. Empty = current commit. |
-| **e2e** (which e2e version runs) | PR label `e2e-ref:<ref>` (e.g. `e2e-ref:v0.2.0`). No label = `main`. | Input `e2e_ref`. Empty = `main`. |
-| **contracts** | Derived from client Cargo.toml (union-contracts tag). No override. | — |
+| --- | --- | --- |
+| client | PR head SHA; not overridable | `client_ref`, empty means current commit |
+| e2e | PR label `e2e-ref:<ref>` or default `main` | `e2e_ref`, empty means `main` |
+| status target SHA | PR head SHA | `pr_head_sha`, empty means `github.sha` |
 
-**When to add `e2e-ref:<ref>`:** If your client branch needs a different e2e version (e.g. it breaks current e2e tests and you have an e2e branch that supports it), add the PR label `e2e-ref:<ref>`. Otherwise the run uses e2e’s `main`. This lets multiple client branches use different e2e refs without changing code.
+## Trusted Actors
 
-**e2e-ref override and trusted actors:** Only trusted maintainers can use the `e2e-ref` label or the `e2e_ref` manual input. If someone else adds the label or sets the input, the workflow fails with an error and does not run the e2e pipeline. This avoids untrusted contributors from choosing which e2e framework ref (and thus which workflow code) runs in the e2e repo. The allowlist is maintained in the client workflow file (`e2e-smoke-tests.yml`).
+Only trusted maintainers can override the E2E framework ref with:
+
+- PR label `e2e-ref:<ref>`
+- manual input `e2e_ref`
+
+If a non-trusted actor tries to set either one, the workflow fails and sets the `e2e-smoke-tests` commit status to
+`error`.
 
 ## Setup
 
-1. **union-bridge-client:** Secret `E2E_FRAMEWORK_GITHUB_TOKEN` (PAT with `repo` + `workflow`, access to `union_bridge_e2e_framework`). Needed to trigger the e2e workflow (else 404). Configure it in repository settings.
-2. **union-bridge-client:** Branch protection for `main` → require status check `e2e-smoke-tests` (optional until enforced).
-3. **union_bridge_e2e_framework:** Secrets `TOKEN_CONTRACTS`, `USER_BITCOIN_WIF`, `MEMBER_BITCOIN_WIF`. `TOKEN_CONTRACTS` is the PAT for the private `temp-rsk/bitvmx-union-bridge-contracts` dependency used by this workspace. Optional: `GHCR_USERNAME` if PAT owner differs from `github.actor`.
+1. In `union-bridge-client`, configure `E2E_FRAMEWORK_GITHUB_TOKEN`. For cross-repo dispatch this is typically a GitHub
+   Personal Access Token (PAT) with `repo` and `workflow` access to `union_bridge_e2e_framework`.
+2. Optionally require the `e2e-smoke-tests` status check in branch protection for `main`.
+3. In `union_bridge_e2e_framework`, configure the secrets required by that pipeline:
+   - `USER_BITCOIN_WIF`
+   - `MEMBER_BITCOIN_WIF`
+   - optional `GHCR_USERNAME` if the PAT owner differs from `github.actor`
 
-Full guide (client + e2e secrets, tokens, multi-arch contracts image): [union_bridge_e2e_framework/.github/workflows/E2E-SMOKE-TESTS.md](https://github.com/rsksmart/union_bridge_e2e_framework/blob/main/.github/workflows/E2E-SMOKE-TESTS.md).
+Full external E2E smoke-tests guide:
+[External E2E Smoke Tests Guide](https://github.com/rsksmart/union_bridge_e2e_framework/blob/main/.github/workflows/E2E-SMOKE-TESTS.md)

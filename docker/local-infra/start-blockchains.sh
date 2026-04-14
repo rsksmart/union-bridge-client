@@ -10,7 +10,7 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.blockchains.yaml"
 ENV_PATH="${SCRIPT_DIR}/.env.local"
 
-CONTRACTS_IMAGE_BASE="ghcr.io/temp-rsk/deploy-contracts"
+CONTRACTS_IMAGE_BASE="ghcr.io/rsksmart/union-bridge-contracts"
 CONTRACTS_TAG_LOCAL_BUILD="local-build"
 
 # Display help message

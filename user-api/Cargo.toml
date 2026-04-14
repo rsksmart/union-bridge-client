@@ -2,6 +2,7 @@
 name = "user-api"
 version.workspace = true
 license.workspace = true
+rust-version.workspace = true
 edition = "2021"
 
 [dependencies]
@@ -12,7 +13,7 @@ clap = { workspace = true }
 common = { path = "../common" }
 hex = "0.4.3"
 log = { workspace = true }
-serde = { version = "1.0.219", features = ["derive"] }
+serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
@@ -21,4 +22,3 @@ transaction-dispatcher = { path = "../transaction-dispatcher", features = ["type
 
 [lints.clippy]
 all = "allow" # non-production code, do not require strict linting
-

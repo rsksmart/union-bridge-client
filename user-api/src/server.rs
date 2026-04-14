@@ -79,7 +79,7 @@ impl Server {
         );
 
         app = app.layer((
-            TimeoutLayer::new(Duration::from_secs(10)),
+            TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(10)),
             Extension(broker_server.clone()),
             Extension(coordinator_client_id),
         ));

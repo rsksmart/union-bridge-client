@@ -10,11 +10,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 print_help() {
   cat <<EOF
-Usage: $0 [-r|--ref <branch-or-tag>] [-s|--ssh] [-h|--help]
+Usage: $0 [-r|--ref <branch-or-tag>] [-h|--help]
 
 Options:
   -r, --ref <ref>   Branch or tag of BitVMX upstream docker-bitvmx to use (default: main)
-  -s, --ssh         Use SSH URL for cloning instead of HTTPS
   -h, --help        Show this help and exit
 
 Environment:
@@ -23,7 +22,6 @@ EOF
 }
 
 REF="main"
-USE_SSH=false
 
 # Parse args (short and long)
 while [ $# -gt 0 ]; do
@@ -35,10 +33,6 @@ while [ $# -gt 0 ]; do
       fi
       REF="$2"
       shift 2
-      ;;
-    -s|--ssh)
-      USE_SSH=true
-      shift
       ;;
     -h|--help)
       print_help
@@ -68,14 +62,7 @@ BC_REPO="docker-bitvmx"
 # Upstream org for BitVMX docker-bitvmx (override for forks): export BITVMX_UPSTREAM_GITHUB_ORG=my-org
 BITVMX_UPSTREAM_GITHUB_ORG="${BITVMX_UPSTREAM_GITHUB_ORG:-FairgateLabs}"
 
-# Set URL based on SSH flag
-if [ "${USE_SSH}" = true ]; then
-  BC_URL="git@github.com:${BITVMX_UPSTREAM_GITHUB_ORG}/${BC_REPO}.git"
-  echo "Using SSH URL for cloning..."
-else
-  BC_URL="https://github.com/${BITVMX_UPSTREAM_GITHUB_ORG}/${BC_REPO}.git"
-  echo "Using HTTPS URL for cloning..."
-fi
+BC_URL="https://github.com/${BITVMX_UPSTREAM_GITHUB_ORG}/${BC_REPO}.git"
 
 # Ensure target path exists
 mkdir -p "${BC_PATH}"

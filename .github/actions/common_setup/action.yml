@@ -2,9 +2,6 @@ name: "Build Tests"
 description: "Builds the union-bridge-client"
 
 inputs:
-  contracts_github_token:
-    description: "GitHub PAT for the private union-contracts repository"
-    required: true
   cache-build:
     description: "Whether dependencies should be cached"
     required: true
@@ -15,13 +12,13 @@ runs:
 
     - name: Set up Node.js
       if: ${{ env.ACT }}
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
       with:
         node-version: 18
 
     - name: Install Rust
       if: ${{ env.ACT }}
-      uses: actions-rust-lang/setup-rust-toolchain@v1
+      uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
       with:
         toolchain: stable
         cache: false
@@ -35,7 +32,7 @@ runs:
 
     - name: Cache RISC Zero
       id: cache-risc0
-      uses: actions/cache@v5
+      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
       with:
         path: ~/.risc0
         key: ${{ runner.os }}-risc0-v0.4.1
@@ -51,7 +48,7 @@ runs:
 
     - name: Cache Build
       if: ${{ inputs.cache-build == 'true' }}
-      uses: actions/cache@v5
+      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
       with:
         path: |
           ~/.cargo/registry
@@ -60,17 +57,3 @@ runs:
         key: ${{ runner.os }}-rust-cargo-${{ hashFiles('./Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-rust-cargo-
-
-    - name: Configure Fairgate dependency cloning
-      shell: bash
-      run: |
-        git config --global \
-          url."https://github.com/FairgateLabs".insteadOf \
-          "ssh://git@github.com/FairgateLabs"
-
-    - name: Configure contracts dependency cloning
-      shell: bash
-      run: |
-        git config --global \
-          url."https://${{ inputs.contracts_github_token }}@github.com/temp-rsk".insteadOf \
-          "ssh://git@github.com/temp-rsk"

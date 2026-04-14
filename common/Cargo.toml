@@ -2,6 +2,7 @@
 name = "common"
 version.workspace = true
 license.workspace = true
+rust-version.workspace = true
 edition = "2024"
 
 [features]
@@ -22,7 +23,7 @@ config = { workspace = true }
 hex = { workspace = true }
 log = { workspace = true }
 log4rs = { workspace = true }
-lru = "0.13.0"
+lru = "0.16"
 message-broker = { workspace = true }
 mockall = { workspace = true }
 musig2 = { workspace = true }
@@ -30,11 +31,11 @@ primitive-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
-sha3 = "0.10"
-signal-hook = "0.3"
+sha3 = "0.10.8"
+signal-hook = "0.3.18"
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
-uuid = { version = "1.11.0", features = ["v4", "serde"] }
+uuid = { version = "1.11.1", features = ["v4", "serde"] }
 
 [lints]
 workspace = true

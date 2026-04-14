@@ -1,47 +1,48 @@
 # Union Bridge CLI Tools
 
-The `cli/` workspace contains the CLI tools for local development, operator operations, and Bitcoin wallet management.
+The `cli/` workspace contains the local wrappers and CLI tools used for development, operator operations, and the
+Bitcoin wallet helper.
 
-> **Disclaimer:** These CLI tools are intended for development testing and validation only. They are **not** designed or supported for production usage.
+> These tools are intended for development and validation. They are not documented here as production interfaces.
 
 ## Related Docs
 
-- [../CONTRIBUTING.md](../CONTRIBUTING.md): contributor setup, shared configuration, and local validation flows
-- [../docker/operator/README.md](../docker/operator/README.md): local Docker operator runtime
-- [bitcoin-wallet/README.md](bitcoin-wallet/README.md): Bitcoin wallet helper used by some operations
+- [Contributing Guide](../CONTRIBUTING.md): canonical setup order, shared env rules, and the recommended local flow
+- [Operator Docker Runtime Guide](../docker/operator/README.md): local Docker operator runtime
+- [Wallet CLI Guide](bitcoin-wallet/README.md): wallet-specific commands and behavior
+
+Run the wrapper scripts below from the repository root.
 
 ## Workflow Entry Points
 
-- Local cargo workflow: bootstrap with `./cli-setup-operators.sh --ops 4`, then use the commands below.
-- Local Docker workflow: use `--env docker` after following [../docker/operator/README.md](../docker/operator/README.md).
-- Remote CLI workflow: use a profile name such as `alphanet` with a matching `cli/.env.<profile>` file.
+- local cargo client + Docker-backed infra: follow the [Contributing Guide](../CONTRIBUTING.md) first, then use the wrapper
+  commands below
+- local Docker operator runtime: use `--env docker` after following the [Operator Docker Runtime Guide](../docker/operator/README.md)
+- remote CLI profile: use `--env <profile>` with a matching `cli/.env.<profile>`
 
 ## `cli-run.sh`
 
-Launches one or more Union Bridge clients locally for development and testing.
+Launch one or more Union Bridge clients locally for development and testing.
 
 ```bash
 ./cli-run.sh --help
 ./cli-run.sh --features anvil
 ./cli-run.sh --id 1 --features anvil
-./cli-run.sh --fresh --features anvil
+./cli-run.sh --fresh
 ./cli-run.sh --bitvmx-mode docker
 ./cli-run.sh --bitvmx-mode repo
-./cli-run.sh --logs
 ./cli-run.sh --kill
 ```
 
 ## `cli-operations.sh`
 
-Handles operator operations and user operations across different environments.
+Operator and user operations for local, Docker-backed, and remote-profile environments.
 
 ### Supported Environments
 
 - `local`
 - `docker`
 - any remote profile name, for example `alphanet`
-
-Only `local` and `docker` are documented here as Docker runtime targets.
 
 ### Environment Variables
 
@@ -51,8 +52,7 @@ For all environments:
 - `UC_OPERATOR_ID`
 - `UC_OPERATOR_ROLE`
 
-For remote CLI access only, copy `cli/.env.sample` to `cli/.env.<profile>` and fill in the values there.
-For example, `--env alphanet` loads `cli/.env.alphanet`.
+For remote CLI access, copy `cli/.env.sample` to `cli/.env.<profile>` and fill in the values there.
 
 ### Usage Examples
 
@@ -76,26 +76,26 @@ For example, `--env alphanet` loads `cli/.env.alphanet`.
 
 ### Remote CLI Notes
 
-Any `--env <name>` other than `local` or `docker` is treated as a remote profile. The CLI looks for
-`cli/.env.<name>` and expects these keys there:
+Any `--env <name>` other than `local` or `docker` is treated as a remote profile. The CLI looks for `cli/.env.<name>`
+and expects these keys there:
 
 - `UC_REMOTE_SSH_USER`
 - `UC_REMOTE_HOSTS`
 - `UC_REMOTE_USER_API_ENDPOINTS`
 - `UC_REMOTE_RPC_URL`
 
-Those files are ignored by git.
+These files are ignored by git.
 
 ### Safety Features
 
 - `--execute` is only supported for local environments (`local`, `docker`)
 - confirmation prompts remain enabled for remote operations
 
-The CLI tools are organized in a separate Cargo workspace under `cli/`:
+## Workspace Layout
 
 ```text
 cli/
-├── Cargo.toml          # CLI workspace configuration with shared dependencies
+├── Cargo.toml
 ├── Cargo.lock
 ├── .env.sample         # Template for remote CLI profiles (copy to .env.<profile>)
 ├── run/                # Local client launcher (cli-run.sh)
@@ -126,35 +126,24 @@ cli/
     └── Cargo.toml
 ```
 
-The CLI workspace is independent from the main Union Bridge workspace, allowing for faster compilation and easier maintenance of CLI-specific code.
+The wallet crate currently includes:
 
-## Usage Examples
-
-### Local Development Setup
-
-```bash
-# 1. Bootstrap wallets, broker identities, and BitVMX runtime artifacts
-./cli-setup-operators.sh --ops 4
-
-# 2. Fund operators (Bitcoin + Rootstock)
-./cli-operations.sh operator fund
-./cli-operations.sh operator fund --execute
-
-# 3. Run all 4 clients
-./cli-run.sh --features anvil
-
-# 4. Apply operators to stream
-./cli-operations.sh operator apply-stream --stream-id 1
+```text
+cli/bitcoin-wallet/
+├── config/
+├── src/
+│   ├── bitcoin/
+│   ├── cli.rs
+│   ├── config.rs
+│   ├── lib.rs
+│   ├── main.rs
+│   ├── pending_tx_store.rs
+│   ├── utxo_store.rs
+│   └── wallet.rs
+└── tests/
 ```
-
-`cli-setup-operators.sh` creates the local keystores consumed by `./cli-run.sh`.
-Docker operator mode uses `docker-compose.env` / `docker-service.env` and container keystore paths instead of these cargo-mode keystore files.
 
 ## Docker Integration
 
-When using the public `docker/operator` setup, you can use `cli-operations.sh` against local Dockerized operators:
-
-```bash
-./cli-operations.sh operator fund --env docker
-./cli-operations.sh operator apply-stream --stream-id 1 --env docker
-```
+`docker-compose.env` and `docker-service.env` are Docker operator runtime artifacts. They are not read by
+`./cli-run.sh`, which uses the local cargo-mode keystores staged under `BASE_STORAGE_PATH`.

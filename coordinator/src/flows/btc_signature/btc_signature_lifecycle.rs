@@ -348,15 +348,16 @@ mod tests {
         let result = flow.set_all_nonces_ready(start_block);
         assert!(result.is_ok(), "failed to set nonces ready again");
 
-        // add enough blocks to reach confirmation for nonces
-        for i in 0..REQUIRED_CONFIRMATIONS {
-            let block = create_test_block(start_block + i.into());
-            blockchain_view.update(&block);
-        }
-
-        // step 7: verify confirmed after enough blocks
+        // existing tracked blocks should not be counted until a new block arrives
         let is_confirmed = flow.is_all_nonces_ready_confirmed();
-        assert!(is_confirmed, "should be confirmed after enough blocks");
+        assert!(!is_confirmed, "should not be confirmed immediately after restarting");
+
+        let next_block = create_test_block(start_block + REQUIRED_CONFIRMATIONS.into());
+        blockchain_view.update(&next_block);
+
+        // step 7: verify confirmed after the next new block
+        let is_confirmed = flow.is_all_nonces_ready_confirmed();
+        assert!(is_confirmed, "should be confirmed after the next new block");
     }
 
     #[test]
@@ -457,6 +458,7 @@ mod tests {
 
         // step 1: complete Nonces step
         let start_block = BlockNumber::from(100);
+        let signature_start_block = start_block + REQUIRED_CONFIRMATIONS.into();
         complete_nonce_step(&mut flow, &signature_input, start_block, &blockchain_view)
             .expect("failed to complete Nonces step");
 
@@ -464,7 +466,8 @@ mod tests {
         flow.send_signature_to_contracts().expect("failed to send signature to contracts");
 
         // step 3: set signatures ready
-        flow.set_all_signatures_ready(start_block).expect("failed to set signatures ready");
+        flow.set_all_signatures_ready(signature_start_block)
+            .expect("failed to set signatures ready");
 
         // verify not confirmed initially
         let is_confirmed = flow.is_all_signatures_ready_confirmed();
@@ -472,7 +475,7 @@ mod tests {
 
         // step 4: add blocks but not enough for confirmation
         for i in 0..(REQUIRED_CONFIRMATIONS - 1) {
-            let block = create_test_block(start_block + i.into());
+            let block = create_test_block(signature_start_block + i.into());
             blockchain_view.update(&block);
         }
 
@@ -486,7 +489,7 @@ mod tests {
 
         // step 6: add enough blocks to confirm
         for i in 0..REQUIRED_CONFIRMATIONS {
-            let block = create_test_block(start_block + i.into());
+            let block = create_test_block(signature_start_block + i.into());
             blockchain_view.update(&block);
         }
 
@@ -495,18 +498,18 @@ mod tests {
         assert!(!is_confirmed, "confirmations should not accumulate after unsetting signatures");
 
         // step 7: set signatures ready again
-        let result = flow.set_all_signatures_ready(start_block);
+        let result = flow.set_all_signatures_ready(signature_start_block);
         assert!(result.is_ok(), "failed to set signatures ready again");
 
-        // add enough blocks to reach confirmation for signatures
-        for i in 0..REQUIRED_CONFIRMATIONS {
-            let block = create_test_block(start_block + i.into());
-            blockchain_view.update(&block);
-        }
-
-        // step 8: verify confirmed after enough blocks
+        // step 8: existing tracked blocks should not be counted until a new block arrives
         let is_confirmed = flow.is_all_signatures_ready_confirmed();
-        assert!(is_confirmed, "should be confirmed after enough blocks");
+        assert!(!is_confirmed, "should not be confirmed immediately after restarting");
+
+        let next_block = create_test_block(signature_start_block + REQUIRED_CONFIRMATIONS.into());
+        blockchain_view.update(&next_block);
+
+        let is_confirmed = flow.is_all_signatures_ready_confirmed();
+        assert!(is_confirmed, "should be confirmed after the next new block");
     }
 
     #[test]
@@ -516,6 +519,7 @@ mod tests {
 
         // step 1: complete Nonces step
         let start_block = BlockNumber::from(100);
+        let signature_start_block = start_block + REQUIRED_CONFIRMATIONS.into();
         complete_nonce_step(&mut flow, &signature_input, start_block, &blockchain_view)
             .expect("failed to complete Nonces step");
 
@@ -523,11 +527,12 @@ mod tests {
         flow.send_signature_to_contracts().expect("failed to send signature to contracts");
 
         // step 3: set signatures ready
-        flow.set_all_signatures_ready(start_block).expect("failed to set signatures ready");
+        flow.set_all_signatures_ready(signature_start_block)
+            .expect("failed to set signatures ready");
 
         // step 4: add blocks but not enough for confirmation
         for i in 0..(REQUIRED_CONFIRMATIONS - 1) {
-            let block = create_test_block(start_block + i.into());
+            let block = create_test_block(signature_start_block + i.into());
             blockchain_view.update(&block);
         }
 

@@ -378,6 +378,77 @@ mod tests {
     }
 
     #[test]
+    fn test_setup_sends_exact_speedup_funding_utxo() {
+        let mut mock_broker =
+            MockBrokerClientApi::<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>::new();
+        let expected_utxo = test_utxo(100);
+
+        mock_broker
+            .expect_send()
+            .withf(|msg: &IncomingBitVMXApiMessages| {
+                matches!(
+                    msg,
+                    IncomingBitVMXApiMessages::SetVar(_, var_name, _)
+                        if var_name == ADVANCE_FUNDS_INPUT
+                )
+            })
+            .times(1)
+            .returning(|_| Ok(true));
+
+        mock_broker
+            .expect_send()
+            .withf({
+                let expected_utxo = expected_utxo.clone();
+                move |msg: &IncomingBitVMXApiMessages| {
+                    // Dispute setup must reuse the exact speedup UTXO, including amount.
+                    matches!(
+                        msg,
+                        IncomingBitVMXApiMessages::SetFundingUtxo(utxo)
+                            if *utxo == expected_utxo
+                    )
+                }
+            })
+            .times(1)
+            .returning(|_| Ok(true));
+
+        mock_broker
+            .expect_send()
+            .withf(|msg: &IncomingBitVMXApiMessages| {
+                matches!(
+                    msg,
+                    IncomingBitVMXApiMessages::SetVar(_, _, _)
+                        | IncomingBitVMXApiMessages::Setup(_, _, _, _)
+                )
+            })
+            .times(5)
+            .returning(|_| Ok(true));
+
+        let setup = DisputeCoreSetup::new(Rc::new(mock_broker));
+
+        let members = vec![
+            test_member(0, ParticipantRole::Prover),
+            test_member(1, ParticipantRole::Verifier),
+        ];
+        let committee_data = test_committee_data(members);
+        let p2p_addresses = vec![test_comms_address(0), test_comms_address(1)];
+        let take_aggr_key = test_public_key(10);
+        let dispute_aggr_key = test_public_key(20);
+        let stream_denomination = 100_000;
+        let advance_funds_utxo = test_partial_utxo(200);
+
+        let result = setup.setup(
+            &committee_data,
+            &p2p_addresses,
+            AggregatedKeys { take: take_aggr_key, dispute: dispute_aggr_key },
+            expected_utxo,
+            stream_denomination,
+            advance_funds_utxo,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
     fn test_setup_creates_protocol_id_per_member() {
         let mut mock_broker =
             MockBrokerClientApi::<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>::new();

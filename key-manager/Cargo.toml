@@ -2,6 +2,7 @@
 name = "key-manager"
 version.workspace = true
 license.workspace = true
+rust-version.workspace = true
 edition = "2024"
 
 [dependencies]

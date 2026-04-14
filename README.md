@@ -1,8 +1,8 @@
 # Union Bridge - Client
 
 The Union Bridge Client is a key part of the Union Bridge Protocol. It helps connect Bitcoin and Rootstock, together
-with BitVMX (through the BitVMX Client) in a trust-minimized way. In simple terms, it watches for important events on
-Rootstock and then triggers the next steps in the protocol to handle peg-ins and peg-outs.
+with BitVMX, in a trust-minimized way. In practice, it watches Rootstock for protocol-relevant events and triggers the
+next steps needed to execute peg-in and peg-out flows.
 
 ## Disclaimer
 
@@ -15,78 +15,35 @@ Do not use this software in production environments or for handling sensitive da
 
 Contributions, feedback, and issue reports are welcome while development is ongoing.
 
-## Introduction
+## Client Overview
 
-The Union Bridge Client is a Rust application that serves as a core component of the Union Bridge protocol. Its goal is
-to connect Rootstock with BitVMX, enabling secure and trust-minimized interactions with the Bitcoin network to
-facilitate the different flows of the Union Bridge protocol.
-
-Below is a high-level summary of the core responsibilities handled by the Union Bridge Client.
-
-### Event Observer
-
-The client constantly scans the Rootstock blockchain for different events required for the various Union Bridge flows.
-It uses **JSON-RPC endpoints** to subscribe to new block headers and smart contract logs. Then, it extracts only the
-relevant events, such as peg-in requests and peg-out requests. This logic is implemented under `log-indexer` crate.
-
-It also listens every new block produced by Rootstock, storing just the minimal required data that will also be used as
-part of the different Union Bridge flows. This logic is implemented under `block-indexer` crate.
-
-If an interruption occurs (such as a network issue), the client uses its saved state to resume processing. The client
-listens for termination signals (like **SIGINT** or **SIGTERM**) and shuts down gracefully while ensuring that its
-current state is saved. It also implements retry and fallback mechanisms to handle temporary connectivity problems or
-blockchain reorganizations.
-
-### Transaction Dispatcher
-
-Implemented under the `transaction-dispatcher` crate, this component is responsible for sending transactions to
-Rootstock. It wraps contract interactions, key usage, and transaction submission so the rest of the system can request
-protocol actions without duplicating chain-specific logic.
-
-### User API
-
-Implemented under the `user-api` crate, this component provides a user-friendly API for end user interaction with the
-protocol. It exposes the entry points used for operations such as peg-ins and peg-outs and validates the request data
-needed by downstream flows.
-
-### Flows Coordination
-
-Implemented under the `coordinator` crate, this component orchestrates the different flows of the Union and interacts
-with BitVMX. It ties together blockchain events, contract state, broker messaging, and timeout handling for
-multi-step protocol execution.
-
-### Summary
-
-The Union Bridge Client is responsible for:
-
-- **Monitoring blockchain events** on Rootstock to detect protocol-relevant activity.
-- **Maintaining protocol state**, tracking all necessary data for correct operation and recovery.
-- **Dispatching protocol transactions** to Rootstock as required by protocol flows.
-- **Exposing a user API** for external interaction and integration.
-- **Integrating with a zero-knowledge proof pipeline** to validate blockchain forks securely.
-- **Coordinating with Union Bridge contracts and the Union Client** for seamless protocol orchestration.
+The Union Bridge Client is a Rust application that connects Rootstock with BitVMX and implements the client-side logic
+required by the Union Bridge protocol. It observes Rootstock by subscribing to new block headers and smart contract logs
+through JSON-RPC, filtering only the events that matter for the protocol and persisting the minimum state needed to
+recover from interruptions or chain reorganizations; this part is implemented in the `log-indexer` and
+`block-indexer` crates. It also sends transactions to Rootstock through the `transaction-dispatcher` crate,
+which centralizes contract interactions, key usage, and transaction submission. User-facing operations,
+including requesting peg-in addresses and peg-outs, are exposed through the `user-api` crate. The end-to-end
+coordination of the different multi-step flows is handled by the `coordinator` crate, which connects blockchain events,
+contract state, broker messaging, BitVMX interactions, and timeout handling.
 
 ## Documentation Map
 
-Higher-level docs route to lower-level ones:
-
-| If you need to... | Read |
-| --- | --- |
-| understand contributor setup, shared configuration, and developer conventions | [CONTRIBUTING.md](CONTRIBUTING.md) |
-| run the client locally or use the operations wrappers | [cli/README.md](cli/README.md) |
-| choose a Docker workflow | [docker/README.md](docker/README.md) |
-| run local operators in Docker | [docker/operator/README.md](docker/operator/README.md) |
-| build or publish Docker images | [docker/build/README.md](docker/build/README.md) |
-| dive into component-specific detail | component READMEs close to the implementation, such as [check-fork/README.md](check-fork/README.md), [transaction-dispatcher/README.md](transaction-dispatcher/README.md), [key-manager/README.md](key-manager/README.md), and [cli/bitcoin-wallet/README.md](cli/bitcoin-wallet/README.md) |
-
-### E2E Documentation
-
-For detailed end-to-end flow documentation, see [docs/e2e/README.md](docs/e2e/README.md).
+| If you need to...                                                           | Read                                                                                                                                                                                                                                         |
+|-----------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| get the recommended local setup, shared env rules, and contributor workflow | [Contributing Guide](CONTRIBUTING.md)                                                                                                                                                                                                        |
+| use the local wrappers and operations CLI                                   | [CLI Tools Guide](cli/README.md)                                                                                                                                                                                                             |
+| choose a Docker flow                                                        | [Docker Guide](docker/README.md)                                                                                                                                                                                                             |
+| run local blockchains and BitVMX in Docker                                  | [Local Infra Guide](docker/local-infra/README.md)                                                                                                                                                                                            |
+| run local operators in Docker                                               | [Operator Docker Runtime Guide](docker/operator/README.md)                                                                                                                                                                                   |
+| build or publish Docker images                                              | [Docker Build Guide](docker/build/README.md)                                                                                                                                                                                                 |
+| read detailed e2e flow documentation                                        | [E2E Flow Documentation](docs/e2e/README.md)                                                                                                                                                                                                 |
+| inspect crate-specific detail                                               | nearby component READMEs such as [CheckFork Guide](check-fork/README.md), [Transaction Dispatcher Guide](transaction-dispatcher/README.md), [Key Manager Guide](key-manager/README.md), and [Wallet CLI Guide](cli/bitcoin-wallet/README.md) |
 
 ## Contributing
 
-- [CONTRIBUTING.md](CONTRIBUTING.md): contributor setup, local flows, runtime configuration, and
-  developer-oriented documentation.
+Contributor setup, shared configuration, local runtime modes, and the recommended development path live in the
+[Contributing Guide](CONTRIBUTING.md).
 
 ## License
 
