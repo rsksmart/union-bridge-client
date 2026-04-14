@@ -44,9 +44,9 @@ RUN cargo fetch --locked
 # 2) build just one crate for speed
 # optionally builds with --features if provided
 # we also exclude key-manager, which is built always in the next step even if only a couple of crates require it
-ARG EXCLUDES="--exclude check-fork --exclude check-fork-zkp --exclude key-manager --exclude mocks"
+ARG EXCLUDES="--exclude check-fork --exclude check-fork-zkp --exclude key-manager"
 # TODO when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips) via Dockerfile_coordinator
-# EXCLUDES="--exclude coordinator--exclude check-fork --exclude check-fork-zkp --exclude key-manager --exclude mocks"
+# EXCLUDES="--exclude coordinator--exclude check-fork --exclude check-fork-zkp --exclude key-manager"
 RUN cargo build --workspace --quiet --release ${EXCLUDES}${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES};
 # build key-manager always, even if only a couple of crates require it
 RUN cargo build --quiet --release -p key-manager

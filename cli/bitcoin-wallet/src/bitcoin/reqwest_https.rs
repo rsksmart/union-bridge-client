@@ -100,9 +100,7 @@ pub struct Builder {
 impl Builder {
     /// Constructs a new [`Builder`] with default configuration and the URL to use.
     pub fn new() -> Builder {
-        Builder {
-            tp: ReqwestHttpsTransport::new(),
-        }
+        Builder { tp: ReqwestHttpsTransport::new() }
     }
 
     /// Sets the timeout after which requests will abort if they aren't finished.

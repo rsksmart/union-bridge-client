@@ -12,7 +12,6 @@ pub(crate) mod get_member_communication_data;
 pub(crate) mod get_member_public_keys;
 pub(crate) mod get_temporary_pegin_address;
 pub(crate) mod is_whitelisted;
-pub(crate) mod notify_check_fork_complete;
 pub(crate) mod register_advance_funds;
 pub(crate) mod register_challenge;
 pub(crate) mod register_input_revealed;

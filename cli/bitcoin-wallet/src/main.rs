@@ -535,7 +535,8 @@ fn handle_command(wallet: &mut Wallet, line: &str, mode: &WalletMode) -> Result<
 
             let dest_addr = parts.next().context("expected destination address")?;
             let rsk_address = parts.next().context("expected RSK address (hex)")?;
-            let enabler_script_pubkey = parts.next().context("expected enabler scriptPubKey (hex)")?;
+            let enabler_script_pubkey =
+                parts.next().context("expected enabler scriptPubKey (hex)")?;
 
             let created = wallet.create_pegin_transaction(
                 stream_value,
@@ -823,7 +824,9 @@ fn print_help(sats_per_byte: u64, mode: &WalletMode) {
         println!(
             "  send_to_address <addr_csv> <sats> [count] - <addr_csv> is comma-separated addresses (P2WPKH bech32 or P2PKH base58); create a single tx paying <sats> to each; repeat the whole tx by count (default 1)"
         );
-        println!("  mine_block                            - Regtest only: mine a single block via RPC");
+        println!(
+            "  mine_block                            - Regtest only: mine a single block via RPC"
+        );
         println!(
             "  mine_utxo [sats]                      - Regtest only: mine and fund the active address with given amount (default 21000000 sat), then register the UTXO"
         );

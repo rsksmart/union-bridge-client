@@ -12,9 +12,8 @@ use log::{debug, error, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 
 use crate::RUNTIME_ENV_LOCAL;
-use crate::config::{BridgeConfig, CoordinatorAdvanceFundsConfig};
+use crate::config::BridgeConfig;
 use crate::event_processor::EventProcessor;
-use crate::flows::advance_funds::advance_funds_processor::AdvanceFundsProcessor;
 use crate::flows::committee::setup_committee_flow::SetupCommitteeFlowFactory;
 use crate::flows::committee::setup_committee_processor::SetupCommitteeProcessor;
 use crate::flows::common::GlobalContext;
@@ -74,7 +73,6 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         monitor: M,
         contracts_gateway: CG,
         bitvmx_broker: &Rc<BC>,
-        advance_funds_config: CoordinatorAdvanceFundsConfig,
         store: S,
         shutdown_flag: ShutdownFlag,
         bitcoin_network: Network,
@@ -108,13 +106,6 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         );
 
         let processors: Vec<Box<dyn EventProcessor>> = vec![
-            Box::new(AdvanceFundsProcessor::new(
-                rt_sync.clone(),
-                Rc::clone(&contracts_arc),
-                bitvmx_broker.clone(),
-                bridge_config.coordinator.required_confirmations,
-                advance_funds_config,
-            )),
             Box::new(PeginFlowProcessor::new(
                 Rc::clone(&contracts_arc),
                 rt_sync.clone(),
@@ -350,8 +341,6 @@ pub(crate) mod tests {
     use std::thread::{self, JoinHandle, sleep};
     use std::time::Duration;
 
-    use alloy_primitives::U256;
-    use common::mocks::fake_contracts::FakePegManager::{AdvanceFunds, RequestAdvanceFunds};
     use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
     use common::msg_broker::broker::MockBrokerClientApi;
     use common::shutdown_flag::ShutdownFlag;
@@ -359,10 +348,9 @@ pub(crate) mod tests {
         create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
     };
     use common::types;
-    use common::types::{RskBlockAndUncles, TxHash};
+    use common::types::RskBlockAndUncles;
     use mockall::mock;
     use mockall::predicate::{always, function};
-    use primitive_types::H256;
     use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
     use transaction_dispatcher::types::{
         AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
@@ -387,21 +375,7 @@ pub(crate) mod tests {
     use crate::event_processor::{EventProcessor, MockEventProcessor};
     use crate::monitor::MockMonitorApi;
     use crate::store::MockCoordinatorStoreApi;
-    use crate::types::{AdvanceFundsEvent, RequestAdvanceFundsEvent, RskPegManagerEvents};
-
-    fn create_fake_request_event(pegout_id: &str) -> RequestAdvanceFunds {
-        RequestAdvanceFunds { pegout_id: pegout_id.to_string(), amount: 1000 }
-    }
-
-    fn create_fake_advance_funds_event(pegout_id: &str) -> AdvanceFunds {
-        AdvanceFunds {
-            pegout_id: pegout_id.to_string(),
-            utxo_id: "utxo123".to_string(),
-            operator_id: "op123".to_string(),
-            required_effort: U256::from(1000),
-            required_num_blocks: 4,
-        }
-    }
+    use crate::types::RskPegManagerEvents;
 
     #[test]
     fn test_uses_fake_native_bridge_only_for_local_modes() {
@@ -419,21 +393,8 @@ pub(crate) mod tests {
         let mut mock_monitor = MockMonitorApi::new();
         let (block_1, uncle_1, block_2) = create_block_and_uncles();
 
-        let event_1 = RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
-            inner: create_fake_request_event("pegout_id_1"),
-            block_number: block_1.number(),
-            block_hash: block_1.hash(),
-            removed: false,
-            tx_hash: TxHash::from(H256::from_low_u64_be(block_1.number().value())),
-        });
-
-        let event_2: RskPegManagerEvents = RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
-            inner: create_fake_advance_funds_event("pegout_id_1"),
-            block_number: block_2.number(),
-            block_hash: block_2.hash(),
-            removed: false,
-            tx_hash: TxHash::from(H256::from_low_u64_be(block_2.number().value())),
-        });
+        let event_1 = RskPegManagerEvents::UnknownEvent;
+        let event_2 = RskPegManagerEvents::IgnoredEvent;
 
         let bitvmx_event = OutgoingBitVMXApiMessages::Pong(uuid::Uuid::new_v4());
 
@@ -499,14 +460,7 @@ pub(crate) mod tests {
         let block_1 = get_first_default_rsk_block();
         let block_2 = get_second_default_rsk_block();
 
-        let event_1 = RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
-            inner: create_fake_request_event("pegout_id_1"),
-            block_number: block_1.number(),
-            block_hash: block_1.hash(),
-            removed: false,
-            tx_hash: TxHash::from(H256::from_low_u64_be(block_1.number().value())),
-        });
-
+        let event_1 = RskPegManagerEvents::IgnoredEvent;
         let event_2 = RskPegManagerEvents::UnknownEvent;
 
         mock_monitor.expect_start_event_monitoring().return_once(|| Ok(()));
@@ -670,11 +624,6 @@ pub(crate) mod tests {
                 &self,
                 input: AddMemberSignatureInput,
             ) -> Result<AddMemberSignatureOutput, DomainErrors>;
-
-            async fn notify_check_fork_completion(
-                &self,
-                input: &str,
-            ) -> Result<(), DomainErrors>;
 
             async fn get_member_public_keys(
                 &self, input: GetMemberPublicKeysInput

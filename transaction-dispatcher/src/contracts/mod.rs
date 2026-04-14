@@ -5,7 +5,6 @@ pub(super) mod common;
 pub(super) mod interactions;
 pub(super) mod member_registry;
 pub(super) mod native_bridge;
-pub(super) mod peg_manager;
 pub(super) mod pegin_manager;
 pub(super) mod pegout_manager;
 pub(super) mod signature_manager;

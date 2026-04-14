@@ -8,14 +8,11 @@ use alloy_sol_types::SolEvent;
 use alloy_sol_types::SolEventInterface;
 use anyhow::{Result, anyhow};
 use bitcoin::PublicKey;
-use common::mocks::fake_contracts::FakePegManager::{
-    AdvanceFunds, FakePegManagerEvents, RequestAdvanceFunds,
-};
 use common::msg_broker::bitvmx_types::{
     PartialUtxo, ParticipantRole, PegOutAccepted, PeginAcceptedMessage,
 };
 use common::types::{Address, BlockHash, BlockNumber, Hash256, RskLog, TxHash};
-use log::{debug, info, trace, warn};
+use log::{debug, trace, warn};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use union_contracts::bindings::bitcoin_manager::BitcoinManager::BitcoinManagerEvents;
@@ -44,8 +41,6 @@ use crate::user_requests::ApplyToStream;
 
 #[derive(Eq, PartialEq, Debug)]
 pub enum RskPegManagerEvents {
-    RequestAdvanceFunds(RequestAdvanceFundsEvent), // temporarily mock, no need to test it
-    AdvanceFunds(AdvanceFundsEvent),               // temporarily mock, no need to test it
     PeginRequested(PeginRequestedEvent),
     PeginAccepted(PeginAcceptedEvent),
     PegoutRegistered(PegoutRegisteredEvent),
@@ -71,8 +66,6 @@ pub enum UserRequests {
     ApplyToStream(ApplyToStream),
 }
 
-pub type RequestAdvanceFundsEvent = EventWithBlock<RequestAdvanceFunds>;
-pub type AdvanceFundsEvent = EventWithBlock<AdvanceFunds>;
 pub type PeginRequestedEvent = EventWithBlock<PeginRequested>;
 pub type PeginAcceptedEvent = EventWithBlock<PeginAccepted>;
 pub type AllNoncesReadyEvent = EventWithBlock<Hash256>;
@@ -137,10 +130,6 @@ impl EventDecoder {
         }
 
         // Try each contract event type and use the first successful decode
-        if let Some(event) = Self::try_fake_peg_manager_events(log) {
-            return event;
-        }
-
         if let Some(event) = Self::try_pegin_manager_events(log) {
             return event;
         }
@@ -191,19 +180,6 @@ impl EventDecoder {
         let removed = log.info().removed();
         let tx_hash = log.info().tx_hash();
         (parsed_topics, data, block_num, block_hash, removed, tx_hash)
-    }
-
-    fn try_fake_peg_manager_events(log: &RskLog) -> Option<RskPegManagerEvents> {
-        let (parsed_topics, data, block_num, block_hash, removed, tx_hash) =
-            Self::extract_log_fields(log);
-
-        if let Ok(fpm) = FakePegManagerEvents::decode_raw_log(&parsed_topics, &data) {
-            trace!("Decoded FakePegManagerEvents: {fpm:?}");
-            return Some(Self::convert_fake_peg_manager_event(
-                fpm, block_num, block_hash, removed, tx_hash,
-            ));
-        }
-        None
     }
 
     fn try_pegin_manager_events(log: &RskLog) -> Option<RskPegManagerEvents> {
@@ -383,39 +359,6 @@ impl EventDecoder {
             event => {
                 let variant = Self::event_variant_name(&event);
                 debug!("Ignored PegoutManager event ({variant}): block={block_num}, tx={tx_hash}");
-                RskPegManagerEvents::IgnoredEvent
-            }
-        }
-    }
-
-    fn convert_fake_peg_manager_event(
-        event: FakePegManagerEvents,
-        block_num: BlockNumber,
-        block_hash: BlockHash,
-        removed: bool,
-        tx_hash: TxHash,
-    ) -> RskPegManagerEvents {
-        match event {
-            FakePegManagerEvents::RequestAdvanceFunds(inner) => {
-                RskPegManagerEvents::RequestAdvanceFunds(RequestAdvanceFundsEvent {
-                    inner,
-                    block_number: block_num,
-                    block_hash,
-                    removed,
-                    tx_hash,
-                })
-            }
-            FakePegManagerEvents::AdvanceFunds(inner) => {
-                RskPegManagerEvents::AdvanceFunds(AdvanceFundsEvent {
-                    inner,
-                    block_number: block_num,
-                    block_hash,
-                    removed,
-                    tx_hash,
-                })
-            }
-            FakePegManagerEvents::CheckForkComplete(_inner) => {
-                info!("Ignored FakePegManager CheckForkComplete event");
                 RskPegManagerEvents::IgnoredEvent
             }
         }

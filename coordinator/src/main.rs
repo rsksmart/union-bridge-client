@@ -160,7 +160,6 @@ fn main() -> Result<()> {
         monitor,
         contracts_gateway,
         &bitvmx_broker,
-        config.coordinator.advance_funds.clone(),
         store,
         shutdown_flag.clone(),
         bitcoin_network,

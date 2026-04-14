@@ -24,14 +24,9 @@ fn fetch_utxo_amount_returns_value_from_hex() {
         version: Version::TWO,
         lock_time: absolute::LockTime::ZERO,
         input: vec![],
-        output: vec![TxOut {
-            value: Amount::from_sat(21_000),
-            script_pubkey: ScriptBuf::new(),
-        }],
+        output: vec![TxOut { value: Amount::from_sat(21_000), script_pubkey: ScriptBuf::new() }],
     };
-    let stub = StubRpc {
-        hex: bitcoin::consensus::encode::serialize_hex(&tx),
-    };
+    let stub = StubRpc { hex: bitcoin::consensus::encode::serialize_hex(&tx) };
     let txid = Txid::from_slice(&[0x33; 32]).expect("txid");
     let amount = fetch_utxo_amount(&stub, txid, None, 0).expect("amount");
     assert_eq!(amount, 21_000);
@@ -43,14 +38,9 @@ fn fetch_utxo_amount_errors_when_vout_missing() {
         version: Version::TWO,
         lock_time: absolute::LockTime::ZERO,
         input: vec![],
-        output: vec![TxOut {
-            value: Amount::from_sat(5_000),
-            script_pubkey: ScriptBuf::new(),
-        }],
+        output: vec![TxOut { value: Amount::from_sat(5_000), script_pubkey: ScriptBuf::new() }],
     };
-    let stub = StubRpc {
-        hex: bitcoin::consensus::encode::serialize_hex(&tx),
-    };
+    let stub = StubRpc { hex: bitcoin::consensus::encode::serialize_hex(&tx) };
     let txid = Txid::from_slice(&[0x44; 32]).expect("txid");
     let err = fetch_utxo_amount(&stub, txid, None, 2).expect_err("should error");
     assert!(err.to_string().contains("vout"));

@@ -301,31 +301,6 @@ bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword \
   sed -E 's/^wpkh\(([0-9a-fA-F]+)\)#.*/0x\1/'
 ```
 
-### Mocking Helper
-
-`./cli-mocking.sh --help` exposes the FakePegManager helper used for local testing. Treat it as optional test support,
-not as part of the default startup flow.
-
-For regtest attach mode:
-
-```bash
-./cli-mocking.sh \
-  --rpc-url ws://<regtest-rpc>:4445 \
-  --fake-peg-manager-address 0x... \
-  --no-deploy
-```
-
-Environment shortcuts:
-
-- `MOCKS_PRIVATE_KEY`
-- `FAKE_PEG_MANAGER_ADDRESS`
-- `CHECK_FORK_REQUIRED_NUM_BLOCKS` defaults to `5`
-
-Interactive commands:
-
-- `raf` or `invoke-request-advance-funds`: emit `RequestAdvanceFunds` and optionally reuse a pegout id
-- `kaf` or `invoke-advance-funds`: emit the fake advance-funds event for a specific pegout id
-
 ## Troubleshooting Index
 
 Use the narrow docs for localized problems:

@@ -15,7 +15,6 @@ alloy-provider = { workspace = true, features = ["ws"] }
 alloy-pubsub = { workspace = true }
 alloy-rpc-client = { workspace = true }
 alloy-rpc-types = { workspace = true }
-alloy-sol-types = { workspace = true }
 alloy-transport = { workspace = true }
 anyhow = { workspace = true }
 bitcoin = { workspace = true }

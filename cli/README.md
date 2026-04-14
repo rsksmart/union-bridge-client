@@ -97,11 +97,33 @@ These files are ignored by git.
 cli/
 ├── Cargo.toml
 ├── Cargo.lock
-├── .env.sample
-├── run/
-├── operations/
-├── mocks/
-└── bitcoin-wallet/
+├── .env.sample         # Template for remote CLI profiles (copy to .env.<profile>)
+├── run/                # Local client launcher (cli-run.sh)
+│   ├── src/main.rs
+│   └── Cargo.toml
+├── operations/         # Operations toolkit (cli-operations.sh)
+│   ├── src/
+│   │   ├── main.rs
+│   │   ├── bitcoin_wallet.rs
+│   │   ├── rsk_wallet.rs
+│   │   ├── committee.rs
+│   │   ├── pegin.rs
+│   │   ├── pegout.rs
+│   │   ├── environments.rs
+│   │   ├── constants.rs
+│   │   └── utils.rs
+│   └── Cargo.toml
+└── bitcoin-wallet/     # Interactive Bitcoin wallet (cli-bitcoin-wallet.sh)
+    ├── src/
+    │   ├── main.rs
+    │   ├── lib.rs
+    │   ├── cli.rs
+    │   ├── config.rs
+    │   ├── wallet.rs
+    │   ├── utxo_store.rs
+    │   ├── pending_tx_store.rs
+    │   └── bitcoin/
+    └── Cargo.toml
 ```
 
 The wallet crate currently includes:
