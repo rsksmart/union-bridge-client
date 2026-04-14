@@ -28,7 +28,6 @@ jobs:
       - name: Setup
         uses: ./.github/actions/common_setup
         with:
-          contracts_github_token: ${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
           cache-build: true
 
       - name: Test Prod
@@ -55,7 +54,6 @@ jobs:
       - name: Setup
         uses: ./.github/actions/common_setup
         with:
-          contracts_github_token: ${{ secrets.UNION_CONTRACTS_GITHUB_TOKEN }}
           cache-build: true
 
       - name: Check All Targets

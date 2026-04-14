@@ -1,11 +1,4 @@
 ############################################################
-# Local Github Actions (Act)
-############################################################
-# Optional: only needed if you want to reproduce CI or Docker builds over HTTPS
-# for the private contracts dependency.
-export UNION_CONTRACTS_GITHUB_TOKEN="<your_contracts_github_token>"
-
-############################################################
 # For GitHub Container Registry
 ############################################################
 export GITHUB_REGISTRY_TOKEN="<your_token_here>"

@@ -41,7 +41,6 @@ If a non-trusted actor tries to set either one, the workflow fails and sets the 
    Personal Access Token (PAT) with `repo` and `workflow` access to `union_bridge_e2e_framework`.
 2. Optionally require the `e2e-smoke-tests` status check in branch protection for `main`.
 3. In `union_bridge_e2e_framework`, configure the secrets required by that pipeline:
-   - `TOKEN_CONTRACTS`: PAT for the private contracts dependency used by that workspace
    - `USER_BITCOIN_WIF`
    - `MEMBER_BITCOIN_WIF`
    - optional `GHCR_USERNAME` if the PAT owner differs from `github.actor`
