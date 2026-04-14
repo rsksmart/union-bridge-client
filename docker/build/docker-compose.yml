@@ -13,8 +13,6 @@ services:
       dockerfile: docker/build/Dockerfile
       args:
         - CRATE=block-indexer
-      ssh:
-        - default=${SSH_AUTH_SOCK}
     volumes:
       - ${CONFIG_DIR:-../../config}:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
@@ -38,8 +36,6 @@ services:
       dockerfile: docker/build/Dockerfile
       args:
         - CRATE=log-indexer
-      ssh:
-        - default=${SSH_AUTH_SOCK}
     volumes:
       - ${CONFIG_DIR:-../../config}:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
@@ -63,8 +59,6 @@ services:
       dockerfile: docker/build/Dockerfile
       args:
         - CRATE=coordinator
-      ssh:
-        - default=${SSH_AUTH_SOCK}
     volumes:
       - ${CONFIG_DIR:-../../config}:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
@@ -99,8 +93,6 @@ services:
       dockerfile: docker/build/Dockerfile
       args:
         - CRATE=user-api
-      ssh:
-        - default=${SSH_AUTH_SOCK}
     volumes:
       - ${CONFIG_DIR:-../../config}:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro

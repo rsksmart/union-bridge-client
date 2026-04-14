@@ -59,7 +59,7 @@ done
 echo "🔨 Building Union Client Builder images with tag: $UC_TAG and platform: $PLATFORM"
 
 # Build standard builder image
-cmd=(docker build --platform "$PLATFORM" --ssh default "${DOCKER_ARGS[@]}" -t "ghcr.io/rsksmart/union-client-builder:$UC_TAG" -f Dockerfile_builder .)
+cmd=(docker build --platform "$PLATFORM" "${DOCKER_ARGS[@]}" -t "ghcr.io/rsksmart/union-client-builder:$UC_TAG" -f Dockerfile_builder .)
 echo "🔨 Building Standard Builder image with command: ${cmd[@]}"
 "${cmd[@]}"
 
