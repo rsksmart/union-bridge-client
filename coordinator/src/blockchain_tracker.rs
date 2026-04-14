@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use anyhow::Result;
 use common::types::{BlockNumber, RskBlock, RskBlockAndUncles};
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 
 use crate::types::RskPegManagerEvents;
 
@@ -356,6 +356,82 @@ impl ConfirmableEventWithData {
 
     pub fn get_data(&self) -> &RskPegManagerEvents {
         &self.data
+    }
+}
+
+pub struct ConfirmingEvents {
+    events: HashMap<String, ConfirmableEventWithData>,
+    blockchain_view: BlockchainView,
+    required_confirmations: u32,
+}
+
+impl ConfirmingEvents {
+    #[must_use]
+    pub fn new(required_confirmations: u32) -> Self {
+        Self {
+            events: HashMap::new(),
+            blockchain_view: BlockchainView::new(),
+            required_confirmations,
+        }
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.events.is_empty()
+    }
+
+    pub fn update(&self, block: &RskBlockAndUncles) {
+        self.blockchain_view.update(block);
+    }
+
+    /// # Errors
+    /// Returns an error if starting confirmation tracking fails.
+    pub fn start_confirming(
+        &mut self,
+        id: String,
+        block_num: BlockNumber,
+        event_data: RskPegManagerEvents,
+    ) -> Result<()> {
+        let mut confirmable_event = ConfirmableEventWithData::new(
+            id,
+            self.required_confirmations,
+            self.blockchain_view.clone(),
+            event_data,
+        );
+        confirmable_event.start_confirming(block_num)?;
+        self.events.insert(confirmable_event.id(), confirmable_event);
+        Ok(())
+    }
+
+    /// Removes the event, calls `stop_confirming` on it, and clears the blockchain view if empty.
+    /// Returns `None` if the event was not found.
+    pub fn stop_confirming(&mut self, id: &str) -> Option<ConfirmableEventWithData> {
+        let mut event = self.events.remove(id)?;
+        if let Err(e) = event.stop_confirming() {
+            error!("Failed to stop confirming for event {id}: {e}");
+        }
+        if self.events.is_empty() {
+            debug!("No events left to confirm, clearing blockchain view");
+            self.blockchain_view.clear();
+        }
+        Some(event)
+    }
+
+    /// Returns and removes all confirmed events, calling `stop_confirming` on each.
+    pub fn take_confirmed(&mut self) -> Vec<ConfirmableEventWithData> {
+        let confirmed_keys: Vec<_> = self
+            .events
+            .iter()
+            .filter(|(_, event)| event.is_confirmed())
+            .map(|(key, _)| key.clone())
+            .collect();
+
+        confirmed_keys.into_iter().filter_map(|key| self.stop_confirming(&key)).collect()
+    }
+
+    pub fn clear(&mut self) {
+        self.events.clear();
+        self.blockchain_view.clear();
     }
 }
 
@@ -1086,5 +1162,94 @@ mod confirmable_event_tests {
             .expect("Failed to generate alternative test block");
 
         RskBlockAndUncles::new_no_uncles(block)
+    }
+}
+
+#[cfg(test)]
+mod confirming_events_tests {
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
+
+    use common::test_utils::rsk_block_generator::FakeBlockGenerator;
+    use common::types::{BlockNumber, RskBlockAndUncles};
+
+    use crate::blockchain_tracker::ConfirmingEvents;
+    use crate::types::RskPegManagerEvents;
+
+    fn create_test_block(block_number: BlockNumber) -> RskBlockAndUncles {
+        let generator = FakeBlockGenerator::new(None, Arc::new(AtomicBool::new(false)), None);
+        let block =
+            generator.generate_block(block_number, None).expect("Failed to generate test block");
+        RskBlockAndUncles::new_no_uncles(block)
+    }
+
+    #[test]
+    fn test_stop_confirming_clears_blockchain_view_when_last_event_removed() {
+        let mut confirming = ConfirmingEvents::new(2);
+        let id = "event-1".to_string();
+
+        confirming
+            .start_confirming(id.clone(), BlockNumber::from(10), RskPegManagerEvents::IgnoredEvent)
+            .expect("Failed to start confirming");
+
+        let block = create_test_block(BlockNumber::from(10));
+        confirming.update(&block);
+
+        assert!(!confirming.blockchain_view.is_empty(), "blockchain view should have blocks");
+        assert!(confirming.blockchain_view.has_observer(&id), "observer should be registered");
+
+        confirming.stop_confirming(&id);
+
+        assert!(confirming.is_empty(), "events map should be empty");
+        assert!(
+            !confirming.blockchain_view.has_observer(&id),
+            "observer should be removed after stop_confirming"
+        );
+        assert!(
+            confirming.blockchain_view.is_empty(),
+            "blockchain view should be cleared when the last event is removed"
+        );
+    }
+
+    #[test]
+    fn test_take_confirmed_removes_observer_from_blockchain_view() {
+        let mut confirming = ConfirmingEvents::new(1);
+        let id = "event-1".to_string();
+
+        confirming
+            .start_confirming(id.clone(), BlockNumber::from(10), RskPegManagerEvents::IgnoredEvent)
+            .expect("Failed to start confirming");
+
+        assert!(confirming.blockchain_view.has_observer(&id), "observer should be registered");
+
+        let block = create_test_block(BlockNumber::from(10));
+        confirming.update(&block);
+
+        let confirmed = confirming.take_confirmed();
+
+        assert_eq!(confirmed.len(), 1, "one event should be confirmed");
+        assert!(
+            !confirming.blockchain_view.has_observer(&id),
+            "observer should be removed after take_confirmed"
+        );
+    }
+
+    #[test]
+    fn test_take_confirmed_returns_each_confirmed_event_exactly_once() {
+        let mut confirming = ConfirmingEvents::new(1);
+        let id = "event-1".to_string();
+
+        confirming
+            .start_confirming(id.clone(), BlockNumber::from(10), RskPegManagerEvents::IgnoredEvent)
+            .expect("Failed to start confirming");
+
+        let block = create_test_block(BlockNumber::from(10));
+        confirming.update(&block);
+
+        let first = confirming.take_confirmed();
+        assert_eq!(first.len(), 1, "first call should return the confirmed event");
+
+        let second = confirming.take_confirmed();
+        assert!(second.is_empty(), "second call should return nothing — event already consumed");
     }
 }

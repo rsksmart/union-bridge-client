@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use uuid::Uuid;
 
-use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
+use crate::blockchain_tracker::ConfirmingEvents;
 use crate::config::AdvanceFundsConfig;
 use crate::event_processor::EventProcessor;
 use crate::flows::common::GlobalContext;
@@ -46,8 +46,7 @@ where
     bitvmx_broker: Rc<BC>,
     global_context: GlobalContext,
     flows: HashMap<Uuid, AdvanceFundsFlow<CG, BC>>,
-    blockchain_view: BlockchainView,
-    events_confirming: HashMap<String, ConfirmableEventWithData>,
+    confirming_events: ConfirmingEvents,
     required_confirmations: u32,
     native_bridge_verifier: NativeBridgeVerifier<CG>,
     // For retry logic when native bridge lacks confirmations
@@ -81,8 +80,7 @@ where
             bitvmx_broker,
             global_context,
             flows: HashMap::new(),
-            blockchain_view: BlockchainView::new(),
-            events_confirming: HashMap::new(),
+            confirming_events: ConfirmingEvents::new(required_confirmations),
             required_confirmations,
             native_bridge_verifier,
             unconfirmed_register_advance_funds: HashMap::new(),
@@ -107,8 +105,7 @@ where
             bitvmx_broker,
             global_context,
             flows: HashMap::new(),
-            blockchain_view: BlockchainView::new(),
-            events_confirming: HashMap::new(),
+            confirming_events: ConfirmingEvents::new(5),
             required_confirmations: 5,
             native_bridge_verifier: NativeBridgeVerifier::Dummy,
             unconfirmed_register_advance_funds: HashMap::new(),
@@ -450,33 +447,16 @@ where
     }
 
     fn process_block_confirmations(&mut self, block: &RskBlockAndUncles) -> Result<()> {
-        if self.events_confirming.is_empty() {
+        if self.confirming_events.is_empty() {
             return Ok(());
         }
 
-        self.blockchain_view.update(block);
+        self.confirming_events.update(block);
 
-        let confirmed_keys: Vec<_> = self
-            .events_confirming
-            .iter()
-            .filter(|(_, event)| event.is_confirmed())
-            .map(|(key, _)| key.clone())
-            .collect();
-
-        for key in confirmed_keys {
-            if let Some(mut event) = self.events_confirming.remove(&key) {
-                debug!("Advance funds RSK event confirmed, removing pending {key}",);
-                trace!("Advance funds event data: {:?}", event.get_data());
-                if let Err(e) = event.stop_confirming() {
-                    warn!("Failed to stop confirming advance funds event {key}: {e}",);
-                }
-                self.process_confirmed_rsk_event(event.get_data())?;
-            }
-        }
-
-        if self.events_confirming.is_empty() {
-            debug!("No advance funds events left to confirm, clearing blockchain view");
-            self.blockchain_view.clear();
+        for event in self.confirming_events.take_confirmed() {
+            debug!("Advance funds RSK event confirmed: {}", event.id());
+            trace!("Advance funds event data: {:?}", event.get_data());
+            self.process_confirmed_rsk_event(event.get_data())?;
         }
 
         self.cleanup_completed_flows();
@@ -848,11 +828,7 @@ where
 
         if is_removal {
             warn!("Removing pending advance funds event {event:?}");
-            if let Some(mut removed_event) = self.events_confirming.remove(&id) {
-                if let Err(e) = removed_event.stop_confirming() {
-                    warn!("Failed to stop confirming removed advance funds event {id}: {e}",);
-                }
-            } else {
+            if self.confirming_events.stop_confirming(&id).is_none() {
                 warn!("Tried to remove non-existing pending advance funds event with id {id}",);
             }
         } else {
@@ -860,18 +836,9 @@ where
                 "Adding pending advance funds event {event:?}, start confirming at block {block_num}",
             );
 
-            let mut confirmable_event = ConfirmableEventWithData::new(
-                id.clone(),
-                self.required_confirmations,
-                self.blockchain_view.clone(),
-                managed_event,
-            );
-
-            confirmable_event
-                .start_confirming(block_num)
+            self.confirming_events
+                .start_confirming(id.clone(), block_num, managed_event)
                 .context("Starting confirming advance funds event")?;
-
-            self.events_confirming.insert(confirmable_event.id(), confirmable_event);
         }
 
         Ok(())
@@ -888,8 +855,7 @@ where
     fn shutdown(&mut self) {
         info!("Shutting down AdvanceFundsFlowProcessor");
         self.flows.clear();
-        self.events_confirming.clear();
-        self.blockchain_view.clear();
+        self.confirming_events.clear();
         self.register_advance_funds_retry_scheduler.clear();
         self.unconfirmed_register_advance_funds.clear();
         self.register_reimbursement_kickoff_retry_scheduler.clear();

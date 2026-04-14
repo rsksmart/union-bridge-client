@@ -22,7 +22,7 @@ use uuid::Uuid;
 use super::setup_committee_flow::{
     SetupCommitteeFlow, SetupCommitteeFlowApi, SetupCommitteeFlowFactoryApi, State, StepData, Steps,
 };
-use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
+use crate::blockchain_tracker::ConfirmingEvents;
 use crate::event_processor::EventProcessor;
 use crate::flows::common::GlobalContext;
 use crate::flows::errors::{FailableFlow, FlowError};
@@ -42,8 +42,7 @@ where
     flow_factory: FactoryBSF,
     flows: HashMap<Uuid, SetupCommitteeFlow<CG, BC, S>>,
     global_context: GlobalContext,
-    blockchain_view: BlockchainView,
-    events_confirming: HashMap<String, ConfirmableEventWithData>,
+    confirming_events: ConfirmingEvents,
     store: Rc<S>,
     required_confirmations: u32,
 }
@@ -71,8 +70,7 @@ where
             flow_factory,
             flows: HashMap::new(),
             global_context,
-            events_confirming: HashMap::new(),
-            blockchain_view: BlockchainView::new(),
+            confirming_events: ConfirmingEvents::new(required_confirmations),
             store: Rc::clone(store),
             required_confirmations,
         };
@@ -419,26 +417,15 @@ where
         if is_removal {
             warn!("Removing pending RSK event: {event:?}");
 
-            if let Some(mut removed_ev) = self.events_confirming.remove(&id) {
-                if let Err(e) = removed_ev.stop_confirming() {
-                    error!("Failed to stop confirming for removed event {id}: {e}");
-                }
-            } else {
+            if self.confirming_events.stop_confirming(&id).is_none() {
                 warn!("Tried to remove non-existing pending event with id {id}");
             }
         } else {
             debug!("Adding new pending {event:?}, start confirming at block {block_num}");
 
-            let mut confirmable_event = ConfirmableEventWithData::new(
-                id.clone(),
-                self.required_confirmations,
-                self.blockchain_view.clone(),
-                managed_event,
-            );
-
-            confirmable_event.start_confirming(block_num).context("Starting confirming")?;
-
-            self.events_confirming.insert(confirmable_event.id(), confirmable_event);
+            self.confirming_events
+                .start_confirming(id.clone(), block_num, managed_event)
+                .context("Starting confirming")?;
 
             debug!("Waiting Rootstock confirmations for {id}");
         }
@@ -447,34 +434,17 @@ where
     }
 
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
-        if self.events_confirming.is_empty() {
+        if self.confirming_events.is_empty() {
             trace!("No events left to confirm, skipping block");
             return Ok(());
         }
 
-        self.blockchain_view.update(block);
+        self.confirming_events.update(block);
 
-        let confirmed_keys: Vec<_> = self
-            .events_confirming
-            .iter()
-            .filter(|(_, event)| event.is_confirmed())
-            .map(|(key, _)| key.clone())
-            .collect();
-
-        for key in confirmed_keys {
-            if let Some(mut event) = self.events_confirming.remove(&key) {
-                debug!("RSK event confirmed, removing pending {key}");
-                trace!("Event data: {:?}", event.get_data());
-                if let Err(e) = event.stop_confirming() {
-                    error!("Failed to stop confirming for event {key}: {e}");
-                }
-                self.process_confirmed_rsk_event(event.get_data());
-            }
-        }
-
-        if self.events_confirming.is_empty() {
-            debug!("No events left to confirm, clearing blockchain view");
-            self.blockchain_view.clear();
+        for event in self.confirming_events.take_confirmed() {
+            debug!("RSK event confirmed: {}", event.id());
+            trace!("Event data: {:?}", event.get_data());
+            self.process_confirmed_rsk_event(event.get_data());
         }
 
         // blocks allow periodic cleanup of completed flows, we can improve it with a cleanup task if needed
@@ -611,8 +581,7 @@ mod tests {
             flow_factory: DummyFactory,
             flows: HashMap::new(),
             global_context: GlobalContext::new(),
-            blockchain_view: BlockchainView::new(),
-            events_confirming: HashMap::new(),
+            confirming_events: ConfirmingEvents::new(1),
             store: Rc::new(MockCoordinatorStoreApi::new()),
             required_confirmations: 1,
         }
