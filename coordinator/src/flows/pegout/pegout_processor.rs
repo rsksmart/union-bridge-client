@@ -865,19 +865,33 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::str::FromStr;
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
 
     use alloy_primitives::{Bytes, FixedBytes, U256 as AlloyU256};
-    use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+    use bitcoin::PublicKey;
+    use common::msg_broker::bitvmx_types::{
+        CommsAddress, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages,
+    };
     use common::msg_broker::broker::MockBrokerClientApi;
     use common::test_utils::rsk_block_generator::FakeBlockGenerator;
+    use common::types::Address as CommonAddress;
+    use primitive_types::H160;
+    use transaction_dispatcher::types::{
+        GetCommitteeOutput, GetCommunicationDataOutput, GetMemberPublicKeysOutput, P2PAddressParser,
+    };
+    use union_contracts::bindings::committee_registry::CommitteeRegistry::{
+        Committee, CommitteeMember,
+    };
     use union_contracts::bindings::pegout_manager::PegoutManager::{
         BitcoinSignatureData, BtcTransaction,
     };
 
     use super::*;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
+    use crate::flows::common::CommInfoRequest;
     use crate::flows::pegout::pegout_flow::FlowContext;
     use crate::store::MockCoordinatorStoreApi;
 
@@ -942,7 +956,7 @@ mod tests {
                 step: Steps::Done,
                 ctx: FlowContext {
                     pegout_requested: create_fake_pegout_requested(),
-                    my_p2p_address: None,
+                    my_comm_info: CommInfoRequest::new(),
                     committee_output: None,
                     peg_out_accepted: None,
                     pegout_registered_tx: None,
@@ -988,6 +1002,116 @@ mod tests {
         }
     }
 
+    fn valid_pubkey_bytes() -> Bytes {
+        Bytes::from(
+            PublicKey::from_str(
+                "0279be667ef9dcbbac55a06295ce870b07029bfcd b2dce28d959f2815b16f81798"
+                    .replace(' ', "")
+                    .as_str(),
+            )
+            .expect("valid test pubkey")
+            .inner
+            .serialize()
+            .to_vec(),
+        )
+    }
+
+    fn create_valid_pegout_requested() -> PegoutRequested {
+        PegoutRequested {
+            userPubKey: valid_pubkey_bytes(),
+            committeeId: AlloyU256::from(1u64),
+            pegoutSignatureData: BitcoinSignatureData {
+                tx: BtcTransaction { version: 2, inputs: vec![], outputs: vec![], locktime: 0 },
+                txid: FixedBytes::default(),
+                signatureHash: FixedBytes::default(),
+                signatureMessage: Bytes::default(),
+            },
+            streamId: 0,
+            packetNumber: 0,
+            slotId: 0,
+            amount: 100_000,
+        }
+    }
+
+    fn test_comm_info(port_offset: u16) -> CommsAddress {
+        CommsAddress {
+            address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9_000 + port_offset),
+            pubkey_hash: format!("{port_offset:064x}"),
+        }
+    }
+
+    fn create_flow_waiting_for_comm_info(flow_id: Uuid, req_id: Uuid) -> TestPegoutFlow {
+        let member_address = CommonAddress::from(H160::from([7u8; 20]));
+        let contract_member_address =
+            alloy_primitives::Address::from_slice(member_address.value().as_fixed_bytes());
+        let committee_output = GetCommitteeOutput {
+            committee: Committee {
+                members: vec![CommitteeMember { memberAddress: contract_member_address, role: 1 }],
+                leaderAddress: contract_member_address,
+                operatorTakeIndex: AlloyU256::from(0u64),
+                createdAt: alloy_primitives::Uint::default(),
+                missingData: 0,
+                missingCommunicationData: 0,
+                isPending: false,
+                streamId: 0,
+                fundingUTXOs: vec![],
+                aggregatedKey: valid_pubkey_bytes(),
+            },
+        };
+
+        let mut contracts = MockRskContractsGatewayApi::new();
+        contracts.expect_my_address().return_const(member_address);
+        contracts
+            .expect_get_committee()
+            .times(0..=1)
+            .returning(move |_| Ok(committee_output.clone()));
+        contracts.expect_get_member_public_keys().times(0..=1).returning(|_| {
+            Ok(GetMemberPublicKeysOutput {
+                public_keys: vec![String::new(), String::new(), "ab".repeat(32)],
+            })
+        });
+        contracts.expect_get_committee_communication_data().times(0..=1).returning(|_| {
+            Ok(GetCommunicationDataOutput {
+                communication_data: vec![
+                    P2PAddressParser::socket_addr_to_contracts(&SocketAddr::new(
+                        IpAddr::V4(Ipv4Addr::LOCALHOST),
+                        9_111,
+                    ))
+                    .expect("valid communication data"),
+                ],
+            })
+        });
+
+        let mut broker = MockBitVmxBroker::new();
+        broker.expect_send().times(0..=2).returning(|_| Ok(true));
+
+        let mut store = MockCoordinatorStoreApi::new();
+        store.expect_save_flow::<State>().times(0..=1).returning(|_, _| Ok(()));
+
+        let state = State {
+            flow_id,
+            step: Steps::GetCommInfo,
+            ctx: FlowContext {
+                pegout_requested: create_valid_pegout_requested(),
+                my_comm_info: CommInfoRequest { req_id: Some(req_id), value: None },
+                committee_output: None,
+                peg_out_accepted: None,
+                pegout_registered_tx: None,
+                spv_proof: None,
+                transaction_status: None,
+            },
+        };
+
+        PegoutFlow::from_saved_state(
+            Rc::new(contracts),
+            RuntimeSync::new().expect("runtime"),
+            Rc::new(broker),
+            state,
+            Rc::new(store),
+            NativeBridgeVerifier::Dummy,
+        )
+    }
+
     /// Regression test for the bug where a signature flow completing after
     /// the advance-funds timeout caused "Invalid state transition: Done with
     /// data `DispatchTransaction`".
@@ -1026,5 +1150,43 @@ mod tests {
         let result = harness.processor.process_unhandled_confirmed_sig_flow_events(&block);
         assert!(result.is_ok(), "second call expected Ok, got: {:?}", result.err());
         assert!(!harness.processor.signature_flows.contains_key(&flow_id));
+    }
+
+    #[test]
+    fn test_comm_info_routes_only_to_matching_pegout_flow() {
+        let mut harness = TestHarness::new();
+        let flow_a_id = Uuid::new_v4();
+        let flow_b_id = Uuid::new_v4();
+        let req_a = Uuid::new_v4();
+        let req_b = Uuid::new_v4();
+
+        harness
+            .processor
+            .pegout_flows
+            .insert(flow_a_id, create_flow_waiting_for_comm_info(flow_a_id, req_a));
+        harness
+            .processor
+            .pegout_flows
+            .insert(flow_b_id, create_flow_waiting_for_comm_info(flow_b_id, req_b));
+
+        harness
+            .processor
+            .process_new_bitvmx_event(&OutgoingBitVMXApiMessages::CommInfo(
+                req_b,
+                test_comm_info(5),
+            ))
+            .expect("comm info should be routed");
+
+        assert_eq!(harness.processor.pegout_flows[&flow_a_id].current_step(), Steps::GetCommInfo);
+        assert_eq!(
+            harness.processor.pegout_flows[&flow_b_id].current_step(),
+            Steps::PrepareUserTakeSetup
+        );
+        assert!(
+            harness.processor.pegout_flows[&flow_a_id].is_waiting_for_comm_info_request(&req_a)
+        );
+        assert!(
+            !harness.processor.pegout_flows[&flow_b_id].is_waiting_for_comm_info_request(&req_b)
+        );
     }
 }

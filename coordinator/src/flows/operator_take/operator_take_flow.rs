@@ -17,6 +17,7 @@ use transaction_dispatcher::types::{RegisterAdvanceFundsInput, RequestPeginInput
 use union_contracts::bindings::pegout_manager::PegoutManager::PegoutRegistered;
 use uuid::Uuid;
 
+use crate::flows::common::CommInfoRequest;
 use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
 use crate::types::OperatorTakeTriggeredEvent;
 
@@ -99,7 +100,7 @@ pub struct FlowContext {
     pub flow_id: Uuid,
     pub step: Steps,
     pub trigger_data: OperatorTakeTriggerData,
-    pub my_p2p_address: Option<CommsAddress>,
+    pub my_comm_info: CommInfoRequest,
     pub accept_pegin_txid: Option<alloy_primitives::FixedBytes<32>>,
     pub advance_funds_spv: Option<FundsAdvanceSPV>,
     pub reimbursement_kickoff_spv: Option<BtcTxSPVProof>,
@@ -142,7 +143,7 @@ where
                 flow_id,
                 step: Steps::OperatorTakeTriggered,
                 trigger_data,
-                my_p2p_address: None,
+                my_comm_info: CommInfoRequest::new(),
                 accept_pegin_txid: None,
                 advance_funds_spv: None,
                 reimbursement_kickoff_spv: None,
@@ -168,7 +169,7 @@ where
                 flow_id,
                 step,
                 trigger_data,
-                my_p2p_address: None,
+                my_comm_info: CommInfoRequest::new(),
                 accept_pegin_txid: None,
                 advance_funds_spv: None,
                 reimbursement_kickoff_spv: None,
@@ -314,7 +315,10 @@ where
                 Ok(Steps::GetCommInfo)
             }
             (Steps::GetCommInfo, StepData::CommInfo(comm_info)) => {
-                self.state.my_p2p_address = Some(comm_info);
+                if self.state.my_comm_info.req_id.is_none() {
+                    return Err(anyhow!("CommInfo request missing in context"));
+                }
+                self.state.my_comm_info.complete(comm_info);
                 Ok(Steps::SetupAdvanceFundsProtocol)
             }
             (Steps::SetupAdvanceFundsProtocol, StepData::SetupCompleted) => {
@@ -399,13 +403,9 @@ where
             return Ok(());
         }
 
-        let my_p2p_address = self
-            .state
-            .my_p2p_address
-            .clone()
-            .ok_or_else(|| anyhow!("P2P address not available for advance funds setup"))?;
+        let my_comm_info = self.state.my_comm_info.get()?.clone();
 
-        let participants = vec![my_p2p_address.clone()];
+        let participants = vec![my_comm_info.clone()];
 
         let request_payload = self.build_advance_funds_request(operator_pubkey)?;
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
@@ -513,8 +513,13 @@ where
         Ok(())
     }
 
-    fn request_bitvmx_comm_info(&self) -> Result<()> {
+    fn request_bitvmx_comm_info(&mut self) -> Result<()> {
         let req_id = Uuid::new_v4();
+        self.state.my_comm_info.start(req_id);
+        debug!(
+            "Requesting BitVMX comm info for advance funds flow_id: {} with req_id: {}",
+            self.state.flow_id, req_id
+        );
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo(req_id))
     }
 
@@ -546,6 +551,10 @@ where
 
     pub fn current_step(&self) -> Steps {
         self.state.step
+    }
+
+    pub(crate) fn is_waiting_for_comm_info_request(&self, req_id: &Uuid) -> bool {
+        self.state.step == Steps::GetCommInfo && self.state.my_comm_info.matches(req_id)
     }
 
     pub fn is_done(&self) -> bool {

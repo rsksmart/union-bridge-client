@@ -21,7 +21,7 @@ use union_contracts::bindings::pegout_manager::PegoutManager::{PegoutRegistered,
 use uuid::Uuid;
 
 use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
-use crate::flows::common::{COMM_KEY_INDEX, build_communication_data};
+use crate::flows::common::{COMM_KEY_INDEX, CommInfoRequest, build_communication_data};
 use crate::store::{CoordinatorStoreApi, StoreKey};
 
 pub const PROGRAM_TYPE_USER_TAKE: &str = "take";
@@ -62,7 +62,8 @@ pub enum StepData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlowContext {
     pub pegout_requested: PegoutRequested,
-    pub my_p2p_address: Option<CommsAddress>,
+    #[serde(default)]
+    pub my_comm_info: CommInfoRequest,
     pub committee_output: Option<GetCommitteeOutput>,
     pub peg_out_accepted: Option<PegOutAccepted>,
     pub spv_proof: Option<BtcTxSPVProof>,
@@ -116,7 +117,7 @@ where
                 step: Steps::PegoutRequested,
                 ctx: FlowContext {
                     pegout_requested: pegout_requested.clone(),
-                    my_p2p_address: None,
+                    my_comm_info: CommInfoRequest::new(),
                     committee_output: None,
                     peg_out_accepted: None,
                     pegout_registered_tx: None,
@@ -254,7 +255,7 @@ where
         match (current_step, data) {
             (Steps::PegoutRequested, StepData::PegoutRequested) => Ok(Steps::GetCommInfo),
             (Steps::GetCommInfo, StepData::CommInfo(comm_info)) => {
-                self.state.ctx.my_p2p_address = Some(comm_info.clone());
+                self.state.ctx.my_comm_info.complete(comm_info.clone());
                 Ok(Steps::PrepareUserTakeSetup)
             }
             (Steps::PrepareUserTakeSetup, StepData::PegoutAccepted(accepted)) => {
@@ -349,14 +350,7 @@ where
 
         let committee_addresses = self.get_committee_member_address(committee_id)?;
         let comms_addresses = build_communication_data(
-            &self
-                .state
-                .ctx
-                .my_p2p_address
-                .as_ref()
-                .ok_or_else(|| anyhow!("P2P address not available for setup"))?
-                .address
-                .to_string(),
+            &self.state.ctx.my_comm_info.get()?.address.to_string(),
             &committee_addresses,
             &committee_pubkey_hashes,
         )?;
@@ -494,9 +488,14 @@ where
             .context("Failed to parse aggregated public key from committee")
     }
 
-    fn request_bitvmx_comm_info(&self) -> Result<()> {
+    fn request_bitvmx_comm_info(&mut self) -> Result<()> {
         info!("Requesting bitvmx comm info for flow_id: {}", self.state.flow_id);
         let req_id = Uuid::new_v4();
+        self.state.ctx.my_comm_info.start(req_id);
+        info!(
+            "Requesting bitvmx comm info for flow_id: {} with req_id: {}",
+            self.state.flow_id, req_id
+        );
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo(req_id))
     }
 
@@ -571,6 +570,10 @@ where
 
     pub fn current_step(&self) -> Steps {
         self.state.step
+    }
+
+    pub(crate) fn is_waiting_for_comm_info_request(&self, req_id: &Uuid) -> bool {
+        self.state.step == Steps::GetCommInfo && self.state.ctx.my_comm_info.matches(req_id)
     }
 
     pub fn _get_state(&self) -> &State {

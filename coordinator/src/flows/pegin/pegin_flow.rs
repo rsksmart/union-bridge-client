@@ -22,7 +22,7 @@ use union_contracts::bindings::pegin_manager::PeginManager::{PeginAccepted, Pegi
 use uuid::Uuid;
 
 use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
-use crate::flows::common::{COMM_KEY_INDEX, build_communication_data};
+use crate::flows::common::{COMM_KEY_INDEX, CommInfoRequest, build_communication_data};
 use crate::flows::pegin::utils::{get_accept_pegin_pid, get_temp_pegin_pid};
 use crate::store::{CoordinatorStoreApi, StoreKey};
 
@@ -115,7 +115,8 @@ pub struct FlowContext {
     pub request_pegin_btc_tx_status: Option<TransactionStatus>,
     pub request_pegin_spv_proof: Option<BtcTxSPVProof>,
     pub pegin_requested: Option<PeginRequested>,
-    pub my_p2p_address: Option<CommsAddress>,
+    #[serde(default)]
+    pub my_comm_info: CommInfoRequest,
     pub committee_output: Option<GetCommitteeOutput>,
     pub bitvmx_pegin_accepted: Option<PeginAcceptedMessage>,
     pub accept_pegin_spv_proof: Option<BtcTxSPVProof>,
@@ -178,7 +179,7 @@ where
                     request_pegin_btc_tx_status: None,
                     request_pegin_spv_proof: None,
                     pegin_requested: None,
-                    my_p2p_address: None,
+                    my_comm_info: CommInfoRequest::new(),
                     committee_output: None,
                     bitvmx_pegin_accepted: None,
                     accept_pegin_spv_proof: None,
@@ -340,7 +341,7 @@ where
                 Ok(Steps::GetCommInfo)
             }
             (Steps::GetCommInfo, StepData::CommInfo(comm_info)) => {
-                self.state.ctx.my_p2p_address = Some(comm_info.clone());
+                self.state.ctx.my_comm_info.complete(comm_info.clone());
                 Ok(Steps::PreparePeginSetup)
             }
             (Steps::PreparePeginSetup, StepData::BitvmxPeginAccepted(accepted)) => {
@@ -445,14 +446,7 @@ where
         let committee_pubkey_hashes = self.get_committee_pubkey_hashes(committee_id)?;
 
         let comms_addresses = build_communication_data(
-            &self
-                .state
-                .ctx
-                .my_p2p_address
-                .as_ref()
-                .ok_or_else(|| anyhow!("P2P address not available for setup"))?
-                .address
-                .to_string(),
+            &self.state.ctx.my_comm_info.get()?.address.to_string(),
             &committee_addresses,
             &committee_pubkey_hashes,
         )?;
@@ -746,9 +740,14 @@ where
         Ok(pubkey_hashes)
     }
 
-    fn request_bitvmx_comm_info(&self) -> Result<()> {
+    fn request_bitvmx_comm_info(&mut self) -> Result<()> {
         info!("Requesting BitVMX comm info for flow_id: {}", self.state.flow_id);
         let req_id = Uuid::new_v4();
+        self.state.ctx.my_comm_info.start(req_id);
+        info!(
+            "Requesting BitVMX comm info for flow_id: {} with req_id: {}",
+            self.state.flow_id, req_id
+        );
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo(req_id))
     }
 
@@ -819,6 +818,10 @@ where
     /// Get the current step
     pub fn current_step(&self) -> Steps {
         self.state.ctx.step
+    }
+
+    pub(crate) fn is_waiting_for_comm_info_request(&self, req_id: &Uuid) -> bool {
+        self.state.ctx.step == Steps::GetCommInfo && self.state.ctx.my_comm_info.matches(req_id)
     }
 
     /// Get the state for debugging
@@ -928,7 +931,7 @@ mod tests {
             request_pegin_btc_tx_status: None,
             request_pegin_spv_proof: None,
             pegin_requested: None,
-            my_p2p_address: None,
+            my_comm_info: CommInfoRequest::new(),
             committee_output: None,
             bitvmx_pegin_accepted: Some(default_pegin_accepted_message(btc_tx_id)),
             accept_pegin_spv_proof: None,
@@ -1087,5 +1090,19 @@ mod tests {
         let result = flow_state.calc_op_role();
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), ParticipantRole::Verifier);
+    }
+
+    #[test]
+    fn test_is_waiting_for_comm_info_request_matches_stored_req_id() {
+        let my_address = test_address([1u8; 20]);
+        let flow_id = Uuid::new_v4();
+        let req_id = Uuid::new_v4();
+        let mut ctx = create_default_flow_context(flow_id, Steps::GetCommInfo, None);
+        ctx.my_comm_info.start(req_id);
+
+        let (flow, _) = create_test_flow_with_mock_contracts(my_address, ctx);
+
+        assert!(flow.is_waiting_for_comm_info_request(&req_id));
+        assert!(!flow.is_waiting_for_comm_info_request(&Uuid::new_v4()));
     }
 }

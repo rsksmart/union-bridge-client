@@ -901,6 +901,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::rc::Rc;
     use std::str::FromStr;
 
@@ -908,8 +909,8 @@ mod tests {
     use bitcoin::transaction::Version;
     use bitcoin::{PublicKey, Transaction};
     use common::msg_broker::bitvmx_types::{
-        BtcTxSPVProof, FundsAdvanceSPV, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages,
-        UnionSPVNotification, UnionTxType,
+        BtcTxSPVProof, CommsAddress, FundsAdvanceSPV, IncomingBitVMXApiMessages,
+        OutgoingBitVMXApiMessages, UnionSPVNotification, UnionTxType,
     };
     use common::msg_broker::broker::MockBrokerClientApi;
     use common::types::{Address, CommitteeId, Hash256};
@@ -918,6 +919,7 @@ mod tests {
 
     use super::*;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
+    use crate::flows::common::CommInfoRequest;
 
     type MockBitVmxBroker =
         MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
@@ -952,6 +954,13 @@ mod tests {
             },
             merkle_branch_path: "0".to_string(),
             merkle_branch_hashes: vec![],
+        }
+    }
+
+    fn test_comm_info(port_offset: u16) -> CommsAddress {
+        CommsAddress {
+            address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9_000 + port_offset),
+            pubkey_hash: format!("{port_offset:064x}"),
         }
     }
 
@@ -1046,5 +1055,62 @@ mod tests {
             flow.state.advance_funds_spv.as_ref().expect("proof should be buffered").txid,
             proof.tx.compute_txid()
         );
+    }
+
+    #[test]
+    fn comm_info_routes_only_to_matching_advance_funds_flow() {
+        let committee_id = Uuid::new_v4();
+        let req_a = Uuid::new_v4();
+        let req_b = Uuid::new_v4();
+        let flow_a_id = Uuid::new_v4();
+        let flow_b_id = Uuid::new_v4();
+
+        let mut contracts_a = MockRskContractsGatewayApi::new();
+        contracts_a.expect_my_address().return_const(Address::from(H160::from_low_u64_be(44)));
+        let mut contracts_b = MockRskContractsGatewayApi::new();
+        contracts_b.expect_my_address().return_const(Address::from(H160::from_low_u64_be(44)));
+
+        let mut broker_a = MockBitVmxBroker::new();
+        broker_a.expect_send().times(0..=1).returning(|_| Ok(true));
+        let mut broker_b = MockBitVmxBroker::new();
+        broker_b.expect_send().times(0..=1).returning(|_| Ok(true));
+
+        let mut flow_a = AdvanceFundsFlow::new_for_test(
+            Rc::new(contracts_a),
+            Rc::new(broker_a),
+            flow_a_id,
+            test_trigger_data(committee_id, 1),
+            Steps::GetCommInfo,
+        );
+        flow_a.state.my_comm_info = CommInfoRequest { req_id: Some(req_a), value: None };
+
+        let mut flow_b = AdvanceFundsFlow::new_for_test(
+            Rc::new(contracts_b),
+            Rc::new(broker_b),
+            flow_b_id,
+            test_trigger_data(committee_id, 2),
+            Steps::GetCommInfo,
+        );
+        flow_b.state.my_comm_info = CommInfoRequest { req_id: Some(req_b), value: None };
+
+        let mut processor = AdvanceFundsFlowProcessor::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+        );
+        processor.flows.insert(flow_a_id, flow_a);
+        processor.flows.insert(flow_b_id, flow_b);
+
+        processor
+            .process_new_bitvmx_event(&OutgoingBitVMXApiMessages::CommInfo(
+                req_b,
+                test_comm_info(6),
+            ))
+            .expect("comm info should be routed");
+
+        assert_eq!(processor.flows[&flow_a_id].current_step(), Steps::GetCommInfo);
+        assert_eq!(processor.flows[&flow_b_id].current_step(), Steps::Done);
+        assert!(processor.flows[&flow_a_id].is_waiting_for_comm_info_request(&req_a));
+        assert!(!processor.flows[&flow_b_id].is_waiting_for_comm_info_request(&req_b));
     }
 }

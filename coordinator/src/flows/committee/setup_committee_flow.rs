@@ -41,7 +41,8 @@ use crate::flows::committee::dispute_channel_setup::{
 };
 use crate::flows::committee::dispute_core_setup::{AggregatedKeys, DisputeCoreSetup};
 use crate::flows::common::{
-    COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, TAKE_KEY_INDEX, build_communication_data,
+    COMM_KEY_INDEX, CommInfoRequest, DISPUTE_KEY_INDEX, GlobalContext, TAKE_KEY_INDEX,
+    build_communication_data,
 };
 use crate::flows::errors::{FailableFlow, FlowError, FlowResultExt};
 use crate::store::{CoordinatorStoreApi, StoreKey};
@@ -123,9 +124,8 @@ struct FlowContext {
     // stepped
     user_input: Option<ApplyToStream>,
     funding_balance_req: Option<(Uuid, Option<u64>)>, // request id, balance
-    my_comm_info: Option<CommsAddress>,
     #[serde(default)]
-    comm_info_req_id: Option<Uuid>,
+    my_comm_info: CommInfoRequest,
     my_take_key_req: PubKeyReq,
     my_dispute_key_req: PubKeyReq,
     my_comm_key_req: PubKeyReq,
@@ -162,9 +162,7 @@ impl FlowContext {
     }
 
     fn get_my_comm_info(&self) -> Result<CommsAddress> {
-        let my_comm_info = self.my_comm_info.clone().context("My Comm Info missing in context")?;
-
-        Ok(my_comm_info)
+        Ok(self.my_comm_info.get()?.clone())
     }
 
     fn get_aggregated_take_key(&self) -> Result<PublicKey> {
@@ -550,7 +548,11 @@ where
     /// Returns true if this flow is waiting for a `BitVMX` response with the given request id.
     pub(crate) fn is_waiting_for_bitvmx_request(&self, req_id: &Uuid) -> bool {
         Self::funding_balance_request_matches(self.state.ctx.funding_balance_req.as_ref(), req_id)
-            || Self::request_id_matches(self.state.ctx.comm_info_req_id.as_ref(), req_id)
+            || Self::comm_info_request_matches(
+                self.state.step,
+                &self.state.ctx.my_comm_info,
+                req_id,
+            )
             || Self::pubkey_request_matches(&self.state.ctx.my_take_key_req, req_id)
             || Self::pubkey_request_matches(&self.state.ctx.my_dispute_key_req, req_id)
             || Self::pubkey_request_matches(&self.state.ctx.my_comm_key_req, req_id)
@@ -607,8 +609,8 @@ where
         }
     }
 
-    fn request_id_matches(stored_req_id: Option<&Uuid>, req_id: &Uuid) -> bool {
-        stored_req_id.is_some_and(|stored_req_id| stored_req_id == req_id)
+    fn comm_info_request_matches(step: Steps, comm_info: &CommInfoRequest, req_id: &Uuid) -> bool {
+        step == Steps::GetMyCommInfo && comm_info.matches(req_id)
     }
 
     fn pubkey_request_matches(pubkey_req: &PubKeyReq, req_id: &Uuid) -> bool {
@@ -1532,8 +1534,8 @@ where
             }
             Steps::GetMyCommInfo => {
                 debug!("CommitteeSetupFlow complete GetMyCommInfo");
-                self.ctx_mut().my_comm_info = Some(data.into_comms_address()?);
-                self.ctx_mut().comm_info_req_id = None;
+                let comm_info = data.into_comms_address()?;
+                self.ctx_mut().my_comm_info.complete(comm_info);
                 if self.global_context.my_keys().is_set() {
                     debug!("My Keys already set, jumping to FundMyBitVmxAccount step");
                     self.start_step(Steps::FundMyBitVmxAccount)?;
@@ -1689,7 +1691,7 @@ where
 
     fn request_bitvmx_comm_info(&mut self) {
         let req_id = Uuid::new_v4();
-        self.ctx_mut().comm_info_req_id = Some(req_id);
+        self.ctx_mut().my_comm_info.start(req_id);
         debug!(
             "Requesting BitVMX comm info for setup committee flow {} with req_id {}",
             self.state.internal_id, req_id
@@ -2599,7 +2601,10 @@ mod tests {
     fn test_flow_context_getters_and_key_resolution() {
         let mut ctx = FlowContext {
             user_input: Some(test_apply_to_stream(11)),
-            my_comm_info: Some(test_comms_address(2)),
+            my_comm_info: CommInfoRequest {
+                req_id: Some(Uuid::new_v4()),
+                value: Some(test_comms_address(2)),
+            },
             my_take_key_req: Some((Uuid::new_v4(), None, None, Some(test_signed_pubkey(1, 27)))),
             ..Default::default()
         };
@@ -2867,7 +2872,7 @@ mod tests {
         flow.state.ctx.user_input = Some(test_apply_to_stream(55));
         flow.state.ctx.funding_balance_req = Some((Uuid::new_v4(), None));
         let comm_info_req_id = Uuid::new_v4();
-        flow.state.ctx.comm_info_req_id = Some(comm_info_req_id);
+        flow.state.ctx.my_comm_info.start(comm_info_req_id);
 
         let target_stream = StreamId::from(55);
         assert!(flow.is_for_stream(&target_stream));
