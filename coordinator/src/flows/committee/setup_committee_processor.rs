@@ -115,14 +115,6 @@ where
         }
     }
 
-    fn dispatch_to_flow_by_step(&mut self, expected_step: Steps, step_data: StepData) {
-        if let Some(flow) = self.flows.values_mut().find(|f| f.current_step() == expected_step) {
-            Self::continue_flow(flow, step_data);
-        } else {
-            trace!("No flow found in step {expected_step:?}");
-        }
-    }
-
     fn dispatch_to_flow_by_program_id(&mut self, program_id: &Uuid, step_data: StepData) {
         if let Some(flow) = self
             .flows
@@ -321,11 +313,17 @@ where
         debug!("Processing new bitvmx event: {event:?}");
 
         match event {
-            OutgoingBitVMXApiMessages::CommInfo(_req_id, comm_info) => {
-                self.dispatch_to_flow_by_step(
-                    Steps::GetMyCommInfo,
-                    StepData::CommInfo(comm_info.clone()),
-                );
+            OutgoingBitVMXApiMessages::CommInfo(req_id, comm_info) => {
+                if let Some(flow) = self.get_flow_for_bitvmx_response(req_id) {
+                    debug!(
+                        "Routing BitVMX CommInfo req_id {} to setup committee flow {}",
+                        req_id,
+                        flow.internal_id()
+                    );
+                    Self::continue_flow(flow, StepData::CommInfo(comm_info.clone()));
+                } else {
+                    warn!("Received unmatched BitVMX CommInfo for req_id {req_id}");
+                }
             }
 
             OutgoingBitVMXApiMessages::AggregatedPubkey(req_id, pubkey) => {
@@ -493,26 +491,32 @@ where
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::rc::Rc;
+    use std::sync::{Arc, Mutex};
 
     use alloy_primitives::{Address as AlloyAddress, Bytes, U256};
     use common::msg_broker::bitvmx_types::{
-        GLOBAL_SETTINGS_UUID, IncomingBitVMXApiMessages, OP_COSIGN_UTXOS,
-        OutgoingBitVMXApiMessages, UnionSettings, VariableTypes,
+        CommsAddress, GLOBAL_SETTINGS_UUID, IncomingBitVMXApiMessages, OP_COSIGN_UTXOS,
+        OutgoingBitVMXApiMessages, ParticipantRole, UnionSettings, VariableTypes,
     };
     use common::msg_broker::broker::MockBrokerClientApi;
-    use common::types::{BlockHash, BlockNumber, TxHash};
+    use common::runtime_sync::RuntimeSync;
+    use common::types::{Address as CommonAddress, BlockHash, BlockNumber, StreamId, TxHash};
     use mockall::predicate::function;
-    use primitive_types::H256;
+    use primitive_types::{H160, H256};
     use union_contracts::bindings::committee_registry::CommitteeRegistry::{
         AllCommunicationDataReady, Committee, CommitteeMember, NewCommittee, NewPendingCommittee,
     };
     use uuid::Uuid;
 
     use super::*;
+    use crate::config::CommitteeConfig;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
-    use crate::store::MockCoordinatorStoreApi;
-    use crate::types::{EventWithBlock, RskPegManagerEvents};
+    use crate::flows::committee::setup_committee_flow::SetupCommitteeFlowFactory;
+    use crate::store::{MockCoordinatorStoreApi, StoreKey};
+    use crate::types::{EventWithBlock, RskPegManagerEvents, Utxo as UserUtxo};
+    use crate::user_requests::ApplyToStream;
 
     type MockBitVmxBroker =
         MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
@@ -618,6 +622,83 @@ mod tests {
         }
     }
 
+    fn test_apply_to_stream(stream_id: u64) -> ApplyToStream {
+        ApplyToStream {
+            stream_id: StreamId::from(stream_id),
+            role: ParticipantRole::Prover,
+            funding_utxo: UserUtxo { value: 30_000_000 },
+            speed_up_utxo: UserUtxo { value: 10_000_000 },
+            advance_funds: UserUtxo { value: 2_000_000 },
+        }
+    }
+
+    fn test_comms_address(port_offset: u16) -> CommsAddress {
+        CommsAddress {
+            address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9_000 + port_offset),
+            pubkey_hash: format!("{port_offset:064x}"),
+        }
+    }
+
+    fn flow_waiting_for_comm_info(
+        internal_id: Uuid,
+        stream_id: u64,
+    ) -> (
+        SetupCommitteeFlow<MockRskContractsGatewayApi, MockBitVmxBroker, MockCoordinatorStoreApi>,
+        Uuid,
+    ) {
+        let mut contracts = MockRskContractsGatewayApi::new();
+        contracts.expect_my_address().return_const(CommonAddress::from(H160::from([7u8; 20])));
+        contracts.expect_is_whitelisted().times(1).returning(|| Ok(true));
+        contracts
+            .expect_get_balance()
+            .times(1)
+            .returning(|| Ok(U256::from(1_000_000_000_500_001_u64)));
+
+        let comm_info_req_id = Arc::new(Mutex::new(None));
+        let comm_info_req_id_for_broker = Arc::clone(&comm_info_req_id);
+
+        let mut broker = MockBitVmxBroker::new();
+        broker.expect_send().times(1..).returning(move |msg| {
+            if let IncomingBitVMXApiMessages::GetCommInfo(req_id) = msg {
+                *comm_info_req_id_for_broker.lock().expect("mutex poisoned") = Some(req_id);
+            }
+            Ok(true)
+        });
+
+        let mut store = MockCoordinatorStoreApi::new();
+        store.expect_save_flow::<State>().times(1..).returning(|key, _| {
+            assert!(matches!(key, StoreKey::SetupCommitteeFlow(_)));
+            Ok(())
+        });
+
+        let factory = SetupCommitteeFlowFactory::new(
+            Rc::new(contracts),
+            RuntimeSync::new().expect("runtime"),
+            Rc::new(broker),
+            GlobalContext::new(),
+            bitcoin::Network::Regtest,
+            Rc::new(store),
+            CommitteeConfig::default(),
+        );
+
+        let mut flow = factory.create_flow(internal_id);
+        flow.complete_step(StepData::UserRequest(test_apply_to_stream(stream_id)))
+            .expect("init should advance to ValidateBalances");
+        flow.complete_step(StepData::BitVmxFundingBalance(
+            CommitteeConfig::default().min_funding_balance,
+        ))
+        .expect("validate balances should advance to GetMyCommInfo");
+
+        let captured_req_id = comm_info_req_id
+            .lock()
+            .expect("mutex poisoned")
+            .expect("GetCommInfo request id should be captured");
+        assert_eq!(flow.current_step(), Steps::GetMyCommInfo);
+        assert!(flow.is_waiting_for_bitvmx_request(&captured_req_id));
+
+        (flow, captured_req_id)
+    }
+
     #[test]
     fn test_send_union_settings_sends_global_set_var_message() {
         let mut broker = MockBitVmxBroker::new();
@@ -712,5 +793,32 @@ mod tests {
     fn test_process_new_rsk_event_ignored_event_returns_ok() {
         let mut processor = empty_processor();
         assert!(processor.process_new_rsk_event(&RskPegManagerEvents::IgnoredEvent).is_ok());
+    }
+
+    #[test]
+    fn test_process_new_bitvmx_event_comm_info_routes_to_matching_flow() {
+        let (flow_a, req_a) = flow_waiting_for_comm_info(Uuid::new_v4(), 11);
+        let (flow_b, req_b) = flow_waiting_for_comm_info(Uuid::new_v4(), 22);
+        let first_flow_id = flow_a.internal_id();
+        let second_flow_id = flow_b.internal_id();
+        assert_ne!(req_a, req_b);
+        assert!(!flow_a.is_waiting_for_bitvmx_request(&req_b));
+        assert!(!flow_b.is_waiting_for_bitvmx_request(&req_a));
+
+        let mut processor = empty_processor();
+        processor.flows.insert(first_flow_id, flow_a);
+        processor.flows.insert(second_flow_id, flow_b);
+
+        processor
+            .process_new_bitvmx_event(&OutgoingBitVMXApiMessages::CommInfo(
+                req_b,
+                test_comms_address(4),
+            ))
+            .expect("comm info should be routed");
+
+        assert_eq!(processor.flows[&first_flow_id].current_step(), Steps::GetMyCommInfo);
+        assert_eq!(processor.flows[&second_flow_id].current_step(), Steps::GetMyTakeKey);
+        assert!(processor.flows[&first_flow_id].is_waiting_for_bitvmx_request(&req_a));
+        assert!(!processor.flows[&second_flow_id].is_waiting_for_bitvmx_request(&req_b));
     }
 }
