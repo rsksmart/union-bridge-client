@@ -43,13 +43,11 @@ RUN cargo fetch --locked
 # 1) build the entire workspace and reuse among containers, to reduce build time
 # 2) build just one crate for speed
 # optionally builds with --features if provided
-# we also exclude key-manager, which is built always in the next step even if only a couple of crates require it
+# we also exclude key-manager from runtime image builds
 ARG EXCLUDES="--exclude check-fork --exclude check-fork-zkp --exclude key-manager"
 # TODO when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips) via Dockerfile_coordinator
 # EXCLUDES="--exclude coordinator--exclude check-fork --exclude check-fork-zkp --exclude key-manager"
 RUN cargo build --workspace --quiet --release ${EXCLUDES}${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES};
-# build key-manager always, even if only a couple of crates require it
-RUN cargo build --quiet --release -p key-manager
 
 # --- RUNTIME STAGE ---
 
@@ -68,9 +66,6 @@ RUN apt-get update -y && \
 
 # copy the crate built binary
 COPY --from=builder /app/target/release/${CRATE} /app/${CRATE}
-# copy key-manager always, even if only a couple of crates require it
-COPY --from=builder /app/target/release/key-manager /app/key-manager
-
 WORKDIR /app
 
 # set environment variables
@@ -80,12 +75,11 @@ ENV RUST_LOG=debug
 # it does not harm to have it always defined, so we leave it common
 ENV RISC0_HOME=/opt/risc0
 
-# copy always even if only needed for one crate, as it's cheap
-COPY docker/build/entrypoint_sh/key-setup.sh /app/key-setup.sh
-COPY docker/build/entrypoint_sh/runtime-entrypoint.sh /app/runtime-entrypoint.sh
+COPY docker/build/entrypoint_sh/db-entrypoint.sh /app/db-entrypoint.sh
+COPY docker/build/entrypoint_sh/keystore-entrypoint.sh /app/keystore-entrypoint.sh
 
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 LABEL org.opencontainers.image.source=https://github.com/rsksmart/union-bridge-client
 
-ENTRYPOINT ["sh", "/app/runtime-entrypoint.sh"]
+ENTRYPOINT ["sh", "/app/db-entrypoint.sh"]

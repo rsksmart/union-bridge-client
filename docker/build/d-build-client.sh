@@ -5,6 +5,8 @@ set -e
 FEATURES=""
 PLATFORM="linux/amd64"
 UC_TAG="latest"
+KEYSTORE_DIR="${KEYSTORE_DIR:-/tmp/union-client-build-keystore}"
+KEY_STORE_PASSWORD="${KEY_STORE_PASSWORD:-build-placeholder-password}"
 HELP=0
 
 show_help() {
@@ -52,6 +54,8 @@ use_env_vars() {
   local vars_to_export=()
   [[ -n $PLATFORM ]] && vars_to_export+=(PLATFORM)
   [[ -n $UC_TAG ]] && vars_to_export+=(UC_TAG)
+  [[ -n $KEYSTORE_DIR ]] && vars_to_export+=(KEYSTORE_DIR)
+  [[ -n $KEY_STORE_PASSWORD ]] && vars_to_export+=(KEY_STORE_PASSWORD)
   
   if [[ ${#vars_to_export[@]} -gt 0 ]]; then
     echo "Using environment variables: ${vars_to_export[*]}"

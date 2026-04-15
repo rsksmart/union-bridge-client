@@ -3,8 +3,8 @@ provider:
     url: "ws://fake-server:4445/websocket"
 
 key_store:
-  user_path: "/fake/path/.union_bridge/keystore/user-key.json"
-  member_path: "/fake/path/.union_bridge/keystore/member-key.json"
+  user_path: "/fake/path/.union_bridge/keystore/user"
+  member_path: "/fake/path/.union_bridge/keystore/member"
 transaction:
   gas_bumps_t1: 3
 server:

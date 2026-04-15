@@ -158,12 +158,28 @@ operator_runtime_env_file_path() {
   echo "${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}/docker-service.env"
 }
 
+operator_keystore_file_path() {
+  local op_num="$1"
+  local key_name="$2"
+  echo "${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}/union-client/keystore/${key_name}"
+}
+
 require_operator_env_file() {
   local file_path="$1"
 
   if [[ ! -f "${file_path}" ]]; then
     echo "Error: missing prepared operator env file ${file_path}" >&2
     echo "Prepare the operator artifacts under \${BASE_STORAGE_PATH}/.union_bridge/op_N/ before starting containers." >&2
+    return 1
+  fi
+}
+
+require_operator_keystore_file() {
+  local file_path="$1"
+
+  if [[ ! -f "${file_path}" ]]; then
+    echo "Error: missing operator keystore ${file_path}" >&2
+    echo "Run <project_root>/cli-setup-operators.sh --ops <N> to create or reuse the required host-side keys before starting containers." >&2
     return 1
   fi
 }
@@ -225,8 +241,9 @@ uses_shared_bitvmx_network() {
 
 run_compose_stack() {
   local project_name="$1"
-  local compose_env_file_path="$2"
-  local runtime_env_file_path="$3"
+  local op_num="$2"
+  local compose_env_file_path="$3"
+  local runtime_env_file_path="$4"
   local compose_override
   compose_override="$(compose_override_file)"
   local -a compose_cmd=(
@@ -243,6 +260,10 @@ run_compose_stack() {
 
   if [[ "${IS_STARTUP_COMMAND}" == true ]]; then
     require_key_store_password "${ENV_FILE}" "${runtime_env_file_path}"
+    if ! require_operator_keystore_file "$(operator_keystore_file_path "${op_num}" "user")" \
+      || ! require_operator_keystore_file "$(operator_keystore_file_path "${op_num}" "member")"; then
+      exit 1
+    fi
   fi
 
   echo
@@ -301,5 +322,5 @@ for op_num in $(resolved_operator_ids); do
     || ! require_operator_env_file "${operator_runtime_env_file}"; then
     exit 1
   fi
-  run_compose_stack "${project_name}" "${operator_compose_env_file}" "${operator_runtime_env_file}"
+  run_compose_stack "${project_name}" "${op_num}" "${operator_compose_env_file}" "${operator_runtime_env_file}"
 done

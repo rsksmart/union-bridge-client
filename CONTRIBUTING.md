@@ -228,8 +228,9 @@ Notes:
 - `docker-compose.env`
 - `docker-service.env`
 
-Host-side `keystore/{member,user}` is used by local cargo mode. Docker operator runs use the generated Docker env files
-and container keystore paths instead.
+Host-side `keystore/{member,user}` is used by both local cargo mode and Docker operator runs. Docker operator
+containers bind-mount the host keystore directory and reuse the existing files; they do not generate replacement keys.
+`cli-setup-operators.sh` creates or reuses these files via the `key-manager` crate before Docker startup.
 
 ### DRP Program Files
 

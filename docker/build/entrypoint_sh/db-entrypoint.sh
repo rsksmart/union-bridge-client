@@ -2,8 +2,8 @@
 set -e
 
 if [ "$(id -u)" -eq 0 ]; then
-  mkdir -p /keystore /app/db
-  chown -R appuser:appuser /keystore /app/db
+  mkdir -p /app/db
+  chown -R appuser:appuser /app/db
   exec gosu appuser "$@"
 fi
 
