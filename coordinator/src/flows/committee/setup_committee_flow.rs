@@ -61,7 +61,7 @@ pub(crate) trait SetupCommitteeFlowApi {
 
     fn request_bitvmx_funding_balance(&mut self);
 
-    fn request_bitvmx_comm_info(&self);
+    fn request_bitvmx_comm_info(&mut self);
 
     fn request_bitvmx_take_pub_key(&mut self) -> Result<()>;
 
@@ -124,6 +124,8 @@ struct FlowContext {
     user_input: Option<ApplyToStream>,
     funding_balance_req: Option<(Uuid, Option<u64>)>, // request id, balance
     my_comm_info: Option<CommsAddress>,
+    #[serde(default)]
+    comm_info_req_id: Option<Uuid>,
     my_take_key_req: PubKeyReq,
     my_dispute_key_req: PubKeyReq,
     my_comm_key_req: PubKeyReq,
@@ -548,6 +550,7 @@ where
     /// Returns true if this flow is waiting for a `BitVMX` response with the given request id.
     pub(crate) fn is_waiting_for_bitvmx_request(&self, req_id: &Uuid) -> bool {
         Self::funding_balance_request_matches(self.state.ctx.funding_balance_req.as_ref(), req_id)
+            || Self::request_id_matches(self.state.ctx.comm_info_req_id.as_ref(), req_id)
             || Self::pubkey_request_matches(&self.state.ctx.my_take_key_req, req_id)
             || Self::pubkey_request_matches(&self.state.ctx.my_dispute_key_req, req_id)
             || Self::pubkey_request_matches(&self.state.ctx.my_comm_key_req, req_id)
@@ -602,6 +605,10 @@ where
         } else {
             false
         }
+    }
+
+    fn request_id_matches(stored_req_id: Option<&Uuid>, req_id: &Uuid) -> bool {
+        stored_req_id.is_some_and(|stored_req_id| stored_req_id == req_id)
     }
 
     fn pubkey_request_matches(pubkey_req: &PubKeyReq, req_id: &Uuid) -> bool {
@@ -1526,6 +1533,7 @@ where
             Steps::GetMyCommInfo => {
                 debug!("CommitteeSetupFlow complete GetMyCommInfo");
                 self.ctx_mut().my_comm_info = Some(data.into_comms_address()?);
+                self.ctx_mut().comm_info_req_id = None;
                 if self.global_context.my_keys().is_set() {
                     debug!("My Keys already set, jumping to FundMyBitVmxAccount step");
                     self.start_step(Steps::FundMyBitVmxAccount)?;
@@ -1679,8 +1687,13 @@ where
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetFundingBalance(req_id));
     }
 
-    fn request_bitvmx_comm_info(&self) {
+    fn request_bitvmx_comm_info(&mut self) {
         let req_id = Uuid::new_v4();
+        self.ctx_mut().comm_info_req_id = Some(req_id);
+        debug!(
+            "Requesting BitVMX comm info for setup committee flow {} with req_id {}",
+            self.state.internal_id, req_id
+        );
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo(req_id));
     }
 
@@ -2853,6 +2866,8 @@ mod tests {
         let mut flow = create_test_flow();
         flow.state.ctx.user_input = Some(test_apply_to_stream(55));
         flow.state.ctx.funding_balance_req = Some((Uuid::new_v4(), None));
+        let comm_info_req_id = Uuid::new_v4();
+        flow.state.ctx.comm_info_req_id = Some(comm_info_req_id);
 
         let target_stream = StreamId::from(55);
         assert!(flow.is_for_stream(&target_stream));
@@ -2874,6 +2889,8 @@ mod tests {
         }];
         assert!(flow.is_waiting_for_dispute_core_variable(&req_id));
         assert!(!flow.is_waiting_for_dispute_core_variable(&Uuid::new_v4()));
+
+        assert!(flow.is_waiting_for_bitvmx_request(&comm_info_req_id));
 
         let unknown_req = Uuid::new_v4();
         assert!(!flow.is_waiting_for_bitvmx_request(&unknown_req));
