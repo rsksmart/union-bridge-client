@@ -73,6 +73,8 @@ RUN apt-get update -y && \
 
 # copy the crate built binary
 COPY --from=builder /app/target/release/${CRATE} /app/${CRATE}
+WORKDIR /app
+
 # set environment variables
 ENV RUST_BACKTRACE=1
 ENV RUST_LOG=debug
@@ -81,6 +83,7 @@ ENV RUST_LOG=debug
 ENV RISC0_HOME=/opt/risc0
 
 COPY docker/build/entrypoint_sh/db-entrypoint.sh /app/db-entrypoint.sh
+COPY docker/build/entrypoint_sh/keystore-entrypoint.sh /app/keystore-entrypoint.sh
 
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
