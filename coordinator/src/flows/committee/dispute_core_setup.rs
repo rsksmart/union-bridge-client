@@ -460,6 +460,7 @@ mod tests {
             expected_utxo,
             stream_denomination,
             advance_funds_utxo,
+            test_confirmations(),
         );
 
         assert!(result.is_ok());
