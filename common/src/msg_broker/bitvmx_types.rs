@@ -43,7 +43,7 @@ pub enum IncomingBitVMXApiMessages {
     Setup(ProgramId, String, Vec<CommsAddress>, u16),
     SubscribeToTransaction(Uuid, Txid),
     SubscribeUTXO(Uuid),
-    SubscribeToRskPegin(),
+    SubscribeToRskPegin(Option<u32>),
     GetSPVProof(Txid),
     DispatchTransaction(Uuid, Transaction),
     DispatchTransactionName(Uuid, String),
@@ -188,26 +188,65 @@ pub struct WinternitzHash {
 
 pub type PartialUtxo = (Txid, u32, Option<u64>, Option<OutputType>);
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum AmountType {
+    Value(Amount),
+    Return,
+    Auto,
+    Recover,
+    None,
+}
+impl AmountType {
+    pub fn is_none(&self) -> bool {
+        matches!(self, AmountType::None)
+    }
+    pub fn is_return(&self) -> bool {
+        matches!(self, AmountType::Return)
+    }
+    pub fn is_auto(&self) -> bool {
+        matches!(self, AmountType::Auto)
+    }
+    pub fn is_recover(&self) -> bool {
+        matches!(self, AmountType::Recover)
+    }
+    pub fn get_value(&self) -> Option<Amount> {
+        match self {
+            AmountType::Value(v) => Some(*v),
+            _ => None,
+        }
+    }
+}
+impl From<u64> for AmountType {
+    fn from(value: u64) -> Self {
+        AmountType::Value(Amount::from_sat(value))
+    }
+}
+impl From<Amount> for AmountType {
+    fn from(value: Amount) -> Self {
+        AmountType::Value(value)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OutputType {
     Taproot {
-        value: Amount,
+        value: AmountType,
         internal_key: PublicKey,
         script_pubkey: ScriptBuf,
         leaves: Vec<ProtocolScript>,
     },
     SegwitPublicKey {
-        value: Amount,
+        value: AmountType,
         script_pubkey: ScriptBuf,
         public_key: PublicKey,
     },
     SegwitScript {
-        value: Amount,
+        value: AmountType,
         script_pubkey: ScriptBuf,
         script: ProtocolScript,
     },
     SegwitUnspendable {
-        value: Amount,
+        value: AmountType,
         script_pubkey: ScriptBuf,
     },
     ExternalUnknown {
@@ -389,6 +428,9 @@ pub struct Committee {
     pub dispute_aggregated_key: PublicKey,
     pub packet_size: u32,
     pub stream_denomination: u64,
+    pub pegin_confirmations: u32,
+    pub pegout_confirmations: u32,
+    pub reject_pegin_confirmations: u32,
 }
 
 impl Committee {
@@ -431,7 +473,7 @@ impl TryInto<ParticipantRole> for u8 {
 
 /// Data structure received from BitVMX client containing pegin acceptance information.
 /// This is sent after BitVMX processes the pegin request and includes signature data
-/// and sighashes needed for the operator take and operator won transactions.
+/// and operator transaction metadata needed by later pegin and pegout steps.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PeginAcceptedMessage {
     pub committee_id: Uuid,
@@ -547,6 +589,22 @@ pub struct ReimbursementResult {
 impl ReimbursementResult {
     pub fn name() -> &'static str {
         "reimbursement_result"
+    }
+}
+
+/// Data sent to BitVMX when advance funds are registered on RSK.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvanceFundsRegistered {
+    pub committee_id: Uuid,
+    pub slot_index: usize,
+    pub txid: Txid,
+    pub pegout_id: Vec<u8>,
+    pub operator_pubkey: PublicKey,
+}
+
+impl AdvanceFundsRegistered {
+    pub fn name(slot_index: usize) -> String {
+        format!("ADVANCED_FUNDS_{slot_index}")
     }
 }
 

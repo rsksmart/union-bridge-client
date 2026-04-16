@@ -9,7 +9,7 @@ use common::msg_broker::bitvmx_types::{
     WT_INIT_CHALLENGE_UTXOS, WtInitChallengeUtxos,
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
-use common::msg_broker::config::{ConfigResult, ConfigResults, DisputeConfiguration};
+use common::msg_broker::config::{ConfigResult, DisputeConfiguration, ForceFailConfiguration};
 use log::{debug, info};
 use uuid::Uuid;
 
@@ -387,7 +387,9 @@ impl<BC: BitVmxBrokerClientApi> DisputeChannelSetup<BC> {
             PROGRAM_TYPE_DISPUTE_CHANNEL, drp_id, i.op_index, i.wt_index,
         );
 
-        let dispute_config = ConfigResults {
+        let dispute_config = ForceFailConfiguration {
+            prover_force_second_nary: false,
+            fail_input_tx: None,
             main: ConfigResult {
                 fail_config_prover: None,
                 fail_config_verifier: None,
@@ -400,7 +402,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeChannelSetup<BC> {
         let dispute_configuration = DisputeConfiguration {
             id: drp_id,
             operators_aggregated_pub: i.pair_key,
-            protocol_connection: (i.op_cosign, vec![]),
+            protocol_connection: (i.op_cosign, 1),
             prover_actions: vec![(i.op_stopper, vec![1])], // Consume leaf 1
             prover_enablers: vec![],
             verifier_actions: vec![(i.wt_stopper, vec![1])], // Consume leaf 1
@@ -519,7 +521,7 @@ mod tests {
         let wpkh = WPubkeyHash::from_slice(&[to_u8_from_u32(index); 20]).expect("valid wpkh");
         let script = ScriptBuf::new_p2wpkh(&wpkh);
         let output_type = OutputType::SegwitPublicKey {
-            value: amount,
+            value: amount.into(),
             script_pubkey: script,
             public_key: test_public_key(to_u8_from_u32(index)),
         };

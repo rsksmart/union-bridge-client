@@ -4,7 +4,7 @@ use std::rc::Rc;
 use alloy_primitives::{Address, Bytes, FixedBytes, U256};
 use anyhow::{Context, Result, bail, ensure};
 use bitcoin::key::Parity::Even;
-use bitcoin::{Amount, Network, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
+use bitcoin::{Network, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
 use common::msg_broker::bitvmx_types::{
     CommsAddress, Destination, IncomingBitVMXApiMessages, OP_COSIGN_UTXOS, OutputType, PartialUtxo,
     ParticipantRole, PubKeyHash, SignedPublicKey, Utxo, VariableTypes, WT_INIT_CHALLENGE_UTXOS,
@@ -39,7 +39,9 @@ use crate::flows::committee::common::{
 use crate::flows::committee::dispute_channel_setup::{
     DisputeChannelSetup, DisputeChannelSetupRequest,
 };
-use crate::flows::committee::dispute_core_setup::{AggregatedKeys, DisputeCoreSetup};
+use crate::flows::committee::dispute_core_setup::{
+    AggregatedKeys, CommitteeConfirmations, DisputeCoreSetup,
+};
 use crate::flows::common::{
     COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, TAKE_KEY_INDEX, build_communication_data,
 };
@@ -270,17 +272,17 @@ impl FlowContext {
             .context("Failed to get wpubkey_hash from dispute public key")?;
         let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
         let speedup_ot = OutputType::SegwitPublicKey {
-            value: Amount::from_sat(speedup_utxo_val),
+            value: speedup_utxo_val.into(),
             script_pubkey: script_pubkey.clone(),
             public_key,
         };
         let protocol_funding_ot = OutputType::SegwitPublicKey {
-            value: Amount::from_sat(funding_utxo_val),
+            value: funding_utxo_val.into(),
             script_pubkey: script_pubkey.clone(),
             public_key,
         };
         let advance_funds_ot = OutputType::SegwitPublicKey {
-            value: Amount::from_sat(advance_funds_utxo_val),
+            value: advance_funds_utxo_val.into(),
             script_pubkey: script_pubkey.clone(),
             public_key,
         };
@@ -831,8 +833,22 @@ where
             }
         }
 
-        let missing_responses = setup_channel_req.iter().any(|r| !r.1);
+        let missing_indices: Vec<_> = setup_channel_req
+            .iter()
+            .enumerate()
+            .filter_map(|(i, r)| if r.1 { None } else { Some((i, r.0)) })
+            .collect();
 
+        let missing_responses = !missing_indices.is_empty();
+
+        if missing_responses {
+            debug!(
+                "Missing responses: {missing_responses}, missing protocol IDs: {:?}",
+                missing_indices.iter().map(|(_, pid)| pid).collect::<Vec<_>>()
+            );
+        } else {
+            debug!("All setup_channel responses received");
+        }
         Ok(missing_responses)
     }
 
@@ -978,7 +994,7 @@ where
         );
 
         let output_type = OutputType::SegwitPublicKey {
-            value: Amount::from_sat(utxo.amount),
+            value: utxo.amount.into(),
             script_pubkey,
             public_key: *member_dispute_key,
         };
@@ -1514,7 +1530,7 @@ where
         debug!("Completing step {current_step:?} for flow {}", self.state.internal_id);
         debug!("Step data: {data:?}");
 
-        debug!("Flow Context: {:?}", self.ctx());
+        trace!("Flow Context: {:?}", self.ctx());
         debug!("Global Context: {:?}", self.global_context);
 
         // Process the step
@@ -1526,12 +1542,12 @@ where
                 self.start_step(Steps::ValidateBalances)?;
             }
             Steps::ValidateBalances => {
-                debug!("CommitteeSetupFlow complete ValidateBalances");
+                debug!("CommitteeSetupFlow completing ValidateBalances");
                 self.validate_bitvmx_balance(data)?;
                 self.start_step(Steps::GetMyCommInfo)?;
             }
             Steps::GetMyCommInfo => {
-                debug!("CommitteeSetupFlow complete GetMyCommInfo");
+                debug!("CommitteeSetupFlow completing GetMyCommInfo");
                 self.ctx_mut().my_comm_info = Some(data.into_comms_address()?);
                 self.ctx_mut().comm_info_req_id = None;
                 if self.global_context.my_keys().is_set() {
@@ -1542,42 +1558,42 @@ where
                 }
             }
             Steps::GetMyTakeKey => {
-                debug!("CommitteeSetupFlow complete GetMyTakeKey");
+                debug!("CommitteeSetupFlow completing GetMyTakeKey");
                 Self::close_pub_key_req(&mut self.ctx_mut().my_take_key_req, data)?;
                 self.start_step(Steps::SignMyTakeKey)?;
             }
             Steps::SignMyTakeKey => {
-                debug!("CommitteeSetupFlow complete SignMyTakeKey");
+                debug!("CommitteeSetupFlow completing SignMyTakeKey");
                 Self::close_pub_key_signing_req(&mut self.ctx_mut().my_take_key_req, data)?;
                 self.start_step(Steps::GetMyDisputeKey)?;
             }
             Steps::GetMyDisputeKey => {
-                debug!("CommitteeSetupFlow complete GetMyDisputeKey");
+                debug!("CommitteeSetupFlow completing GetMyDisputeKey");
                 Self::close_pub_key_req(&mut self.ctx_mut().my_dispute_key_req, data)?;
                 self.start_step(Steps::SignMyDisputeKey)?;
             }
             Steps::SignMyDisputeKey => {
-                debug!("CommitteeSetupFlow complete SignMyDisputeKey");
+                debug!("CommitteeSetupFlow completing SignMyDisputeKey");
                 Self::close_pub_key_signing_req(&mut self.ctx_mut().my_dispute_key_req, data)?;
                 self.start_step(Steps::GetMyCommKey)?;
             }
             Steps::GetMyCommKey => {
-                debug!("CommitteeSetupFlow complete GetMyCommKey");
+                debug!("CommitteeSetupFlow completing GetMyCommKey");
                 Self::close_pub_key_req(&mut self.ctx_mut().my_comm_key_req, data)?;
                 self.start_step(Steps::SignMyCommKey)?;
             }
             Steps::SignMyCommKey => {
-                debug!("CommitteeSetupFlow complete SignMyCommKey");
+                debug!("CommitteeSetupFlow completing SignMyCommKey");
                 Self::close_pub_key_signing_req(&mut self.ctx_mut().my_comm_key_req, data)?;
                 self.start_step(Steps::FundMyBitVmxAccount)?;
             }
             Steps::FundMyBitVmxAccount => {
-                debug!("CommitteeSetupFlow complete FundMyBitVmxAccount");
+                debug!("CommitteeSetupFlow completing FundMyBitVmxAccount");
                 Self::close_send_funds_req(&mut self.ctx_mut().send_funds_req, data)?;
                 self.start_step(Steps::ApplyToStream)?;
             }
             Steps::ApplyToStream => {
-                debug!("CommitteeSetupFlow complete ApplyToStream");
+                debug!("CommitteeSetupFlow completing ApplyToStream");
                 let pending_committee = data.into_committee_pending()?;
                 let committee_id: CommitteeId = pending_committee.inner.committeeId.into();
 
@@ -1593,29 +1609,29 @@ where
                 }
             }
             Steps::DepositP2PData => {
-                debug!("CommitteeSetupFlow complete DepositP2PData");
+                debug!("CommitteeSetupFlow completing DepositP2PData");
                 data.into_all_comm_data_ready()?;
                 self.close_communication_data_step()?;
                 self.start_step(Steps::SetupTakeAggregatedKey)?;
             }
             Steps::SetupTakeAggregatedKey => {
-                debug!("CommitteeSetupFlow complete SetupTakeAggregatedKey");
+                debug!("CommitteeSetupFlow completing SetupTakeAggregatedKey");
                 Self::close_agg_key_req(&mut self.ctx_mut().agg_take_key_req, data)?;
                 self.start_step(Steps::SetupDisputeAggregatedKey)?;
             }
             Steps::SetupDisputeAggregatedKey => {
-                debug!("CommitteeSetupFlow complete SetupDisputeAggregatedKey");
+                debug!("CommitteeSetupFlow completing SetupDisputeAggregatedKey");
                 Self::close_agg_key_req(&mut self.ctx_mut().agg_dispute_key_req, data)?;
                 self.start_step(Steps::DepositAggregatedKey)?;
             }
             Steps::DepositAggregatedKey => {
-                debug!("CommitteeSetupFlow complete DepositAggregatedKey");
+                debug!("CommitteeSetupFlow completing DepositAggregatedKey");
                 self.ctx_mut().committee_ready_req = Some(data.into_committee_ready()?);
                 self.validate_committee_ready()?;
                 self.start_step(Steps::SetupPairwiseKeys)?;
             }
             Steps::SetupPairwiseKeys => {
-                debug!("CommitteeSetupFlow complete SetupPairwiseKeys");
+                debug!("CommitteeSetupFlow completing SetupPairwiseKeys");
                 let missing_responses = self.process_pairwise_key_response(data)?;
 
                 if missing_responses {
@@ -1628,7 +1644,7 @@ where
                 debug!("Setup PairwiseKeys completed");
             }
             Steps::SetupDisputeCore => {
-                debug!("CommitteeSetupFlow complete SetupDisputeCore");
+                debug!("CommitteeSetupFlow completing SetupDisputeCore");
                 let setup_core_state = &mut self.ctx_mut().setup_core_req;
                 let missing_responses = Self::close_setup_core_req(setup_core_state, data)?;
                 if missing_responses {
@@ -1639,7 +1655,7 @@ where
                 }
             }
             Steps::RequestDisputeChannelVars => {
-                debug!("CommitteeSetupFlow complete RequestDisputeChannelVars");
+                debug!("CommitteeSetupFlow completing RequestDisputeChannelVars");
                 let (dispute_core_pid, var_name, var_data) = data.into_dispute_core_variable()?;
 
                 let missing_responses =
@@ -1654,7 +1670,7 @@ where
                 }
             }
             Steps::DisputeChannelSetup => {
-                debug!("CommitteeSetupFlow complete DisputeChannelSetup");
+                debug!("CommitteeSetupFlow completing DisputeChannelSetup");
                 let missing_responses = Self::close_setup_channel_req(
                     &mut self.ctx_mut().setup_channel_setup_req,
                     data,
@@ -1669,11 +1685,11 @@ where
                 }
             }
             Steps::Done => {
-                debug!("CommitteeSetupFlow complete Done");
+                debug!("CommitteeSetupFlow completing Done");
                 unreachable!("Done step should not be reached in complete_step");
             }
             Steps::Failed => {
-                debug!("CommitteeSetupFlow complete Failed");
+                debug!("CommitteeSetupFlow completing Failed");
                 unreachable!("Failed step should not be reached in complete_step");
             }
         }
@@ -2079,6 +2095,11 @@ where
         );
 
         let committee_id = committee_data.committee_id.clone();
+        let confirmations = CommitteeConfirmations {
+            pegin: self.config.pegin_confirmations,
+            pegout: self.config.pegout_confirmations,
+            reject_pegin: self.config.reject_pegin_confirmations,
+        };
         let protocol_ids = dispute_core.setup(
             committee_data,
             &p2p_addrs,
@@ -2089,6 +2110,7 @@ where
             my_speedup_utxo,
             *stream_id,
             advance_funds_utxo,
+            confirmations,
         )?;
 
         for pid in protocol_ids {

@@ -21,6 +21,13 @@ pub struct AggregatedKeys {
     pub dispute: PublicKey,
 }
 
+#[derive(Clone, Copy)]
+pub struct CommitteeConfirmations {
+    pub pegin: u32,
+    pub pegout: u32,
+    pub reject_pegin: u32,
+}
+
 pub struct DisputeCoreSetup<BC: BitVmxBrokerClientApi> {
     broker_client: Rc<BC>,
 }
@@ -30,6 +37,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
         Self { broker_client }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn setup(
         &self,
         committee_data: &CommitteeData,
@@ -38,6 +46,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
         my_speedup_funding_utxo: Utxo,
         stream_denomination: u64,
         advance_funds_utxo: PartialUtxo,
+        confirmations: CommitteeConfirmations,
     ) -> Result<Vec<Uuid>> {
         let committee = Committee {
             members: committee_data
@@ -53,6 +62,9 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
             dispute_aggregated_key: aggregated_keys.dispute,
             packet_size: 10,
             stream_denomination,
+            pegin_confirmations: confirmations.pegin,
+            pegout_confirmations: confirmations.pegout,
+            reject_pegin_confirmations: confirmations.reject_pegin,
         };
 
         let committee_id = committee_data.committee_uuid();
@@ -160,6 +172,10 @@ mod tests {
     use crate::flows::committee::common::CommitteeData;
     use crate::types::MemberOfCommittee;
 
+    fn test_confirmations() -> CommitteeConfirmations {
+        CommitteeConfirmations { pegin: 1, pegout: 1, reject_pegin: 1 }
+    }
+
     // Helper to create a test public key
     fn test_public_key(seed: u8) -> PublicKey {
         let mut bytes = [0u8; 33];
@@ -205,7 +221,7 @@ mod tests {
         let wpkh = WPubkeyHash::from_slice(&[to_u8_from_u32(index); 20]).expect("valid wpkh");
         let script = ScriptBuf::new_p2wpkh(&wpkh);
         let output_type = OutputType::SegwitPublicKey {
-            value: amount,
+            value: amount.into(),
             script_pubkey: script,
             public_key: test_public_key(to_u8_from_u32(index)),
         };
@@ -366,6 +382,7 @@ mod tests {
             my_speedup_funding_utxo,
             stream_denomination,
             advance_funds_utxo,
+            test_confirmations(),
         );
 
         assert!(result.is_ok());
@@ -488,6 +505,7 @@ mod tests {
             my_speedup_funding_utxo,
             stream_denomination,
             advance_funds_utxo,
+            test_confirmations(),
         );
 
         assert!(result.is_ok());
@@ -536,6 +554,7 @@ mod tests {
                 my_speedup_funding_utxo.clone(),
                 stream_denomination,
                 advance_funds_utxo.clone(),
+                test_confirmations(),
             )
             .unwrap();
 
@@ -547,6 +566,7 @@ mod tests {
                 my_speedup_funding_utxo,
                 stream_denomination,
                 advance_funds_utxo,
+                test_confirmations(),
             )
             .unwrap();
 
@@ -593,6 +613,7 @@ mod tests {
                 my_speedup_funding_utxo,
                 stream_denomination,
                 advance_funds_utxo,
+                test_confirmations(),
             )
             .unwrap();
 
@@ -660,6 +681,7 @@ mod tests {
             my_speedup_funding_utxo,
             stream_denomination,
             advance_funds_utxo,
+            test_confirmations(),
         );
 
         assert!(result.is_ok());
@@ -737,6 +759,7 @@ mod tests {
             my_speedup_funding_utxo,
             stream_denomination,
             advance_funds_utxo,
+            test_confirmations(),
         );
 
         assert!(result.is_ok());
@@ -781,6 +804,7 @@ mod tests {
             my_speedup_funding_utxo,
             stream_denomination,
             advance_funds_utxo,
+            test_confirmations(),
         );
 
         assert!(result.is_ok());
@@ -846,6 +870,7 @@ mod tests {
             my_speedup_funding_utxo,
             stream_denomination,
             advance_funds_utxo,
+            test_confirmations(),
         );
 
         assert!(result.is_ok());

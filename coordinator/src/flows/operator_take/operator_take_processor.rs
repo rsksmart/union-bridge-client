@@ -3,10 +3,11 @@ use std::rc::Rc;
 
 use anyhow::{Context, Result, anyhow};
 use common::msg_broker::bitvmx_types::{
-    FundsAdvanceSPV, OutgoingBitVMXApiMessages, UnionSPVNotification, UnionTxType, VariableTypes,
+    AdvanceFundsRegistered, FundsAdvanceSPV, OutgoingBitVMXApiMessages, UnionSPVNotification,
+    UnionTxType, VariableTypes,
 };
 use common::runtime_sync::RuntimeSync;
-use common::types::{Hash256, RskBlockAndUncles};
+use common::types::{Hash256, RskBlockAndUncles, TxIdParser};
 use log::{debug, error, info, trace, warn};
 use primitive_types::H256;
 use sha2::{Digest, Sha256};
@@ -391,6 +392,23 @@ where
         })
     }
 
+    fn build_advance_funds_registered(
+        event: &union_contracts::bindings::pegout_manager::PegoutManager::AdvanceFundsRegistered,
+    ) -> Result<AdvanceFundsRegistered> {
+        let committee_id = Uuid::from_u128(event.committeeId);
+        let slot_index = usize::try_from(event.streamInfo.slotId)
+            .context("Failed to convert slotId to usize")?;
+        let txid = TxIdParser::fb_32_to_txid(event.txid);
+        let pegout_id = event.pegoutId.as_slice().to_vec();
+
+        let xonly =
+            bitcoin::secp256k1::XOnlyPublicKey::from_slice(event.operatorTakePubKey.as_slice())
+                .context("Failed to parse operatorTakePubKey as x-only key")?;
+        let operator_pubkey = bitcoin::PublicKey::new(xonly.public_key(bitcoin::key::Parity::Even));
+
+        Ok(AdvanceFundsRegistered { committee_id, slot_index, txid, pegout_id, operator_pubkey })
+    }
+
     fn cleanup_completed_flows(&mut self) {
         let completed: Vec<_> =
             self.flows.iter().filter(|(_, flow)| flow.is_done()).map(|(k, _)| *k).collect();
@@ -411,10 +429,12 @@ where
                 self.create_flow_for_operator_take_triggered(op_take)?;
             }
             RskPegManagerEvents::AdvanceFundsRegistered(e) => {
+                let ev = &e.inner;
+                let data = Self::build_advance_funds_registered(ev)?;
                 self.complete_flow_by_pegout_id(
-                    Hash256::from(e.inner.pegoutId),
+                    Hash256::from(ev.pegoutId),
                     Steps::RegisterAdvanceFunds,
-                    StepData::AdvanceFundsConfirmed,
+                    StepData::AdvanceFundsConfirmed(data),
                     "AdvanceFundsRegistered",
                 )?;
             }

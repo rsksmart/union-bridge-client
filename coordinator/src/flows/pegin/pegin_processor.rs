@@ -110,8 +110,11 @@ where
         );
 
         // Subscribe to BitVMX pegin events
-        Self::subscribe_to_bitvmx_pegin_events(&bitvmx_broker)
-            .expect("Failed to subscribe to BitVMX pegin events");
+        Self::subscribe_to_bitvmx_pegin_events(
+            &bitvmx_broker,
+            config.rsk_pegin_subscription_confirmations,
+        )
+        .expect("Failed to subscribe to BitVMX pegin events");
 
         info!("Successfully subscribed to BitVMX pegin events");
 
@@ -623,8 +626,8 @@ where
         Ok(())
     }
 
-    fn subscribe_to_bitvmx_pegin_events(bitvmx_broker: &BC) -> Result<()> {
-        bitvmx_broker.send(IncomingBitVMXApiMessages::SubscribeToRskPegin())?;
+    fn subscribe_to_bitvmx_pegin_events(bitvmx_broker: &BC, confirmations: u32) -> Result<()> {
+        bitvmx_broker.send(IncomingBitVMXApiMessages::SubscribeToRskPegin(Some(confirmations)))?;
         Ok(())
     }
 

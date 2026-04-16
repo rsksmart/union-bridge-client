@@ -142,6 +142,8 @@ bitvmx_ping_after_silence_secs = 15
 min_tx_confirmations = 1
 # Blocks delay before rechecking transaction status
 blocks_delay_for_tx_check = 20
+# Confirmations threshold sent to BitVMX via SubscribeToRskPegin
+rsk_pegin_subscription_confirmations = 1
 
 [bridge.pegout]
 # Blocks delay before rechecking transaction status
@@ -165,6 +167,12 @@ min_funding_balance = 20002000
 min_rsk_balance = 1000000000500000
 # Path to the DRP program definition YAML file
 drp_program_definition = "resources/hello-world.yaml"
+# BTC confirmations required before accepting a pegin
+pegin_confirmations = 1
+# BTC confirmations required before accepting a pegout
+pegout_confirmations = 1
+# BTC confirmations required before accepting a reject-pegin
+reject_pegin_confirmations = 1
 
 [bridge.native_bridge]
 # Minimum confirmations from native bridge
