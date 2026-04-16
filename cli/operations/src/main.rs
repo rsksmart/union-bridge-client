@@ -36,7 +36,7 @@
 //! # copy displayed bitcoin addresses and fund them in bitcoin-wallet cli
 //! # or use --execute to run the wallet commands automatically:
 //! cargo run -- operator fund --env local --execute
-//! # optionally specify a custom funding amount in satoshis (default: 32002000):
+//! # optionally specify a custom funding amount in satoshis (default: 32100000):
 //! cargo run -- operator fund --env local --execute --fund-amount 65000000
 //! ```
 //!
@@ -81,6 +81,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 use crate::committee::CommitteeRole;
+use crate::constants::DEFAULT_OPERATOR_FUND_AMOUNT;
 use crate::environments::Environment;
 
 #[derive(Debug, Parser, Clone)]
@@ -120,7 +121,7 @@ enum OperatorCommands {
         #[arg(
             long = "fund-amount",
             value_name = "SATOSHIS",
-            default_value_t = 32_002_000u64,
+            default_value_t = DEFAULT_OPERATOR_FUND_AMOUNT,
             value_parser = clap::value_parser!(u64).range(1..)
         )]
         fund_amount: u64,

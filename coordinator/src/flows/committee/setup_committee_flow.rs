@@ -61,7 +61,7 @@ pub(crate) trait SetupCommitteeFlowApi {
 
     fn request_bitvmx_funding_balance(&mut self);
 
-    fn request_bitvmx_comm_info(&self);
+    fn request_bitvmx_comm_info(&mut self);
 
     fn request_bitvmx_take_pub_key(&mut self) -> Result<()>;
 
@@ -124,6 +124,8 @@ struct FlowContext {
     user_input: Option<ApplyToStream>,
     funding_balance_req: Option<(Uuid, Option<u64>)>, // request id, balance
     my_comm_info: Option<CommsAddress>,
+    #[serde(default)]
+    comm_info_req_id: Option<Uuid>,
     my_take_key_req: PubKeyReq,
     my_dispute_key_req: PubKeyReq,
     my_comm_key_req: PubKeyReq,
@@ -263,7 +265,9 @@ impl FlowContext {
         let advance_funds_utxo_val =
             calculate_advance_funds_value(self.get_user_input()?.advance_funds.value);
 
-        let wpkh = public_key.wpubkey_hash().expect("key is compressed");
+        let wpkh = public_key
+            .wpubkey_hash()
+            .context("Failed to get wpubkey_hash from dispute public key")?;
         let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
         let speedup_ot = OutputType::SegwitPublicKey {
             value: Amount::from_sat(speedup_utxo_val),
@@ -546,6 +550,7 @@ where
     /// Returns true if this flow is waiting for a `BitVMX` response with the given request id.
     pub(crate) fn is_waiting_for_bitvmx_request(&self, req_id: &Uuid) -> bool {
         Self::funding_balance_request_matches(self.state.ctx.funding_balance_req.as_ref(), req_id)
+            || Self::request_id_matches(self.state.ctx.comm_info_req_id.as_ref(), req_id)
             || Self::pubkey_request_matches(&self.state.ctx.my_take_key_req, req_id)
             || Self::pubkey_request_matches(&self.state.ctx.my_dispute_key_req, req_id)
             || Self::pubkey_request_matches(&self.state.ctx.my_comm_key_req, req_id)
@@ -600,6 +605,10 @@ where
         } else {
             false
         }
+    }
+
+    fn request_id_matches(stored_req_id: Option<&Uuid>, req_id: &Uuid) -> bool {
+        stored_req_id.is_some_and(|stored_req_id| stored_req_id == req_id)
     }
 
     fn pubkey_request_matches(pubkey_req: &PubKeyReq, req_id: &Uuid) -> bool {
@@ -696,6 +705,18 @@ where
 
         debug!("Funding balance check passed: {balance}");
 
+        Ok(())
+    }
+
+    fn ensure_member_whitelisted(&self) -> Result<()> {
+        let my_address: Address = self.my_address().into();
+        let is_whitelisted = self.rt_sync.run(self.contracts.is_whitelisted())?;
+        if !is_whitelisted {
+            bail!(
+                "Member address {my_address} is not whitelisted in the CommitteeRegistry contract"
+            );
+        }
+        info!("Whitelist check passed for address {my_address}");
         Ok(())
     }
 
@@ -994,7 +1015,7 @@ where
         let public_key = self.ctx().get_my_dispute_key(&self.global_context)?.public_key;
 
         let funding_utxo_val = self.ctx().get_user_input()?.funding_utxo.value;
-        let speedup_utxo_val = self.ctx().get_user_input()?.funding_utxo.value;
+        let speedup_utxo_val = self.ctx().get_user_input()?.speed_up_utxo.value;
         let advance_funds_utxo_val =
             calculate_advance_funds_value(self.ctx().get_user_input()?.advance_funds.value);
 
@@ -1501,6 +1522,7 @@ where
             Steps::Init => {
                 debug!("Init");
                 self.ctx_mut().user_input = Some(data.into_user_input()?);
+                self.ensure_member_whitelisted()?;
                 self.start_step(Steps::ValidateBalances)?;
             }
             Steps::ValidateBalances => {
@@ -1511,6 +1533,7 @@ where
             Steps::GetMyCommInfo => {
                 debug!("CommitteeSetupFlow complete GetMyCommInfo");
                 self.ctx_mut().my_comm_info = Some(data.into_comms_address()?);
+                self.ctx_mut().comm_info_req_id = None;
                 if self.global_context.my_keys().is_set() {
                     debug!("My Keys already set, jumping to FundMyBitVmxAccount step");
                     self.start_step(Steps::FundMyBitVmxAccount)?;
@@ -1664,8 +1687,13 @@ where
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetFundingBalance(req_id));
     }
 
-    fn request_bitvmx_comm_info(&self) {
+    fn request_bitvmx_comm_info(&mut self) {
         let req_id = Uuid::new_v4();
+        self.ctx_mut().comm_info_req_id = Some(req_id);
+        debug!(
+            "Requesting BitVMX comm info for setup committee flow {} with req_id {}",
+            self.state.internal_id, req_id
+        );
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo(req_id));
     }
 
@@ -1706,15 +1734,6 @@ where
     }
 
     fn apply_to_stream(&self) -> Result<()> {
-        let my_address: Address = self.my_address().into();
-        let is_whitelisted = self.rt_sync.run(self.contracts.is_whitelisted())?;
-        if !is_whitelisted {
-            bail!(
-                "Member address {my_address} is not whitelisted in the CommitteeRegistry contract"
-            );
-        }
-        info!("Whitelist check passed for address {my_address}");
-
         let utxo = self.build_funding_utxo()?;
 
         let stream_id = self.ctx().get_stream_id()?;
@@ -2629,6 +2648,71 @@ mod tests {
     }
 
     #[test]
+    fn test_fund_protocol_uses_speedup_value_for_first_send_funds_output() {
+        let dispute_key = test_signed_pubkey(42, 27);
+        let expected_pubkey = dispute_key.public_key;
+        let expected_speedup = 10_000_000;
+        let expected_funding = 30_000_000;
+        let expected_advance = calculate_advance_funds_value(2_000_000);
+
+        let mut broker = MockBitVmxBroker::new();
+        broker
+            .expect_send()
+            .with(function(move |msg: &IncomingBitVMXApiMessages| {
+                if let IncomingBitVMXApiMessages::SendFunds(
+                    _,
+                    Destination::Batch(destinations),
+                    Some(fee_rate),
+                ) = msg
+                {
+                    if *fee_rate != REGTEST_FEE_RATE {
+                        return false;
+                    }
+
+                    // The funding outputs must keep the contract order used by the flow.
+                    match destinations.as_slice() {
+                        [
+                            Destination::P2WPKH(pubkey0, amount0),
+                            Destination::P2WPKH(pubkey1, amount1),
+                            Destination::P2WPKH(pubkey2, amount2),
+                        ] => {
+                            *pubkey0 == expected_pubkey
+                                && *pubkey1 == expected_pubkey
+                                && *pubkey2 == expected_pubkey
+                                && *amount0 == expected_speedup
+                                && *amount1 == expected_funding
+                                && *amount2 == expected_advance
+                        }
+                        _ => false,
+                    }
+                } else {
+                    false
+                }
+            }))
+            .times(1)
+            .returning(|_| Ok(true));
+
+        let global_context = GlobalContext::new();
+        global_context.my_keys().set_dispute_key(dispute_key);
+
+        let mut flow = SetupCommitteeFlow::new(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            RuntimeSync::new().expect("runtime"),
+            Rc::new(broker),
+            global_context,
+            Uuid::new_v4(),
+            Network::Regtest,
+            Rc::new(MockCoordinatorStoreApi::new()),
+            CommitteeConfig::default(),
+        );
+        flow.state.ctx.user_input = Some(test_apply_to_stream(55));
+
+        flow.fund_protocol().expect("fund protocol");
+
+        assert!(matches!(flow.state.ctx.send_funds_req, Some((_req_id, None))));
+    }
+
+    #[test]
     fn test_pubkey_and_core_request_matchers() {
         let pub_req_id = Uuid::new_v4();
         let sign_req_id = Uuid::new_v4();
@@ -2782,6 +2866,8 @@ mod tests {
         let mut flow = create_test_flow();
         flow.state.ctx.user_input = Some(test_apply_to_stream(55));
         flow.state.ctx.funding_balance_req = Some((Uuid::new_v4(), None));
+        let comm_info_req_id = Uuid::new_v4();
+        flow.state.ctx.comm_info_req_id = Some(comm_info_req_id);
 
         let target_stream = StreamId::from(55);
         assert!(flow.is_for_stream(&target_stream));
@@ -2803,6 +2889,8 @@ mod tests {
         }];
         assert!(flow.is_waiting_for_dispute_core_variable(&req_id));
         assert!(!flow.is_waiting_for_dispute_core_variable(&Uuid::new_v4()));
+
+        assert!(flow.is_waiting_for_bitvmx_request(&comm_info_req_id));
 
         let unknown_req = Uuid::new_v4();
         assert!(!flow.is_waiting_for_bitvmx_request(&unknown_req));

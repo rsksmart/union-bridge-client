@@ -7,6 +7,8 @@ bitcoin:
 key_manager:
   network: regtest
   key_derivation_path: m/101/1/0/0/
+  mnemonic_sentence: <to_patch_in_host>
+  mnemonic_passphrase: <to_patch_in_host>
 
 key_storage:
   password: <to_patch_in_host>

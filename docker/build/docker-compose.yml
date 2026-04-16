@@ -3,7 +3,7 @@
 #####################################################################################################################################
 
 services:
-  # Operator-specific broker PEM bind mounts and runtime env overrides belong in
+  # Operator-specific broker PEM bind mounts, keystore overrides, and runtime env overrides belong in
   # docker/operator/docker-compose.yml. Keep this base compose build-safe.
   block-indexer:
     platform: ${PLATFORM}
@@ -13,8 +13,6 @@ services:
       dockerfile: docker/build/Dockerfile
       args:
         - CRATE=block-indexer
-      ssh:
-        - default=${SSH_AUTH_SOCK}
     volumes:
       - ${CONFIG_DIR:-../../config}:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
@@ -28,7 +26,7 @@ services:
       retries: 3
       start_period: 10s
       test: ["CMD", "pgrep", "-f", "block-indexer"] # TODO improve with health endpoint
-    command: ["sh", "-c", "/app/block-indexer --config $CONFIG"]
+    command: ["sh", "-c", "/app/block-indexer --config $$CONFIG"]
 
   log-indexer:
     platform: ${PLATFORM}
@@ -38,8 +36,6 @@ services:
       dockerfile: docker/build/Dockerfile
       args:
         - CRATE=log-indexer
-      ssh:
-        - default=${SSH_AUTH_SOCK}
     volumes:
       - ${CONFIG_DIR:-../../config}:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
@@ -53,7 +49,7 @@ services:
       retries: 3
       start_period: 10s
       test: ["CMD", "pgrep", "-f", "log-indexer"] # TODO improve with health endpoint
-    command: ["sh", "-c", "/app/log-indexer --config $CONFIG"]
+    command: ["sh", "-c", "/app/log-indexer --config $$CONFIG"]
 
   coordinator:
     platform: ${PLATFORM}
@@ -63,12 +59,10 @@ services:
       dockerfile: docker/build/Dockerfile
       args:
         - CRATE=coordinator
-      ssh:
-        - default=${SSH_AUTH_SOCK}
     volumes:
       - ${CONFIG_DIR:-../../config}:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
-      - keystore:/keystore
+      - ${KEYSTORE_DIR}:/keystore-src:ro
       - ${RESOURCES_DIR:-../../resources}:/app/resources:ro
       - db-coordinator:/app/db/coordinator
     restart: no
@@ -82,8 +76,8 @@ services:
       retries: 3
       start_period: 10s
       test: ["CMD", "pgrep", "-f", "coordinator"]
-    entrypoint: ["sh", "/app/key-setup.sh"]
-    command: ["sh", "-c", "/app/coordinator --config $CONFIG"]
+    entrypoint: ["sh", "/app/keystore-entrypoint.sh"]
+    command: ["sh", "-c", "exec /app/coordinator --config $$CONFIG"]
     depends_on:
       block-indexer:
         condition: service_healthy
@@ -100,12 +94,10 @@ services:
       dockerfile: docker/build/Dockerfile
       args:
         - CRATE=user-api
-      ssh:
-        - default=${SSH_AUTH_SOCK}
     volumes:
       - ${CONFIG_DIR:-../../config}:/app/config/:ro
       - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
-      - keystore:/keystore
+      - ${KEYSTORE_DIR}:/keystore-src:ro
     environment:
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
       - CONFIG=${CONFIG:-dummy-config-name}
@@ -116,11 +108,10 @@ services:
       retries: 3
       start_period: 10s
       test: ["CMD", "pgrep", "-f", "user-api"]
-    entrypoint: ["sh", "/app/key-setup.sh"]
-    command: ["sh", "-c", "/app/user-api --config $CONFIG"]
+    entrypoint: ["sh", "/app/keystore-entrypoint.sh"]
+    command: ["sh", "-c", "exec /app/user-api --config $$CONFIG"]
 
 volumes:
-  keystore:
   db-blocks:
   db-logs:
   db-coordinator:

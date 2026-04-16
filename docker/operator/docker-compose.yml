@@ -92,7 +92,6 @@ networks:
     driver: bridge
 
 volumes:
-  keystore:
   db-blocks:
   db-logs:
   db-coordinator:

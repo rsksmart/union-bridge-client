@@ -28,6 +28,7 @@ docs/node_modules/
 .vscode/*
 .idea
 .cursor
+.claude
 .DS_Store
 .intent
 

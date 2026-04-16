@@ -22,7 +22,6 @@ use crate::contracts::committee_registry::{
 use crate::contracts::interactions::get_btc_transaction_confirmations::GetBtcTransactionConfirmationsCall;
 use crate::contracts::member_registry::{GetMemberPublicKeysCall, MemberRegistryContract};
 use crate::contracts::native_bridge::NativeBridgeContract;
-use crate::contracts::peg_manager::{FakePegManagerContract, NotifyCheckForkCompleteInvoke};
 use crate::contracts::pegin_manager::{
     AcceptPeginInvoke, GetTemporaryPeginAddressCall, PeginManagerContract, RequestPeginInvoke,
 };
@@ -57,7 +56,6 @@ use crate::types::{
 /// Must match the contract name in the config file
 const PEGIN_MANAGER_CONTRACT_NAME: &str = "PeginManager";
 const PEGOUT_MANAGER_CONTRACT_NAME: &str = "PegoutManager";
-const FAKE_PEG_MANAGER_CONTRACT_NAME: &str = "FakePegManager";
 const SIGNATURE_MANAGER_CONTRACT_NAME: &str = "SignatureManager";
 const COMMITTEE_REGISTRY_CONTRACT_NAME: &str = "CommitteeRegistry";
 const MEMBER_REGISTRY_CONTRACT_NAME: &str = "MemberRegistry";
@@ -126,11 +124,6 @@ pub trait RskContractsGatewayApi {
         &self,
         input: AddOperatorTakeTxHashInput,
     ) -> impl Future<Output = Result<AddOperatorTakeTxHashOutput, DomainErrors>>;
-
-    fn notify_check_fork_completion(
-        &self,
-        input: &str,
-    ) -> impl Future<Output = Result<(), DomainErrors>>;
 
     fn request_pegout(
         &self,
@@ -226,7 +219,6 @@ pub struct RskContractsGateway<P: Provider + Clone> {
     add_member_nonce_invoke: AddMemberNonceInvoke<SignatureManagerContract<P>>,
     add_member_signature_invoke: AddMemberSignatureInvoke<SignatureManagerContract<P>>,
     add_operator_take_tx_hash_invoke: AddOperatorTakeTxHashInvoke<SignatureManagerContract<P>>,
-    notify_check_fork_completion_invoke: NotifyCheckForkCompleteInvoke<FakePegManagerContract<P>>,
     get_member_public_keys_call: GetMemberPublicKeysCall<MemberRegistryContract<P>>,
     get_member_communication_data_call:
         GetMemberCommunicationDataCall<CommitteeRegistryContract<P>>,
@@ -267,8 +259,6 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             Self::load_contract(PEGIN_MANAGER_CONTRACT_NAME, &managed_contracts)?;
         let pegout_contract_address =
             Self::load_contract(PEGOUT_MANAGER_CONTRACT_NAME, &managed_contracts)?;
-        let fake_contract_address =
-            Self::load_contract(FAKE_PEG_MANAGER_CONTRACT_NAME, &managed_contracts)?;
         let signature_manager_address =
             Self::load_contract(SIGNATURE_MANAGER_CONTRACT_NAME, &managed_contracts)?;
         let committee_registry_address =
@@ -286,7 +276,6 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
         let addresses_to_validate = vec![
             (PEGIN_MANAGER_CONTRACT_NAME, pegin_contract_address),
             (PEGOUT_MANAGER_CONTRACT_NAME, pegout_contract_address),
-            // intentionally not validating fake peg manager contract
             (SIGNATURE_MANAGER_CONTRACT_NAME, signature_manager_address),
             (COMMITTEE_REGISTRY_CONTRACT_NAME, committee_registry_address),
             (MEMBER_REGISTRY_CONTRACT_NAME, member_registry_address),
@@ -311,8 +300,6 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             PeginManagerContract::new(provider.clone(), pegin_contract_address.into());
         let pegout_manager_contract =
             PegoutManagerContract::new(provider.clone(), pegout_contract_address.into());
-        let fake_peg_manager_contract =
-            FakePegManagerContract::new(provider.clone(), fake_contract_address.into());
         let signature_manager_contract =
             SignatureManagerContract::new(provider.clone(), signature_manager_address.into());
         let committee_registry_contract =
@@ -343,10 +330,6 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
             ),
             request_pegout_invoke: TryPegoutInvoke::new(
                 pegout_manager_contract.clone(),
-                tx_config.gas_bumps_t1,
-            ),
-            notify_check_fork_completion_invoke: NotifyCheckForkCompleteInvoke::new(
-                fake_peg_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
             register_pegout_invoke: RegisterPegoutInvoke::new(
@@ -519,15 +502,6 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     ) -> Result<AddMemberNonceOutput, DomainErrors> {
         self.add_operator_take_tx_hash_invoke.run(input).await.map_err(|err| {
             error!("Error on add_operator_take_tx_hash_invoke: {err}");
-            err
-        })
-    }
-
-    async fn notify_check_fork_completion(&self, input: &str) -> Result<(), DomainErrors> {
-        info!("Interacting with FakePegManager#notifyCheckForkCompletion",);
-
-        self.notify_check_fork_completion_invoke.run(input).await.map_err(|err| {
-            error!("Error on notify_check_fork_completion_invoke: {err}");
             err
         })
     }

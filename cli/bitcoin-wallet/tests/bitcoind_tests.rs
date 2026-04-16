@@ -40,12 +40,8 @@ fn test_start_stop_bitcoind_with_flags() -> Result<(), Error> {
         fallback_fee: 0.0002,
     };
 
-    let bitcoind = Bitcoind::new_with_flags(
-        "bitcoin-regtest",
-        "ruimarinho/bitcoin-core",
-        rpc_config,
-        flags,
-    );
+    let bitcoind =
+        Bitcoind::new_with_flags("bitcoin-regtest", "ruimarinho/bitcoin-core", rpc_config, flags);
 
     bitcoind.start()?;
     bitcoind.stop()?;

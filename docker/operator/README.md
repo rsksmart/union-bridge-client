@@ -1,141 +1,142 @@
 # Operator Docker Runtime
 
-This document covers the Docker runtime driven from this repo.
+This doc owns the local operator Docker runtime driven from this repository.
+
+For the full local setup order, shared env semantics, and the recommended contributor path, start with the
+[Contributing Guide](../../CONTRIBUTING.md). This doc only covers operator-specific runtime detail.
 
 ## Related Docs
 
-- [../README.md](../README.md): Docker flow selection
-- [../build/README.md](../build/README.md): image build and registry operations
-- [../local-infra/README.md](../local-infra/README.md): local blockchains + BitVMX
-- [../../cli/README.md](../../cli/README.md): local and remote operations CLI
-
-In the examples below, `<project_root>` means the root of this repository checkout.
+- [Docker Guide](../README.md): Docker flow routing
+- [Contributing Guide](../../CONTRIBUTING.md): canonical local workflow
+- [Local Infra Guide](../local-infra/README.md): local blockchains + BitVMX
+- [CLI Tools Guide](../../cli/README.md): CLI operations
 
 ## Scope
 
 This repo owns:
 
 - local multi-operator Docker runtime
-- env-file driven operator startup with the compose override derived from operator count
+- env-file driven operator startup
 - generated runtime artifacts under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/`
-- local `start-operators.sh` usage
+- `start-operators.sh` usage
 - local funding, logs, and troubleshooting
 
 ## Prerequisites
 
-Before starting operators, export the values consumed by local setup:
-
 ```bash
+# Shared env used by local setup
 export BITCOIND_URL=http://user:password@localhost:18443
 export KEY_STORE_PASSWORD=<your-password>
 export USER_BITCOIN_WIF=<your-user-wif>
-```
 
-`BITCOIND_URL` is patched into the generated BitVMX operator YAMLs.
-`KEY_STORE_PASSWORD` and `USER_BITCOIN_WIF` are stored in each generated
-`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-service.env`.
-
-## 1. Prepare Local Operator Artifacts
-
-Bootstrap the local runtime artifacts once on that machine:
-
-```bash
-cd <project_root>
+# Prepare staged operator payloads from the repository root
 ./cli-setup-operators.sh --ops 4
 ```
 
-This creates or refreshes:
+The generated files include:
 
-- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/<service>.pem`
-- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/<service>.pubkey_hash`
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/broker/<service>.pem`
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/broker/<service>.pubkey_hash`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/...`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-compose.env`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-service.env`
-- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/keystore/{member,user}`
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/keystore/{member,user}`
 
-The setup script still patches the generated local BitVMX YAMLs with the current `BITCOIND_URL`, key-store password,
-and the required broker pubkey hashes. Those placeholders exist in the tracked local BitVMX templates and are required
-for the local workflow to work.
+`docker-compose.env` includes `KEYSTORE_DIR=${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/keystore`.
+`start-operators.sh` loads that file automatically, so local operator runs do not need you to export `KEYSTORE_DIR`
+by hand.
 
-## 2. Start Local Blockchains and BitVMX
+The setup flow also patches the generated local BitVMX YAMLs with the current `BITCOIND_URL`, the keystore password,
+and the required broker pubkey hashes. `KEY_STORE_PASSWORD` and `USER_BITCOIN_WIF` are written into each operator's
+`docker-service.env`.
 
-Use the local infra helpers:
+The coordinator and user-api containers bind-mount
+`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/keystore/` as `/keystore` and reuse the existing host
+files. The same keystores serve local cargo mode. Containers do not generate replacement keys; `cli-setup-operators.sh`
+creates or reuses them ahead of time via the `key-manager` crate.
+
+## Local Startup
+
+Use this mode when blockchains come from `docker/local-infra`, but the Union Bridge services and BitVMX run from the
+operator Docker runtime in this directory.
 
 ```bash
-cd <project_root>
-./cli-infra.sh --start --fresh
-```
+# 1. Start only the blockchains
+./cli-infra.sh --start-blockchains --fresh
 
-Or run the lower-level scripts directly:
-
-```bash
-cd docker/local-infra
-./start-blockchains.sh --fresh up -d
-cd ../..
+# 2. Prepare operator runtime artifacts
 ./cli-setup-operators.sh --ops 4
-cd docker/local-infra
-./start-bitvmx.sh --fresh up -d
+
+# 3. Start the operator Docker runtime from docker/operator/
+bash start-operators.sh --fresh up -d
 ```
 
-## 3. Start or Stop Operators
+Notes:
 
-Use the operator wrapper:
+- This sequence starts only the blockchains from `docker/local-infra`.
+- `start-operators.sh` includes the `bitvmx-client` service in the operator compose stack.
+- `bash start-operators.sh up -d` reuses the current operator containers and volumes.
+
+For broader workflow context, go back to the [Contributing Guide](../../CONTRIBUTING.md) or the
+[Local Infra Guide](../local-infra/README.md).
+
+## `start-operators.sh`
+
+Run this from `docker/operator/`:
 
 ```bash
-cd docker/operator
-
-# Start 4 operators
 bash start-operators.sh up -d
-
-# Start only the prepared operator under ~/.union_bridge/op_3
 bash start-operators.sh --op 3 up -d
-
-# Start a different count
 bash start-operators.sh --ops 6 up -d
-
-# Clean and start again
 bash start-operators.sh --fresh up -d
-
-# Start a single operator using an external deploy env file
 bash start-operators.sh --env-file /path/to/docker-deploy.env up -d
 
-# Logs / status / stop
 bash start-operators.sh logs -f
 bash start-operators.sh ps
 bash start-operators.sh down
 ```
 
-The compose shape is derived from the effective operator count:
+`--fresh` removes Docker volumes and databases for the operator stack but does not rotate Rootstock keys, because the
+keystores come from the host `op_N/union-client/keystore/` directory prepared by `cli-setup-operators.sh`.
 
-- `--op <ID>`: `docker-compose.one.yml`
-- `NUM_OPERATORS=1`: `docker-compose.one.yml`
-- `NUM_OPERATORS=2-10`: `docker-compose.all.yml`
+Compose selection is derived from the effective operator count:
+
+- `--op <ID>` -> `docker-compose.one.yml`
+- `NUM_OPERATORS=1` -> `docker-compose.one.yml`
+- `NUM_OPERATORS=2-10` -> `docker-compose.all.yml`
 
 ## Environment Files
 
-The Docker runtime uses:
+The Docker operator runtime uses:
 
-- tracked static environment file: [`docker/operator/docker-deploy.env`](docker-deploy.env)
-- optional external environment file passed with `--env-file`
+- tracked static environment file: [`docker-deploy.env`](docker-deploy.env)
+- optional external env file passed with `--env-file`
 - generated per-operator files:
-  `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-compose.env`
-  `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-service.env`
+  - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-compose.env`
+  - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-service.env`
 
-`docker-deploy.env` can also override shared deployment paths such as `CONFIG_DIR` and
-`RESOURCES_DIR`. When unset, Docker falls back to the public repo copies under `../../config`
-and `../../resources`.
+`docker-deploy.env` can override shared deployment paths such as `CONFIG_DIR` and `RESOURCES_DIR`. When unset, Docker
+falls back to the tracked repo copies under `../../config` and `../../resources`.
 
-`--op <ID>` selects which staged operator payload under
-`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_<ID>/` should be used. This is the
-intended path for one-operator-per-host deployments.
+`--op <ID>` selects the staged payload under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_<ID>/` and is the intended
+entry point for one-operator-per-host deployments.
 
-`docker-compose.env` and `docker-service.env` are consumed only by Docker operator runs.
-Local cargo mode (`./cli-run.sh`) does not read those files.
+`docker-compose.env` and `docker-service.env` are Docker operator runtime artifacts only. They are not read by the
+local cargo client launched with `./cli-run.sh`. The generated env files point Docker at the host keystore directory
+under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/keystore/`. `start-operators.sh` expects those
+keystore files to already exist and fails fast if they are missing. If you bypass `start-operators.sh` and run
+`docker compose` manually, export `KEYSTORE_DIR` yourself first.
+
+## Operator Count Boundary
+
+`start-operators.sh` supports `1-10` operators, but the documented local infra BitVMX flow in this repository still
+describes 4 local BitVMX instances. Treat `--ops 5-10` as an operator-runtime surface, not as proof that the full
+all-in-one local infra flow is documented beyond 4.
 
 ## BitVMX Template Checks
 
-The tracked upstream BitVMX compose file lives in [`../bitvmx-client/`](../bitvmx-client).
-If you need to compare it with upstream:
+The tracked BitVMX compose template lives in [`../bitvmx-client/`](../bitvmx-client). To compare it with upstream:
 
 ```bash
 cd ../bitvmx-client
@@ -145,21 +146,21 @@ cd ../bitvmx-client
 
 ## Troubleshooting
 
-### Missing operator env file
+### Missing Operator Env File
 
-If `start-operators.sh` reports a missing `docker-compose.env` or `docker-service.env`, prepare the operator artifacts under
-`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/` and then rerun. For local bootstrap:
+If `start-operators.sh` reports a missing `docker-compose.env` or `docker-service.env`, rerun:
 
 ```bash
 ./cli-setup-operators.sh --ops 4
 ```
 
-### Missing BitVMX config
+### Missing BitVMX Config
 
-If `.union_bridge/op_N/bitvmx/` is missing or stale, delete the operator directory under
-`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/` and rerun `cli-setup-operators.sh`.
+If `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/` is missing or stale, delete the affected operator
+directory and rerun `./cli-setup-operators.sh`.
 
-### Compose variants
+### Compose Variants
 
-- [`docker-compose.all.yml`](docker-compose.all.yml): local multi-operator flow with the shared BitVMX network
-- [`docker-compose.one.yml`](docker-compose.one.yml): single-operator-per-host flow with host-network BitVMX; expects single-operator, host-network-ready runtime artifacts
+- [`docker-compose.all.yml`](docker-compose.all.yml): shared multi-operator flow
+- [`docker-compose.one.yml`](docker-compose.one.yml): single-operator-per-host flow with host-network-ready runtime
+  artifacts

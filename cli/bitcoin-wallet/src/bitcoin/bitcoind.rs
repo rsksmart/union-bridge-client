@@ -34,13 +34,7 @@ impl RpcConfig {
         password: String,
         wallet: String,
     ) -> Self {
-        Self {
-            network,
-            url,
-            username,
-            password,
-            wallet,
-        }
+        Self { network, url, username, password, wallet }
     }
 }
 
@@ -134,10 +128,7 @@ impl Bitcoind {
     pub fn rpc_client(&self) -> bitcoincore_rpc::Result<Client> {
         Client::new(
             &self.rpc_config.url,
-            Auth::UserPass(
-                self.rpc_config.username.clone(),
-                self.rpc_config.password.clone(),
-            ),
+            Auth::UserPass(self.rpc_config.username.clone(), self.rpc_config.password.clone()),
         )
     }
 
@@ -145,10 +136,7 @@ impl Bitcoind {
         let wallet_url = format!("{}/wallet/{}", self.rpc_config.url, self.rpc_config.wallet);
         Client::new(
             &wallet_url,
-            Auth::UserPass(
-                self.rpc_config.username.clone(),
-                self.rpc_config.password.clone(),
-            ),
+            Auth::UserPass(self.rpc_config.username.clone(), self.rpc_config.password.clone()),
         )
     }
 
@@ -162,10 +150,7 @@ impl Bitcoind {
             self.docker
                 .remove_container(
                     &self.container_name,
-                    Some(RemoveContainerOptions {
-                        force: true,
-                        ..Default::default()
-                    }),
+                    Some(RemoveContainerOptions { force: true, ..Default::default() }),
                 )
                 .await?;
             for _ in 0..10 {
@@ -266,9 +251,7 @@ impl Bitcoind {
         let ContainerCreateResponse { id, .. } = self
             .docker
             .create_container::<&str, String>(
-                Some(CreateContainerOptions {
-                    name: &self.container_name,
-                }),
+                Some(CreateContainerOptions { name: &self.container_name }),
                 config,
             )
             .await?;

@@ -2,6 +2,11 @@
 pub const DEFAULT_NUM_OPERATORS: u8 = 4;
 pub const MAX_OPERATORS: u8 = 10;
 
+// Committee setup needs 32,000,000 sat of BitVMX outputs on regtest.
+// Keep extra headroom for the SendFunds fee so setup does not fail on a
+// marginally larger spend with "out of funds".
+pub const DEFAULT_OPERATOR_FUND_AMOUNT: u64 = 32_100_000;
+
 pub fn operator_ids() -> Vec<u8> {
     let count = std::env::var("NUM_OPERATORS")
         .ok()

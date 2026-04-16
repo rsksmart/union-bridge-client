@@ -8,7 +8,6 @@ use serde::Deserialize;
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 const PEGIN_MANAGER_CONTRACT_NAME: &str = "PeginManager";
 const PEGOUT_MANAGER_CONTRACT_NAME: &str = "PegoutManager";
-const FAKE_PEG_MANAGER_CONTRACT_NAME: &str = "FakePegManager";
 const SIGNATURE_CONTRACT_NAME: &str = "SignatureManager";
 const COMMITTEE_REGISTRY_CONTRACT_NAME: &str = "CommitteeRegistry";
 const MEMBER_REGISTRY_CONTRACT_NAME: &str = "MemberRegistry";
@@ -25,8 +24,6 @@ pub struct Config {
     /// Bridge flow configuration with sensible defaults
     #[serde(default)]
     pub bridge: BridgeConfig,
-    #[serde(skip)]
-    subscribe_fake_peg_manager: bool,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -38,13 +35,6 @@ pub struct CoordinatorConfig {
     pub bitvmx: BitVmxBrokerConfig,
     pub broker: BrokerClientConfig,
     pub storage_path: String,
-    pub advance_funds: CoordinatorAdvanceFundsConfig,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct CoordinatorAdvanceFundsConfig {
-    pub check_fork_guest_elf_path: String,
-    pub max_zkp_status_retries: u32,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -243,10 +233,7 @@ impl Config {
     /// # Errors
     /// Returns an error if configuration loading fails.
     pub fn load(config_name: Option<&str>) -> Result<Self, ConfigError> {
-        let mut config = CommonConfig::load_config::<Self>(config_name.map(str::to_string))?;
-        config.subscribe_fake_peg_manager =
-            Self::should_subscribe_fake_peg_manager(&config.environment);
-        Ok(config)
+        CommonConfig::load_config::<Self>(config_name.map(str::to_string))
     }
 
     /// # Panics
@@ -255,7 +242,7 @@ impl Config {
     pub fn get_contract_addresses(&self) -> Vec<Address> {
         self.contracts
             .iter()
-            .filter(|contract| self.get_contracts_to_subscribe_to(contract))
+            .filter(|contract| Config::get_contracts_to_subscribe_to(contract))
             .map(|contract| contract.address.clone())
             .map(|address| {
                 Address::try_from(address.as_str()).expect("Invalid contract address on config")
@@ -263,18 +250,13 @@ impl Config {
             .collect::<Vec<Address>>()
     }
 
-    fn get_contracts_to_subscribe_to(&self, contract: &ContractConfig) -> bool {
+    fn get_contracts_to_subscribe_to(contract: &ContractConfig) -> bool {
         contract.name == PEGIN_MANAGER_CONTRACT_NAME
             || contract.name == PEGOUT_MANAGER_CONTRACT_NAME
-            || (self.subscribe_fake_peg_manager && contract.name == FAKE_PEG_MANAGER_CONTRACT_NAME)
             || contract.name == SIGNATURE_CONTRACT_NAME
             || contract.name == COMMITTEE_REGISTRY_CONTRACT_NAME
             || contract.name == MEMBER_REGISTRY_CONTRACT_NAME
             || contract.name == STREAM_MANAGER_CONTRACT_NAME
-    }
-
-    fn should_subscribe_fake_peg_manager(runtime_environment: &str) -> bool {
-        runtime_environment.eq_ignore_ascii_case("regtest")
     }
 }
 
@@ -332,18 +314,13 @@ mod tests {
                 .coordinator
                 .broker
                 .key_path
-                .ends_with("/.union_bridge/op_1/union-client/coordinator.pem")
+                .ends_with("/.union_bridge/op_1/union-client/broker/coordinator.pem")
         );
         assert!(!config.coordinator.storage_path.contains("{BASE_STORAGE_PATH}"));
-        assert!(config.coordinator.storage_path.ends_with("/.union_bridge/op_1/database"));
-        assert_eq!(
-            "/app/config/check-fork-guest.bin",
-            config.coordinator.advance_funds.check_fork_guest_elf_path
-        );
+        assert!(config.coordinator.storage_path.ends_with("/.union_bridge/op_1/local_database"));
         assert_eq!("resources/hello-world.yaml", config.bridge.committee.drp_program_definition);
-        assert_eq!(99_999_999, config.coordinator.advance_funds.max_zkp_status_retries);
         assert_eq!("regtest", config.bitcoin_network);
-        assert_eq!(11, config.contracts.len());
+        assert_eq!(10, config.contracts.len());
     }
 
     #[test]
@@ -397,31 +374,15 @@ mod tests {
     }
 
     #[test]
-    fn test_get_contract_addresses_excludes_fake_peg_manager_outside_regtest() {
+    fn test_get_contract_addresses_returns_runtime_subscriptions() {
         let config = Config::load(None).expect("Failed to load base config");
         let contract_addresses = config.get_contract_addresses();
 
         assert_eq!(6, contract_addresses.len());
-        assert!(!contract_addresses.iter().any(|address| {
-            *address
-                == Address::try_from("0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f")
-                    .expect("valid fake peg manager address")
-        }));
-    }
-
-    #[test]
-    fn test_get_contract_addresses_includes_fake_peg_manager_on_regtest() {
-        let mut config = Config::load(None).expect("Failed to load base config");
-        config.environment = "regtest".to_string();
-        config.subscribe_fake_peg_manager =
-            Config::should_subscribe_fake_peg_manager(&config.environment);
-        let contract_addresses = config.get_contract_addresses();
-
-        assert_eq!(7, contract_addresses.len());
         assert!(contract_addresses.iter().any(|address| {
             *address
-                == Address::try_from("0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f")
-                    .expect("valid fake peg manager address")
+                == Address::try_from("0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE")
+                    .expect("valid pegin manager address")
         }));
     }
 }

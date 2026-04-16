@@ -17,18 +17,28 @@ NEW_USER_BITCOIN_WIF="${USER_BITCOIN_WIF:-}"
 USED_EXPORTED_USER_BITCOIN_WIF=false
 NEW_KEY_STORE_PASSWORD="${KEY_STORE_PASSWORD:-}"
 USED_EXPORTED_KEY_STORE_PASSWORD=false
+NEW_BITVMX_MNEMONIC_SENTENCE="${BITVMX_MNEMONIC_SENTENCE:-}"
+USED_EXPORTED_BITVMX_MNEMONIC_SENTENCE=false
+USED_EXPORTED_BITVMX_MNEMONIC_PASSPHRASE=false
+HAS_EXPORTED_BITVMX_MNEMONIC_PASSPHRASE=false
+if [[ "${BITVMX_MNEMONIC_PASSPHRASE+x}" == x ]]; then
+  HAS_EXPORTED_BITVMX_MNEMONIC_PASSPHRASE=true
+fi
 BROKER_SERVICES=("block-indexer" "log-indexer" "user-api" "coordinator")
 RESOLVED_USER_BITCOIN_WIF=""
 RESOLVED_BITVMX_BROKER_PUBKEY_HASH=""
 RESOLVED_KEY_STORE_PASSWORD=""
+RESOLVED_BITVMX_MNEMONIC_SENTENCE=""
+RESOLVED_BITVMX_MNEMONIC_PASSPHRASE=""
 
 print_help() {
   echo "Usage: $0 [--ops <N>]"
   echo ""
   echo "Creates or reuses host-side local operator artifacts:"
-  echo "  - service identities under ${BASE_STORAGE_PATH}/.union_bridge/op_N/union-client/<service>.*"
+  echo "  - service identities under ${BASE_STORAGE_PATH}/.union_bridge/op_N/union-client/broker/<service>.*"
   echo "  - generated operator docker-compose.env/docker-service.env files under ${BASE_STORAGE_PATH}/.union_bridge/op_N/"
-  echo "  - local cargo-mode keystores under ${BASE_STORAGE_PATH}/.union_bridge/op_N/keystore/{member,user}"
+  echo "  - host-side Rootstock keystores under ${BASE_STORAGE_PATH}/.union_bridge/op_N/union-client/keystore/{member,user}"
+  echo "    reused by local cargo mode and docker/operator"
   echo "  Existing operator env files are refreshed in place."
   echo ""
   echo "Options:"
@@ -48,6 +58,16 @@ ensure_dependencies() {
   fi
   if ! command -v cargo >/dev/null 2>&1; then
     echo "Error: cargo is required to create local keystores." >&2
+    exit 1
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "Error: python3 is required to generate BitVMX mnemonics." >&2
+    echo "Install python3 plus the 'mnemonic' package (for example: pip install mnemonic or pip3 install mnemonic)." >&2
+    exit 1
+  fi
+  if ! python3 -c "import mnemonic" >/dev/null 2>&1; then
+    echo "Error: python3 module 'mnemonic' is required to generate BitVMX mnemonics." >&2
+    echo "Install it with 'pip install mnemonic' or 'pip3 install mnemonic' and rerun cli-setup-operators.sh." >&2
     exit 1
   fi
 }
@@ -162,14 +182,14 @@ broker_pem_path() {
   local service="$1"
   local op_num="$2"
 
-  echo "$(operator_root_path "${op_num}")/union-client/${service}.pem"
+  echo "$(operator_root_path "${op_num}")/union-client/broker/${service}.pem"
 }
 
 broker_pubkey_hash_path() {
   local service="$1"
   local op_num="$2"
 
-  echo "$(operator_root_path "${op_num}")/union-client/${service}.pubkey_hash"
+  echo "$(operator_root_path "${op_num}")/union-client/broker/${service}.pubkey_hash"
 }
 
 compute_pubkey_hash() {
@@ -195,7 +215,7 @@ provision_operator_broker_identities() {
   echo "- Preparing service identities for op_${op_num}:"
 
   for service in "${BROKER_SERVICES[@]}"; do
-    identity_dir="$(operator_root_path "${op_num}")/union-client"
+    identity_dir="$(operator_root_path "${op_num}")/union-client/broker"
     pem_path="${identity_dir}/${service}.pem"
     pubkey_hash_path="${identity_dir}/${service}.pubkey_hash"
 
@@ -220,6 +240,59 @@ patch_bitvmx_key_storage_password() {
   if grep -q '^[[:space:]]*key_storage:' "${cfg_file}" && grep -q '^[[:space:]]*password:' "${cfg_file}"; then
     BITVMX_KEY_STORAGE_PASSWORD="${password}" \
       perl -0pi -e 's/(key_storage:\s*\n\s*password:\s*)[^\n]+/${1}$ENV{BITVMX_KEY_STORAGE_PASSWORD}/m' "${cfg_file}"
+  fi
+}
+
+yaml_single_quote() {
+  local value="$1"
+
+  printf "'%s'" "$(printf '%s' "${value}" | sed "s/'/''/g")"
+}
+
+strip_yaml_string_quotes() {
+  local value="$1"
+
+  if [[ ${#value} -ge 2 && "${value:0:1}" == "'" && "${value: -1}" == "'" ]]; then
+    value="${value:1:${#value}-2}"
+    value="${value//\'\'/\'}"
+  elif [[ ${#value} -ge 2 && "${value:0:1}" == "\"" && "${value: -1}" == "\"" ]]; then
+    value="${value:1:${#value}-2}"
+  fi
+
+  printf '%s' "${value}"
+}
+
+is_patch_placeholder() {
+  local value="$1"
+
+  [[ "${value}" == "<to_patch_in_host>" ]]
+}
+
+read_bitvmx_key_manager_value() {
+  local cfg_file="$1"
+  local key="$2"
+
+  awk -v key="${key}" '
+    $1 == "key_manager:" { in_key_manager = 1; next }
+    in_key_manager && /^[^[:space:]]/ { exit }
+    in_key_manager && $1 == key ":" {
+      sub(/^[[:space:]]*[^:]+:[[:space:]]*/, "", $0)
+      print $0
+      exit
+    }
+  ' "${cfg_file}"
+}
+
+patch_bitvmx_key_manager_field() {
+  local cfg_file="$1"
+  local field_name="$2"
+  local field_value="$3"
+  local yaml_value=""
+
+  if grep -q '^[[:space:]]*key_manager:' "${cfg_file}" && grep -q "^[[:space:]]*${field_name}:" "${cfg_file}"; then
+    yaml_value="$(yaml_single_quote "${field_value}")"
+    BITVMX_KEY_MANAGER_FIELD="${field_name}" BITVMX_KEY_MANAGER_VALUE="${yaml_value}" \
+      perl -0pi -e 's/(key_manager:\s*\n(?:\s+.*\n)*?\s+$ENV{BITVMX_KEY_MANAGER_FIELD}:\s*)[^\n]+/${1}$ENV{BITVMX_KEY_MANAGER_VALUE}/m' "${cfg_file}"
   fi
 }
 
@@ -348,6 +421,67 @@ read_broker_pubkey_hash() {
   tr -d ' \n' < "${hash_path}"
 }
 
+resolve_bitvmx_mnemonic_sentence() {
+  local op_num="$1"
+  local cfg_file="$2"
+  local existing_value=""
+  local generated_value=""
+
+  if [[ -n "${NEW_BITVMX_MNEMONIC_SENTENCE}" ]]; then
+    if [[ "${USED_EXPORTED_BITVMX_MNEMONIC_SENTENCE}" != true ]]; then
+      echo "Using exported BITVMX_MNEMONIC_SENTENCE for BitVMX configs." >&2
+      USED_EXPORTED_BITVMX_MNEMONIC_SENTENCE=true
+    fi
+    RESOLVED_BITVMX_MNEMONIC_SENTENCE="${NEW_BITVMX_MNEMONIC_SENTENCE}"
+    return 0
+  fi
+
+  if [[ -f "${cfg_file}" ]]; then
+    existing_value="$(read_bitvmx_key_manager_value "${cfg_file}" "mnemonic_sentence")"
+    existing_value="$(strip_yaml_string_quotes "${existing_value}")"
+    if [[ -n "${existing_value}" ]] && ! is_patch_placeholder "${existing_value}"; then
+      RESOLVED_BITVMX_MNEMONIC_SENTENCE="${existing_value}"
+      return 0
+    fi
+  fi
+
+  generated_value="$(python3 -c "from mnemonic import Mnemonic; print(Mnemonic('english').generate(strength=128))")"
+  if [[ -z "${generated_value}" ]]; then
+    echo "Error: failed to generate BITVMX_MNEMONIC_SENTENCE for op_${op_num}." >&2
+    exit 1
+  fi
+  echo "Generated BITVMX_MNEMONIC_SENTENCE for op_${op_num} with python3 mnemonic." >&2
+
+  RESOLVED_BITVMX_MNEMONIC_SENTENCE="${generated_value}"
+}
+
+resolve_bitvmx_mnemonic_passphrase() {
+  local cfg_file="$1"
+  local existing_value=""
+
+  if [[ "${HAS_EXPORTED_BITVMX_MNEMONIC_PASSPHRASE}" == true ]]; then
+    if [[ "${USED_EXPORTED_BITVMX_MNEMONIC_PASSPHRASE}" != true ]]; then
+      echo "Using exported BITVMX_MNEMONIC_PASSPHRASE for BitVMX configs." >&2
+      USED_EXPORTED_BITVMX_MNEMONIC_PASSPHRASE=true
+    fi
+    RESOLVED_BITVMX_MNEMONIC_PASSPHRASE="${BITVMX_MNEMONIC_PASSPHRASE}"
+    return 0
+  fi
+
+  if [[ -f "${cfg_file}" ]]; then
+    existing_value="$(read_bitvmx_key_manager_value "${cfg_file}" "mnemonic_passphrase")"
+    if [[ -n "${existing_value}" ]]; then
+      existing_value="$(strip_yaml_string_quotes "${existing_value}")"
+      if ! is_patch_placeholder "${existing_value}"; then
+        RESOLVED_BITVMX_MNEMONIC_PASSPHRASE="${existing_value}"
+        return 0
+      fi
+    fi
+  fi
+
+  RESOLVED_BITVMX_MNEMONIC_PASSPHRASE=""
+}
+
 read_env_value() {
   local env_file="$1"
   local key="$2"
@@ -431,6 +565,7 @@ write_operator_compose_env_file() {
 
   cat > "${env_file_path}" <<EOF
 CLIENT_OP=op_${op_num}
+KEYSTORE_DIR=$(operator_root_path "${op_num}")/union-client/keystore
 BITVMX_CONFIG_DIR=$(operator_bitvmx_config_dir "${op_num}")
 BLOCK_INDEXER_BROKER_PEM_PATH=$(broker_pem_path "block-indexer" "${op_num}")
 LOG_INDEXER_BROKER_PEM_PATH=$(broker_pem_path "log-indexer" "${op_num}")
@@ -476,7 +611,7 @@ create_or_reuse_local_keystore() {
   local cmd_output
   local generated_path
 
-  keystore_dir="$(operator_root_path "${op_num}")/keystore"
+  keystore_dir="$(operator_root_path "${op_num}")/union-client/keystore"
   target_path="${keystore_dir}/${wallet_name}"
   mkdir -p "${keystore_dir}"
 
@@ -507,7 +642,7 @@ prepare_local_keystores() {
   local op_num="$1"
   local key_store_password="$2"
 
-  echo "- Preparing local cargo-mode keystores for op_${op_num}:"
+  echo "- Preparing host-side Rootstock keystores for op_${op_num}:"
   create_or_reuse_local_keystore "${op_num}" "member" "${key_store_password}"
   create_or_reuse_local_keystore "${op_num}" "user" "${key_store_password}"
 }
@@ -521,6 +656,8 @@ prepare_operator_bitvmx_config() {
   local coordinator_pubkey_hash
   local target_keys_dir
   local config_action
+  local bitvmx_mnemonic_sentence
+  local bitvmx_mnemonic_passphrase
   local -a referenced_key_files=()
 
   template_dir="$(bitvmx_template_dir)"
@@ -536,6 +673,10 @@ prepare_operator_bitvmx_config() {
   fi
 
   ensure_operator_bitvmx_config_tree "${op_num}" "${template_dir}" "${target_dir}" "${cfg_file}"
+  resolve_bitvmx_mnemonic_sentence "${op_num}" "${cfg_file}"
+  bitvmx_mnemonic_sentence="${RESOLVED_BITVMX_MNEMONIC_SENTENCE}"
+  resolve_bitvmx_mnemonic_passphrase "${cfg_file}"
+  bitvmx_mnemonic_passphrase="${RESOLVED_BITVMX_MNEMONIC_PASSPHRASE}"
 
   prune_extra_bitvmx_operator_yaml_files "${target_dir}" "${cfg_file}"
 
@@ -546,6 +687,8 @@ prepare_operator_bitvmx_config() {
   generate_operator_bitvmx_keys "${target_keys_dir}" "${referenced_key_files[@]}"
   write_operator_bitvmx_pubkey_hash_files "${target_keys_dir}"
   patch_operator_bitvmx_identity_hashes "${cfg_file}" "${coordinator_pubkey_hash}" "${target_keys_dir}"
+  patch_bitvmx_key_manager_field "${cfg_file}" "mnemonic_sentence" "${bitvmx_mnemonic_sentence}"
+  patch_bitvmx_key_manager_field "${cfg_file}" "mnemonic_passphrase" "${bitvmx_mnemonic_passphrase}"
   patch_bitvmx_key_storage_password "${cfg_file}" "${key_store_password}"
   patch_bitvmx_bitcoin_url "${cfg_file}" "${BITCOIND_URL}"
 

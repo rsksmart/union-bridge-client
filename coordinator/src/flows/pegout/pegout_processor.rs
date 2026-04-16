@@ -425,6 +425,17 @@ where
         Ok(())
     }
 
+    fn stop_confirming_event(&mut self, id: &str) -> Option<ConfirmableEventWithData> {
+        let mut event = self.events_confirming.remove(id)?;
+        if let Err(e) = event.stop_confirming() {
+            error!("Failed to stop confirming for event {id}: {e}");
+        }
+        if self.events_confirming.is_empty() {
+            self.blockchain_view.clear();
+        }
+        Some(event)
+    }
+
     fn process_block_confirmations(&mut self, block: &RskBlockAndUncles) -> Result<()> {
         if self.events_confirming.is_empty() {
             trace!("No events left to confirm, skipping block");
@@ -443,20 +454,11 @@ where
             .collect();
 
         for key in confirmed_keys {
-            if let Some(mut event) = self.events_confirming.remove(&key) {
+            if let Some(event) = self.stop_confirming_event(&key) {
                 debug!("RSK event confirmed, removing pending {key}");
                 trace!("Event data: {:?}", event.get_data());
-                // properly cleanup the observer before processing the event
-                if let Err(e) = event.stop_confirming() {
-                    error!("Failed to stop confirming for event {key}: {e}");
-                }
                 self.process_confirmed_rsk_event(event.get_data())?;
             }
-        }
-
-        if self.events_confirming.is_empty() {
-            debug!("No events left to confirm, clearing blockchain view");
-            self.blockchain_view.clear();
         }
 
         // blocks allow periodic cleanup of completed flows, we can improve it with a cleanup task if needed
@@ -806,12 +808,7 @@ where
         if is_removal {
             warn!("Removing pending RSK event: {event:?}");
 
-            // properly clean up the observer before removing the event
-            if let Some(mut removed_ev) = self.events_confirming.remove(&id) {
-                if let Err(e) = removed_ev.stop_confirming() {
-                    error!("Failed to stop confirming for removed event {id}: {e}");
-                }
-            } else {
+            if self.stop_confirming_event(&id).is_none() {
                 warn!("Tried to remove non-existing pending event with id {id}");
             }
         } else {
@@ -865,17 +862,19 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
+
     use alloy_primitives::{Bytes, FixedBytes, U256 as AlloyU256};
     use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
     use common::msg_broker::broker::MockBrokerClientApi;
-    use primitive_types::U256 as RskU256;
+    use common::test_utils::rsk_block_generator::FakeBlockGenerator;
     use union_contracts::bindings::pegout_manager::PegoutManager::{
         BitcoinSignatureData, BtcTransaction,
     };
 
     use super::*;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
-    use crate::flows::advance_funds::test_utils::create_fake_block;
     use crate::flows::pegout::pegout_flow::FlowContext;
     use crate::store::MockCoordinatorStoreApi;
 
@@ -1008,10 +1007,12 @@ mod tests {
         let signature_flow = harness.create_completed_sig_flow(flow_id);
         harness.processor.signature_flows.insert(flow_id, signature_flow);
 
-        let block = RskBlockAndUncles::new_no_uncles(create_fake_block(
-            BlockNumber::from(100),
-            RskU256::from(50),
-        ));
+        let block_generator = FakeBlockGenerator::new(None, Arc::new(AtomicBool::new(false)), None);
+        let block = RskBlockAndUncles::new_no_uncles(
+            block_generator
+                .generate_block(BlockNumber::from(100), None)
+                .expect("failed to generate test block"),
+        );
 
         let result = harness.processor.process_unhandled_confirmed_sig_flow_events(&block);
         assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());

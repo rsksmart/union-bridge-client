@@ -73,22 +73,16 @@ fn wallet_end_to_end_over_regtest_rpc() -> Result<()> {
         .call("getnewaddress", &[json!("miner"), json!("bech32")])
         .context("failed to obtain mining address")?;
     wallet_client
-        .call::<Vec<String>>(
-            "generatetoaddress",
-            &[json!(101), json!(miner_address.clone())],
-        )
+        .call::<Vec<String>>("generatetoaddress", &[json!(101), json!(miner_address.clone())])
         .context("failed to pre-mine regtest blocks")?;
 
     // Generate a new random key pair for the test wallet.
     let secp = Secp256k1::new();
     let mut rng = secp256k1::rand::thread_rng();
     let (secret_key, _) = secp.generate_keypair(&mut rng);
-    let test_wallet_wif = PrivateKey {
-        compressed: true,
-        network: Network::Regtest.into(),
-        inner: secret_key,
-    }
-    .to_wif();
+    let test_wallet_wif =
+        PrivateKey { compressed: true, network: Network::Regtest.into(), inner: secret_key }
+            .to_wif();
 
     // Initialise CLI wallet backed by LevelDB store.
     let temp = tempdir().context("temp dir")?;
@@ -100,36 +94,24 @@ fn wallet_end_to_end_over_regtest_rpc() -> Result<()> {
     // Send funds from miner wallet to the CLI wallet address.
     let send_amount_btc = 0.002_f64;
     let txid_hex: String = wallet_client
-        .call(
-            "sendtoaddress",
-            &[json!(wallet_address_str.clone()), json!(send_amount_btc)],
-        )
+        .call("sendtoaddress", &[json!(wallet_address_str.clone()), json!(send_amount_btc)])
         .context("failed to send funds to wallet address")?;
     wallet_client
-        .call::<Vec<String>>(
-            "generatetoaddress",
-            &[json!(1), json!(miner_address.clone())],
-        )
+        .call::<Vec<String>>("generatetoaddress", &[json!(1), json!(miner_address.clone())])
         .context("failed to confirm funding transaction")?;
 
     wallet.set_rpc_client(wallet_client);
 
     let funding_txid = Txid::from_str(&txid_hex).context("invalid txid from sendtoaddress")?;
     let funding_vout = {
-        let client = wallet
-            .rpc_client()
-            .context("wallet RPC client should be configured")?;
+        let client = wallet.rpc_client().context("wallet RPC client should be configured")?;
         find_vout_for_address(client, &txid_hex, &wallet_address)
             .context("failed to locate wallet output in funding transaction")?
     };
     let funding_amount = wallet.fetch_utxo_amount(funding_txid, None, funding_vout)?;
     wallet.register_utxo(OutPoint::new(funding_txid, funding_vout), funding_amount)?;
 
-    assert_eq!(
-        wallet.utxos().len(),
-        1,
-        "exactly one funding UTXO registered"
-    );
+    assert_eq!(wallet.utxos().len(), 1, "exactly one funding UTXO registered");
 
     // Craft and broadcast a spend via the wallet.
     let target_script = recipient_script();
@@ -140,20 +122,11 @@ fn wallet_end_to_end_over_regtest_rpc() -> Result<()> {
     assert_eq!(created.len(), 1, "expected a single created transaction");
 
     let to_broadcast = &created[0];
-    assert_eq!(
-        to_broadcast.transaction.output[0].value.to_sat(),
-        spend_amount_sat
-    );
+    assert_eq!(to_broadcast.transaction.output[0].value.to_sat(), spend_amount_sat);
 
-    let change = to_broadcast
-        .change
-        .as_ref()
-        .context("wallet should return change for this spend")?;
-    assert_eq!(
-        wallet.utxos().len(),
-        1,
-        "change should replace spent UTXO in memory"
-    );
+    let change =
+        to_broadcast.change.as_ref().context("wallet should return change for this spend")?;
+    assert_eq!(wallet.utxos().len(), 1, "change should replace spent UTXO in memory");
     assert_eq!(wallet.utxos()[0].outpoint, change.outpoint);
 
     // Broadcast and confirm.

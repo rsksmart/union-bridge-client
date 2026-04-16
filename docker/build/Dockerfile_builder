@@ -1,5 +1,5 @@
 # Custom Rust builder image
-FROM rust:1.88-slim-bookworm
+FROM rust:1.91-slim-bookworm
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -12,10 +12,6 @@ RUN apt-get update && apt-get install -y \
     git \
     curl \
     && rm -rf /var/lib/apt/lists/*
-
-# setup SSH for private repositories
-RUN mkdir -p -m 0700 ~/.ssh && \
-    ssh-keyscan github.com >> ~/.ssh/known_hosts
 
 # [coordinator Specific] Install Risc0 toolchain
 # Just needed for build stage, so it won't impact the final runtime image size, therefore is safe to install it always

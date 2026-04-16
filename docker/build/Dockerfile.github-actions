@@ -7,13 +7,9 @@ ARG JUST_CRATE
 
 # --- BUILDER STAGE ---
 
-FROM ghcr.io/rsksmart/union-client-builder:rust-1.88-v1 AS builder
+FROM ghcr.io/rsksmart/union-client-builder:rust-1.91-v1 AS builder
 ARG JUST_CRATE=""
 ARG FEATURES=""
-
-# setup SSH known hosts for git dependencies
-RUN mkdir -p -m 0700 ~/.ssh && \
-    ssh-keyscan github.com >> ~/.ssh/known_hosts
 
 WORKDIR /app
 
@@ -41,27 +37,16 @@ COPY user-api user-api
 ENV RUST_LOG=error
 ENV CARGO_TERM_QUIET=true
 
-# Configure Git to use HTTPS for all workspace git dependencies during
-# dependency fetch. The contracts repo is private and requires a token,
-# while FairgateLabs dependencies are fetched anonymously over HTTPS.
-ARG UNION_CONTRACTS_GITHUB_TOKEN
-
-RUN export GIT_CONFIG_GLOBAL="$(mktemp)" && \
-    mkdir -p .cargo && \
-    echo '[net]\ngit-fetch-with-cli = true' > .cargo/config.toml && \
-    git config --global url."https://${UNION_CONTRACTS_GITHUB_TOKEN}@github.com/temp-rsk".insteadOf "ssh://git@github.com/temp-rsk" && \
-    git config --global url."https://github.com/FairgateLabs".insteadOf "ssh://git@github.com/FairgateLabs" && \
-    cargo fetch --locked && \
-    rm -f "${GIT_CONFIG_GLOBAL}"
+RUN cargo fetch --locked
 
 # two build modes:
 # 1) build the entire workspace and reuse among containers, to reduce build time
 # 2) build just one crate for speed
 # optionally builds with --features if provided
-# we also exclude key-manager, which is built always in the next step even if only a couple of crates require it
-ARG EXCLUDES="--exclude check-fork --exclude check-fork-zkp --exclude key-manager --exclude mocks"
+# we also exclude key-manager from runtime image builds
+ARG EXCLUDES="--exclude check-fork --exclude check-fork-zkp --exclude key-manager"
 # TODO when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips) via Dockerfile_coordinator
-# EXCLUDES="--exclude coordinator--exclude check-fork --exclude check-fork-zkp --exclude key-manager --exclude mocks"
+# EXCLUDES="--exclude coordinator--exclude check-fork --exclude check-fork-zkp --exclude key-manager"
 RUN cargo build --workspace --quiet --release ${EXCLUDES}${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES} && \
     # Clean up intermediate build artifacts to free up space
     # Remove incremental compilation cache (can be regenerated)
@@ -69,12 +54,6 @@ RUN cargo build --workspace --quiet --release ${EXCLUDES}${JUST_CRATE:+ -p $JUST
     # Remove metadata files (can be regenerated, but keep .rlib for linking)
     find target/release/deps -name "*.rmeta" -delete 2>/dev/null || true && \
     # Remove build script artifacts
-    find target/release/build -type f -name "*.d" -delete 2>/dev/null || true
-# build key-manager always, even if only a couple of crates require it
-RUN cargo build --quiet --release -p key-manager && \
-    # Clean up intermediate artifacts again after building key-manager
-    rm -rf target/release/incremental 2>/dev/null || true && \
-    find target/release/deps -name "*.rmeta" -delete 2>/dev/null || true && \
     find target/release/build -type f -name "*.d" -delete 2>/dev/null || true
 
 # --- RUNTIME STAGE ---
@@ -86,14 +65,15 @@ ARG CRATE
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         ca-certificates \
+        gosu \
         procps \
+        openssl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # copy the crate built binary
 COPY --from=builder /app/target/release/${CRATE} /app/${CRATE}
-# copy key-manager always, even if only a couple of crates require it
-COPY --from=builder /app/target/release/key-manager /app/key-manager
+WORKDIR /app
 
 # set environment variables
 ENV RUST_BACKTRACE=1
@@ -102,9 +82,11 @@ ENV RUST_LOG=debug
 # it does not harm to have it always defined, so we leave it common
 ENV RISC0_HOME=/opt/risc0
 
-# copy always even if only needed for one crate, as it's cheap
-COPY docker/build/entrypoint_sh/key-setup.sh /app/key-setup.sh
+COPY docker/build/entrypoint_sh/db-entrypoint.sh /app/db-entrypoint.sh
+COPY docker/build/entrypoint_sh/keystore-entrypoint.sh /app/keystore-entrypoint.sh
+
+RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 LABEL org.opencontainers.image.source=https://github.com/rsksmart/union-bridge-client
 
-# ENTRYPOINT is handled in docker-compose.yml
+ENTRYPOINT ["sh", "/app/db-entrypoint.sh"]

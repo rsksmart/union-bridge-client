@@ -88,9 +88,16 @@ mod tests {
 
         // key store (now shared at top level)
         assert!(!config.key_store.user_path.contains("{BASE_STORAGE_PATH}"));
-        assert!(config.key_store.user_path.ends_with("/.union_bridge/op_1/keystore/user"));
+        assert!(
+            config.key_store.user_path.ends_with("/.union_bridge/op_1/union-client/keystore/user")
+        );
         assert!(!config.key_store.member_path.contains("{BASE_STORAGE_PATH}"));
-        assert!(config.key_store.member_path.ends_with("/.union_bridge/op_1/keystore/member"));
+        assert!(
+            config
+                .key_store
+                .member_path
+                .ends_with("/.union_bridge/op_1/union-client/keystore/member")
+        );
         assert_eq!(3, config.transaction().gas_bumps_t1);
     }
 
@@ -100,7 +107,7 @@ mod tests {
             CommonConfig::load_config::<Config>(None).expect("Failed to load config");
         let contracts = config.load_managed_contracts();
 
-        assert_eq!(11, contracts.len());
+        assert_eq!(10, contracts.len());
     }
 
     #[test]

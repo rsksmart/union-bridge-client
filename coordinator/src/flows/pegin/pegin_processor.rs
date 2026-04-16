@@ -576,6 +576,17 @@ where
         }
     }
 
+    fn stop_confirming_event(&mut self, id: &str) -> Option<ConfirmableEventWithData> {
+        let mut event = self.events_confirming.remove(id)?;
+        if let Err(e) = event.stop_confirming() {
+            error!("Failed to stop confirming for event {id}: {e}");
+        }
+        if self.events_confirming.is_empty() {
+            self.blockchain_view.clear();
+        }
+        Some(event)
+    }
+
     fn process_block_confirmations(&mut self, block: &RskBlockAndUncles) -> Result<()> {
         if self.events_confirming.is_empty() {
             trace!("No events left to confirm, skipping block");
@@ -594,20 +605,11 @@ where
             .collect();
 
         for key in confirmed_keys {
-            if let Some(mut event) = self.events_confirming.remove(&key) {
+            if let Some(event) = self.stop_confirming_event(&key) {
                 debug!("RSK event confirmed, removing pending {key}");
                 trace!("Event data: {:?}", event.get_data());
-                // properly cleanup the observer before processing the event
-                if let Err(e) = event.stop_confirming() {
-                    error!("Failed to stop confirming for event {key}: {e}");
-                }
                 self.process_confirmed_rsk_event(event.get_data())?;
             }
-        }
-
-        if self.events_confirming.is_empty() {
-            debug!("No events left to confirm, clearing blockchain view");
-            self.blockchain_view.clear();
         }
 
         // blocks allow periodic cleanup of completed flows, we can improve it with a cleanup task if needed
@@ -886,12 +888,7 @@ where
         if is_removal {
             warn!("Removing pending RSK event: {event:?}");
 
-            // properly clean up the observer before removing the event
-            if let Some(mut removed_ev) = self.events_confirming.remove(&id) {
-                if let Err(e) = removed_ev.stop_confirming() {
-                    error!("Failed to stop confirming for removed event {id}: {e}");
-                }
-            } else {
+            if self.stop_confirming_event(&id).is_none() {
                 warn!("Tried to remove non-existing pending event with id {id}");
             }
         } else {

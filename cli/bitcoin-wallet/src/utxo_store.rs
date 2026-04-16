@@ -60,9 +60,7 @@ impl UtxoStore {
             address: Some(address.to_string()),
             state: UtxoState::Available,
         };
-        self.db
-            .set(&key, &stored, None)
-            .map_err(|e| anyhow!("failed to write utxo: {e}"))
+        self.db.set(&key, &stored, None).map_err(|e| anyhow!("failed to write utxo: {e}"))
     }
 
     pub fn mark_spent_unconfirmed(&self, outpoint: &OutPoint) -> Result<()> {
@@ -73,9 +71,7 @@ impl UtxoStore {
             .map_err(|e| anyhow!("failed to read utxo: {e}"))?
             .ok_or_else(|| anyhow!("utxo not found: {}", outpoint))?;
         stored.state = UtxoState::SpentUnconfirmed;
-        self.db
-            .set(&key, &stored, None)
-            .map_err(|e| anyhow!("failed to update utxo state: {e}"))
+        self.db.set(&key, &stored, None).map_err(|e| anyhow!("failed to update utxo state: {e}"))
     }
 
     pub fn mark_available(&self, outpoint: &OutPoint) -> Result<()> {
@@ -86,16 +82,12 @@ impl UtxoStore {
             .map_err(|e| anyhow!("failed to read utxo: {e}"))?
             .ok_or_else(|| anyhow!("utxo not found: {}", outpoint))?;
         stored.state = UtxoState::Available;
-        self.db
-            .set(&key, &stored, None)
-            .map_err(|e| anyhow!("failed to update utxo state: {e}"))
+        self.db.set(&key, &stored, None).map_err(|e| anyhow!("failed to update utxo state: {e}"))
     }
 
     pub fn remove(&self, outpoint: &OutPoint) -> Result<()> {
         let key = utxo_key(outpoint);
-        self.db
-            .delete(&key)
-            .map_err(|e| anyhow!("failed to delete utxo: {e}"))
+        self.db.delete(&key).map_err(|e| anyhow!("failed to delete utxo: {e}"))
     }
 
     /// Iterates over all UTXOs in the store, yielding (OutPoint, StoredUtxo) pairs.
@@ -130,19 +122,14 @@ impl UtxoStore {
         // supports address-specific prefix scanning (e.g., "utxo/{address}/"), we could optimize
         // this by storing UTXOs under an address-specific prefix structure.
         self.iter_utxos(|stored| {
-            stored
-                .address
-                .as_deref()
-                .map_or(false, |addr| addr == address_str)
+            stored.address.as_deref().map_or(false, |addr| addr == address_str)
         })
     }
 
     pub fn contains(&self, outpoint: &OutPoint) -> Result<bool> {
         let key = utxo_key(outpoint);
-        let exists: Option<StoredUtxo> = self
-            .db
-            .get(&key)
-            .map_err(|e| anyhow!("failed to read utxo: {e}"))?;
+        let exists: Option<StoredUtxo> =
+            self.db.get(&key).map_err(|e| anyhow!("failed to read utxo: {e}"))?;
         Ok(exists.is_some())
     }
 
@@ -152,9 +139,7 @@ impl UtxoStore {
             .partial_compare_keys(UTXO_PREFIX)
             .map_err(|e| anyhow!("failed to iterate utxos: {e}"))?;
         for key in entries.into_iter() {
-            self.db
-                .delete(&key)
-                .map_err(|e| anyhow!("failed to delete utxo: {e}"))?;
+            self.db.delete(&key).map_err(|e| anyhow!("failed to delete utxo: {e}"))?;
         }
         Ok(())
     }
@@ -182,8 +167,5 @@ fn key_to_outpoint(key: &str) -> Result<OutPoint> {
 }
 
 fn current_timestamp() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
