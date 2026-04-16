@@ -158,6 +158,8 @@ impl BlockchainView {
             return;
         }
 
+        // During a reorg, the block indexer is expected to replay the new canonical chain in order
+        // starting from the first divergent height.
         if let Some(ref prev_tip) = prev_tip
             && new_block.number() <= prev_tip.number()
         {
@@ -172,7 +174,7 @@ impl BlockchainView {
             return;
         }
 
-        // normal new tip
+        // Outside of reorg replay, the block indexer is expected to emit canonical tip blocks only.
         self.blocks.borrow_mut().insert(new_block.number(), new_block.clone());
         if let Some(ref prev_tip) = prev_tip {
             Self::validate_consecutive_block(new_block.block(), prev_tip.block());
@@ -200,6 +202,9 @@ impl BlockchainView {
         self.observers.borrow_mut().clear();
     }
 
+    // `BlockchainView` may start above the true reorg point. When `new_tip` has no in-view parent,
+    // we accept it based on the block indexer contract: the indexer emits canonical tip blocks only,
+    // and reorgs are replayed in order from the first divergent height.
     fn rollback_to(&self, new_tip: &RskBlockAndUncles) {
         let tip_parent_opt = self
             .blocks
