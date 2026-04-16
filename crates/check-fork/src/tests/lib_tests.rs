@@ -155,22 +155,27 @@ fn compute_pegout_id_matches_public_input_encoding() {
 }
 
 #[test]
-fn journal_layout_is_exactly_72_bytes() {
-    let args = CheckForkArgsBuilder::new(vec![
-        create_first_block(DEFAULT_INIT_BLOCK_NUMBER),
-        create_child_block(&create_first_block(DEFAULT_INIT_BLOCK_NUMBER)),
-    ])
-    .build();
-    let journal = build_check_fork_journal_from_args(&args, true).to_bytes();
-    let pegout_id = compute_pegout_id(&args);
+fn journal_layout_is_exactly_76_bytes() {
+    for (accepted, accepted_byte) in [(true, 1), (false, 0)] {
+        let mut args = CheckForkArgsBuilder::new(vec![
+            create_first_block(DEFAULT_INIT_BLOCK_NUMBER),
+            create_child_block(&create_first_block(DEFAULT_INIT_BLOCK_NUMBER)),
+        ])
+        .build();
+        args.utxo_id = 0x0102_0304;
 
-    assert_eq!(journal.len(), 72);
-    assert_eq!(&journal[..32], &args.operator_id);
-    assert_eq!(journal[32], 0);
-    assert_eq!(&journal[33..65], pegout_id.as_bytes());
-    assert_eq!(&journal[65..69], &args.utxo_id.to_be_bytes());
-    assert_eq!(journal[69], 1);
-    assert_eq!(&journal[70..72], &u16::from(args.version).to_be_bytes());
+        let journal = build_check_fork_journal_from_args(&args, accepted).to_bytes();
+        let pegout_id = compute_pegout_id(&args);
+
+        assert_eq!(journal.len(), 76);
+        assert_eq!(&journal[0..32], &args.operator_id);
+        assert_eq!(&journal[32..36], &[0; 4]);
+        assert_eq!(&journal[36..68], pegout_id.as_bytes());
+        assert_eq!(&journal[68..72], &args.utxo_id.to_be_bytes());
+        assert_eq!(journal[72], accepted_byte);
+        assert_eq!(&journal[73..75], &u16::from(args.version).to_be_bytes());
+        assert_eq!(journal[75], 0);
+    }
 }
 
 #[test]

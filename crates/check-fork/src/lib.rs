@@ -10,10 +10,10 @@ use sha3::{Digest, Keccak256};
 use crate::block_header::RskBlockHeader;
 
 pub const SUPERBLOCK_TIMES_DIFFICULTY: u8 = 20;
-pub const CHECK_FORK_JOURNAL_LEN: usize = 72;
+pub const CHECK_FORK_JOURNAL_LEN: usize = 76;
 
 const BASE_EVENT_HEADER_VERSION: u8 = 2;
-const JOURNAL_OPERATOR_ID_LEN: usize = 33;
+const JOURNAL_OPERATOR_ID_LEN: usize = 36;
 const PEGOUT_ID_LEN: usize = 32;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -30,6 +30,7 @@ pub struct CheckForkArgs {
     pub rand: u32,
     pub stream_id: u32,
     pub packet_id: u32,
+    // RSV uses UTXOID as the slot id.
     pub utxo_id: u32,
     pub operator_id: [u8; 32],
     pub init_block_time: u64,
@@ -43,7 +44,7 @@ pub struct CheckForkArgs {
 pub struct CheckForkJournal {
     pub operator_id: [u8; JOURNAL_OPERATOR_ID_LEN],
     pub pegout_id: [u8; PEGOUT_ID_LEN],
-    pub utxo_id: [u8; 4],
+    pub slot_id: [u8; 4],
     pub accepted: u8,
     pub version: [u8; 2],
 }
@@ -62,13 +63,15 @@ impl CheckForkJournal {
         pegout_dst.copy_from_slice(&self.pegout_id);
         rest = next;
 
-        let (utxo_dst, next) = rest.split_at_mut(self.utxo_id.len());
-        utxo_dst.copy_from_slice(&self.utxo_id);
+        let (slot_dst, next) = rest.split_at_mut(self.slot_id.len());
+        slot_dst.copy_from_slice(&self.slot_id);
         rest = next;
 
-        let (accepted_dst, version_dst) = rest.split_at_mut(1);
+        let (accepted_dst, rest) = rest.split_at_mut(1);
         accepted_dst[0] = self.accepted;
+        let (version_dst, padding_dst) = rest.split_at_mut(self.version.len());
         version_dst.copy_from_slice(&self.version);
+        padding_dst.fill(0);
         out
     }
 }
@@ -102,7 +105,7 @@ pub fn build_check_fork_journal_from_args(
     CheckForkJournal {
         operator_id,
         pegout_id: pegout_id_bytes,
-        utxo_id: args.utxo_id.to_be_bytes(),
+        slot_id: args.utxo_id.to_be_bytes(),
         accepted: u8::from(accepted),
         version: u16::from(args.version).to_be_bytes(),
     }
