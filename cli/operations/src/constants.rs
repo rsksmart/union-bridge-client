@@ -25,3 +25,4 @@ pub const LOCAL_ANVIL_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb9226
 
 // Must stay aligned with the packet size used by the committee setup flow.
 pub const COMMITTEE_PACKET_SIZE: u64 = 100; // TODO(iago) this should come from config
+pub const UNION_BRIDGE_DIR: &str = ".union_bridge";
