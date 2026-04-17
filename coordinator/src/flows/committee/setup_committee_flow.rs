@@ -42,6 +42,7 @@ use crate::flows::committee::dispute_channel_setup::{
 use crate::flows::committee::dispute_core_setup::{
     AggregatedKeys, CommitteeConfirmations, DisputeCoreSetup,
 };
+use crate::flows::committee::full_penalization_setup::FullPenalizationSetup;
 use crate::flows::common::{
     COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, TAKE_KEY_INDEX, build_communication_data,
 };
@@ -140,6 +141,7 @@ struct FlowContext {
     setup_core_req: SetupCoreReq,
     setup_channel_req: DisputeChannelReq,
     setup_channel_setup_req: SetupChannelReq,
+    setup_full_penalization_req: SetupChannelReq,
     #[serde(default)]
     committee_data: Option<CommitteeData>,
     // async
@@ -323,6 +325,7 @@ pub(crate) enum Steps {
     SetupDisputeCore,
     RequestDisputeChannelVars,
     DisputeChannelSetup,
+    FullPenalizationSetup,
     Done,
     Failed,
 }
@@ -570,6 +573,10 @@ where
                     .map(|committee_data| committee_data.committee_id.clone()),
             )
             || Self::setup_channel_request_matches(&self.state.ctx.setup_channel_setup_req, req_id)
+            || Self::setup_channel_request_matches(
+                &self.state.ctx.setup_full_penalization_req,
+                req_id,
+            )
     }
 
     pub(crate) fn is_pairwise_aggregated_key_request(&self, req_id: &Uuid) -> bool {
@@ -1377,6 +1384,28 @@ where
 
         Ok(protocol_ids.len())
     }
+
+    fn complete_full_penalization_setup(&mut self) -> Result<usize> {
+        debug!("Completing FullPenalization setup");
+
+        let committee_data = self.ctx().get_committee_data()?;
+        let p2p_addrs = self.ctx().get_my_communication_data()?;
+
+        let my_address: types::Address = self.my_address();
+        let my_index = committee_data
+            .members
+            .iter()
+            .position(|m| m.address == my_address)
+            .context("My address not found in committee members")?;
+
+        let full_penalization_setup = FullPenalizationSetup::new(self.bitvmx_broker.clone());
+        let protocol_id =
+            full_penalization_setup.setup(committee_data.committee_uuid(), my_index, &p2p_addrs)?;
+
+        self.ctx_mut().setup_full_penalization_req = vec![(protocol_id, false)];
+
+        Ok(1)
+    }
 }
 
 impl<CG, BC, S> FailableFlow for SetupCommitteeFlow<CG, BC, S>
@@ -1508,6 +1537,11 @@ where
                 debug!("CommitteeSetupFlow waiting for DisputeChannel setup completion");
                 let req_count = self.complete_dispute_channel_setup()?;
                 trace!("Requested {req_count} DisputeChannel Setup");
+            }
+            Steps::FullPenalizationSetup => {
+                debug!("CommitteeSetupFlow waiting for FullPenalization setup completion");
+                let req_count = self.complete_full_penalization_setup()?;
+                trace!("Requested {req_count} FullPenalization Setup");
             }
             Steps::Done => {
                 info!("CommitteeSetupFlow Done: {}", self.state.internal_id);
@@ -1681,6 +1715,21 @@ where
                     self.state.step = Steps::DisputeChannelSetup;
                 } else {
                     info!("All DisputeChannel setups completed");
+                    self.start_step(Steps::FullPenalizationSetup)?;
+                }
+            }
+            Steps::FullPenalizationSetup => {
+                debug!("CommitteeSetupFlow completing FullPenalizationSetup");
+                let missing_responses = Self::close_setup_channel_req(
+                    &mut self.ctx_mut().setup_full_penalization_req,
+                    data,
+                )?;
+
+                if missing_responses {
+                    debug!("Waiting for FullPenalization setup completion");
+                    self.state.step = Steps::FullPenalizationSetup;
+                } else {
+                    info!("FullPenalization setup completed");
                     self.start_step(Steps::Done)?;
                 }
             }

@@ -26,6 +26,8 @@ pub const PROGRAM_TYPE_DISPUTE_CHANNEL: &str = "dispute_channel";
 pub const ADVANCE_FUNDS_INPUT: &str = "ADVANCE_FUNDS_INPUT";
 pub const PROGRAM_TYPE_DRP: &str = "drp";
 
+pub const PROGRAM_TYPE_FULL_PENALIZATION: &str = "full_penalization";
+
 type ProgramId = Uuid;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -614,4 +616,15 @@ impl AdvanceFundsRegistered {
 pub struct WtInitChallengeUtxos {
     pub wt_stopper: PartialUtxo,
     pub op_stopper: PartialUtxo,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FullPenalizationData {
+    pub committee_id: Uuid,
+}
+
+impl FullPenalizationData {
+    pub fn name() -> String {
+        "full_penalization_data".to_string()
+    }
 }
