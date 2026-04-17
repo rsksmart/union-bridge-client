@@ -29,7 +29,7 @@ impl<BC: BitVmxBrokerClientApi> FullPenalizationSetup<BC> {
     ) -> Result<Uuid> {
         let protocol_id = Self::get_full_penalization_pid(committee_id);
 
-        info!("Setting up the FullPenalization protocol handler {} for {}", protocol_id, my_id);
+        info!("Setting up the FullPenalization protocol handler {protocol_id} for {my_id}");
 
         let data = FullPenalizationData { committee_id };
 
@@ -41,7 +41,7 @@ impl<BC: BitVmxBrokerClientApi> FullPenalizationSetup<BC> {
             self.broker_client.as_ref(),
             IncomingBitVMXApiMessages::SetVar(
                 protocol_id,
-                FullPenalizationData::name().to_string(),
+                FullPenalizationData::name().clone(),
                 VariableTypes::String(payload),
             ),
         )
@@ -71,6 +71,6 @@ impl<BC: BitVmxBrokerClientApi> FullPenalizationSetup<BC> {
 
         // Get the result as a byte array
         let hash = hasher.finalize();
-        return Uuid::from_bytes(hash[0..16].try_into().unwrap());
+        Uuid::from_bytes(hash[0..16].try_into().unwrap())
     }
 }

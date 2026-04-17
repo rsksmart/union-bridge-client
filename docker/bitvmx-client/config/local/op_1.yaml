@@ -58,12 +58,12 @@ testing:
 
 coordinator_throttle:
   init_interval: 10
-  busy_interval: 50
-  idle_interval: 200
+  busy_interval: 10
+  idle_interval: 10
 
 bitvmx_throttle:
-  busy_interval: 20
-  idle_interval: 200
+  busy_interval: 10
+  idle_interval: 10
 
 client: 
   retry: 1
