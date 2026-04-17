@@ -31,6 +31,7 @@ pub enum Steps {
     SetupAdvanceFundsProtocol,
     WaitForAdvanceFundsSPV,
     RegisterAdvanceFunds,
+    WaitForAdvanceFundsRegistered,
     NotifyAdvanceFundsRegistered,
     WaitForReimbursementKickoffSpv,
     RegisterReimbursementKickoff,
@@ -236,6 +237,14 @@ where
                     "Advance funds registered, waiting for on-chain confirmation for flow_id: {}",
                     self.state.flow_id
                 );
+                // so all selected and non-selected wait on the same step for the confirmation
+                self.start_step(Steps::WaitForAdvanceFundsRegistered)?;
+            }
+            Steps::WaitForAdvanceFundsRegistered => {
+                info!(
+                    "Waiting for advance funds registration confirmation for flow_id: {}",
+                    self.state.flow_id
+                );
             }
             Steps::NotifyAdvanceFundsRegistered => {
                 info!(
@@ -344,7 +353,7 @@ where
                 info!("Retrying register advance funds for flow_id: {}", self.state.flow_id);
                 Ok(Steps::RegisterAdvanceFunds)
             }
-            (Steps::RegisterAdvanceFunds, StepData::AdvanceFundsConfirmed(data)) => {
+            (Steps::WaitForAdvanceFundsRegistered, StepData::AdvanceFundsConfirmed(data)) => {
                 self.state.advance_funds_registered = Some(data);
                 Ok(Steps::NotifyAdvanceFundsRegistered)
             }
@@ -396,9 +405,9 @@ where
         let my_address = self.contracts.my_address();
         if my_address != operator_address {
             debug!(
-                "Advance funds setup: node {my_address} is not selected operator (selected: {operator_address}), finishing flow",
+                "Advance funds setup: node {my_address} is not selected operator (selected: {operator_address}), waiting for confirmed registration",
             );
-            self.start_step(Steps::Done)?;
+            self.start_step(Steps::WaitForAdvanceFundsRegistered)?;
             return Ok(());
         }
 
@@ -588,6 +597,7 @@ fn format_step(step: Steps) -> &'static str {
         Steps::SetupAdvanceFundsProtocol => "SetupAdvanceFundsProtocol",
         Steps::WaitForAdvanceFundsSPV => "WaitForAdvanceFundsSPV",
         Steps::RegisterAdvanceFunds => "RegisterAdvanceFunds",
+        Steps::WaitForAdvanceFundsRegistered => "WaitForAdvanceFundsRegistered",
         Steps::NotifyAdvanceFundsRegistered => "NotifyAdvanceFundsRegistered",
         Steps::WaitForReimbursementKickoffSpv => "WaitForReimbursementKickoffSpv",
         Steps::RegisterReimbursementKickoff => "RegisterReimbursementKickoff",
@@ -663,6 +673,31 @@ mod tests {
     }
 
     #[test]
+    fn non_selected_operator_waits_for_advance_funds_registration() {
+        let committee_id = Uuid::new_v4();
+        let flow_id = Uuid::new_v4();
+        let trigger_data = test_trigger_data(committee_id, 0);
+
+        let mut contracts = MockRskContractsGatewayApi::new();
+        contracts.expect_my_address().return_const(Address::from(H160::from_low_u64_be(44)));
+
+        let broker = MockBitVmxBroker::new();
+
+        let mut flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(contracts),
+            Rc::new(broker),
+            flow_id,
+            trigger_data,
+            Steps::GetCommInfo,
+        );
+
+        flow.start_step(Steps::SetupAdvanceFundsProtocol)
+            .expect("non-selected operator should remain in passive advance funds flow");
+
+        assert_eq!(flow.current_step(), Steps::WaitForAdvanceFundsRegistered);
+    }
+
+    #[test]
     fn entering_wait_for_reimbursement_kickoff_consumes_buffered_spv() {
         let committee_id = Uuid::new_v4();
         let flow_id = Uuid::new_v4();
@@ -689,7 +724,7 @@ mod tests {
             Rc::new(broker),
             flow_id,
             trigger_data,
-            Steps::RegisterAdvanceFunds,
+            Steps::WaitForAdvanceFundsRegistered,
         );
         flow.state.accept_pegin_txid = Some(FixedBytes::<32>::from([7u8; 32]));
         flow.state.reimbursement_kickoff_spv = Some(test_spv_proof());

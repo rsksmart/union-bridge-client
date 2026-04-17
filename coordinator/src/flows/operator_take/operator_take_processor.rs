@@ -355,23 +355,24 @@ where
         Ok(())
     }
 
-    fn complete_flow_by_pegout_id(
+    fn complete_step_by_pegout_id(
         &mut self,
         pegout_id: Hash256,
-        expected_step: Steps,
+        expected_steps: &[Steps],
         step_data: StepData,
         event_name: &str,
     ) -> Result<()> {
         if let Some(flow) =
             self.flows.values_mut().find(|f| f.trigger_data().pegout_id == pegout_id)
         {
-            if flow.current_step() == expected_step {
+            if expected_steps.contains(&flow.current_step()) {
                 info!("{event_name} confirmed for pegout_id {pegout_id}");
                 flow.complete_step(step_data)?;
             } else {
                 warn!(
-                    "Received {event_name} but flow is at {:?}, expected {expected_step:?}",
-                    flow.current_step()
+                    "Received {event_name} but flow is at {:?}, expected one of {:?}",
+                    flow.current_step(),
+                    expected_steps
                 );
             }
         } else {
@@ -431,17 +432,17 @@ where
             RskPegManagerEvents::AdvanceFundsRegistered(e) => {
                 let ev = &e.inner;
                 let data = Self::build_advance_funds_registered(ev)?;
-                self.complete_flow_by_pegout_id(
+                self.complete_step_by_pegout_id(
                     Hash256::from(ev.pegoutId),
-                    Steps::RegisterAdvanceFunds,
+                    &[Steps::WaitForAdvanceFundsRegistered],
                     StepData::AdvanceFundsConfirmed(data),
                     "AdvanceFundsRegistered",
                 )?;
             }
             RskPegManagerEvents::ReimbursementKickoffRegistered(e) => {
-                self.complete_flow_by_pegout_id(
+                self.complete_step_by_pegout_id(
                     Hash256::from(e.inner.pegoutId),
-                    Steps::RegisterReimbursementKickoff,
+                    &[Steps::RegisterReimbursementKickoff],
                     StepData::ReimbursementKickoffConfirmed,
                     "ReimbursementKickoffRegistered",
                 )?;
@@ -638,7 +639,10 @@ where
                 Err(err) if is_missing_native_bridge_confirmations(&err) => true,
                 Err(err) => return Err(err),
             }
-        } else if flow.current_step() == Steps::RegisterAdvanceFunds {
+        } else if matches!(
+            flow.current_step(),
+            Steps::RegisterAdvanceFunds | Steps::WaitForAdvanceFundsRegistered
+        ) {
             info!(
                 "Flow {} not yet at WaitForReimbursementKickoffSpv (current: {:?}), buffering SPV",
                 flow_id,
@@ -927,8 +931,8 @@ mod tests {
     use bitcoin::transaction::Version;
     use bitcoin::{PublicKey, Transaction};
     use common::msg_broker::bitvmx_types::{
-        BtcTxSPVProof, FundsAdvanceSPV, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages,
-        UnionSPVNotification, UnionTxType,
+        AdvanceFundsRegistered, BtcTxSPVProof, FundsAdvanceSPV, IncomingBitVMXApiMessages,
+        OutgoingBitVMXApiMessages, UnionSPVNotification, UnionTxType,
     };
     use common::msg_broker::broker::MockBrokerClientApi;
     use common::types::{Address, CommitteeId, Hash256};
@@ -990,7 +994,7 @@ mod tests {
             Rc::new(MockBitVmxBroker::new()),
             flow_id,
             trigger_data,
-            Steps::RegisterAdvanceFunds,
+            Steps::WaitForAdvanceFundsRegistered,
         );
 
         let mut processor = AdvanceFundsFlowProcessor::new_for_test(
@@ -1014,7 +1018,7 @@ mod tests {
             .expect("should buffer early reimbursement kickoff spv");
 
         let flow = processor.flows.get(&flow_id).expect("flow should still exist");
-        assert_eq!(flow.current_step(), Steps::RegisterAdvanceFunds);
+        assert_eq!(flow.current_step(), Steps::WaitForAdvanceFundsRegistered);
         assert_eq!(
             flow.state
                 .reimbursement_kickoff_spv
@@ -1065,5 +1069,108 @@ mod tests {
             flow.state.advance_funds_spv.as_ref().expect("proof should be buffered").txid,
             proof.tx.compute_txid()
         );
+    }
+
+    #[test]
+    fn buffers_reimbursement_kickoff_spv_while_waiting_for_advance_funds_registration() {
+        let committee_id = Uuid::new_v4();
+        let slot_index = 2;
+        let flow_id = AdvanceFundsFlowProcessor::<MockRskContractsGatewayApi, MockBitVmxBroker>::get_advance_funds_pid(
+            committee_id,
+            slot_index,
+        )
+        .expect("flow id");
+        let trigger_data = test_trigger_data(committee_id, slot_index);
+
+        let flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            flow_id,
+            trigger_data,
+            Steps::WaitForAdvanceFundsRegistered,
+        );
+
+        let mut processor = AdvanceFundsFlowProcessor::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+        );
+        processor.flows.insert(flow_id, flow);
+
+        let proof = test_spv_proof();
+        let notification = UnionSPVNotification {
+            txid: proof.tx.compute_txid(),
+            committee_id,
+            slot_index,
+            spv_proof: Some(proof.clone()),
+            tx_type: UnionTxType::ReimbursementKickoff,
+        };
+
+        processor
+            .handle_union_spv_notification(&notification)
+            .expect("should buffer reimbursement kickoff before advance funds confirmation");
+
+        let flow = processor.flows.get(&flow_id).expect("flow should still exist");
+        assert_eq!(flow.current_step(), Steps::WaitForAdvanceFundsRegistered);
+        assert_eq!(
+            flow.state
+                .reimbursement_kickoff_spv
+                .as_ref()
+                .expect("proof should be buffered")
+                .tx
+                .compute_txid(),
+            proof.tx.compute_txid()
+        );
+    }
+
+    #[test]
+    fn advance_funds_confirmation_notifies_passive_followers() {
+        let committee_id = Uuid::new_v4();
+        let slot_index = 4;
+        let flow_id = Uuid::new_v4();
+        let trigger_data = test_trigger_data(committee_id, slot_index);
+
+        let mut flow_broker = MockBitVmxBroker::new();
+        flow_broker.expect_send().times(1).returning(|_| Ok(true));
+
+        let flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(flow_broker),
+            flow_id,
+            trigger_data.clone(),
+            Steps::WaitForAdvanceFundsRegistered,
+        );
+
+        let mut processor = AdvanceFundsFlowProcessor::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+        );
+        processor.flows.insert(flow_id, flow);
+
+        let registered_data = AdvanceFundsRegistered {
+            committee_id,
+            slot_index,
+            txid: proof_txid(),
+            pegout_id: trigger_data.pegout_id.value().as_bytes().to_vec(),
+            operator_pubkey: trigger_data.operator_take_pubkey,
+        };
+
+        processor
+            .complete_step_by_pegout_id(
+                trigger_data.pegout_id,
+                &[Steps::WaitForAdvanceFundsRegistered],
+                StepData::AdvanceFundsConfirmed(registered_data),
+                "AdvanceFundsRegistered",
+            )
+            .expect("passive follower should notify BitVMX after advance funds confirmation");
+
+        let flow = processor.flows.get(&flow_id).expect("flow should still exist");
+        assert_eq!(flow.current_step(), Steps::WaitForReimbursementKickoffSpv);
+        assert!(flow.state.advance_funds_registered.is_some());
+    }
+
+    fn proof_txid() -> bitcoin::Txid {
+        test_spv_proof().tx.compute_txid()
     }
 }
