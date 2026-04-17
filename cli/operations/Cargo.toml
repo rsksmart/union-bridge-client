@@ -7,6 +7,7 @@ edition = "2021"
 [dependencies]
 alloy-primitives = { workspace = true }
 anyhow = { workspace = true }
+bitcoin = { workspace = true }
 clap = { workspace = true, features = ["env"] }
 key-manager = { workspace = true }
 op-funding = { path = "../../op-funding" }
@@ -14,6 +15,7 @@ reqwest = { workspace = true }
 rpassword = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tempfile = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]

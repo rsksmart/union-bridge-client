@@ -16,7 +16,7 @@
 //! ## user
 //! funding, pegin and pegout transaction commands
 //! - `fund`: displays user addresses and funding instructions
-//!   - extracts user RSK addresses from user-api logs
+//!   - derives user RSK and Bitcoin addresses from staged operator keys
 //!   - prints cast commands to fund RSK addresses
 //!   - prints bitcoin-wallet instructions for funding bitcoin
 //! - `pegin`: initiates a bitcoin → rootstock transfer
@@ -75,6 +75,7 @@ mod environments;
 mod pegin;
 mod pegout;
 mod rsk_wallet;
+mod staged_operator_data;
 mod utils;
 
 use anyhow::Result;
