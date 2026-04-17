@@ -38,6 +38,9 @@ Launch one or more Union Bridge clients locally for development and testing.
 
 Operator and user operations for local, Docker-backed, and remote-profile environments.
 
+User and member wallet addresses are deterministically derived from the staged
+keystore and env artifacts under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/`.
+
 ### Supported Environments
 
 - `local`
