@@ -8,20 +8,15 @@ use anyhow::{anyhow, Result};
 use crate::constants::operator_ids;
 
 /// unified environment enum for all cli commands
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Environment {
     /// local cargo-run services (no docker)
+    #[default]
     Local,
     /// local docker compose services
     Docker,
     /// generic remote deployment configured via `cli/.env.<profile>`
     Remote(String),
-}
-
-impl Default for Environment {
-    fn default() -> Self {
-        Environment::Local
-    }
 }
 
 impl FromStr for Environment {

@@ -109,7 +109,7 @@ async fn collect_local_docker_addresses() -> Result<Vec<String>> {
     request_bitvmx_address_user_api(&Environment::Docker).await?;
 
     let projects: Vec<String> = operator_ids().iter().map(|id| format!("op_{}", id)).collect();
-    collect_addresses_from_logs(projects, |project| run_docker_compose_logs(project))
+    collect_addresses_from_logs(projects, run_docker_compose_logs)
 }
 
 async fn collect_remote_addresses(env: &Environment) -> Result<Vec<String>> {
