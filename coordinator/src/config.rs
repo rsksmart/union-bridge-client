@@ -333,7 +333,7 @@ mod tests {
         );
         assert!(!config.coordinator.storage_path.contains("{BASE_STORAGE_PATH}"));
         assert!(config.coordinator.storage_path.ends_with("/.union_bridge/op_1/local_database"));
-        assert_eq!("resources/hello-world.yaml", config.bridge.committee.drp_program_definition);
+        assert_eq!("resources/union-verifier.yaml", config.bridge.committee.drp_program_definition);
         assert_eq!("regtest", config.bitcoin_network);
         assert_eq!(10, config.contracts.len());
     }

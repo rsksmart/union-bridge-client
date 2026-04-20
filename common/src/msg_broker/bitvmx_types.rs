@@ -18,6 +18,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub const ACCEPT_PEGIN_TX: &str = "ACCEPT_PEGIN_TX";
+pub const OPERATOR_TAKE_TX: &str = "OPERATOR_TAKE_TX";
+pub const OPERATOR_WON_TX: &str = "OPERATOR_WON_TX";
 
 // DisputeChannel related constants and types
 pub const OP_COSIGN_UTXOS: &str = "OP_COSIGN_UTXOS";
@@ -475,7 +477,7 @@ impl TryInto<ParticipantRole> for u8 {
 
 /// Data structure received from BitVMX client containing pegin acceptance information.
 /// This is sent after BitVMX processes the pegin request and includes signature data
-/// and operator transaction metadata needed by later pegin and pegout steps.
+/// plus optional operator transaction sighashes for prover members.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PeginAcceptedMessage {
     pub committee_id: Uuid,
@@ -483,8 +485,12 @@ pub struct PeginAcceptedMessage {
     pub accept_pegin_sighash: Vec<u8>,
     pub accept_pegin_nonce: PubNonce,
     pub accept_pegin_signature: MaybeScalar,
-    pub operator_take_txid: Option<Txid>,
-    pub operator_won_txid: Option<Txid>,
+    // Kept to stay aligned with the bitvmx-client payload shape. The examples' flow and
+    // union-bridge-client do not currently consume these sighashes directly;
+    // union-bridge-client resolves operator txids via TransactionInfoByName.
+    pub operator_take_sighash: Option<Vec<u8>>,
+    // Same as above, but for operator_won_txid.
+    pub operator_won_sighash: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

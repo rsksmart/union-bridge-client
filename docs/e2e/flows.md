@@ -158,6 +158,8 @@ sequenceDiagram
     UC->>BV: Setup(flow_id, "accept_pegin", participants, 0)
     BV-->>UC: Variable(flow_id, "pegin_accepted", PeginAcceptedMessage)
     opt Prover (operator)
+        UC->>BV: GetTransactionInfoByName(flow_id, "OPERATOR_TAKE_TX_<my_idx>")
+        UC->>BV: GetTransactionInfoByName(flow_id, "OPERATOR_WON_TX_<my_idx>")
         UC->>SM: add_operator_take_tx_hash(accept_pegin_txid, operator_take_txid, operator_won_txid)
     end
     PM-->>UC: AllOperatorTakeTxidsAdded (after confirmations)
@@ -298,6 +300,5 @@ sequenceDiagram
         Note over UC: flow completes here (no advance_funds SetVar/Setup)
     end
 ```
-
 
 

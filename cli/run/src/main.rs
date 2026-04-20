@@ -565,7 +565,7 @@ fn build_env_for_client(
     if bitvmx_mode == BitvmxMode::Repo {
         envs.push((
             "UB__BRIDGE__COMMITTEE__DRP_PROGRAM_DEFINITION".to_string(),
-            project_root()?.join("resources").join("hello-world.yaml").display().to_string(),
+            project_root()?.join("resources").join("union-verifier.yaml").display().to_string(),
         ));
     }
 

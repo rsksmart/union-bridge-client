@@ -164,9 +164,9 @@ blocks_delay_for_tx_check = 20
 # Minimum BitVMX funding balance (satoshis)
 min_funding_balance = 20002000
 # Minimum RSK balance (wei) - approx 1 RBTC + fees
-min_rsk_balance = 1000000000500000
-# Path to the DRP program definition YAML file
-drp_program_definition = "resources/hello-world.yaml"
+min_rsk_balance = 1000000000500000 # TODO(iago) corregir esto
+# Path to the BitVMX union verifier program definition YAML file
+drp_program_definition = "resources/union-verifier.yaml"
 # BTC confirmations required before accepting a pegin
 pegin_confirmations = 1
 # BTC confirmations required before accepting a pegout

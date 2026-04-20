@@ -131,6 +131,74 @@ check_bitcoin_connectivity() {
     bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount &> /dev/null
 }
 
+check_bitcoin_wallet() {
+    bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword -rpcwallet=mainwallet getwalletinfo &> /dev/null
+}
+
+wait_for_condition() {
+    local description="$1"
+    local timeout_secs="$2"
+    shift 2
+    local elapsed=0
+
+    log "Waiting for ${description}..."
+    while [[ "${elapsed}" -lt "${timeout_secs}" ]]; do
+        if "$@" &> /dev/null; then
+            success "${description} ready"
+            return 0
+        fi
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+
+    warn "${description} not ready after ${timeout_secs}s"
+    return 1
+}
+
+docker_bitvmx_container_healthy() {
+    local container_name="$1"
+    local status
+
+    status=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "${container_name}" 2>/dev/null || true)
+    [[ "${status}" == "healthy" ]]
+}
+
+wait_for_docker_bitvmx_health() {
+    local op_id
+
+    for op_id in $(seq 1 "$NUM_OPERATORS"); do
+        if ! wait_for_condition "bitvmx-client-${op_id} health" 90 docker_bitvmx_container_healthy "bitvmx-client-${op_id}"; then
+            return 1
+        fi
+    done
+}
+
+wait_for_test_prereqs() {
+    if ! wait_for_condition "Anvil RPC" 30 cast rpc eth_chainId --rpc-url http://localhost:8545; then
+        echo "Error: Anvil not ready on localhost:8545"
+        exit 1
+    fi
+
+    if ! wait_for_condition "Bitcoin RPC" 30 check_bitcoin_connectivity; then
+        echo "Error: Bitcoin regtest node not accessible"
+        echo "Please ensure Bitcoin Core is running with:"
+        echo "  bitcoind -regtest -rpcuser=foo -rpcpassword=rpcpassword"
+        exit 1
+    fi
+
+    if ! wait_for_condition "Bitcoin wallet 'mainwallet'" 30 check_bitcoin_wallet; then
+        echo "Error: Bitcoin wallet 'mainwallet' is not loaded"
+        exit 1
+    fi
+
+    if [[ "$SCRIPT_ENV" == "docker" ]]; then
+        if ! wait_for_docker_bitvmx_health; then
+            echo "Error: Docker BitVMX clients are not healthy"
+            exit 1
+        fi
+    fi
+}
+
 # derive x-only public key (32 bytes) from USER_BITCOIN_WIF
 # returns the key with 0x prefix (66 chars total)
 user_xonly_pubkey_from_wif() {
@@ -183,17 +251,7 @@ if ! command -v cargo &> /dev/null || ! command -v cast &> /dev/null || ! comman
     exit 1
 fi
 
-if ! cast rpc eth_chainId --rpc-url http://localhost:8545 &> /dev/null; then
-    echo "Error: Anvil not running on localhost:8545"
-    exit 1
-fi
-
-if ! check_bitcoin_connectivity; then
-    echo "Error: Bitcoin regtest node not accessible"
-    echo "Please ensure Bitcoin Core is running with:"
-    echo "  bitcoind -regtest -rpcuser=foo -rpcpassword=rpcpassword"
-    exit 1
-fi
+wait_for_test_prereqs
 
 echo "All prerequisites met!"
 echo ""
@@ -514,7 +572,7 @@ trap cleanup EXIT
 
 clear
 log "Configuration: stream=$STREAM_ID, rsk=$RSK_ADDRESS, amount=$VALUE, env=$SCRIPT_ENV"
-log "Prerequisite: Start mining in another terminal with: ./cli-infra.sh --start-mine"
+log "Prerequisite: keep mining disabled until infra is ready; only start it when the flow needs block progress"
 echo ""
 
 # prepare wallets

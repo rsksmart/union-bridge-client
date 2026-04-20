@@ -12,4 +12,4 @@ start_from = "best"
 # ═══════════════════════════════════════════════════════
 
 [bridge.committee]
-drp_program_definition = "/app/resources/hello-world.yaml"
+drp_program_definition = "/app/resources/union-verifier.yaml"

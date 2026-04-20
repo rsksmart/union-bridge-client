@@ -373,6 +373,9 @@ write_operator_bitvmx_pubkey_hash_files() {
   if [[ -f "${target_keys_dir}/prover.key" ]]; then
     compute_pubkey_hash "${target_keys_dir}/prover.key" > "${target_keys_dir}/prover.pubkey_hash"
   fi
+  if [[ -f "${target_keys_dir}/garbler.key" ]]; then
+    compute_pubkey_hash "${target_keys_dir}/garbler.key" > "${target_keys_dir}/garbler.pubkey_hash"
+  fi
 }
 
 patch_operator_bitvmx_identity_hashes() {
@@ -382,6 +385,7 @@ patch_operator_bitvmx_identity_hashes() {
   local bitvmx_pubkey_hash=""
   local emulator_pubkey_hash=""
   local prover_pubkey_hash=""
+  local garbler_pubkey_hash=""
 
   if [[ -f "${target_keys_dir}/services.pubkey_hash" ]]; then
     bitvmx_pubkey_hash="$(tr -d ' \n' < "${target_keys_dir}/services.pubkey_hash")"
@@ -391,6 +395,9 @@ patch_operator_bitvmx_identity_hashes() {
   fi
   if [[ -f "${target_keys_dir}/prover.pubkey_hash" ]]; then
     prover_pubkey_hash="$(tr -d ' \n' < "${target_keys_dir}/prover.pubkey_hash")"
+  fi
+  if [[ -f "${target_keys_dir}/garbler.pubkey_hash" ]]; then
+    garbler_pubkey_hash="$(tr -d ' \n' < "${target_keys_dir}/garbler.pubkey_hash")"
   fi
 
   patch_bitvmx_component_pubkey_hash "${cfg_file}" "l2" "${coordinator_pubkey_hash}"
@@ -402,6 +409,9 @@ patch_operator_bitvmx_identity_hashes() {
   fi
   if [[ -n "${prover_pubkey_hash}" ]]; then
     patch_bitvmx_component_pubkey_hash "${cfg_file}" "prover" "${prover_pubkey_hash}"
+  fi
+  if [[ -n "${garbler_pubkey_hash}" ]]; then
+    patch_bitvmx_component_pubkey_hash "${cfg_file}" "garbler" "${garbler_pubkey_hash}"
   fi
 
   RESOLVED_BITVMX_BROKER_PUBKEY_HASH="${bitvmx_pubkey_hash}"

@@ -238,16 +238,16 @@ The repository ships sample files under `resources/`:
 
 | File | Purpose |
 | --- | --- |
-| `resources/hello-world.elf` | sample RISC-V ELF binary |
-| `resources/hello-world.yaml` | sample BitVMX program definition |
+| `resources/generic-verifier.elf` | BitVMX union verifier ELF binary |
+| `resources/union-verifier.yaml` | BitVMX union verifier program definition |
 
-For the recommended Docker-backed local path, `config/local.toml` already points to `/app/resources/hello-world.yaml`,
+For the recommended Docker-backed local path, `config/local.toml` already points to `/app/resources/union-verifier.yaml`,
 which matches the Docker mounts used by the local BitVMX flow.
 
 For repo-mode BitVMX, `./cli-run.sh --bitvmx-mode repo` injects:
 
 ```bash
-UB__BRIDGE__COMMITTEE__DRP_PROGRAM_DEFINITION=<project_root>/resources/hello-world.yaml
+UB__BRIDGE__COMMITTEE__DRP_PROGRAM_DEFINITION=<project_root>/resources/union-verifier.yaml
 ```
 
 ## Run the Happy-Path

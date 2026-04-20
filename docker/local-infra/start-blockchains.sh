@@ -81,6 +81,45 @@ if [[ ! -f "$ENV_PATH" ]]; then
   exit 1
 fi
 
+source "${ENV_PATH}"
+
+wait_for_bitcoind_rpc() {
+  local timeout_secs="${1:-60}"
+  local elapsed=0
+
+  echo "Waiting for ${BITCOIND_CONTAINER} RPC..."
+  while [[ "${elapsed}" -lt "${timeout_secs}" ]]; do
+    if docker exec "${BITCOIND_CONTAINER}" bitcoin-cli -regtest -rpcuser="${BITCOIND_USER}" -rpcpassword="${BITCOIND_PASSWORD}" getblockcount >/dev/null 2>&1; then
+      echo "${BITCOIND_CONTAINER} RPC is ready."
+      return 0
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+
+  echo "Error: ${BITCOIND_CONTAINER} RPC was not ready after ${timeout_secs}s."
+  return 1
+}
+
+wait_for_bitcoind_wallet() {
+  local wallet_name="$1"
+  local timeout_secs="${2:-60}"
+  local elapsed=0
+
+  echo "Waiting for wallet '${wallet_name}' to load..."
+  while [[ "${elapsed}" -lt "${timeout_secs}" ]]; do
+    if docker exec "${BITCOIND_CONTAINER}" bitcoin-cli -regtest -rpcuser="${BITCOIND_USER}" -rpcpassword="${BITCOIND_PASSWORD}" -rpcwallet="${wallet_name}" getwalletinfo >/dev/null 2>&1; then
+      echo "Wallet '${wallet_name}' is ready."
+      return 0
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+
+  echo "Error: wallet '${wallet_name}' was not ready after ${timeout_secs}s."
+  return 1
+}
+
 # Resolve CONTRACTS_IMAGE_TAG: --contracts-tag > Cargo.toml (no env var override)
 PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 CARGO_TOML="${PROJECT_ROOT}/Cargo.toml"
@@ -227,13 +266,12 @@ if [[ "${IS_UP_COMMAND}" == true ]]; then
   fi
 fi
 
+if [[ "${IS_UP_COMMAND}" == true ]]; then
+  wait_for_bitcoind_rpc
+fi
+
 # If using 'up' command after a fresh teardown, create the Bitcoin wallet and deploy contracts
 if [[ "${IS_UP_COMMAND}" == true && "${FRESH}" == true ]]; then
-  echo "Waiting 5 seconds for bitcoind initialization..."
-  sleep 5
-
-  source "${ENV_PATH}"
-
   # Create wallet
   echo "Creating wallet 'mainwallet' in ${BITCOIND_CONTAINER}..."
   if ! docker exec "${BITCOIND_CONTAINER}" bitcoin-cli -regtest -rpcuser="${BITCOIND_USER}" -rpcpassword="${BITCOIND_PASSWORD}" createwallet mainwallet; then
@@ -247,6 +285,11 @@ if [[ "${IS_UP_COMMAND}" == true && "${FRESH}" == true ]]; then
     echo "Error: Failed to restart ${BITCOIND_CONTAINER}"
     exit 1
   fi
+fi
+
+if [[ "${IS_UP_COMMAND}" == true ]]; then
+  wait_for_bitcoind_rpc
+  wait_for_bitcoind_wallet "mainwallet"
 fi
 
 echo
