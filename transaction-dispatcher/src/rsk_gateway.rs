@@ -34,7 +34,7 @@ use crate::contracts::signature_manager::{
     AddMemberNonceInvoke, AddMemberSignatureInvoke, AddOperatorTakeTxHashInvoke,
     SignatureManagerContract,
 };
-use crate::contracts::stream_manager::StreamManagerContract;
+use crate::contracts::stream_manager::{StreamManagerContract, StreamManagerContractApi};
 use crate::types::{
     AcceptPeginInput, AcceptPeginOutput, AddMemberNonceInput, AddMemberNonceOutput,
     AddMemberSignatureInput, AddMemberSignatureOutput, AddOperatorTakeTxHashInput,
@@ -206,6 +206,12 @@ pub trait RskContractsGatewayApi {
     ) -> impl Future<Output = Result<RegisterReimbursementKickoffOutput, DomainErrors>>;
 
     fn is_whitelisted(&self) -> impl Future<Output = Result<bool, DomainErrors>>;
+
+    fn get_minimum_deposit(
+        &self,
+        stream_id: u8,
+        role: u8,
+    ) -> impl Future<Output = Result<U256, DomainErrors>>;
 }
 
 #[derive(Clone)]
@@ -240,6 +246,7 @@ pub struct RskContractsGateway<P: Provider + Clone> {
     deposit_aggregated_key_invoke: DepositAggregatedKeysInvoke<CommitteeRegistryContract<P>>,
     is_whitelisted_call: IsWhitelistedCall<CommitteeRegistryContract<P>>,
     get_btc_confirmations_call: GetBtcTransactionConfirmationsCall<NativeBridgeContract<P>>,
+    stream_manager_contract: StreamManagerContract<P>,
 }
 
 impl<P: Provider + Clone> RskContractsGateway<P> {
@@ -405,6 +412,7 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
                 native_bridge_contract.clone(),
             ),
             is_whitelisted_call: IsWhitelistedCall::new(committee_registry_contract.clone()),
+            stream_manager_contract: stream_manager_contract.clone(),
         })
     }
 
@@ -691,6 +699,17 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
             error!("Error on is_whitelisted_call: {err}");
             err
         })
+    }
+
+    async fn get_minimum_deposit(&self, stream_id: u8, role: u8) -> Result<U256, DomainErrors> {
+        use union_contracts::bindings::stream_manager::StreamManager::{Role, StreamDenomination};
+        self.stream_manager_contract
+            .call_get_minimum_deposit(StreamDenomination::from(stream_id), Role::from(role))
+            .await
+            .map_err(|err| {
+                error!("Error on call_get_minimum_deposit: {err}");
+                DomainErrors::UnhandledContractError(err.to_string())
+            })
     }
 }
 

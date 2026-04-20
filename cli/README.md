@@ -63,7 +63,7 @@ For remote CLI access, copy `cli/.env.sample` to `cli/.env.<profile>` and fill i
 ./cli-operations.sh operator fund --env docker
 
 # Local operator apply-stream
-./cli-operations.sh operator apply-stream --stream-id 1
+./cli-operations.sh operator apply-stream --stream 1
 
 # Local whitelist
 ./cli-operations.sh operator whitelist --contract-address 0x742d35... --env local

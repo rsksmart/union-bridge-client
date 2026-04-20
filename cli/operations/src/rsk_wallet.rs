@@ -1,11 +1,18 @@
+use alloy_primitives::U256;
 use anyhow::{anyhow, bail, Context, Result};
 use rpassword::prompt_password;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::str::FromStr;
 
-use crate::constants::{operator_ids, LOCAL_ANVIL_ADDRESS, ONE_OPERATOR_COMPOSE_PROJECT};
+use op_funding::{derive_stream_funding_profile, required_member_rsk_balance};
+
+use crate::constants::{
+    operator_and_prover_counts, operator_ids, COMMITTEE_PACKET_SIZE, LOCAL_ANVIL_ADDRESS,
+    ONE_OPERATOR_COMPOSE_PROJECT,
+};
 use crate::environments::*;
 use crate::utils::command_to_string;
 
@@ -13,6 +20,13 @@ const MEMBER_LOG_MARKER: &str = "Got member signer with address";
 const USER_LOG_MARKER: &str = "Got user signer with address";
 const USER_RSK_LOG_MARKER: &str = "Connected to Rootstock at";
 const USER_RSK_ADDRESS_MARKER: &str = "as User with address";
+// Keep this aligned with `union-bridge-client/config/base.toml`. Local and docker both point at
+// the same Anvil deployment, so the CLI can rely on this fixed StreamManager address.
+const LOCAL_STREAM_MANAGER_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
+const WEI_PER_RBTC: u64 = 1_000_000_000_000_000_000;
+const WEI_PER_SAT: u64 = 10_000_000_000;
+// Fixed local/dev gas headroom added on top of the pegout amount for user wallets.
+const LOCAL_USER_RSK_GAS_BUFFER_WEI: u64 = 30_000_000_000_000_000;
 
 /// whitelists member RSK addresses on the CommitteeRegistry contract.
 /// collects member signer addresses from coordinator logs, then calls
@@ -183,15 +197,19 @@ fn has_prefixed_hex_len(value: &str, hex_len: usize) -> bool {
 }
 
 /// handles funding rootstock wallets for operator stacks
-pub async fn handle_operator_funding(env: Environment) -> Result<()> {
+pub async fn handle_operator_funding(
+    env: Environment,
+    stream_id: u64,
+    stream_manager_address: Option<&str>,
+) -> Result<()> {
     match env {
         Environment::Local => {
-            fund_local()?;
+            fund_local(stream_id)?;
         }
         Environment::Docker => {
-            fund_local_docker()?;
+            fund_local_docker(stream_id)?;
         }
-        Environment::Remote(_) => print_instructions(&env)?,
+        Environment::Remote(_) => print_instructions(&env, stream_id, stream_manager_address)?,
     }
     Ok(())
 }
@@ -223,9 +241,13 @@ pub fn handle_user_funding(env: Environment) -> Result<()> {
         match env {
             Environment::Local | Environment::Docker => {
                 println!("Fund using (local anvil):");
+                println!(
+                    "  value should be: pegout amount in wei + {} wei gas buffer",
+                    LOCAL_USER_RSK_GAS_BUFFER_WEI
+                );
                 for (_, address) in &user_addresses {
                     println!(
-                        "  cast send --rpc-url {} --from {} {} --value 1ether --unlocked",
+                        "  cast send --rpc-url {} --from {} {} --value <AMOUNT_IN_WEI_PLUS_BUFFER> --unlocked",
                         rpc_url, LOCAL_ANVIL_ADDRESS, address
                     );
                 }
@@ -381,7 +403,7 @@ fn extract_user_rsk_address(log_content: &str) -> Option<String> {
     None
 }
 
-fn fund_local() -> Result<()> {
+fn fund_local(stream_id: u64) -> Result<()> {
     println!("[cargo-fund] funding operator wallets via local anvil");
     let member_signers = collect_local_signers_from_logs(MEMBER_LOG_MARKER)?;
     let unique_members = unique_addresses(&member_signers);
@@ -394,10 +416,23 @@ fn fund_local() -> Result<()> {
         );
     }
 
-    for (operator_id, address) in &member_signers {
+    let rpc_url = Environment::Local.rpc_url()?;
+
+    for (index, (operator_id, address)) in member_signers.iter().enumerate() {
         println!("Processing coordinator-{}", operator_id);
         println!("  Funding member RSK address: {}", address);
-        run_cast_send_local(&address)?;
+        let required_balance = required_operator_rsk_balance(
+            &rpc_url,
+            LOCAL_STREAM_MANAGER_ADDRESS,
+            stream_id,
+            role_for_operator_index(index),
+        )?;
+        println!(
+            "  Required RSK balance: {} RBTC ({} wei)",
+            format_wei_as_rbtc(required_balance),
+            required_balance
+        );
+        run_cast_send_local(address, required_balance)?;
     }
 
     println!("\n[cargo-fund] funding user wallets via local anvil");
@@ -411,17 +446,24 @@ fn fund_local() -> Result<()> {
         );
     }
 
+    let required_user_balance = required_user_rsk_balance(stream_id)?;
+
     for (operator_id, address) in &user_signers {
         println!("Processing user-api-{}", operator_id);
         println!("  Funding user RSK address: {}", address);
-        run_cast_send_local(&address)?;
+        println!(
+            "  Required user RSK balance: {} RBTC ({} wei)",
+            format_wei_as_rbtc(required_user_balance),
+            required_user_balance
+        );
+        run_cast_send_local(address, required_user_balance)?;
     }
 
     println!("\nDone. Funded operator and user RSK addresses on local Anvil.");
     Ok(())
 }
 
-fn fund_local_docker() -> Result<()> {
+fn fund_local_docker(stream_id: u64) -> Result<()> {
     println!("[docker-fund] funding operator wallets via local anvil");
     let member_signers = collect_local_signers(MEMBER_LOG_MARKER)?;
     let unique_members = unique_addresses(&member_signers);
@@ -434,10 +476,23 @@ fn fund_local_docker() -> Result<()> {
         );
     }
 
-    for (project, address) in &member_signers {
+    let rpc_url = Environment::Docker.rpc_url()?;
+
+    for (index, (project, address)) in member_signers.iter().enumerate() {
         println!("Processing {}", project);
         println!("  Funding member RSK address: {}", address);
-        run_cast_send_local(&address)?;
+        let required_balance = required_operator_rsk_balance(
+            &rpc_url,
+            LOCAL_STREAM_MANAGER_ADDRESS,
+            stream_id,
+            role_for_operator_index(index),
+        )?;
+        println!(
+            "  Required RSK balance: {} RBTC ({} wei)",
+            format_wei_as_rbtc(required_balance),
+            required_balance
+        );
+        run_cast_send_local(address, required_balance)?;
     }
 
     println!("\n[docker-fund] funding user wallets via local anvil");
@@ -451,21 +506,36 @@ fn fund_local_docker() -> Result<()> {
         );
     }
 
+    let required_user_balance = required_user_rsk_balance(stream_id)?;
+
     for (project, address) in &user_signers {
         println!("Processing {} (user)", project);
         println!("  Funding user RSK address: {}", address);
-        run_cast_send_local(&address)?;
+        println!(
+            "  Required user RSK balance: {} RBTC ({} wei)",
+            format_wei_as_rbtc(required_user_balance),
+            required_user_balance
+        );
+        run_cast_send_local(address, required_user_balance)?;
     }
 
     println!("\nDone. Funded operator and user RSK addresses on local Anvil.");
     Ok(())
 }
 
-fn print_instructions(env: &Environment) -> Result<()> {
+fn print_instructions(
+    env: &Environment,
+    stream_id: u64,
+    stream_manager_address: Option<&str>,
+) -> Result<()> {
     let env_name = env.get_name();
 
     let hosts = env.hosts()?;
     let rpc_url = env.rpc_url()?;
+    let stream_manager_address = stream_manager_address
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow!("--stream-manager-address is required for remote environments"))?;
 
     println!("[docker-fund] gathering operator wallets from {} hosts", env_name);
     let ssh_user = env.remote_ssh_user()?;
@@ -481,20 +551,75 @@ fn print_instructions(env: &Environment) -> Result<()> {
     }
 
     println!("Operator RSK addresses to fund on {}:", env_name);
-    for address in &unique {
-        println!("  operator -> {}", address);
+    for (index, address) in unique.iter().enumerate() {
+        let required_balance = required_operator_rsk_balance(
+            &rpc_url,
+            stream_manager_address,
+            stream_id,
+            role_for_operator_index(index),
+        )?;
+        println!(
+            "  operator -> {} (required: {} RBTC / {} wei)",
+            address,
+            format_wei_as_rbtc(required_balance),
+            required_balance
+        );
     }
     println!();
 
     println!("Fund with `cast` using a key you control. Replace <PRIVATE_KEY> locally:");
-    for address in unique {
+    for (index, address) in unique.into_iter().enumerate() {
+        let required_balance = required_operator_rsk_balance(
+            &rpc_url,
+            stream_manager_address,
+            stream_id,
+            role_for_operator_index(index),
+        )?;
         println!(
-            "  cast send {} --value <VARIABLE_AMOUNT_PER_STREAM> --private-key <PRIVATE_KEY> --rpc-url {}",
-            address, rpc_url
+            "  cast send {} --value {} --private-key <PRIVATE_KEY> --rpc-url {}",
+            address, required_balance, rpc_url
         );
     }
 
     Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum CommitteeFundingRole {
+    Prover,
+    Verifier,
+}
+
+impl CommitteeFundingRole {
+    fn role_id(self) -> u8 {
+        match self {
+            CommitteeFundingRole::Prover => 1,
+            CommitteeFundingRole::Verifier => 2,
+        }
+    }
+}
+
+fn role_for_operator_index(index: usize) -> CommitteeFundingRole {
+    if index % 2 == 0 {
+        CommitteeFundingRole::Prover
+    } else {
+        CommitteeFundingRole::Verifier
+    }
+}
+
+fn required_user_rsk_balance(stream_id: u64) -> Result<U256> {
+    let (operator_count, prover_count) = operator_and_prover_counts();
+    let amount_in_wei = derive_stream_funding_profile(
+        stream_id,
+        true,
+        COMMITTEE_PACKET_SIZE,
+        operator_count,
+        prover_count,
+    )
+    .map(|profile| U256::from(profile.denomination) * U256::from(WEI_PER_SAT))
+    .ok_or_else(|| anyhow!("invalid stream id {} (expected 0-4)", stream_id))?;
+
+    Ok(amount_in_wei + U256::from(LOCAL_USER_RSK_GAS_BUFFER_WEI))
 }
 
 fn collect_local_signers_from_logs(marker: &str) -> Result<Vec<(String, String)>> {
@@ -642,11 +767,80 @@ fn cargo_logs_dir() -> Result<PathBuf> {
     Ok(project_root.join("logs"))
 }
 
-fn run_cast_send_local(address: &str) -> Result<()> {
+fn required_operator_rsk_balance(
+    rpc_url: &str,
+    stream_manager_address: &str,
+    stream_id: u64,
+    role: CommitteeFundingRole,
+) -> Result<U256> {
+    let min_deposit = fetch_stream_min_deposit(rpc_url, stream_manager_address, stream_id, role)?;
+    let operator_count = u64::try_from(operator_ids().len()).expect("operator count fits in u64");
+    Ok(required_member_rsk_balance(min_deposit, COMMITTEE_PACKET_SIZE, operator_count))
+}
+
+fn fetch_stream_min_deposit(
+    rpc_url: &str,
+    stream_manager_address: &str,
+    stream_id: u64,
+    role: CommitteeFundingRole,
+) -> Result<U256> {
+    let output = Command::new("cast")
+        .arg("call")
+        .arg("--rpc-url")
+        .arg(rpc_url)
+        .arg(stream_manager_address)
+        .arg("getMinimumDeposit(uint8,uint8)(uint256)")
+        .arg(stream_id.to_string())
+        .arg(role.role_id().to_string())
+        .output()
+        .context("failed to execute cast call for getMinimumDeposit")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("getMinimumDeposit call failed: {}", stderr.trim());
+    }
+
+    let stdout = String::from_utf8(output.stdout).context("cast call output is not valid utf-8")?;
+    parse_u256(stdout.trim()).context("failed to parse getMinimumDeposit response")
+}
+
+fn parse_u256(value: &str) -> Result<U256> {
+    let normalized = value.split_whitespace().next().unwrap_or(value).trim();
+
+    if let Some(hex) = normalized.strip_prefix("0x") {
+        U256::from_str_radix(hex, 16)
+            .map_err(|err| anyhow!("invalid hex uint256 '{}': {}", normalized, err))
+    } else {
+        U256::from_str(normalized)
+            .map_err(|err| anyhow!("invalid decimal uint256 '{}': {}", normalized, err))
+    }
+}
+
+fn format_wei_as_rbtc(value: U256) -> String {
+    let whole = value / U256::from(WEI_PER_RBTC);
+    let fractional = value % U256::from(WEI_PER_RBTC);
+
+    if fractional.is_zero() {
+        return whole.to_string();
+    }
+
+    let mut fractional_str = fractional.to_string();
+    if fractional_str.len() < 18 {
+        fractional_str = format!("{fractional_str:0>18}");
+    }
+    let trimmed = fractional_str.trim_end_matches('0');
+    format!("{}.{}", whole, trimmed)
+}
+
+fn run_cast_send_local(address: &str, value: U256) -> Result<()> {
     let rpc_url = Environment::Local.rpc_url()?;
     eprintln!(
-        "  Running: cast send --rpc-url {} --from {} {} --value 1ether --unlocked",
-        rpc_url, LOCAL_ANVIL_ADDRESS, address
+        "  Running: cast send --rpc-url {} --from {} {} --value {} --unlocked ({} RBTC)",
+        rpc_url,
+        LOCAL_ANVIL_ADDRESS,
+        address,
+        value,
+        format_wei_as_rbtc(value)
     );
     let output = Command::new("cast")
         .arg("send")
@@ -656,7 +850,7 @@ fn run_cast_send_local(address: &str) -> Result<()> {
         .arg(LOCAL_ANVIL_ADDRESS)
         .arg(address)
         .arg("--value")
-        .arg("2ether")
+        .arg(value.to_string())
         .arg("--unlocked")
         .output()
         .context("failed to execute cast send")?;
@@ -672,6 +866,22 @@ fn run_cast_send_local(address: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_u256_decimal_and_hex() {
+        assert_eq!(parse_u256("123").unwrap(), U256::from(123_u64));
+        assert_eq!(parse_u256("0x7b").unwrap(), U256::from(123_u64));
+        assert_eq!(
+            parse_u256("25000000000000000 [2.5e16]").unwrap(),
+            U256::from(25_000_000_000_000_000_u64)
+        );
+    }
+
+    #[test]
+    fn formats_wei_as_rbtc() {
+        assert_eq!(format_wei_as_rbtc(U256::from(WEI_PER_RBTC)), "1");
+        assert_eq!(format_wei_as_rbtc(U256::from(26_000_000_000_500_000_u64)), "0.0260000000005");
+    }
 
     #[test]
     fn local_whitelist_uses_default_unlocked_sender() {

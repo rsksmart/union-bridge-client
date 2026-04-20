@@ -4,10 +4,12 @@ use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::ValueEnum;
+use op_funding::derive_stream_funding_profile;
 use reqwest::Client;
 use serde::Serialize;
 use tokio::time::sleep;
 
+use crate::constants::{operator_and_prover_counts, COMMITTEE_PACKET_SIZE};
 use crate::environments::Environment;
 use crate::utils::{confirm_operation, request_to_string};
 use crate::validate_1_10;
@@ -130,13 +132,23 @@ async fn post_apply(
     role: CommitteeRole,
     environment: &Environment,
 ) -> Result<()> {
+    let (operator_count, prover_count) = operator_and_prover_counts();
+    let funding_profile = derive_stream_funding_profile(
+        stream_id,
+        matches!(environment, Environment::Local | Environment::Docker),
+        COMMITTEE_PACKET_SIZE,
+        operator_count,
+        prover_count,
+    )
+    .with_context(|| format!("invalid stream id {} (expected 0-4)", stream_id))?;
+
     let payload = ApplyStreamRequest {
         apply_to_stream: ApplyToStream {
             stream_id,
             role: role.as_str().to_string(),
-            funding_utxo: Funding { value: 10_000_000 },
-            speed_up_utxo: Funding { value: 10_000_000 },
-            advance_funds: Funding { value: 10_000_000 },
+            funding_utxo: Funding { value: funding_profile.protocol_funding },
+            speed_up_utxo: Funding { value: funding_profile.speed_up_utxo },
+            advance_funds: Funding { value: funding_profile.advance_funds },
         },
     };
 

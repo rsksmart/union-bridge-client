@@ -606,9 +606,9 @@ echo ""
 step "Step 1: Fund Operator Wallets"
 # operator fund with --execute handles BitVMX funding automatically
 # Must pass $SCRIPT_ENV so it knows where to find the BitVMX addresses (local logs vs Docker logs)
-log "Command: bash cli-operations.sh operator fund --env $SCRIPT_ENV --execute"
+log "Command: bash cli-operations.sh operator fund --env $SCRIPT_ENV --stream-id $STREAM_ID --execute"
 echo ""
-if ! bash cli-operations.sh operator fund --env "$SCRIPT_ENV" --execute; then
+if ! bash cli-operations.sh operator fund --env "$SCRIPT_ENV" --stream-id "$STREAM_ID" --execute; then
     warn "Command failed!"
     exit 1
 fi

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use alloy_primitives::{Address, Bytes, FixedBytes, U256};
+use alloy_primitives::{Address, Bytes, FixedBytes};
 use anyhow::{Context, Result, bail, ensure};
 use bitcoin::key::Parity::Even;
 use bitcoin::{Network, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
@@ -17,6 +17,7 @@ use common::types::{CommitteeId, StreamId, TxIdParser};
 use log::{debug, error, info, trace, warn};
 #[cfg(test)]
 use mockall::automock;
+use op_funding::{derive_stream_funding_profile, required_member_rsk_balance};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tiny_keccak::{Hasher, Keccak};
@@ -40,7 +41,8 @@ use crate::flows::committee::dispute_channel_setup::{
     DisputeChannelSetup, DisputeChannelSetupRequest,
 };
 use crate::flows::committee::dispute_core_setup::{
-    AggregatedKeys, CommitteeConfirmations, DisputeCoreSetup,
+    AggregatedKeys, CommitteeConfirmations, DEFAULT_OPERATOR_COUNT, DEFAULT_PROVER_COUNT,
+    DisputeCoreSetup, PACKET_SIZE,
 };
 use crate::flows::committee::full_penalization_setup::FullPenalizationSetup;
 use crate::flows::common::{
@@ -699,6 +701,19 @@ where
     fn validate_bitvmx_balance(&mut self, data: StepData) -> Result<()> {
         let balance = data.into_bitvmx_funding_balance()?;
 
+        let stream_id = self.ctx().get_stream_id()?;
+        let is_regtest = self.bitcoin_network == Network::Regtest;
+
+        let profile = derive_stream_funding_profile(
+            *stream_id,
+            is_regtest,
+            PACKET_SIZE.into(),
+            DEFAULT_OPERATOR_COUNT,
+            DEFAULT_PROVER_COUNT,
+        )
+        .with_context(|| format!("Unsupported stream id {}", *stream_id))?;
+        let min_funding_balance = profile.operator_fund_amount;
+
         let r = self
             .state
             .ctx
@@ -707,7 +722,6 @@ where
             .context("Funding balance request missing in context")?;
         r.1 = Some(balance);
 
-        let min_funding_balance = self.config.min_funding_balance;
         if balance < min_funding_balance {
             bail!("Insufficient funding balance: {balance} < {min_funding_balance}")
         }
@@ -736,9 +750,15 @@ where
 
         let balance_wei = self.rt_sync.run(self.contracts.get_balance())?;
 
-        let min_rsk_balance = self.config.min_rsk_balance;
-        // convert wei to a u64 (this is safe for reasonable balance values)
-        if balance_wei < U256::from(min_rsk_balance) {
+        let stream_id = self.ctx().get_stream_id()?;
+        let role = u8::from(self.ctx().get_user_input()?.role);
+        let stream_id_u8 = stream_id.as_u8()?;
+        let min_deposit =
+            self.rt_sync.run(self.contracts.get_minimum_deposit(stream_id_u8, role))?;
+        let min_rsk_balance =
+            required_member_rsk_balance(min_deposit, PACKET_SIZE.into(), DEFAULT_OPERATOR_COUNT);
+
+        if balance_wei < min_rsk_balance {
             bail!("Insufficient RSK balance: {balance_wei} < {min_rsk_balance}")
         }
 

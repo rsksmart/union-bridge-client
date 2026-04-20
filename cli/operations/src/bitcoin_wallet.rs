@@ -5,20 +5,35 @@ use std::process::Command;
 use std::time::Duration;
 use tokio::time::sleep;
 
-use crate::constants::{operator_ids, ONE_OPERATOR_COMPOSE_PROJECT};
+use crate::constants::{
+    operator_and_prover_counts, operator_ids, COMMITTEE_PACKET_SIZE, ONE_OPERATOR_COMPOSE_PROJECT,
+};
 use crate::environments::*;
 use crate::utils::command_to_string;
+use op_funding::derive_stream_funding_profile;
 
 const LOG_MARKER: &str = "Received BitVMX Funding Address:";
 
 pub async fn handle_bitcoin_funding(
     environment: Environment,
+    stream_id: u64,
     execute: bool,
-    amount: u64,
+    amount_override: Option<u64>,
 ) -> Result<()> {
     if execute && environment.is_remote() {
         bail!("--execute flag is only supported for local environments (`local`/`docker`). For remote environments, please run the wallet commands manually.");
     }
+
+    let (operator_count, prover_count) = operator_and_prover_counts();
+    let funding_profile = derive_stream_funding_profile(
+        stream_id,
+        matches!(environment, Environment::Local | Environment::Docker),
+        COMMITTEE_PACKET_SIZE,
+        operator_count,
+        prover_count,
+    )
+    .with_context(|| format!("invalid stream id {} (expected 0-4)", stream_id))?;
+    let amount = amount_override.unwrap_or(funding_profile.operator_fund_amount);
 
     let addresses = match &environment {
         Environment::Local => collect_local_addresses().await?,
@@ -30,14 +45,30 @@ pub async fn handle_bitcoin_funding(
         bail!("no BitVMX funding addresses were discovered");
     }
 
+    // Add a small fixed buffer so the wallet's `mine_utxo` amount still covers
+    // the subsequent `send_to_address` transaction fee on regtest.
+    let funding_utxo = amount
+        .checked_mul(addresses.len() as u64)
+        .and_then(|value| value.checked_add(10_000))
+        .context("failed to compute wallet funding UTXO amount")?;
+
     println!();
+    println!(
+        "Derived stream {} funding: denomination={} protocol_funding={} speed_up_utxo={} advance_funds={} operator_fund_amount={}",
+        stream_id,
+        funding_profile.denomination,
+        funding_profile.protocol_funding,
+        funding_profile.speed_up_utxo,
+        funding_profile.advance_funds,
+        amount
+    );
 
     if execute {
         println!("Executing wallet commands programmatically...");
         println!();
         execute_wallet_command(&addresses, amount)?;
     } else {
-        print_instructions(&environment, &addresses, amount);
+        print_instructions(&environment, &addresses, amount, funding_utxo);
     }
 
     Ok(())
@@ -206,7 +237,7 @@ fn cargo_logs_dir() -> Result<PathBuf> {
     Ok(project_root.join("logs"))
 }
 
-fn print_instructions(env: &Environment, addresses: &[String], amount: u64) {
+fn print_instructions(env: &Environment, addresses: &[String], amount: u64, funding_utxo: u64) {
     let joined = addresses.join(",");
     println!("Note: See the bitcoin-wallet README for how to start and use the CLI: ../cli/bitcoin-wallet/README.md\n");
 
@@ -221,7 +252,7 @@ fn print_instructions(env: &Environment, addresses: &[String], amount: u64) {
         Environment::Docker | Environment::Local => {
             println!("Run the following commands in the bitcoin-wallet CLI (Regtest):");
             println!("1 =>    clear_db   (if you see a misaligned utxos error)");
-            println!("2 =>    mine_utxo 900000000");
+            println!("2 =>    mine_utxo {}", funding_utxo);
             println!("3 =>    send_to_address {} {}", joined, amount);
             println!("4 =>    mine_block");
         }

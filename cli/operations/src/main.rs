@@ -36,7 +36,7 @@
 //! # copy displayed bitcoin addresses and fund them in bitcoin-wallet cli
 //! # or use --execute to run the wallet commands automatically:
 //! cargo run -- operator fund --env local --execute
-//! # optionally specify a custom funding amount in satoshis (default: 32100000):
+//! # optionally override the derived funding amount in satoshis:
 //! cargo run -- operator fund --env local --execute --fund-amount 65000000
 //! ```
 //!
@@ -79,9 +79,10 @@ mod utils;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use op_funding::derive_stream_funding_profile;
 
 use crate::committee::CommitteeRole;
-use crate::constants::DEFAULT_OPERATOR_FUND_AMOUNT;
+use crate::constants::{operator_and_prover_counts, COMMITTEE_PACKET_SIZE};
 use crate::environments::Environment;
 
 #[derive(Debug, Parser, Clone)]
@@ -113,18 +114,26 @@ enum OperatorCommands {
         #[arg(long = "env", short = 'e', default_value = "local", env = "UC_ENV")]
         env: Environment,
 
+        /// Stream identifier used to derive BitVMX funding and UTXO values
+        #[arg(short = 's', long = "stream", value_name = "STREAM_ID", default_value_t = 0)]
+        stream_id: u64,
+
+        /// StreamManager contract address. Required for remote environments when
+        /// funding operator RSK balances.
+        #[arg(long = "stream-manager-address", value_name = "ADDRESS")]
+        stream_manager_address: Option<String>,
+
         /// Execute the wallet commands programmatically instead of just printing them
         #[arg(long = "execute", default_value_t = false)]
         execute: bool,
 
-        /// Bitcoin funding amount in satoshis
+        /// Override the derived Bitcoin funding amount in satoshis
         #[arg(
             long = "fund-amount",
             value_name = "SATOSHIS",
-            default_value_t = DEFAULT_OPERATOR_FUND_AMOUNT,
             value_parser = clap::value_parser!(u64).range(1..)
         )]
-        fund_amount: u64,
+        fund_amount: Option<u64>,
     },
     /// Whitelist member addresses on the CommitteeRegistry contract
     Whitelist {
@@ -146,11 +155,23 @@ enum OperatorCommands {
         #[arg(long = "private-key", value_name = "HEX_KEY", conflicts_with = "from_address")]
         private_key: Option<String>,
     },
+    /// Print the per-operator Bitcoin funding amount (sats) for the given stream.
+    /// Emits a single integer to stdout so it can be consumed by scripts.
+    #[command(name = "funding-amount")]
+    FundingAmount {
+        /// Environment to target (`local`, `docker`, or a remote profile name such as `alphanet`)
+        #[arg(long = "env", short = 'e', default_value = "local", env = "UC_ENV")]
+        env: Environment,
+
+        /// Stream identifier used to derive BitVMX funding
+        #[arg(short = 's', long = "stream", value_name = "STREAM_ID", default_value_t = 0)]
+        stream_id: u64,
+    },
     /// Apply operator to a stream for committee setup
     #[command(name = "apply-stream")]
     ApplyToStream {
         /// Stream identifier to configure
-        #[arg(short = 's', long = "stream-id", value_name = "STREAM_ID")]
+        #[arg(short = 's', long = "stream", value_name = "STREAM_ID")]
         stream_id: u64,
 
         /// Target environment (`local`, `docker`, or a remote profile name such as `alphanet`)
@@ -231,11 +252,23 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Operator { command } => match command {
-            OperatorCommands::Fund { env, execute, fund_amount } => {
+            OperatorCommands::Fund {
+                env,
+                stream_id,
+                stream_manager_address,
+                execute,
+                fund_amount,
+            } => {
                 println!("\n=== Funding Rootstock wallets ===");
-                rsk_wallet::handle_operator_funding(env.clone()).await?;
+                rsk_wallet::handle_operator_funding(
+                    env.clone(),
+                    stream_id,
+                    stream_manager_address.as_deref(),
+                )
+                .await?;
                 println!("=== Funding Bitcoin addresses ===");
-                bitcoin_wallet::handle_bitcoin_funding(env, execute, fund_amount).await?;
+                bitcoin_wallet::handle_bitcoin_funding(env, stream_id, execute, fund_amount)
+                    .await?;
             }
             OperatorCommands::Whitelist { env, contract_address, from_address, private_key } => {
                 rsk_wallet::handle_whitelist(
@@ -244,6 +277,19 @@ async fn main() -> Result<()> {
                     from_address.as_deref(),
                     private_key.as_deref(),
                 )?;
+            }
+            OperatorCommands::FundingAmount { env, stream_id } => {
+                let is_regtest = matches!(env, Environment::Local | Environment::Docker);
+                let (operator_count, prover_count) = operator_and_prover_counts();
+                let profile = derive_stream_funding_profile(
+                    stream_id,
+                    is_regtest,
+                    COMMITTEE_PACKET_SIZE,
+                    operator_count,
+                    prover_count,
+                )
+                .ok_or_else(|| anyhow::anyhow!("invalid stream id {} (expected 0-4)", stream_id))?;
+                println!("{}", profile.operator_fund_amount);
             }
             OperatorCommands::ApplyToStream { stream_id, env, operator_id, role } => {
                 committee::run_committee_setup(stream_id, env, operator_id, role).await?;

@@ -65,6 +65,11 @@ impl<C: CommitteeRegistryContractApi, S: StreamManagerContractApi, BP: BalancePr
             )
             .await?;
 
+        debug!(
+            "ApplyToStream check member_address={} RSK balance_wei={} min_deposit_wei={}",
+            self.member_address, member_balance, min_deposit
+        );
+
         if min_deposit > member_balance {
             error!(
                 "Member has not enough balance to apply to committee. Balance: {member_balance}, Minimum: {min_deposit}"
