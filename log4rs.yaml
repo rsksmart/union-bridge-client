@@ -26,6 +26,8 @@ loggers:
     level: warn
   alloy_provider:
     level: warn
+  alloy_pubsub:
+    level: warn
   alloy_rpc_client:
     level: warn
   alloy_json_rpc:
