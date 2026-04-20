@@ -37,6 +37,8 @@ use crate::types::{
 };
 
 const PEGIN_ACCEPTED_INPUT_MSG: &str = "pegin_accepted";
+const OPERATOR_TAKE_TX_PREFIX: &str = "OPERATOR_TAKE_TX";
+const OPERATOR_WON_TX_PREFIX: &str = "OPERATOR_WON_TX";
 
 fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
     err.chain().any(|cause| {
@@ -153,49 +155,8 @@ where
 
         processor.pegin_flows = restore_flows(store.as_ref(), StorePrefix::PeginFlow, flow_factory)
             .expect("Failed to load flows from store");
-        processor
-            .resume_operator_transaction_info_steps()
-            .expect("Failed to resume operator transaction info steps");
 
         processor
-    }
-
-    fn resume_operator_transaction_info_steps(&mut self) -> Result<()> {
-        let flow_ids: Vec<_> = self
-            .pegin_flows
-            .iter()
-            .filter_map(|(flow_id, flow)| match flow.current_step() {
-                Steps::RequestOperatorTakeTransactionInfo
-                | Steps::RequestOperatorWonTransactionInfo => Some(*flow_id),
-                _ => None,
-            })
-            .collect();
-
-        for flow_id in flow_ids {
-            let Some(flow) = self.pegin_flows.get_mut(&flow_id) else {
-                continue;
-            };
-
-            match flow.current_step() {
-                Steps::RequestOperatorTakeTransactionInfo => {
-                    if let Some(txid) = flow.get_state().ctx.operator_take_txid {
-                        flow.complete_step(&StepData::OperatorTakeTransactionInfo(txid))?;
-                    } else {
-                        flow.start_step(Steps::RequestOperatorTakeTransactionInfo)?;
-                    }
-                }
-                Steps::RequestOperatorWonTransactionInfo => {
-                    if let Some(txid) = flow.get_state().ctx.operator_won_txid {
-                        flow.complete_step(&StepData::OperatorWonTransactionInfo(txid))?;
-                    } else {
-                        flow.start_step(Steps::RequestOperatorWonTransactionInfo)?;
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        Ok(())
     }
 
     /// Handle `PeginRequested` event by finding and updating existing flow
@@ -808,6 +769,7 @@ where
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines)]
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
         trace!("Processing BitVMX event: {event:?}");
 
@@ -878,43 +840,32 @@ where
                 flow.complete_step(&step_data)?;
             }
             OutgoingBitVMXApiMessages::TransactionInfo(flow_id, tx_name, transaction) => {
+                let txid = transaction.compute_txid();
                 let Some(flow) = self.pegin_flows.get_mut(flow_id) else {
                     trace!("Ignoring BitVMX TransactionInfo for unknown flow_id: {flow_id}");
                     return Ok(());
                 };
 
-                let txid = transaction.compute_txid();
                 debug!(
-                    "Received BitVMX TransactionInfo for flow_id: {}, tx_name: {}, txid: {}",
-                    flow_id, tx_name, txid
+                    "Received BitVMX TransactionInfo for flow_id: {flow_id}, tx_name: {tx_name}, txid: {txid}"
                 );
 
                 match flow.current_step() {
-                    Steps::RequestOperatorTakeTransactionInfo => {
-                        if tx_name.as_str() != flow.operator_take_transaction_name()? {
-                            trace!(
-                                "Ignoring BitVMX TransactionInfo for flow {} in step {:?} with tx_name {}",
-                                flow_id,
-                                flow.current_step(),
-                                tx_name
-                            );
-                            return Ok(());
-                        }
-
-                        flow.complete_step(&StepData::OperatorTakeTransactionInfo(txid))?;
+                    Steps::RequestOperatorTakeTransactionInfo
+                        if tx_name.starts_with(OPERATOR_TAKE_TX_PREFIX) =>
+                    {
+                        flow.complete_step(&StepData::TransactionInfo {
+                            tx_name: tx_name.clone(),
+                            txid,
+                        })?;
                     }
-                    Steps::RequestOperatorWonTransactionInfo => {
-                        if tx_name.as_str() != flow.operator_won_transaction_name()? {
-                            trace!(
-                                "Ignoring BitVMX TransactionInfo for flow {} in step {:?} with tx_name {}",
-                                flow_id,
-                                flow.current_step(),
-                                tx_name
-                            );
-                            return Ok(());
-                        }
-
-                        flow.complete_step(&StepData::OperatorWonTransactionInfo(txid))?;
+                    Steps::RequestOperatorWonTransactionInfo
+                        if tx_name.starts_with(OPERATOR_WON_TX_PREFIX) =>
+                    {
+                        flow.complete_step(&StepData::TransactionInfo {
+                            tx_name: tx_name.clone(),
+                            txid,
+                        })?;
                     }
                     _ => {
                         trace!(

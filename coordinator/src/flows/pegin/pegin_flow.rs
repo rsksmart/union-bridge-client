@@ -78,10 +78,8 @@ pub enum StepData {
     CommInfo(CommsAddress),
     // BitVMX pegin accepted
     BitvmxPeginAccepted(PeginAcceptedMessage),
-    // Operator take transaction information is available for the current prover
-    OperatorTakeTransactionInfo(Txid),
-    // Operator won transaction information is available for the current prover
-    OperatorWonTransactionInfo(Txid),
+    // Named transaction information returned by BitVMX
+    TransactionInfo { tx_name: String, txid: Txid },
     // Operator take hash added
     OperatorTakeHashAdded,
     // Dispatch accept pegin transaction
@@ -352,15 +350,7 @@ where
                 Ok(Steps::PeginRequested)
             }
             (Steps::RequestPeginSpvProof, StepData::RetryRequestPegin) => {
-                let spv_proof =
-                    self.state.ctx.request_pegin_spv_proof.as_ref().ok_or_else(|| {
-                        anyhow!(
-                            "SPV proof not available for pegin request - flow_id {}",
-                            self.state.flow_id
-                        )
-                    })?;
-                self.request_pegin(spv_proof)?;
-                Ok(Steps::PeginRequested)
+                self.retry_request_pegin_step()
             }
             (Steps::PeginRequested, StepData::PeginRequested(pegin_requested)) => {
                 self.state.ctx.pegin_requested = Some(pegin_requested.clone());
@@ -372,26 +362,20 @@ where
             }
             (Steps::PreparePeginSetup, StepData::BitvmxPeginAccepted(accepted)) => {
                 self.state.ctx.bitvmx_pegin_accepted = Some(accepted.clone());
-                if self.try_get_op_role()? != ParticipantRole::Prover {
-                    Ok(Steps::AddOperatorTakeHash)
-                } else {
+                if self.try_get_op_role()? == ParticipantRole::Prover {
                     Ok(Steps::RequestOperatorTakeTransactionInfo)
+                } else {
+                    Ok(Steps::AddOperatorTakeHash)
                 }
             }
             (
                 Steps::RequestOperatorTakeTransactionInfo,
-                StepData::OperatorTakeTransactionInfo(txid),
-            ) => {
-                self.state.ctx.operator_take_txid = Some(*txid);
-                Ok(Steps::RequestOperatorWonTransactionInfo)
-            }
+                StepData::TransactionInfo { tx_name, txid },
+            ) => self.handle_operator_take_transaction_info(tx_name, *txid),
             (
                 Steps::RequestOperatorWonTransactionInfo,
-                StepData::OperatorWonTransactionInfo(txid),
-            ) => {
-                self.state.ctx.operator_won_txid = Some(*txid);
-                Ok(Steps::AddOperatorTakeHash)
-            }
+                StepData::TransactionInfo { tx_name, txid },
+            ) => self.handle_operator_won_transaction_info(tx_name, *txid),
             (Steps::AddOperatorTakeHash, StepData::OperatorTakeHashAdded) => {
                 Ok(Steps::DispatchTransaction)
             }
@@ -401,25 +385,7 @@ where
             (
                 Steps::ConfirmAcceptPeginTransaction,
                 StepData::AcceptPeginTransactionConfirmed(tx_status),
-            ) => {
-                info!(
-                    "Transaction confirmed for flow_id: {} and tx_id: {:?}",
-                    self.state.flow_id, tx_status.tx_id
-                );
-                trace!("Transaction status data: {tx_status:?}");
-                let expected_tx_id = self
-                    .get_accept_pegin_txid()
-                    .ok_or_else(|| anyhow!("Expected accept pegin txid not found"))?;
-                if tx_status.tx_id != expected_tx_id {
-                    bail!(
-                        "Transaction status txId mismatch: got {:?}, expected {:?}",
-                        tx_status.tx_id,
-                        expected_tx_id
-                    );
-                }
-                self.state.ctx.accept_pegin_tx_status = Some(tx_status.clone());
-                Ok(Steps::RequestAcceptPeginSpvProof)
-            }
+            ) => self.confirm_accept_pegin_transaction(tx_status),
             (Steps::RequestAcceptPeginSpvProof, StepData::AcceptPeginSpvProof(spv_proof)) => {
                 info!("Received SPV proof for flow_id: {}", self.state.flow_id);
                 trace!("SPV Proof data: {spv_proof:?}");
@@ -883,14 +849,76 @@ where
             .context("Address not found in committee members")
     }
 
-    pub(crate) fn operator_take_transaction_name(&self) -> Result<String> {
+    fn operator_take_transaction_name(&self) -> Result<String> {
         let member_index = self.my_committee_index()?;
         Ok(indexed_name(OPERATOR_TAKE_TX, member_index))
     }
 
-    pub(crate) fn operator_won_transaction_name(&self) -> Result<String> {
+    fn operator_won_transaction_name(&self) -> Result<String> {
         let member_index = self.my_committee_index()?;
         Ok(indexed_name(OPERATOR_WON_TX, member_index))
+    }
+
+    fn retry_request_pegin_step(&mut self) -> Result<Steps> {
+        let spv_proof = self.state.ctx.request_pegin_spv_proof.as_ref().ok_or_else(|| {
+            anyhow!("SPV proof not available for pegin request - flow_id {}", self.state.flow_id)
+        })?;
+        self.request_pegin(spv_proof)?;
+        Ok(Steps::PeginRequested)
+    }
+
+    fn handle_operator_take_transaction_info(
+        &mut self,
+        tx_name: &str,
+        txid: Txid,
+    ) -> Result<Steps> {
+        let expected_tx_name = self.operator_take_transaction_name()?;
+        if tx_name != expected_tx_name {
+            bail!(
+                "Unexpected transaction info for flow {} in step {:?}: got {}, expected {}",
+                self.state.flow_id,
+                Steps::RequestOperatorTakeTransactionInfo,
+                tx_name,
+                expected_tx_name
+            );
+        }
+        self.state.ctx.operator_take_txid = Some(txid);
+        Ok(Steps::RequestOperatorWonTransactionInfo)
+    }
+
+    fn handle_operator_won_transaction_info(&mut self, tx_name: &str, txid: Txid) -> Result<Steps> {
+        let expected_tx_name = self.operator_won_transaction_name()?;
+        if tx_name != expected_tx_name {
+            bail!(
+                "Unexpected transaction info for flow {} in step {:?}: got {}, expected {}",
+                self.state.flow_id,
+                Steps::RequestOperatorWonTransactionInfo,
+                tx_name,
+                expected_tx_name
+            );
+        }
+        self.state.ctx.operator_won_txid = Some(txid);
+        Ok(Steps::AddOperatorTakeHash)
+    }
+
+    fn confirm_accept_pegin_transaction(&mut self, tx_status: &TransactionStatus) -> Result<Steps> {
+        info!(
+            "Transaction confirmed for flow_id: {} and tx_id: {:?}",
+            self.state.flow_id, tx_status.tx_id
+        );
+        trace!("Transaction status data: {tx_status:?}");
+        let expected_tx_id = self
+            .get_accept_pegin_txid()
+            .ok_or_else(|| anyhow!("Expected accept pegin txid not found"))?;
+        if tx_status.tx_id != expected_tx_id {
+            bail!(
+                "Transaction status txId mismatch: got {:?}, expected {:?}",
+                tx_status.tx_id,
+                expected_tx_id
+            );
+        }
+        self.state.ctx.accept_pegin_tx_status = Some(tx_status.clone());
+        Ok(Steps::RequestAcceptPeginSpvProof)
     }
 
     pub fn get_accept_pegin_txid(&self) -> Option<Txid> {
@@ -1249,7 +1277,10 @@ mod tests {
             NativeBridgeVerifier::Dummy,
         );
 
-        let result = flow.complete_step(&StepData::OperatorTakeTransactionInfo(txid));
+        let result = flow.complete_step(&StepData::TransactionInfo {
+            tx_name: flow.operator_take_transaction_name().unwrap(),
+            txid,
+        });
         assert!(result.is_ok());
         assert_eq!(flow.current_step(), Steps::RequestOperatorWonTransactionInfo);
         assert_eq!(flow.get_state().ctx.operator_take_txid, Some(txid));
@@ -1358,7 +1389,10 @@ mod tests {
             NativeBridgeVerifier::Dummy,
         );
 
-        let result = flow.complete_step(&StepData::OperatorWonTransactionInfo(txid));
+        let result = flow.complete_step(&StepData::TransactionInfo {
+            tx_name: flow.operator_won_transaction_name().unwrap(),
+            txid,
+        });
         assert!(result.is_ok());
         assert_eq!(flow.current_step(), Steps::AddOperatorTakeHash);
         assert_eq!(flow.get_state().ctx.operator_won_txid, Some(txid));
