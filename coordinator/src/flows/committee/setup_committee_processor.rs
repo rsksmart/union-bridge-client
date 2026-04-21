@@ -511,7 +511,6 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
-    use crate::config::CommitteeConfig;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
     use crate::flows::committee::setup_committee_flow::SetupCommitteeFlowFactory;
     use crate::store::{MockCoordinatorStoreApi, StoreKey};
@@ -679,7 +678,8 @@ mod tests {
             GlobalContext::new(),
             bitcoin::Network::Regtest,
             Rc::new(store),
-            CommitteeConfig::default(),
+            String::new(),
+            1,
         );
 
         let mut flow = factory.create_flow(internal_id);

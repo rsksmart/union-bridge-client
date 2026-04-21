@@ -12,7 +12,6 @@ use log::{error, info, trace, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 
 use crate::RUNTIME_ENV_LOCAL;
-use crate::config::BridgeConfig;
 use crate::event_processor::EventProcessor;
 use crate::flows::committee::setup_committee_flow::SetupCommitteeFlowFactory;
 use crate::flows::committee::setup_committee_processor::SetupCommitteeProcessor;
@@ -55,7 +54,8 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         runtime_environment: &str,
         contracts_arc: &Rc<CG>,
         rt_sync: &RuntimeSync,
-        bridge_config: &BridgeConfig,
+        btc_confirmations: u32,
+        btc_confirmations_buffer: u32,
     ) -> NativeBridgeVerifier<CG> {
         if uses_fake_native_bridge(runtime_environment) {
             log::info!(
@@ -64,11 +64,12 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             NativeBridgeVerifier::Dummy
         } else {
             log::info!("Environment: {runtime_environment} → Using Real Native Bridge Verifier");
-            NativeBridgeVerifier::Real {
-                contracts: contracts_arc.clone(),
-                rt_sync: rt_sync.clone(),
-                min_tx_confirmations: bridge_config.native_bridge.min_tx_confirmations,
-            }
+            let required_confirmations = btc_confirmations.saturating_add(btc_confirmations_buffer);
+            NativeBridgeVerifier::real(
+                contracts_arc.clone(),
+                rt_sync.clone(),
+                required_confirmations,
+            )
         }
     }
 
@@ -84,7 +85,15 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         shutdown_flag: ShutdownFlag,
         bitcoin_network: Network,
         runtime_environment: &str,
-        bridge_config: &BridgeConfig,
+        check_period: Duration,
+        bitvmx_not_responding_threshold: Duration,
+        bitvmx_ping_after_silence: Duration,
+        rsk_confirmations: u32,
+        btc_confirmations: u32,
+        btc_status_retry_blocks: u32,
+        pegout_advance_funds_timeout_secs: u64,
+        committee_drp_program_definition: String,
+        native_bridge_btc_confirmations_buffer: u32,
     ) -> Self {
         let contracts_arc = Rc::new(contracts_gateway);
         let store_rc = Rc::new(store);
@@ -102,14 +111,16 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             global_context.clone(),
             bitcoin_network,
             Rc::clone(&store_rc),
-            bridge_config.committee.clone(),
+            committee_drp_program_definition,
+            btc_confirmations,
         );
 
         let native_bridge_verifier = Self::build_native_bridge_verifier(
             runtime_environment,
             &contracts_arc,
             rt_sync,
-            bridge_config,
+            btc_confirmations,
+            native_bridge_btc_confirmations_buffer,
         );
 
         let processors: Vec<Box<dyn EventProcessor>> = vec![
@@ -120,8 +131,9 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                 global_context.clone(),
                 &store_rc,
                 native_bridge_verifier.clone(),
-                bridge_config.pegin.clone(),
-                bridge_config.coordinator.required_confirmations,
+                rsk_confirmations,
+                btc_confirmations,
+                btc_status_retry_blocks,
             )),
             Box::new(
                 PegoutFlowProcessor::restore_or_new(
@@ -131,8 +143,10 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     global_context.clone(),
                     &store_rc,
                     native_bridge_verifier.clone(),
-                    bridge_config.pegout.clone(),
-                    bridge_config.coordinator.required_confirmations,
+                    pegout_advance_funds_timeout_secs,
+                    rsk_confirmations,
+                    btc_confirmations,
+                    btc_status_retry_blocks,
                     Some(runtime_environment),
                 )
                 // todo(fede) ideally this method should return a result
@@ -144,16 +158,16 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                 rt_sync.clone(),
                 bitvmx_broker.clone(),
                 global_context.clone(),
-                bridge_config.coordinator.required_confirmations,
+                rsk_confirmations,
+                btc_status_retry_blocks,
                 native_bridge_verifier.clone(),
-                bridge_config.advance_funds.clone(),
             )),
             Box::new(SetupCommitteeProcessor::new(
                 setup_committee_flow_factory,
                 global_context.clone(),
                 &store_rc,
                 bitvmx_broker.as_ref(),
-                bridge_config.coordinator.required_confirmations,
+                rsk_confirmations,
             )),
             Box::new(FundBitvmxProcessor::new(bitvmx_broker.clone(), bitcoin_network)),
         ];
@@ -162,11 +176,9 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             monitor,
             bitvmx_broker: bitvmx_broker.clone(),
             processors,
-            check_period: bridge_config.coordinator.check_period(),
-            bitvmx_not_responding_threshold: bridge_config
-                .coordinator
-                .bitvmx_not_responding_threshold(),
-            bitvmx_ping_after_silence: bridge_config.coordinator.bitvmx_ping_after_silence(),
+            check_period,
+            bitvmx_not_responding_threshold,
+            bitvmx_ping_after_silence,
             shutdown_flag,
             store: store_rc,
             global_context: global_context.clone(),

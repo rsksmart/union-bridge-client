@@ -33,7 +33,6 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
 };
 use uuid::Uuid;
 
-use crate::config::CommitteeConfig;
 use crate::flows::committee::common::{
     CommitteeData, FundingUtxos, get_dispute_pair_aggregated_key_pid,
 };
@@ -456,7 +455,8 @@ pub(crate) struct SetupCommitteeFlow<
     global_context: GlobalContext,
     bitcoin_network: Network,
     store: Rc<S>,
-    config: CommitteeConfig,
+    drp_program_definition: String,
+    btc_confirmations: u32,
 }
 
 const REGTEST_FEE_RATE: u64 = 10;
@@ -507,7 +507,8 @@ where
         state: State,
         bitcoin_network: Network,
         store: Rc<S>,
-        config: CommitteeConfig,
+        drp_program_definition: String,
+        btc_confirmations: u32,
     ) -> Self {
         Self {
             contracts,
@@ -517,7 +518,8 @@ where
             global_context,
             bitcoin_network,
             store,
-            config,
+            drp_program_definition,
+            btc_confirmations,
         }
     }
 
@@ -530,7 +532,8 @@ where
         internal_id: Uuid,
         bitcoin_network: Network,
         store: Rc<S>,
-        config: CommitteeConfig,
+        drp_program_definition: String,
+        btc_confirmations: u32,
     ) -> Self {
         Self {
             contracts,
@@ -540,7 +543,8 @@ where
             global_context,
             bitcoin_network,
             store,
-            config,
+            drp_program_definition,
+            btc_confirmations,
         }
     }
 
@@ -1388,7 +1392,7 @@ where
 
         let dispute_channel_setup = DisputeChannelSetup::new(
             self.bitvmx_broker.clone(),
-            self.config.drp_program_definition.clone(),
+            self.drp_program_definition.clone(),
         );
 
         let protocol_ids = dispute_channel_setup.complete_setup(
@@ -2165,9 +2169,9 @@ where
 
         let committee_id = committee_data.committee_id.clone();
         let confirmations = CommitteeConfirmations {
-            pegin: self.config.pegin_confirmations,
-            pegout: self.config.pegout_confirmations,
-            reject_pegin: self.config.reject_pegin_confirmations,
+            pegin: self.btc_confirmations,
+            pegout: self.btc_confirmations,
+            reject_pegin: self.btc_confirmations,
         };
         let protocol_ids = dispute_core.setup(
             committee_data,
@@ -2204,7 +2208,7 @@ where
 
         let dispute_channel_setup = DisputeChannelSetup::new(
             self.bitvmx_broker.clone(),
-            self.config.drp_program_definition.clone(),
+            self.drp_program_definition.clone(),
         );
 
         let requests = dispute_channel_setup.request_dispute_core_var(committee_data, my_index)?;
@@ -2227,7 +2231,8 @@ where
     global_context: GlobalContext,
     bitcoin_network: Network,
     store: Rc<S>,
-    config: CommitteeConfig,
+    drp_program_definition: String,
+    btc_confirmations: u32,
 }
 
 impl<CG, BC, S> SetupCommitteeFlowFactory<CG, BC, S>
@@ -2244,7 +2249,8 @@ where
         global_context: GlobalContext,
         bitcoin_network: Network,
         store: Rc<S>,
-        config: CommitteeConfig,
+        drp_program_definition: String,
+        btc_confirmations: u32,
     ) -> Self {
         Self {
             contracts_gateway,
@@ -2253,7 +2259,8 @@ where
             global_context,
             bitcoin_network,
             store,
-            config,
+            drp_program_definition,
+            btc_confirmations,
         }
     }
 }
@@ -2273,7 +2280,8 @@ where
             internal_id,
             self.bitcoin_network,
             Rc::clone(&self.store),
-            self.config.clone(),
+            self.drp_program_definition.clone(),
+            self.btc_confirmations,
         )
     }
 
@@ -2286,7 +2294,8 @@ where
             saved_state,
             self.bitcoin_network,
             Rc::clone(&self.store),
-            self.config.clone(),
+            self.drp_program_definition.clone(),
+            self.btc_confirmations,
         )
     }
 }
@@ -2558,7 +2567,8 @@ mod tests {
             Uuid::new_v4(),
             Network::Regtest,
             Rc::new(MockCoordinatorStoreApi::new()),
-            CommitteeConfig::default(),
+            String::new(),
+            1,
         )
     }
 
@@ -2794,7 +2804,8 @@ mod tests {
             Uuid::new_v4(),
             Network::Regtest,
             Rc::new(MockCoordinatorStoreApi::new()),
-            CommitteeConfig::default(),
+            String::new(),
+            1,
         );
         flow.state.ctx.user_input = Some(test_apply_to_stream(55));
 
@@ -2938,7 +2949,8 @@ mod tests {
             GlobalContext::new(),
             Network::Regtest,
             Rc::new(MockCoordinatorStoreApi::new()),
-            CommitteeConfig::default(),
+            String::new(),
+            1,
         );
 
         let internal_id = Uuid::new_v4();

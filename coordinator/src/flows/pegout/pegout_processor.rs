@@ -17,7 +17,6 @@ use union_contracts::bindings::pegout_manager::PegoutManager::{PegoutRegistered,
 use uuid::Uuid;
 
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
-use crate::config::PegoutConfig;
 use crate::event_processor::EventProcessor;
 use crate::flows::btc_signature::btc_signature_lifecycle::BtcSignatureLifeCycle;
 use crate::flows::btc_signature::btc_signature_subflow::{
@@ -72,8 +71,10 @@ where
     register_pegout_retry_scheduler: TickScheduler<Uuid>,
     store: Rc<S>,
     native_bridge_verifier: NativeBridgeVerifier<CG>,
-    config: PegoutConfig,
+    advance_funds_timeout_secs: u64,
     required_confirmations: u32,
+    btc_confirmations: u32,
+    btc_status_retry_blocks: u32,
     // Runtime environment for force flags (only active when config.environment is local)
     environment: Option<String>,
 }
@@ -99,8 +100,10 @@ where
         global_context: GlobalContext,
         store: Rc<S>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
-        config: PegoutConfig,
+        advance_funds_timeout_secs: u64,
         required_confirmations: u32,
+        btc_confirmations: u32,
+        btc_status_retry_blocks: u32,
         environment: Option<&str>,
     ) -> Self {
         let factory = BtcSignatureSubFlowFactory::new(
@@ -125,8 +128,10 @@ where
             register_pegout_retry_scheduler: TickScheduler::new(),
             store,
             native_bridge_verifier,
-            config,
+            advance_funds_timeout_secs,
             required_confirmations,
+            btc_confirmations,
+            btc_status_retry_blocks,
             environment: environment.map(String::from),
         }
     }
@@ -139,8 +144,10 @@ where
         global_context: GlobalContext,
         store: &Rc<S>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
-        config: PegoutConfig,
+        advance_funds_timeout_secs: u64,
         required_confirmations: u32,
+        btc_confirmations: u32,
+        btc_status_retry_blocks: u32,
         environment: Option<&str>,
     ) -> Result<Self> {
         let mut processor = Self::new(
@@ -150,8 +157,10 @@ where
             global_context,
             Rc::clone(store),
             native_bridge_verifier,
-            config,
+            advance_funds_timeout_secs,
             required_confirmations,
+            btc_confirmations,
+            btc_status_retry_blocks,
             environment,
         );
 
@@ -380,18 +389,18 @@ where
             );
         }
 
-        if confirmations >= self.config.spv_proof_min_confirmations {
+        if confirmations >= self.btc_confirmations {
             debug!("Transaction confirmed with sufficient confirmations for flow_id: {flow_id}");
             flow.complete_step(&StepData::TransactionConfirmed(tx_status))?;
             if self.tx_status_scheduler.is_scheduled(&flow_id) {
                 self.tx_status_scheduler.cancel(&flow_id);
             }
         } else {
-            let min_conf = self.config.spv_proof_min_confirmations;
+            let min_conf = self.btc_confirmations;
             debug!(
                 "Bitcoin transaction {tx_id} missing confirmations ({confirmations}/{min_conf}) for flow_id {flow_id}, rescheduling"
             );
-            self.tx_status_scheduler.schedule(flow_id, self.config.blocks_delay_for_tx_check);
+            self.tx_status_scheduler.schedule(flow_id, self.btc_status_retry_blocks);
         }
         Ok(())
     }
@@ -487,13 +496,13 @@ where
                     self.advance_funds_timeout_scheduler.schedule(
                         flow_id,
                         current_timestamp,
-                        self.config.advance_funds_timeout_secs,
+                        self.advance_funds_timeout_secs,
                     );
                     info!(
                         "Scheduled advance funds timeout for flow_id: {} at timestamp: {} (expires at: {})",
                         flow_id,
                         current_timestamp,
-                        current_timestamp + self.config.advance_funds_timeout_secs
+                        current_timestamp + self.advance_funds_timeout_secs
                     );
                 }
             }
@@ -564,8 +573,7 @@ where
     fn schedule_register_pegout_retry(&mut self, flow_id: Uuid, attempt: i16, reason: &str) {
         info!("{reason} for flow {flow_id} (attempt {attempt})");
         self.unconfirmed_register_pegout.insert(flow_id, attempt);
-        self.register_pegout_retry_scheduler
-            .schedule(flow_id, self.config.blocks_delay_for_tx_check);
+        self.register_pegout_retry_scheduler.schedule(flow_id, self.btc_status_retry_blocks);
     }
 
     fn handle_register_pegout_retry_tick(&mut self) {
@@ -925,8 +933,10 @@ mod tests {
                 GlobalContext::new(),
                 store.clone(),
                 NativeBridgeVerifier::Dummy,
-                PegoutConfig::default(),
+                600,
                 5, // required_confirmations for tests
+                1,
+                20,
                 None,
             );
 

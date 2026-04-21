@@ -97,6 +97,9 @@ bitvmx.pubkey_hash = "1d10fa43ebbf6674d74caa3e9032711ade09d98ea7d20f89459f61152b
 broker.client_id = 101
 broker.key_path = "/{BASE_STORAGE_PATH}/.union_bridge/op_1/union-client/broker/coordinator.pem"
 storage_path = "/{BASE_STORAGE_PATH}/.union_bridge/op_1/local_database"
+check_period_secs = 1
+bitvmx_not_responding_threshold_secs = 30
+bitvmx_ping_after_silence_secs = 15
 
 # ═══════════════════════════════════════════════════════
 # Key Store
@@ -127,52 +130,26 @@ http.port = 40001
 # Bridge Flow Configuration
 # ═══════════════════════════════════════════════════════
 
-[bridge.coordinator]
+[flows.common]
 # Required RSK block confirmations for events
-required_confirmations = 5
-# Period between coordinator check cycles (seconds)
-check_period_secs = 1
-# Threshold before considering BitVMX not responding (seconds)
-bitvmx_not_responding_threshold_secs = 30
-# Seconds of silence before sending ping to BitVMX
-bitvmx_ping_after_silence_secs = 15
+rsk_confirmations = 5
+# BTC confirmations used by non-Native-Bridge coordinator flows
+btc_confirmations = 1
+# Blocks delay before rechecking BTC transaction status
+btc_status_retry_blocks = 20
 
-[bridge.pegin]
-# Minimum BTC transaction confirmations for pegin
-min_tx_confirmations = 1
-# Blocks delay before rechecking transaction status
-blocks_delay_for_tx_check = 20
-# Confirmations threshold sent to BitVMX via SubscribeToRskPegin
-rsk_pegin_subscription_confirmations = 1
-
-[bridge.pegout]
-# Blocks delay before rechecking transaction status
-blocks_delay_for_tx_check = 20
-# Minimum SPV proof confirmations
-spv_proof_min_confirmations = 1
+[flows.pegout]
 # Timeout for advance funds before triggering operator take (seconds)
 # Test environments: 600 (10 min), Production: 7200 (2 hours)
+# Must match contracts, or even better, be retrieved from contracts settings
 advance_funds_timeout_secs = 600
 
-[bridge.advance_funds]
-# Minimum SPV proof confirmations for operator take
-spv_proof_min_confirmations = 1
-# Blocks delay before rechecking transaction status
-blocks_delay_for_tx_check = 20
-
-[bridge.committee]
-# Path to the BitVMX union verifier program definition YAML file
+[flows.committee]
 drp_program_definition = "resources/union-verifier.yaml"
-# BTC confirmations required before accepting a pegin
-pegin_confirmations = 1
-# BTC confirmations required before accepting a pegout
-pegout_confirmations = 1
-# BTC confirmations required before accepting a reject-pegin
-reject_pegin_confirmations = 1
 
-[bridge.native_bridge]
-# Minimum confirmations from native bridge
-min_tx_confirmations = 2
+[flows.native_bridge]
+# Extra confirmations required on top of common.btc_confirmations
+btc_confirmations_buffer = 1
 
 # ═══════════════════════════════════════════════════════
 # Transaction Dispatcher
