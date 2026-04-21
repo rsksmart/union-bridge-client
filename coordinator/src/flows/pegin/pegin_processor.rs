@@ -17,7 +17,6 @@ use union_contracts::bindings::pegin_manager::PeginManager::PeginRequested;
 use uuid::Uuid;
 
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
-use crate::config::PeginConfig;
 use crate::event_processor::EventProcessor;
 use crate::flows::btc_signature::btc_signature_lifecycle::BtcSignatureLifeCycle;
 use crate::flows::btc_signature::btc_signature_subflow::{
@@ -77,8 +76,9 @@ where
     accept_pegin_retry_scheduler: TickScheduler<Uuid>,
     store: Rc<S>,
     native_bridge_verifier: NativeBridgeVerifier<CG>,
-    config: PeginConfig,
     required_confirmations: u32,
+    btc_confirmations: u32,
+    btc_status_retry_blocks: u32,
 }
 
 impl<CG, BC, S>
@@ -102,8 +102,9 @@ where
         global_context: GlobalContext,
         store: &Rc<S>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
-        config: PeginConfig,
         required_confirmations: u32,
+        btc_confirmations: u32,
+        btc_status_retry_blocks: u32,
     ) -> Self {
         let factory = BtcSignatureSubFlowFactory::new(
             Rc::clone(&contracts_gateway),
@@ -112,11 +113,8 @@ where
         );
 
         // Subscribe to BitVMX pegin events
-        Self::subscribe_to_bitvmx_pegin_events(
-            &bitvmx_broker,
-            config.rsk_pegin_subscription_confirmations,
-        )
-        .expect("Failed to subscribe to BitVMX pegin events");
+        Self::subscribe_to_bitvmx_pegin_events(&bitvmx_broker, btc_confirmations)
+            .expect("Failed to subscribe to BitVMX pegin events");
 
         info!("Successfully subscribed to BitVMX pegin events");
 
@@ -138,8 +136,9 @@ where
             accept_pegin_retry_scheduler: TickScheduler::new(),
             store: Rc::clone(store),
             native_bridge_verifier,
-            config,
             required_confirmations,
+            btc_confirmations,
+            btc_status_retry_blocks,
         };
 
         let flow_factory = |saved_state: State| {
@@ -434,7 +433,7 @@ where
             ));
         }
 
-        if confirmations >= self.config.min_tx_confirmations {
+        if confirmations >= self.btc_confirmations {
             debug!("Transaction confirmed with sufficient confirmations for flow_id: {flow_id}");
             let step_data = StepData::AcceptPeginTransactionConfirmed(tx_status);
             flow.complete_step(&step_data)?;
@@ -442,11 +441,11 @@ where
                 self.tx_status_scheduler.cancel(&flow_id);
             }
         } else {
-            let min_conf = self.config.min_tx_confirmations;
+            let min_conf = self.btc_confirmations;
             debug!(
                 "Bitcoin transaction {tx_id} missing confirmations ({confirmations}/{min_conf}) for flow_id {flow_id}, rescheduling"
             );
-            self.tx_status_scheduler.schedule(flow_id, self.config.blocks_delay_for_tx_check);
+            self.tx_status_scheduler.schedule(flow_id, self.btc_status_retry_blocks);
         }
         Ok(())
     }
@@ -489,13 +488,13 @@ where
         let block_hash = spv_proof.block_hash.clone();
         info!("{reason} for block {block_hash} (attempt {attempt})");
         self.unconfirmed_pegin_requests.insert(block_hash.clone(), (spv_proof, attempt));
-        self.pegin_retry_scheduler.schedule(block_hash, self.config.blocks_delay_for_tx_check);
+        self.pegin_retry_scheduler.schedule(block_hash, self.btc_status_retry_blocks);
     }
 
     fn schedule_accept_pegin_retry(&mut self, flow_id: Uuid, attempt: i16, reason: &str) {
         info!("{reason} for flow {flow_id} (attempt {attempt})");
         self.unconfirmed_accept_pegin.insert(flow_id, attempt);
-        self.accept_pegin_retry_scheduler.schedule(flow_id, self.config.blocks_delay_for_tx_check);
+        self.accept_pegin_retry_scheduler.schedule(flow_id, self.btc_status_retry_blocks);
     }
 
     fn handle_pegin_retry_tick(&mut self) {

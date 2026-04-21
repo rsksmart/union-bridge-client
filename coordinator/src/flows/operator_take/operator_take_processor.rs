@@ -15,7 +15,6 @@ use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use uuid::Uuid;
 
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
-use crate::config::AdvanceFundsConfig;
 use crate::event_processor::EventProcessor;
 use crate::flows::common::GlobalContext;
 use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
@@ -58,7 +57,7 @@ where
     register_reimbursement_kickoff_retry_scheduler: TickScheduler<Uuid>,
     unconfirmed_register_operator_take: HashMap<Uuid, i16>,
     register_operator_take_retry_scheduler: TickScheduler<Uuid>,
-    config: AdvanceFundsConfig,
+    btc_status_retry_blocks: u32,
 }
 
 impl<CG, BC> AdvanceFundsFlowProcessor<CG, BC>
@@ -73,8 +72,8 @@ where
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
         required_confirmations: u32,
+        btc_status_retry_blocks: u32,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
-        config: AdvanceFundsConfig,
     ) -> Self {
         Self {
             contracts_gateway,
@@ -92,7 +91,7 @@ where
             register_reimbursement_kickoff_retry_scheduler: TickScheduler::new(),
             unconfirmed_register_operator_take: HashMap::new(),
             register_operator_take_retry_scheduler: TickScheduler::new(),
-            config,
+            btc_status_retry_blocks,
         }
     }
 
@@ -118,15 +117,14 @@ where
             register_reimbursement_kickoff_retry_scheduler: TickScheduler::new(),
             unconfirmed_register_operator_take: HashMap::new(),
             register_operator_take_retry_scheduler: TickScheduler::new(),
-            config: AdvanceFundsConfig::default(),
+            btc_status_retry_blocks: 20,
         }
     }
 
     fn schedule_register_advance_funds_retry(&mut self, flow_id: Uuid, attempt: i16, reason: &str) {
         info!("{reason} for flow {flow_id} (attempt {attempt})");
         self.unconfirmed_register_advance_funds.insert(flow_id, attempt);
-        self.register_advance_funds_retry_scheduler
-            .schedule(flow_id, self.config.blocks_delay_for_tx_check);
+        self.register_advance_funds_retry_scheduler.schedule(flow_id, self.btc_status_retry_blocks);
     }
 
     fn handle_register_advance_funds_retry_tick(&mut self) {
@@ -180,7 +178,7 @@ where
         info!("{reason} for flow {flow_id} (attempt {attempt})");
         self.unconfirmed_register_reimbursement_kickoff.insert(flow_id, attempt);
         self.register_reimbursement_kickoff_retry_scheduler
-            .schedule(flow_id, self.config.blocks_delay_for_tx_check);
+            .schedule(flow_id, self.btc_status_retry_blocks);
     }
 
     fn handle_register_reimbursement_kickoff_retry_tick(&mut self) {
@@ -231,8 +229,7 @@ where
     fn schedule_register_operator_take_retry(&mut self, flow_id: Uuid, attempt: i16, reason: &str) {
         info!("{reason} for flow {flow_id} (attempt {attempt})");
         self.unconfirmed_register_operator_take.insert(flow_id, attempt);
-        self.register_operator_take_retry_scheduler
-            .schedule(flow_id, self.config.blocks_delay_for_tx_check);
+        self.register_operator_take_retry_scheduler.schedule(flow_id, self.btc_status_retry_blocks);
     }
 
     fn handle_register_operator_take_retry_tick(&mut self) {

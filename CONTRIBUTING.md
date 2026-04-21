@@ -247,7 +247,7 @@ which matches the Docker mounts used by the local BitVMX flow.
 For repo-mode BitVMX, `./cli-run.sh --bitvmx-mode repo` injects:
 
 ```bash
-UB__BRIDGE__COMMITTEE__DRP_PROGRAM_DEFINITION=<project_root>/resources/union-verifier.yaml
+UB__FLOWS__COMMITTEE__DRP_PROGRAM_DEFINITION=<project_root>/resources/union-verifier.yaml
 ```
 
 ## Run the Happy-Path
