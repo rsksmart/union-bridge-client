@@ -55,7 +55,7 @@ pub struct StreamFundingProfile {
 }
 
 fn stream_denomination(stream_id: u64) -> Option<u64> {
-    STREAM_DENOMINATIONS.get(stream_id as usize).copied()
+    usize::try_from(stream_id).ok().and_then(|index| STREAM_DENOMINATIONS.get(index)).copied()
 }
 
 fn calculate_advance_funds_value(stream_denomination: u64) -> u64 {
@@ -102,6 +102,7 @@ fn operator_funding_margin(denomination: u64) -> u64 {
     denomination * OPERATOR_FUNDING_MARGIN_NUMERATOR / OPERATOR_FUNDING_MARGIN_DENOMINATOR
 }
 
+#[must_use]
 pub fn derive_stream_funding_profile(
     stream_id: u64,
     is_regtest: bool,
@@ -135,6 +136,7 @@ pub fn derive_stream_funding_profile(
     })
 }
 
+#[must_use]
 pub fn required_rsk_balance(min_deposit: U256) -> U256 {
     let percentage_buffer =
         (min_deposit * U256::from(RSK_GAS_BUFFER_PERCENT)) / U256::from(100_u64);
