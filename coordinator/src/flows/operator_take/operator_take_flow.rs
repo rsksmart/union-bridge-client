@@ -33,6 +33,7 @@ pub enum Steps {
     RegisterAdvanceFunds,
     WaitForAdvanceFundsRegistered,
     NotifyAdvanceFundsRegistered,
+    WaitForPegoutRegistered,
     WaitForReimbursementKickoffSpv,
     RegisterReimbursementKickoff,
     WaitForOperatorTakeSpv,
@@ -237,8 +238,6 @@ where
                     "Advance funds registered, waiting for on-chain confirmation for flow_id: {}",
                     self.state.flow_id
                 );
-                // so all selected and non-selected wait on the same step for the confirmation
-                self.start_step(Steps::WaitForAdvanceFundsRegistered)?;
             }
             Steps::WaitForAdvanceFundsRegistered => {
                 info!(
@@ -263,7 +262,7 @@ where
                     self.complete_step(StepData::ReimbursementKickoffSPV(spv_proof))?;
                 } else {
                     info!(
-                        "Waiting for reimbursement kickoff SPV for flow_id: {}",
+                        "Selected operator waiting for reimbursement kickoff SPV for flow_id: {}",
                         self.state.flow_id
                     );
                 }
@@ -291,7 +290,7 @@ where
                     self.complete_step(StepData::OperatorTakeSPV(spv_proof))?;
                 } else {
                     info!(
-                        "Waiting for operator take SPV proof for flow_id: {}",
+                        "Selected operator waiting for operator take SPV proof for flow_id: {}",
                         self.state.flow_id
                     );
                 }
@@ -304,6 +303,12 @@ where
                     .as_ref()
                     .ok_or_else(|| anyhow!("Operator take SPV not available"))?;
                 self.register_operator_take(spv_proof)?;
+            }
+            Steps::WaitForPegoutRegistered => {
+                info!(
+                    "Non-selected operator waiting for operator take completion on-chain for flow_id: {}",
+                    self.state.flow_id
+                );
             }
             Steps::Done => {
                 info!("AdvanceFundsFlow {}: Done", self.state.flow_id);
@@ -353,12 +358,19 @@ where
                 info!("Retrying register advance funds for flow_id: {}", self.state.flow_id);
                 Ok(Steps::RegisterAdvanceFunds)
             }
-            (Steps::WaitForAdvanceFundsRegistered, StepData::AdvanceFundsConfirmed(data)) => {
+            (
+                Steps::RegisterAdvanceFunds | Steps::WaitForAdvanceFundsRegistered,
+                StepData::AdvanceFundsConfirmed(data),
+            ) => {
                 self.state.advance_funds_registered = Some(data);
                 Ok(Steps::NotifyAdvanceFundsRegistered)
             }
             (Steps::NotifyAdvanceFundsRegistered, StepData::AdvanceFundsNotified) => {
-                Ok(Steps::WaitForReimbursementKickoffSpv)
+                if self.was_selected_operator() {
+                    Ok(Steps::WaitForReimbursementKickoffSpv)
+                } else {
+                    Ok(Steps::WaitForPegoutRegistered)
+                }
             }
             (
                 Steps::WaitForReimbursementKickoffSpv,
@@ -387,7 +399,10 @@ where
                 info!("Retrying register operator take for flow_id: {}", self.state.flow_id);
                 Ok(Steps::RegisterOperatorTake)
             }
-            (Steps::RegisterOperatorTake, StepData::OperatorTakeRegistered(pegout_registered)) => {
+            (
+                Steps::WaitForPegoutRegistered | Steps::RegisterOperatorTake,
+                StepData::OperatorTakeRegistered(pegout_registered),
+            ) => {
                 debug!(
                     "Operator take registered for flow {}: {:?}",
                     self.state.flow_id, pegout_registered
@@ -402,10 +417,9 @@ where
         let operator_address = self.state.trigger_data.take_operator_address;
         let operator_pubkey = self.state.trigger_data.operator_take_pubkey;
 
-        let my_address = self.contracts.my_address();
-        if my_address != operator_address {
+        if !self.was_selected_operator() {
             debug!(
-                "Advance funds setup: node {my_address} is not selected operator (selected: {operator_address}), waiting for confirmed registration",
+                "Not selected operator (selected: {operator_address}), waiting for confirmed registration",
             );
             self.start_step(Steps::WaitForAdvanceFundsRegistered)?;
             return Ok(());
@@ -569,6 +583,10 @@ where
         Ok(())
     }
 
+    fn was_selected_operator(&self) -> bool {
+        self.contracts.my_address() == self.state.trigger_data.take_operator_address
+    }
+
     pub fn flow_id(&self) -> Uuid {
         self.state.flow_id
     }
@@ -599,6 +617,7 @@ fn format_step(step: Steps) -> &'static str {
         Steps::RegisterAdvanceFunds => "RegisterAdvanceFunds",
         Steps::WaitForAdvanceFundsRegistered => "WaitForAdvanceFundsRegistered",
         Steps::NotifyAdvanceFundsRegistered => "NotifyAdvanceFundsRegistered",
+        Steps::WaitForPegoutRegistered => "WaitForPegoutRegistered",
         Steps::WaitForReimbursementKickoffSpv => "WaitForReimbursementKickoffSpv",
         Steps::RegisterReimbursementKickoff => "RegisterReimbursementKickoff",
         Steps::WaitForOperatorTakeSpv => "WaitForOperatorTakeSpv",
@@ -704,6 +723,7 @@ mod tests {
         let trigger_data = test_trigger_data(committee_id, 3);
 
         let mut contracts = MockRskContractsGatewayApi::new();
+        contracts.expect_my_address().return_const(Address::from(H160::from_low_u64_be(33)));
         contracts
             .expect_register_reimbursement_kickoff()
             .with(function(move |input: &RegisterReimbursementKickoffInput| {

@@ -15,7 +15,7 @@ use crate::flows::committee::setup_committee_flow::NO_LEADER_IDX;
 
 const PROGRAM_TYPE_DISPUTE_CORE: &str = "dispute_core";
 // Must cover the full slot range assigned by StreamManager for one packet.
-const PACKET_SIZE: u32 = 100;
+const PACKET_SIZE: u32 = 10; // TODO clarify with Fairgate team why we get an error with 100
 
 #[derive(Clone, Copy)]
 pub struct AggregatedKeys {

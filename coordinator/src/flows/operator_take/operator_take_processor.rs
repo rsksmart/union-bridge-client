@@ -434,7 +434,7 @@ where
                 let data = Self::build_advance_funds_registered(ev)?;
                 self.complete_step_by_pegout_id(
                     Hash256::from(ev.pegoutId),
-                    &[Steps::WaitForAdvanceFundsRegistered],
+                    &[Steps::RegisterAdvanceFunds, Steps::WaitForAdvanceFundsRegistered],
                     StepData::AdvanceFundsConfirmed(data),
                     "AdvanceFundsRegistered",
                 )?;
@@ -1132,9 +1132,11 @@ mod tests {
 
         let mut flow_broker = MockBitVmxBroker::new();
         flow_broker.expect_send().times(1).returning(|_| Ok(true));
+        let mut contracts = MockRskContractsGatewayApi::new();
+        contracts.expect_my_address().return_const(Address::from(H160::from_low_u64_be(44)));
 
         let flow = AdvanceFundsFlow::new_for_test(
-            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(contracts),
             Rc::new(flow_broker),
             flow_id,
             trigger_data.clone(),
@@ -1166,7 +1168,7 @@ mod tests {
             .expect("passive follower should notify BitVMX after advance funds confirmation");
 
         let flow = processor.flows.get(&flow_id).expect("flow should still exist");
-        assert_eq!(flow.current_step(), Steps::WaitForReimbursementKickoffSpv);
+        assert_eq!(flow.current_step(), Steps::WaitForPegoutRegistered);
         assert!(flow.state.advance_funds_registered.is_some());
     }
 
