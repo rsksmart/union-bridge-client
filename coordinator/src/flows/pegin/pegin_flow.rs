@@ -5,8 +5,9 @@ use bitcoin::secp256k1::Parity::Even;
 use bitcoin::secp256k1::XOnlyPublicKey;
 use bitcoin::{PublicKey, Txid};
 use common::msg_broker::bitvmx_types::{
-    ACCEPT_PEGIN_TX, BtcTxSPVProof, CommsAddress, IncomingBitVMXApiMessages, ParticipantRole,
-    PeginAcceptedMessage, PubKeyHash, TransactionStatus, VariableTypes,
+    ACCEPT_PEGIN_TX, BtcTxSPVProof, CommsAddress, IncomingBitVMXApiMessages, OPERATOR_TAKE_TX,
+    OPERATOR_WON_TX, ParticipantRole, PeginAcceptedMessage, PubKeyHash, TransactionStatus,
+    VariableTypes,
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
@@ -44,6 +45,10 @@ pub enum Steps {
     GetCommInfo,
     // Send pegin request to BitVMX and setup
     PreparePeginSetup,
+    // Request BitVMX operator take transaction info for prover members
+    RequestOperatorTakeTransactionInfo,
+    // Request BitVMX operator won transaction info for prover members
+    RequestOperatorWonTransactionInfo,
     // Add operator take tx hash to contracts after BitVMX accepts
     AddOperatorTakeHash,
     // Signature flow is executed between these steps (outside the flow)
@@ -73,6 +78,8 @@ pub enum StepData {
     CommInfo(CommsAddress),
     // BitVMX pegin accepted
     BitvmxPeginAccepted(PeginAcceptedMessage),
+    // Named transaction information returned by BitVMX
+    TransactionInfo { tx_name: String, txid: Txid },
     // Operator take hash added
     OperatorTakeHashAdded,
     // Dispatch accept pegin transaction
@@ -118,6 +125,8 @@ pub struct FlowContext {
     pub my_p2p_address: Option<CommsAddress>,
     pub committee_output: Option<GetCommitteeOutput>,
     pub bitvmx_pegin_accepted: Option<PeginAcceptedMessage>,
+    pub operator_take_txid: Option<Txid>,
+    pub operator_won_txid: Option<Txid>,
     pub accept_pegin_spv_proof: Option<BtcTxSPVProof>,
     pub accept_pegin_tx_status: Option<TransactionStatus>,
     pub pegin_accepted: Option<PeginAccepted>,
@@ -181,6 +190,8 @@ where
                     my_p2p_address: None,
                     committee_output: None,
                     bitvmx_pegin_accepted: None,
+                    operator_take_txid: None,
+                    operator_won_txid: None,
                     accept_pegin_spv_proof: None,
                     accept_pegin_tx_status: None,
                     pegin_accepted: None,
@@ -242,6 +253,20 @@ where
             }
             Steps::PreparePeginSetup => {
                 self.prepare_pegin_setup()?;
+            }
+            Steps::RequestOperatorTakeTransactionInfo => {
+                info!(
+                    "Requesting operator take transaction info from BitVMX for flow_id: {}",
+                    self.state.flow_id
+                );
+                self.request_operator_take_transaction_info()?;
+            }
+            Steps::RequestOperatorWonTransactionInfo => {
+                info!(
+                    "Requesting operator won transaction info from BitVMX for flow_id: {}",
+                    self.state.flow_id
+                );
+                self.request_operator_won_transaction_info()?;
             }
             Steps::AddOperatorTakeHash => {
                 self.add_operator_take_hash()?;
@@ -325,15 +350,7 @@ where
                 Ok(Steps::PeginRequested)
             }
             (Steps::RequestPeginSpvProof, StepData::RetryRequestPegin) => {
-                let spv_proof =
-                    self.state.ctx.request_pegin_spv_proof.as_ref().ok_or_else(|| {
-                        anyhow!(
-                            "SPV proof not available for pegin request - flow_id {}",
-                            self.state.flow_id
-                        )
-                    })?;
-                self.request_pegin(spv_proof)?;
-                Ok(Steps::PeginRequested)
+                self.retry_request_pegin_step()
             }
             (Steps::PeginRequested, StepData::PeginRequested(pegin_requested)) => {
                 self.state.ctx.pegin_requested = Some(pegin_requested.clone());
@@ -345,8 +362,20 @@ where
             }
             (Steps::PreparePeginSetup, StepData::BitvmxPeginAccepted(accepted)) => {
                 self.state.ctx.bitvmx_pegin_accepted = Some(accepted.clone());
-                Ok(Steps::AddOperatorTakeHash)
+                if self.try_get_op_role()? == ParticipantRole::Prover {
+                    Ok(Steps::RequestOperatorTakeTransactionInfo)
+                } else {
+                    Ok(Steps::AddOperatorTakeHash)
+                }
             }
+            (
+                Steps::RequestOperatorTakeTransactionInfo,
+                StepData::TransactionInfo { tx_name, txid },
+            ) => self.handle_operator_take_transaction_info(tx_name, *txid),
+            (
+                Steps::RequestOperatorWonTransactionInfo,
+                StepData::TransactionInfo { tx_name, txid },
+            ) => self.handle_operator_won_transaction_info(tx_name, *txid),
             (Steps::AddOperatorTakeHash, StepData::OperatorTakeHashAdded) => {
                 Ok(Steps::DispatchTransaction)
             }
@@ -356,25 +385,7 @@ where
             (
                 Steps::ConfirmAcceptPeginTransaction,
                 StepData::AcceptPeginTransactionConfirmed(tx_status),
-            ) => {
-                info!(
-                    "Transaction confirmed for flow_id: {} and tx_id: {:?}",
-                    self.state.flow_id, tx_status.tx_id
-                );
-                trace!("Transaction status data: {tx_status:?}");
-                let expected_tx_id = self
-                    .get_accept_pegin_txid()
-                    .ok_or_else(|| anyhow!("Expected accept pegin txid not found"))?;
-                if tx_status.tx_id != expected_tx_id {
-                    bail!(
-                        "Transaction status txId mismatch: got {:?}, expected {:?}",
-                        tx_status.tx_id,
-                        expected_tx_id
-                    );
-                }
-                self.state.ctx.accept_pegin_tx_status = Some(tx_status.clone());
-                Ok(Steps::RequestAcceptPeginSpvProof)
-            }
+            ) => self.confirm_accept_pegin_transaction(tx_status),
             (Steps::RequestAcceptPeginSpvProof, StepData::AcceptPeginSpvProof(spv_proof)) => {
                 info!("Received SPV proof for flow_id: {}", self.state.flow_id);
                 trace!("SPV Proof data: {spv_proof:?}");
@@ -483,13 +494,17 @@ where
             self.state.flow_id, pegin_accepted.accept_pegin_txid
         );
 
-        let take_tx_hash = pegin_accepted.operator_take_txid.ok_or_else(|| {
-            anyhow!("operator_take_txid missing for prover in PeginAcceptedMessage")
-        })?;
+        let take_tx_hash = self
+            .state
+            .ctx
+            .operator_take_txid
+            .ok_or_else(|| anyhow!("operator_take_txid missing in pegin flow state"))?;
 
-        let won_tx_hash = pegin_accepted.operator_won_txid.ok_or_else(|| {
-            anyhow!("operator_won_txid missing for prover in PeginAcceptedMessage")
-        })?;
+        let won_tx_hash = self
+            .state
+            .ctx
+            .operator_won_txid
+            .ok_or_else(|| anyhow!("operator_won_txid missing in pegin flow state"))?;
 
         let input = transaction_dispatcher::types::AddOperatorTakeTxHashInput {
             accept_pegin_tx_hash: pegin_accepted.accept_pegin_txid,
@@ -498,6 +513,24 @@ where
         };
 
         self.rt_sync.run(async { self.contracts.add_operator_take_tx_hash(input).await })?;
+
+        Ok(())
+    }
+
+    fn request_operator_take_transaction_info(&self) -> Result<()> {
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetTransactionInfoByName(
+            self.state.flow_id,
+            self.operator_take_transaction_name()?,
+        ))?;
+
+        Ok(())
+    }
+
+    fn request_operator_won_transaction_info(&self) -> Result<()> {
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetTransactionInfoByName(
+            self.state.flow_id,
+            self.operator_won_transaction_name()?,
+        ))?;
 
         Ok(())
     }
@@ -802,6 +835,92 @@ where
         bail!("Operator role not found in context")
     }
 
+    fn my_committee_index(&self) -> Result<usize> {
+        let Some(get_committee_output) = &self.state.ctx.committee_output else {
+            bail!("Committee output not found");
+        };
+
+        let my_addr: alloy_primitives::Address = self.contracts.my_address().into();
+        get_committee_output
+            .committee
+            .members
+            .iter()
+            .position(|member| member.memberAddress == my_addr)
+            .context("Address not found in committee members")
+    }
+
+    fn operator_take_transaction_name(&self) -> Result<String> {
+        let member_index = self.my_committee_index()?;
+        Ok(indexed_name(OPERATOR_TAKE_TX, member_index))
+    }
+
+    fn operator_won_transaction_name(&self) -> Result<String> {
+        let member_index = self.my_committee_index()?;
+        Ok(indexed_name(OPERATOR_WON_TX, member_index))
+    }
+
+    fn retry_request_pegin_step(&mut self) -> Result<Steps> {
+        let spv_proof = self.state.ctx.request_pegin_spv_proof.as_ref().ok_or_else(|| {
+            anyhow!("SPV proof not available for pegin request - flow_id {}", self.state.flow_id)
+        })?;
+        self.request_pegin(spv_proof)?;
+        Ok(Steps::PeginRequested)
+    }
+
+    fn handle_operator_take_transaction_info(
+        &mut self,
+        tx_name: &str,
+        txid: Txid,
+    ) -> Result<Steps> {
+        let expected_tx_name = self.operator_take_transaction_name()?;
+        if tx_name != expected_tx_name {
+            bail!(
+                "Unexpected transaction info for flow {} in step {:?}: got {}, expected {}",
+                self.state.flow_id,
+                Steps::RequestOperatorTakeTransactionInfo,
+                tx_name,
+                expected_tx_name
+            );
+        }
+        self.state.ctx.operator_take_txid = Some(txid);
+        Ok(Steps::RequestOperatorWonTransactionInfo)
+    }
+
+    fn handle_operator_won_transaction_info(&mut self, tx_name: &str, txid: Txid) -> Result<Steps> {
+        let expected_tx_name = self.operator_won_transaction_name()?;
+        if tx_name != expected_tx_name {
+            bail!(
+                "Unexpected transaction info for flow {} in step {:?}: got {}, expected {}",
+                self.state.flow_id,
+                Steps::RequestOperatorWonTransactionInfo,
+                tx_name,
+                expected_tx_name
+            );
+        }
+        self.state.ctx.operator_won_txid = Some(txid);
+        Ok(Steps::AddOperatorTakeHash)
+    }
+
+    fn confirm_accept_pegin_transaction(&mut self, tx_status: &TransactionStatus) -> Result<Steps> {
+        info!(
+            "Transaction confirmed for flow_id: {} and tx_id: {:?}",
+            self.state.flow_id, tx_status.tx_id
+        );
+        trace!("Transaction status data: {tx_status:?}");
+        let expected_tx_id = self
+            .get_accept_pegin_txid()
+            .ok_or_else(|| anyhow!("Expected accept pegin txid not found"))?;
+        if tx_status.tx_id != expected_tx_id {
+            bail!(
+                "Transaction status txId mismatch: got {:?}, expected {:?}",
+                tx_status.tx_id,
+                expected_tx_id
+            );
+        }
+        self.state.ctx.accept_pegin_tx_status = Some(tx_status.clone());
+        Ok(Steps::RequestAcceptPeginSpvProof)
+    }
+
     pub fn get_accept_pegin_txid(&self) -> Option<Txid> {
         self.state.ctx.bitvmx_pegin_accepted.as_ref().map(|accepted| accepted.accept_pegin_txid)
     }
@@ -837,6 +956,10 @@ where
     }
 }
 
+fn indexed_name(prefix: &str, index: usize) -> String {
+    format!("{prefix}_{index}")
+}
+
 /// Helper function to format step names for logging
 fn format_step(step: Steps) -> &'static str {
     match step {
@@ -845,6 +968,8 @@ fn format_step(step: Steps) -> &'static str {
         Steps::PeginRequested => "PeginRequested",
         Steps::GetCommInfo => "GetCommInfo",
         Steps::PreparePeginSetup => "PreparePeginSetup",
+        Steps::RequestOperatorTakeTransactionInfo => "RequestOperatorTakeTransactionInfo",
+        Steps::RequestOperatorWonTransactionInfo => "RequestOperatorWonTransactionInfo",
         Steps::AddOperatorTakeHash => "AddOperatorTakeHash",
         Steps::DispatchTransaction => "DispatchTransaction",
         Steps::ConfirmAcceptPeginTransaction => "ConfirmAcceptPeginTransaction",
@@ -907,8 +1032,8 @@ mod tests {
             accept_pegin_nonce: default_pub_nonce(),
             accept_pegin_signature: MaybeScalar::Zero,
             accept_pegin_sighash: vec![],
-            operator_take_txid: Some(test_txid([1u8; 32])),
-            operator_won_txid: Some(test_txid([2u8; 32])),
+            operator_take_sighash: Some(vec![1u8; 32]),
+            operator_won_sighash: Some(vec![2u8; 32]),
             committee_id: Uuid::new_v4(),
         }
     }
@@ -931,6 +1056,8 @@ mod tests {
             my_p2p_address: None,
             committee_output: None,
             bitvmx_pegin_accepted: Some(default_pegin_accepted_message(btc_tx_id)),
+            operator_take_txid: None,
+            operator_won_txid: None,
             accept_pegin_spv_proof: None,
             accept_pegin_tx_status: None,
             pegin_accepted: None,
@@ -1025,6 +1152,8 @@ mod tests {
             Some(ParticipantRole::Prover),
         );
         ctx.bitvmx_pegin_accepted = Some(default_pegin_accepted_message(btc_tx_id));
+        ctx.operator_take_txid = Some(test_txid([1u8; 32]));
+        ctx.operator_won_txid = Some(test_txid([2u8; 32]));
 
         let mut mock_contracts = crate::coordinator::tests::MockRskContractsGatewayApi::new();
         mock_contracts.expect_my_address().returning(move || my_address);
@@ -1048,6 +1177,266 @@ mod tests {
         let (flow, _) = create_test_flow_with_custom_mock(my_address, ctx, mock_contracts);
         let result = flow.add_operator_take_hash();
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_request_operator_take_transaction_info_prover_stays_in_request_step() {
+        let my_address = test_address([1u8; 20]);
+        let flow_id = Uuid::new_v4();
+        let btc_tx_id = test_txid([0u8; 32]);
+
+        let mut ctx = create_default_flow_context(
+            flow_id,
+            Steps::RequestOperatorTakeTransactionInfo,
+            Some(ParticipantRole::Prover),
+        );
+        ctx.bitvmx_pegin_accepted = Some(default_pegin_accepted_message(btc_tx_id));
+        ctx.committee_output = Some(create_committee_output_with_member(my_address, ROLE_PROVER));
+
+        let mut mock_contracts = crate::coordinator::tests::MockRskContractsGatewayApi::new();
+        mock_contracts.expect_my_address().returning(move || my_address);
+
+        let mut mock_broker =
+            MockBrokerClientApi::<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>::new();
+        mock_broker
+            .expect_send()
+            .withf(move |msg| {
+                matches!(
+                    msg,
+                    IncomingBitVMXApiMessages::GetTransactionInfoByName(id, name)
+                        if *id == flow_id && name == "OPERATOR_TAKE_TX_0"
+                )
+            })
+            .times(1)
+            .returning(|_| Ok(true));
+
+        let mock_contracts = std::rc::Rc::new(mock_contracts);
+        let mock_broker = std::rc::Rc::new(mock_broker);
+        let mut mock_store = MockCoordinatorStoreApi::new();
+        mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
+        let mock_store = std::rc::Rc::new(mock_store);
+        let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
+        let state = State { flow_id: ctx.flow_id, ctx };
+        let mut flow = PeginFlow::from_saved_state(
+            mock_contracts,
+            rt_sync,
+            mock_broker,
+            state,
+            mock_store,
+            NativeBridgeVerifier::Dummy,
+        );
+
+        let result = flow.start_step(Steps::RequestOperatorTakeTransactionInfo);
+        assert!(result.is_ok());
+        assert_eq!(flow.current_step(), Steps::RequestOperatorTakeTransactionInfo);
+    }
+
+    #[test]
+    fn test_operator_take_transaction_info_moves_to_won_step_and_caches_txid() {
+        let my_address = test_address([1u8; 20]);
+        let flow_id = Uuid::new_v4();
+        let txid = test_txid([3u8; 32]);
+
+        let mut ctx = create_default_flow_context(
+            flow_id,
+            Steps::RequestOperatorTakeTransactionInfo,
+            Some(ParticipantRole::Prover),
+        );
+        ctx.committee_output = Some(create_committee_output_with_member(my_address, ROLE_PROVER));
+
+        let mut mock_contracts = crate::coordinator::tests::MockRskContractsGatewayApi::new();
+        mock_contracts.expect_my_address().returning(move || my_address);
+
+        let mut mock_broker =
+            MockBrokerClientApi::<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>::new();
+        mock_broker
+            .expect_send()
+            .withf(move |msg| {
+                matches!(
+                    msg,
+                    IncomingBitVMXApiMessages::GetTransactionInfoByName(id, name)
+                        if *id == flow_id && name == "OPERATOR_WON_TX_0"
+                )
+            })
+            .times(1)
+            .returning(|_| Ok(true));
+
+        let mock_contracts = std::rc::Rc::new(mock_contracts);
+        let mock_broker = std::rc::Rc::new(mock_broker);
+        let mut mock_store = MockCoordinatorStoreApi::new();
+        mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
+        let mock_store = std::rc::Rc::new(mock_store);
+        let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
+        let state = State { flow_id: ctx.flow_id, ctx };
+        let mut flow = PeginFlow::from_saved_state(
+            mock_contracts,
+            rt_sync,
+            mock_broker,
+            state,
+            mock_store,
+            NativeBridgeVerifier::Dummy,
+        );
+
+        let result = flow.complete_step(&StepData::TransactionInfo {
+            tx_name: flow.operator_take_transaction_name().unwrap(),
+            txid,
+        });
+        assert!(result.is_ok());
+        assert_eq!(flow.current_step(), Steps::RequestOperatorWonTransactionInfo);
+        assert_eq!(flow.get_state().ctx.operator_take_txid, Some(txid));
+    }
+
+    #[test]
+    fn test_request_operator_won_transaction_info_prover_stays_in_request_step() {
+        let my_address = test_address([1u8; 20]);
+        let flow_id = Uuid::new_v4();
+        let btc_tx_id = test_txid([0u8; 32]);
+
+        let mut ctx = create_default_flow_context(
+            flow_id,
+            Steps::RequestOperatorWonTransactionInfo,
+            Some(ParticipantRole::Prover),
+        );
+        ctx.bitvmx_pegin_accepted = Some(default_pegin_accepted_message(btc_tx_id));
+        ctx.committee_output = Some(create_committee_output_with_member(my_address, ROLE_PROVER));
+
+        let mut mock_contracts = crate::coordinator::tests::MockRskContractsGatewayApi::new();
+        mock_contracts.expect_my_address().returning(move || my_address);
+
+        let mut mock_broker =
+            MockBrokerClientApi::<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>::new();
+        mock_broker
+            .expect_send()
+            .withf(move |msg| {
+                matches!(
+                    msg,
+                    IncomingBitVMXApiMessages::GetTransactionInfoByName(id, name)
+                        if *id == flow_id && name == "OPERATOR_WON_TX_0"
+                )
+            })
+            .times(1)
+            .returning(|_| Ok(true));
+
+        let mock_contracts = std::rc::Rc::new(mock_contracts);
+        let mock_broker = std::rc::Rc::new(mock_broker);
+        let mut mock_store = MockCoordinatorStoreApi::new();
+        mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
+        let mock_store = std::rc::Rc::new(mock_store);
+        let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
+        let state = State { flow_id: ctx.flow_id, ctx };
+        let mut flow = PeginFlow::from_saved_state(
+            mock_contracts,
+            rt_sync,
+            mock_broker,
+            state,
+            mock_store,
+            NativeBridgeVerifier::Dummy,
+        );
+
+        let result = flow.start_step(Steps::RequestOperatorWonTransactionInfo);
+        assert!(result.is_ok());
+        assert_eq!(flow.current_step(), Steps::RequestOperatorWonTransactionInfo);
+    }
+
+    #[test]
+    fn test_operator_won_transaction_info_moves_to_add_step_and_caches_txid() {
+        let my_address = test_address([1u8; 20]);
+        let flow_id = Uuid::new_v4();
+        let txid = test_txid([4u8; 32]);
+        let take_txid = test_txid([3u8; 32]);
+
+        let mut ctx = create_default_flow_context(
+            flow_id,
+            Steps::RequestOperatorWonTransactionInfo,
+            Some(ParticipantRole::Prover),
+        );
+        ctx.committee_output = Some(create_committee_output_with_member(my_address, ROLE_PROVER));
+        ctx.operator_take_txid = Some(take_txid);
+
+        let mut mock_contracts = crate::coordinator::tests::MockRskContractsGatewayApi::new();
+        mock_contracts.expect_my_address().returning(move || my_address);
+        let expected_input = transaction_dispatcher::types::AddOperatorTakeTxHashInput {
+            accept_pegin_tx_hash: test_txid([0u8; 32]),
+            take_tx_hash: take_txid,
+            won_tx_hash: txid,
+        };
+        mock_contracts
+            .expect_add_operator_take_tx_hash()
+            .with(eq(expected_input))
+            .times(1)
+            .returning(|_| {
+                Ok(transaction_dispatcher::types::AddOperatorTakeTxHashOutput {
+                    transaction_hash: "test_hash".to_string(),
+                })
+            });
+
+        let mock_contracts = std::rc::Rc::new(mock_contracts);
+        let mock_broker = std::rc::Rc::new(MockBrokerClientApi::<
+            IncomingBitVMXApiMessages,
+            OutgoingBitVMXApiMessages,
+        >::new());
+        let mut mock_store = MockCoordinatorStoreApi::new();
+        mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
+        let mock_store = std::rc::Rc::new(mock_store);
+        let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
+        let state = State { flow_id: ctx.flow_id, ctx };
+        let mut flow = PeginFlow::from_saved_state(
+            mock_contracts,
+            rt_sync,
+            mock_broker,
+            state,
+            mock_store,
+            NativeBridgeVerifier::Dummy,
+        );
+
+        let result = flow.complete_step(&StepData::TransactionInfo {
+            tx_name: flow.operator_won_transaction_name().unwrap(),
+            txid,
+        });
+        assert!(result.is_ok());
+        assert_eq!(flow.current_step(), Steps::AddOperatorTakeHash);
+        assert_eq!(flow.get_state().ctx.operator_won_txid, Some(txid));
+    }
+
+    #[test]
+    fn test_prepare_pegin_setup_verifier_skips_operator_info_step() {
+        let my_address = test_address([1u8; 20]);
+        let flow_id = Uuid::new_v4();
+        let btc_tx_id = test_txid([0u8; 32]);
+
+        let ctx = create_default_flow_context(
+            flow_id,
+            Steps::PreparePeginSetup,
+            Some(ParticipantRole::Verifier),
+        );
+
+        let mut mock_contracts = crate::coordinator::tests::MockRskContractsGatewayApi::new();
+        mock_contracts.expect_my_address().returning(move || my_address);
+
+        let mock_contracts = std::rc::Rc::new(mock_contracts);
+        let mock_broker = std::rc::Rc::new(MockBrokerClientApi::<
+            IncomingBitVMXApiMessages,
+            OutgoingBitVMXApiMessages,
+        >::new());
+        let mut mock_store = MockCoordinatorStoreApi::new();
+        mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
+        let mock_store = std::rc::Rc::new(mock_store);
+        let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
+        let state = State { flow_id: ctx.flow_id, ctx };
+        let mut flow = PeginFlow::from_saved_state(
+            mock_contracts,
+            rt_sync,
+            mock_broker,
+            state,
+            mock_store,
+            NativeBridgeVerifier::Dummy,
+        );
+
+        let result = flow.complete_step(&StepData::BitvmxPeginAccepted(
+            default_pegin_accepted_message(btc_tx_id),
+        ));
+        assert!(result.is_ok());
+        assert_eq!(flow.current_step(), Steps::AddOperatorTakeHash);
     }
 
     #[test]

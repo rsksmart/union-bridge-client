@@ -1,0 +1,19 @@
+elf: generic-verifier.elf
+nary_search: 8
+max_steps: 500000000
+input_section_name: .input
+inputs:
+  - size: 4
+    owner: const
+  - size: 32
+    owner: const
+  - size: 128
+    owner: prover
+  - size: 36
+    owner: const
+  - size: 32
+    owner: prover_prev
+  - size: 4
+    owner: prover_prev
+  - size: 4
+    owner: const

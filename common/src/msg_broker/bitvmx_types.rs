@@ -18,6 +18,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub const ACCEPT_PEGIN_TX: &str = "ACCEPT_PEGIN_TX";
+pub const OPERATOR_TAKE_TX: &str = "OPERATOR_TAKE_TX";
+pub const OPERATOR_WON_TX: &str = "OPERATOR_WON_TX";
 
 // DisputeChannel related constants and types
 pub const OP_COSIGN_UTXOS: &str = "OP_COSIGN_UTXOS";
@@ -25,6 +27,8 @@ pub const WT_INIT_CHALLENGE_UTXOS: &str = "WT_INIT_CHALLENGE_UTXOS";
 pub const PROGRAM_TYPE_DISPUTE_CHANNEL: &str = "dispute_channel";
 pub const ADVANCE_FUNDS_INPUT: &str = "ADVANCE_FUNDS_INPUT";
 pub const PROGRAM_TYPE_DRP: &str = "drp";
+
+pub const PROGRAM_TYPE_FULL_PENALIZATION: &str = "full_penalization";
 
 type ProgramId = Uuid;
 
@@ -43,7 +47,7 @@ pub enum IncomingBitVMXApiMessages {
     Setup(ProgramId, String, Vec<CommsAddress>, u16),
     SubscribeToTransaction(Uuid, Txid),
     SubscribeUTXO(Uuid),
-    SubscribeToRskPegin(),
+    SubscribeToRskPegin(Option<u32>),
     GetSPVProof(Txid),
     DispatchTransaction(Uuid, Transaction),
     DispatchTransactionName(Uuid, String),
@@ -188,26 +192,65 @@ pub struct WinternitzHash {
 
 pub type PartialUtxo = (Txid, u32, Option<u64>, Option<OutputType>);
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum AmountType {
+    Value(Amount),
+    Return,
+    Auto,
+    Recover,
+    None,
+}
+impl AmountType {
+    pub fn is_none(&self) -> bool {
+        matches!(self, AmountType::None)
+    }
+    pub fn is_return(&self) -> bool {
+        matches!(self, AmountType::Return)
+    }
+    pub fn is_auto(&self) -> bool {
+        matches!(self, AmountType::Auto)
+    }
+    pub fn is_recover(&self) -> bool {
+        matches!(self, AmountType::Recover)
+    }
+    pub fn get_value(&self) -> Option<Amount> {
+        match self {
+            AmountType::Value(v) => Some(*v),
+            _ => None,
+        }
+    }
+}
+impl From<u64> for AmountType {
+    fn from(value: u64) -> Self {
+        AmountType::Value(Amount::from_sat(value))
+    }
+}
+impl From<Amount> for AmountType {
+    fn from(value: Amount) -> Self {
+        AmountType::Value(value)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OutputType {
     Taproot {
-        value: Amount,
+        value: AmountType,
         internal_key: PublicKey,
         script_pubkey: ScriptBuf,
         leaves: Vec<ProtocolScript>,
     },
     SegwitPublicKey {
-        value: Amount,
+        value: AmountType,
         script_pubkey: ScriptBuf,
         public_key: PublicKey,
     },
     SegwitScript {
-        value: Amount,
+        value: AmountType,
         script_pubkey: ScriptBuf,
         script: ProtocolScript,
     },
     SegwitUnspendable {
-        value: Amount,
+        value: AmountType,
         script_pubkey: ScriptBuf,
     },
     ExternalUnknown {
@@ -389,6 +432,9 @@ pub struct Committee {
     pub dispute_aggregated_key: PublicKey,
     pub packet_size: u32,
     pub stream_denomination: u64,
+    pub pegin_confirmations: u32,
+    pub pegout_confirmations: u32,
+    pub reject_pegin_confirmations: u32,
 }
 
 impl Committee {
@@ -431,7 +477,7 @@ impl TryInto<ParticipantRole> for u8 {
 
 /// Data structure received from BitVMX client containing pegin acceptance information.
 /// This is sent after BitVMX processes the pegin request and includes signature data
-/// and sighashes needed for the operator take and operator won transactions.
+/// plus optional operator transaction sighashes for prover members.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PeginAcceptedMessage {
     pub committee_id: Uuid,
@@ -439,8 +485,12 @@ pub struct PeginAcceptedMessage {
     pub accept_pegin_sighash: Vec<u8>,
     pub accept_pegin_nonce: PubNonce,
     pub accept_pegin_signature: MaybeScalar,
-    pub operator_take_txid: Option<Txid>,
-    pub operator_won_txid: Option<Txid>,
+    // Kept to stay aligned with the bitvmx-client payload shape. The examples' flow and
+    // union-bridge-client do not currently consume these sighashes directly;
+    // union-bridge-client resolves operator txids via TransactionInfoByName.
+    pub operator_take_sighash: Option<Vec<u8>>,
+    // Same as above, but for operator_won_txid.
+    pub operator_won_sighash: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -550,10 +600,37 @@ impl ReimbursementResult {
     }
 }
 
+/// Data sent to BitVMX when advance funds are registered on RSK.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvanceFundsRegistered {
+    pub committee_id: Uuid,
+    pub slot_index: usize,
+    pub txid: Txid,
+    pub pegout_id: Vec<u8>,
+    pub operator_pubkey: PublicKey,
+}
+
+impl AdvanceFundsRegistered {
+    pub fn name(slot_index: usize) -> String {
+        format!("ADVANCED_FUNDS_{slot_index}")
+    }
+}
+
 /// Holds the UTXOs required for a watchtower to initiate a challenge.
 /// These are provided by the DisputeCore protocol.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WtInitChallengeUtxos {
     pub wt_stopper: PartialUtxo,
     pub op_stopper: PartialUtxo,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FullPenalizationData {
+    pub committee_id: Uuid,
+}
+
+impl FullPenalizationData {
+    pub fn name() -> String {
+        "full_penalization_data".to_string()
+    }
 }

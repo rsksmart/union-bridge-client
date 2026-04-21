@@ -136,11 +136,17 @@ pub struct PeginConfig {
     pub min_tx_confirmations: u32,
     /// Blocks delay before rechecking transaction status (default: 20)
     pub blocks_delay_for_tx_check: u32,
+    /// Confirmations threshold sent to `BitVMX` via `SubscribeToRskPegin` (default: 1)
+    pub rsk_pegin_subscription_confirmations: u32,
 }
 
 impl Default for PeginConfig {
     fn default() -> Self {
-        Self { min_tx_confirmations: 1, blocks_delay_for_tx_check: 20 }
+        Self {
+            min_tx_confirmations: 1,
+            blocks_delay_for_tx_check: 20,
+            rsk_pegin_subscription_confirmations: 1,
+        }
     }
 }
 
@@ -200,6 +206,12 @@ pub struct CommitteeConfig {
     pub min_rsk_balance: u64,
     /// Path to the DRP program definition YAML file
     pub drp_program_definition: String,
+    /// BTC confirmations required before accepting a pegin (default: 1)
+    pub pegin_confirmations: u32,
+    /// BTC confirmations required before accepting a pegout (default: 1)
+    pub pegout_confirmations: u32,
+    /// BTC confirmations required before accepting a reject-pegin (default: 1)
+    pub reject_pegin_confirmations: u32,
 }
 
 impl Default for CommitteeConfig {
@@ -208,6 +220,9 @@ impl Default for CommitteeConfig {
             min_funding_balance: 20_002_000,
             min_rsk_balance: 1_000_000_000_500_000,
             drp_program_definition: String::new(),
+            pegin_confirmations: 1,
+            pegout_confirmations: 1,
+            reject_pegin_confirmations: 1,
         }
     }
 }
@@ -318,7 +333,7 @@ mod tests {
         );
         assert!(!config.coordinator.storage_path.contains("{BASE_STORAGE_PATH}"));
         assert!(config.coordinator.storage_path.ends_with("/.union_bridge/op_1/local_database"));
-        assert_eq!("resources/hello-world.yaml", config.bridge.committee.drp_program_definition);
+        assert_eq!("resources/union-verifier.yaml", config.bridge.committee.drp_program_definition);
         assert_eq!("regtest", config.bitcoin_network);
         assert_eq!(10, config.contracts.len());
     }

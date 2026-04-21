@@ -84,6 +84,43 @@ ensure_generated_bitvmx_configs() {
   done
 }
 
+wait_for_container_health() {
+  local container_name="$1"
+  local timeout_secs="${2:-90}"
+  local elapsed=0
+  local status
+
+  echo "Waiting for ${container_name} healthcheck..."
+  while [[ "${elapsed}" -lt "${timeout_secs}" ]]; do
+    status=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "${container_name}" 2>/dev/null || true)
+    case "${status}" in
+      healthy)
+        echo "${container_name} is healthy."
+        return 0
+        ;;
+      unhealthy|exited|dead)
+        echo "Error: ${container_name} entered state '${status}'."
+        docker logs --tail 40 "${container_name}" || true
+        return 1
+        ;;
+    esac
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+
+  echo "Error: ${container_name} did not become healthy within ${timeout_secs}s."
+  docker logs --tail 40 "${container_name}" || true
+  return 1
+}
+
+wait_for_bitvmx_clients() {
+  local op_num
+
+  for op_num in 1 2 3 4; do
+    wait_for_container_health "bitvmx-client-${op_num}"
+  done
+}
+
 # Check if we're using the 'up' command
 IS_UP_COMMAND=false
 for arg in "${DOCKER_COMPOSE_ARGS[@]}"; do
@@ -110,6 +147,7 @@ docker compose -p bitvmx --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "${DOCKER_COM
 
 # Print connection info after up
 if [[ "${IS_UP_COMMAND}" == true ]]; then
+  wait_for_bitvmx_clients
   echo
   echo "BitVMX clients ready. Connect to:"
   echo "  op_1 -> localhost:22222"

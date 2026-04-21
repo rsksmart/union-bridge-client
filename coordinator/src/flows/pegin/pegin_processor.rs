@@ -37,6 +37,8 @@ use crate::types::{
 };
 
 const PEGIN_ACCEPTED_INPUT_MSG: &str = "pegin_accepted";
+const OPERATOR_TAKE_TX_PREFIX: &str = "OPERATOR_TAKE_TX";
+const OPERATOR_WON_TX_PREFIX: &str = "OPERATOR_WON_TX";
 
 fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
     err.chain().any(|cause| {
@@ -110,8 +112,11 @@ where
         );
 
         // Subscribe to BitVMX pegin events
-        Self::subscribe_to_bitvmx_pegin_events(&bitvmx_broker)
-            .expect("Failed to subscribe to BitVMX pegin events");
+        Self::subscribe_to_bitvmx_pegin_events(
+            &bitvmx_broker,
+            config.rsk_pegin_subscription_confirmations,
+        )
+        .expect("Failed to subscribe to BitVMX pegin events");
 
         info!("Successfully subscribed to BitVMX pegin events");
 
@@ -623,8 +628,8 @@ where
         Ok(())
     }
 
-    fn subscribe_to_bitvmx_pegin_events(bitvmx_broker: &BC) -> Result<()> {
-        bitvmx_broker.send(IncomingBitVMXApiMessages::SubscribeToRskPegin())?;
+    fn subscribe_to_bitvmx_pegin_events(bitvmx_broker: &BC, confirmations: u32) -> Result<()> {
+        bitvmx_broker.send(IncomingBitVMXApiMessages::SubscribeToRskPegin(Some(confirmations)))?;
         Ok(())
     }
 
@@ -764,6 +769,7 @@ where
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines)]
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
         trace!("Processing BitVMX event: {event:?}");
 
@@ -832,6 +838,44 @@ where
 
                 let step_data = StepData::BitvmxPeginAccepted(pegin_accepted);
                 flow.complete_step(&step_data)?;
+            }
+            OutgoingBitVMXApiMessages::TransactionInfo(flow_id, tx_name, transaction) => {
+                let txid = transaction.compute_txid();
+                let Some(flow) = self.pegin_flows.get_mut(flow_id) else {
+                    trace!("Ignoring BitVMX TransactionInfo for unknown flow_id: {flow_id}");
+                    return Ok(());
+                };
+
+                debug!(
+                    "Received BitVMX TransactionInfo for flow_id: {flow_id}, tx_name: {tx_name}, txid: {txid}"
+                );
+
+                match flow.current_step() {
+                    Steps::RequestOperatorTakeTransactionInfo
+                        if tx_name.starts_with(OPERATOR_TAKE_TX_PREFIX) =>
+                    {
+                        flow.complete_step(&StepData::TransactionInfo {
+                            tx_name: tx_name.clone(),
+                            txid,
+                        })?;
+                    }
+                    Steps::RequestOperatorWonTransactionInfo
+                        if tx_name.starts_with(OPERATOR_WON_TX_PREFIX) =>
+                    {
+                        flow.complete_step(&StepData::TransactionInfo {
+                            tx_name: tx_name.clone(),
+                            txid,
+                        })?;
+                    }
+                    _ => {
+                        trace!(
+                            "Ignoring BitVMX TransactionInfo for flow {} in step {:?}",
+                            flow_id,
+                            flow.current_step()
+                        );
+                        return Ok(());
+                    }
+                }
             }
             // Handle SetupCompleted from BitVMX
             OutgoingBitVMXApiMessages::SetupCompleted(program_id) => {

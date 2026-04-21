@@ -321,7 +321,7 @@ where
     }
 
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
-        debug!("Processing new bitvmx event: {event:?}");
+        trace!("Processing new bitvmx event: {event:?}");
 
         match event {
             OutgoingBitVMXApiMessages::CommInfo(req_id, comm_info) => {
