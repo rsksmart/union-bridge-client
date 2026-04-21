@@ -200,10 +200,6 @@ impl Default for AdvanceFundsConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct CommitteeConfig {
-    /// Minimum `BitVMX` funding balance in satoshis (default: `20_002_000`)
-    pub min_funding_balance: u64,
-    /// Minimum RSK balance in wei (default: `1_000_000_000_500_000` = ~1 RBTC + fees)
-    pub min_rsk_balance: u64,
     /// Path to the DRP program definition YAML file
     pub drp_program_definition: String,
     /// BTC confirmations required before accepting a pegin (default: 1)
@@ -217,8 +213,6 @@ pub struct CommitteeConfig {
 impl Default for CommitteeConfig {
     fn default() -> Self {
         Self {
-            min_funding_balance: 20_002_000,
-            min_rsk_balance: 1_000_000_000_500_000,
             drp_program_definition: String::new(),
             pegin_confirmations: 1,
             pegout_confirmations: 1,
@@ -361,9 +355,7 @@ mod tests {
         assert_eq!(config.advance_funds.spv_proof_min_confirmations, 1);
         assert_eq!(config.advance_funds.blocks_delay_for_tx_check, 20);
 
-        // Committee defaults (was MIN_FUNDING_BALANCE = 20_002_000, MIN_RSK_BALANCE = 100_000 * 10^10 + 500_000)
-        assert_eq!(config.committee.min_funding_balance, 20_002_000);
-        assert_eq!(config.committee.min_rsk_balance, 1_000_000_000_500_000);
+        // Committee defaults
 
         // Native bridge defaults (was MIN_TX_CONFIRMATIONS = 2)
         assert_eq!(config.native_bridge.min_tx_confirmations, 2);

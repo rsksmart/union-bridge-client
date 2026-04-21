@@ -695,6 +695,12 @@ pub(crate) mod tests {
             ) -> Result<RegisterReimbursementKickoffOutput, DomainErrors>;
 
             async fn is_whitelisted(&self) -> Result<bool, DomainErrors>;
+
+            async fn get_minimum_deposit(
+                &self,
+                stream_id: u8,
+                role: u8,
+            ) -> Result<alloy_primitives::Uint<256, 4>, DomainErrors>;
         }
     }
 }

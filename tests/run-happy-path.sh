@@ -9,7 +9,7 @@
 #   - USER_BITCOIN_WIF environment variable set (for bitcoin-wallet operations)
 #   - MEMBER_BITCOIN_WIF environment variable set (for member operations)
 #
-# usage: bash tests/run-happy-path.sh
+# usage: bash tests/run-happy-path.sh [--stream <0-4>]
 
 set -euo pipefail
 
@@ -34,14 +34,16 @@ else
 fi
 
 usage() {
-    echo "Usage: $0 [--env <local|docker>] [--ops <1-10>]"
+    echo "Usage: $0 [--env <local|docker>] [--ops <1-10>] [--stream <0-4>]"
     echo ""
     echo "  --env    Environment: local or docker (default: from UC_ENV or local)"
     echo "  --ops    Number of operators (1-10, default: from docker-deploy.env or 4)"
+    echo "  --stream   Stream identifier (0-4). Defaults to 0."
     exit 1
 }
 
 OPS_FROM_FLAG=""
+STREAM_ID=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
     --env)
@@ -59,6 +61,14 @@ while [[ $# -gt 0 ]]; do
         OPS_FROM_FLAG="${2:-}"
         if [[ -z "$OPS_FROM_FLAG" ]] || ! [[ "$OPS_FROM_FLAG" =~ ^(10|[1-9])$ ]]; then
             echo "Error: --ops must be between 1 and 10"
+            exit 1
+        fi
+        shift 2
+        ;;
+    --stream)
+        STREAM_ID="${2:-}"
+        if [[ -z "$STREAM_ID" ]] || ! [[ "$STREAM_ID" =~ ^[0-4]$ ]]; then
+            echo "Error: --stream must be between 0 and 4"
             exit 1
         fi
         shift 2
@@ -93,10 +103,45 @@ else
     unset _env_local _num
 fi
 
-# hardcoded configuration
-STREAM_ID=0
+# stream configuration
+stream_denomination() {
+    case "$1" in
+        0) echo 100000 ;;
+        1) echo 1000000 ;;
+        2) echo 10000000 ;;
+        3) echo 100000000 ;;
+        4) echo 1000000000 ;;
+        *)
+            echo "Error: unsupported stream id '$1'" >&2
+            return 1
+            ;;
+    esac
+}
+
+derived_wallet_utxo_value() {
+    local denomination="$1"
+    local pegin_enabler_amount=1080
+    local wallet_fee_buffer=10000
+
+    echo $((denomination + pegin_enabler_amount + wallet_fee_buffer))
+}
+
+derived_member_wallet_utxo_value() {
+    local stream_id="$1"
+    local operator_count="$2"
+    local wallet_fee_buffer=10000
+    local per_operator_funding
+    per_operator_funding=$(bash cli-operations.sh operator funding-amount --env local --stream "$stream_id")
+
+    echo $((per_operator_funding * operator_count + wallet_fee_buffer))
+}
+
+STREAM_DENOMINATION=$(stream_denomination "$STREAM_ID")
+VALUE="$STREAM_DENOMINATION"
+USER_UTXO_VALUE=$(derived_wallet_utxo_value "$STREAM_DENOMINATION")
+MEMBER_UTXO_VALUE=$(derived_member_wallet_utxo_value "$STREAM_ID" "$NUM_OPERATORS")
+
 RSK_ADDRESS="0x$(openssl rand -hex 20)" # random address each run
-VALUE=100000
 COMMITTEE_REGISTRY_ADDRESS="0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82"
 
 # Committee setup can take longer to emit completion markers in all operators.
@@ -571,7 +616,7 @@ cleanup() {
 trap cleanup EXIT
 
 clear
-log "Configuration: stream=$STREAM_ID, rsk=$RSK_ADDRESS, amount=$VALUE, env=$SCRIPT_ENV"
+log "Configuration: stream=$STREAM_ID, denomination=$STREAM_DENOMINATION, rsk=$RSK_ADDRESS, amount=$VALUE, env=$SCRIPT_ENV, user_wallet_utxo=$USER_UTXO_VALUE, member_wallet_utxo=$MEMBER_UTXO_VALUE"
 log "Prerequisite: keep mining disabled until infra is ready; only start it when the flow needs block progress"
 echo ""
 
@@ -587,14 +632,14 @@ bash cli-bitcoin-wallet.sh user clear_db || warn "User wallet clear_db failed (m
 log "Member wallet: clear_db"
 bash cli-bitcoin-wallet.sh member clear_db || warn "Member wallet clear_db failed (may be expected if db is empty)"
 
-log "User wallet: mine_utxo 900000000"
-if ! bash cli-bitcoin-wallet.sh user mine_utxo 900000000; then
+log "User wallet: mine_utxo $USER_UTXO_VALUE"
+if ! bash cli-bitcoin-wallet.sh user mine_utxo "$USER_UTXO_VALUE"; then
   warn "User wallet mine_utxo failed!"
   exit 1
 fi
 
-log "Member wallet: mine_utxo 900000000"
-if ! bash cli-bitcoin-wallet.sh member mine_utxo 900000000; then
+log "Member wallet: mine_utxo $MEMBER_UTXO_VALUE"
+if ! bash cli-bitcoin-wallet.sh member mine_utxo "$MEMBER_UTXO_VALUE"; then
   warn "Member wallet mine_utxo failed!"
   exit 1
 fi
@@ -606,9 +651,9 @@ echo ""
 step "Step 1: Fund Operator Wallets"
 # operator fund with --execute handles BitVMX funding automatically
 # Must pass $SCRIPT_ENV so it knows where to find the BitVMX addresses (local logs vs Docker logs)
-log "Command: bash cli-operations.sh operator fund --env $SCRIPT_ENV --execute"
+log "Command: bash cli-operations.sh operator fund --env $SCRIPT_ENV --stream $STREAM_ID --execute"
 echo ""
-if ! bash cli-operations.sh operator fund --env "$SCRIPT_ENV" --execute; then
+if ! bash cli-operations.sh operator fund --env "$SCRIPT_ENV" --stream "$STREAM_ID" --execute; then
     warn "Command failed!"
     exit 1
 fi

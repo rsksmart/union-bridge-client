@@ -9,6 +9,7 @@ members = [
     "coordinator",
     "key-manager",
     "log-indexer",
+    "op-funding",
     "transaction-dispatcher",
     "user-api",
 ]

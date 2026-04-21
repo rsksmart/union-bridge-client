@@ -161,10 +161,6 @@ spv_proof_min_confirmations = 1
 blocks_delay_for_tx_check = 20
 
 [bridge.committee]
-# Minimum BitVMX funding balance (satoshis)
-min_funding_balance = 20002000
-# Minimum RSK balance (wei) - approx 1 RBTC + fees
-min_rsk_balance = 1000000000500000 # TODO(iago) corregir esto
 # Path to the BitVMX union verifier program definition YAML file
 drp_program_definition = "resources/union-verifier.yaml"
 # BTC confirmations required before accepting a pegin

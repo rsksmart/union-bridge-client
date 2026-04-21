@@ -503,6 +503,7 @@ mod tests {
     use common::runtime_sync::RuntimeSync;
     use common::types::{Address as CommonAddress, BlockHash, BlockNumber, StreamId, TxHash};
     use mockall::predicate::function;
+    use op_funding::derive_stream_funding_profile;
     use primitive_types::{H160, H256};
     use union_contracts::bindings::committee_registry::CommitteeRegistry::{
         AllCommunicationDataReady, Committee, CommitteeMember, NewCommittee, NewPendingCommittee,
@@ -651,7 +652,8 @@ mod tests {
         contracts
             .expect_get_balance()
             .times(1)
-            .returning(|| Ok(U256::from(1_000_000_000_500_001_u64)));
+            .returning(|| Ok(U256::from(200_000_000_000_000_000_u64)));
+        contracts.expect_get_minimum_deposit().times(1).returning(|_, _| Ok(U256::from(0_u64)));
 
         let comm_info_req_id = Arc::new(Mutex::new(None));
         let comm_info_req_id_for_broker = Arc::clone(&comm_info_req_id);
@@ -683,10 +685,17 @@ mod tests {
         let mut flow = factory.create_flow(internal_id);
         flow.complete_step(StepData::UserRequest(test_apply_to_stream(stream_id)))
             .expect("init should advance to ValidateBalances");
-        flow.complete_step(StepData::BitVmxFundingBalance(
-            CommitteeConfig::default().min_funding_balance,
-        ))
-        .expect("validate balances should advance to GetMyCommInfo");
+        let min_funding_balance = derive_stream_funding_profile(
+            stream_id,
+            true,
+            crate::flows::committee::dispute_core_setup::PACKET_SIZE.into(),
+            crate::flows::committee::dispute_core_setup::DEFAULT_OPERATOR_COUNT,
+            crate::flows::committee::dispute_core_setup::DEFAULT_PROVER_COUNT,
+        )
+        .expect("valid stream id for test")
+        .operator_fund_amount;
+        flow.complete_step(StepData::BitVmxFundingBalance(min_funding_balance))
+            .expect("validate balances should advance to GetMyCommInfo");
 
         let captured_req_id = comm_info_req_id
             .lock()
@@ -796,8 +805,8 @@ mod tests {
 
     #[test]
     fn test_process_new_bitvmx_event_comm_info_routes_to_matching_flow() {
-        let (flow_a, req_a) = flow_waiting_for_comm_info(Uuid::new_v4(), 11);
-        let (flow_b, req_b) = flow_waiting_for_comm_info(Uuid::new_v4(), 22);
+        let (flow_a, req_a) = flow_waiting_for_comm_info(Uuid::new_v4(), 0);
+        let (flow_b, req_b) = flow_waiting_for_comm_info(Uuid::new_v4(), 1);
         let first_flow_id = flow_a.internal_id();
         let second_flow_id = flow_b.internal_id();
         assert_ne!(req_a, req_b);

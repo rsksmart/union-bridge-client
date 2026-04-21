@@ -2952,6 +2952,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
+name = "op-funding"
+version = "0.3.0"
+dependencies = [
+ "alloy-primitives",
+]
+
+[[package]]
 name = "opaque-debug"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3005,9 +3012,11 @@ dependencies = [
 name = "operations"
 version = "0.3.0"
 dependencies = [
+ "alloy-primitives",
  "anyhow",
  "clap",
  "key-manager",
+ "op-funding",
  "reqwest",
  "rpassword",
  "serde",

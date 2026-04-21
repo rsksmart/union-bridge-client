@@ -14,8 +14,10 @@ use crate::flows::committee::common::{CommitteeData, send_bitvmx_msg};
 use crate::flows::committee::setup_committee_flow::NO_LEADER_IDX;
 
 const PROGRAM_TYPE_DISPUTE_CORE: &str = "dispute_core";
+pub(super) const DEFAULT_OPERATOR_COUNT: u64 = 4; // TODO(iago) this should come from config
+pub(super) const DEFAULT_PROVER_COUNT: u64 = 2; // TODO(iago) this should come from config
 // Must cover the full slot range assigned by StreamManager for one packet.
-const PACKET_SIZE: u32 = 10; // TODO clarify with Fairgate team why we get an error with 100
+pub(super) const PACKET_SIZE: u32 = 10; // TODO clarify with Fairgate team why we get an error with 100
 
 #[derive(Clone, Copy)]
 pub struct AggregatedKeys {
@@ -62,7 +64,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
                 .collect(),
             take_aggregated_key: aggregated_keys.take,
             dispute_aggregated_key: aggregated_keys.dispute,
-            packet_size: PACKET_SIZE,
+            packet_size: 10,
             stream_denomination,
             pegin_confirmations: confirmations.pegin,
             pegout_confirmations: confirmations.pegout,
