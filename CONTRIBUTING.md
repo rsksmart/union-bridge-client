@@ -277,12 +277,21 @@ The `CommitteeRegistry` contract address comes from the deployed contracts confi
 For the automated local happy-path flow:
 
 ```bash
-./cli-infra.sh --start-mine
-bash tests/run-happy-path.sh
-./cli-infra.sh --stop-mine
+./cli-infra.sh --start-blockchains [--fresh]
+./cli-infra.sh --start-bitvmx [--fresh]
+bash tests/run-happy-path.sh --ops
+./cli-infra.sh --stop
 ```
 
-This assumes the recommended stack is already running and that the relevant Bitcoin WIF env vars are available.
+`./cli-infra.sh --start-blockchains` now bootstraps the regtest Bitcoin miner wallet once (101 blocks when needed)
+before background mining starts, so the automated happy path only needs to fund the user/member wallet UTXOs.
+
+Notes:
+
+- `./cli-infra.sh --start-blockchains` starts Anvil + bitcoind and background mining.
+- If mining gets stuck, run `./cli-infra.sh --stop-mining` before restarting it.
+- `bash tests/run-happy-path.sh --ops` starts the local Rust operators with `bash cli-run.sh --fresh` before the test.
+- Use `./cli-infra.sh --start --fresh` instead when you want the all-in-one stack, including BitVMX, from the outset.
 
 The user flows now require explicit Bitcoin public keys in the request body. For manual testing, the same derivation
 used by `tests/run-happy-path.sh` is:

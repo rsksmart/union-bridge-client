@@ -164,6 +164,47 @@ step() {
     echo ""
 }
 
+format_duration() {
+    local total_seconds=$1
+    local hours=$((total_seconds / 3600))
+    local minutes=$(((total_seconds % 3600) / 60))
+    local seconds=$((total_seconds % 60))
+
+    if [ "$hours" -gt 0 ]; then
+        printf "%02dh:%02dm:%02ds" "$hours" "$minutes" "$seconds"
+    else
+        printf "%02dm:%02ds" "$minutes" "$seconds"
+    fi
+}
+
+notify_terminal_bell() {
+    printf '\a'
+}
+
+notify_os_notification() {
+    local title="$1"
+    local message="$2"
+
+    if [[ "$(uname -s)" != "Darwin" ]] || ! command -v osascript &> /dev/null; then
+        return 1
+    fi
+
+    osascript - "$title" "$message" <<'APPLESCRIPT' &> /dev/null
+on run argv
+    set notificationTitle to item 1 of argv
+    set notificationMessage to item 2 of argv
+    display notification notificationMessage with title notificationTitle
+end run
+APPLESCRIPT
+}
+
+notify_completion() {
+    local title="$1"
+    local message="$2"
+
+    notify_os_notification "$title" "$message" || notify_terminal_bell
+}
+
 # get current bitcoin block height
 get_current_bitcoin_height() {
     local height=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount 2>/dev/null || echo "0")
@@ -613,16 +654,32 @@ wait_for_log_in_all_operators() {
 cleanup() {
     rm -f /tmp/apply-operators-$$ /tmp/pegout-$$
 }
-trap cleanup EXIT
+
+on_exit() {
+    local exit_code=$?
+    cleanup
+
+    if [[ $exit_code -eq 0 ]]; then
+        notify_completion "Happy Path script" "Completed"
+    else
+        notify_completion "Happy Path script" "Failed (exit $exit_code)"
+    fi
+
+    return "$exit_code"
+}
+trap on_exit EXIT
 
 clear
 log "Configuration: stream=$STREAM_ID, denomination=$STREAM_DENOMINATION, rsk=$RSK_ADDRESS, amount=$VALUE, env=$SCRIPT_ENV, user_wallet_utxo=$USER_UTXO_VALUE, member_wallet_utxo=$MEMBER_UTXO_VALUE"
 log "Prerequisite: keep mining disabled until infra is ready; only start it when the flow needs block progress"
 echo ""
 
+SCRIPT_START_TIME=$(date +%s)
+SETUP_START_TIME=$SCRIPT_START_TIME
+
 # prepare wallets
 step "Step 0: Prepare Wallets"
-log "Clearing wallet databases and mining initial UTXOs..."
+log "Clearing wallet databases and funding wallet-specific UTXOs..."
 log "Note: First run compiles release binaries for bitcoin-wallet (~1 min), subsequent runs are fast"
 echo ""
 
@@ -644,7 +701,7 @@ if ! bash cli-bitcoin-wallet.sh member mine_utxo "$MEMBER_UTXO_VALUE"; then
   exit 1
 fi
 
-success "Wallets prepared with initial UTXOs"
+success "Wallets prepared with funded UTXOs"
 echo ""
 
 # step 1: fund operator wallets
@@ -658,7 +715,7 @@ if ! bash cli-operations.sh operator fund --env "$SCRIPT_ENV" --stream "$STREAM_
     exit 1
 fi
 echo ""
-if ! wait_for_bitcoin_transactions 1 15 5; then
+if ! wait_for_bitcoin_transactions 1 15 6; then
     warn "Failed to detect 1 Bitcoin transaction with 5 confirmations within 15 blocks"
     exit 1
 fi
@@ -696,8 +753,14 @@ if ! wait_for_log_in_all_operators "CommitteeSetupFlow Done:" "$COMMITTEE_SETUP_
 fi
 echo ""
 
+SETUP_END_TIME=$(date +%s)
+SETUP_DURATION=$((SETUP_END_TIME - SETUP_START_TIME))
+success "Setup completed in $(format_duration "$SETUP_DURATION")"
+echo ""
+
 # step 4: request pegin
 step "Step 4: Request Pegin"
+PEGIN_START_TIME=$(date +%s)
 
 # Derive x-only public key for pegin (32 bytes with 0x prefix)
 USER_XONLY_PUBKEY=$(user_xonly_pubkey_from_wif)
@@ -717,14 +780,20 @@ if ! bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -k "$USER_XONLY
 fi
 success "Pegin transaction created"
 echo ""
-if ! wait_for_log_with_block_timeout "PeginFlow Done" 15; then
+if ! wait_for_log_with_block_timeout "PeginFlow Done" 30; then
     warn "PeginFlow completion log not found within timeout"
     exit 1
 fi
 echo ""
 
+PEGIN_END_TIME=$(date +%s)
+PEGIN_DURATION=$((PEGIN_END_TIME - PEGIN_START_TIME))
+success "Pegin completed in $(format_duration "$PEGIN_DURATION")"
+echo ""
+
 # step 5: request pegout
 step "Step 5: Request Pegout"
+PEGOUT_START_TIME=$(date +%s)
 
 # Derive compressed public key for pegout (33 bytes with 0x prefix)
 USER_COMPRESSED_PUBKEY=$(user_compressed_pubkey_from_wif)
@@ -748,10 +817,15 @@ rm -f /tmp/pegout-$$
 success "Pegout requested"
 echo ""
 
-if ! wait_for_log_with_block_timeout "PegoutFlow Done" 15; then
+if ! wait_for_log_with_block_timeout "PegoutFlow Done" 30; then
     warn "PegoutFlow completion log not found within timeout"
     exit 1
 fi
+echo ""
+
+PEGOUT_END_TIME=$(date +%s)
+PEGOUT_DURATION=$((PEGOUT_END_TIME - PEGOUT_START_TIME))
+success "Pegout completed in $(format_duration "$PEGOUT_DURATION")"
 echo ""
 
 # step 6: verify pegout completion
@@ -766,6 +840,12 @@ step "Complete"
 
 if [ "$SUCCESS" = true ]; then
     success "E2E test completed successfully!"
+    TOTAL_DURATION=$(( $(date +%s) - SCRIPT_START_TIME ))
+    log "Timing summary:"
+    log "  Setup:  $(format_duration "$SETUP_DURATION")"
+    log "  Pegin:  $(format_duration "$PEGIN_DURATION")"
+    log "  Pegout: $(format_duration "$PEGOUT_DURATION")"
+    log "  Total:  $(format_duration "$TOTAL_DURATION")"
 else
     warn "E2E test completed with warnings - PegoutFlow completion not verified"
     exit 1

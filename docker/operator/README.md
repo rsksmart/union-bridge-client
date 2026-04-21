@@ -62,7 +62,7 @@ Use this mode when blockchains come from `docker/local-infra`, but the Union Bri
 operator Docker runtime in this directory.
 
 ```bash
-# 1. Start only the blockchains
+# 1. Start the local blockchains and background mining
 ./cli-infra.sh --start-blockchains --fresh
 
 # 2. Prepare operator runtime artifacts
@@ -74,7 +74,7 @@ bash start-operators.sh --fresh up -d
 
 Notes:
 
-- This sequence starts only the blockchains from `docker/local-infra`.
+- This sequence starts the blockchains from `docker/local-infra` and the wrapper's background mining loop.
 - `start-operators.sh` includes the `bitvmx-client` service in the operator compose stack.
 - `bash start-operators.sh up -d` reuses the current operator containers and volumes.
 
