@@ -8,7 +8,7 @@ use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMX
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::shutdown_flag::ShutdownFlag;
-use log::{debug, error, warn};
+use log::{error, info, trace, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 
 use crate::RUNTIME_ENV_LOCAL;
@@ -35,6 +35,13 @@ pub struct Coordinator<M: MonitorApi, BC: BitVmxBrokerClientApi, S: CoordinatorS
     store: Rc<S>,
     global_context: GlobalContext,
     shutdown_flag: ShutdownFlag,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BitvmxLiveness {
+    Unknown,
+    Healthy,
+    NotResponding,
 }
 
 fn uses_fake_native_bridge(runtime_environment: &str) -> bool {
@@ -202,6 +209,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         let mut bitvmx_last_msg =
             Instant::now().checked_sub(self.bitvmx_ping_after_silence).unwrap_or_else(Instant::now);
         let mut bitvmx_ping: Option<Instant> = None;
+        let mut bitvmx_liveness = BitvmxLiveness::Unknown;
 
         let result = (|| -> Result<()> {
             loop {
@@ -209,7 +217,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     break;
                 }
 
-                self.check_bitvmx_liveness(&mut bitvmx_ping, bitvmx_last_msg);
+                self.check_bitvmx_liveness(&mut bitvmx_ping, &mut bitvmx_liveness, bitvmx_last_msg);
 
                 let mut message_received = false;
 
@@ -230,8 +238,10 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                 if let Some(event) =
                     self.monitor.try_bitvmx_event().context("Error getting BitVMX event")?
                 {
-                    Self::check_bitvmx_pong(&event).then(|| bitvmx_ping = None);
-                    bitvmx_last_msg = Instant::now();
+                    if Self::check_bitvmx_pong(&event, &mut bitvmx_liveness) {
+                        bitvmx_ping = None;
+                        bitvmx_last_msg = Instant::now();
+                    }
 
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
@@ -294,13 +304,20 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         result
     }
 
-    fn check_bitvmx_liveness(&self, bitvmx_ping: &mut Option<Instant>, bitvmx_last_msg: Instant) {
-        #[allow(clippy::collapsible_if)]
-        if let Some(ping) = bitvmx_ping {
-            if ping.elapsed() > self.bitvmx_not_responding_threshold {
-                warn!("BitVMX is not responding");
-                *bitvmx_ping = None;
+    fn check_bitvmx_liveness(
+        &self,
+        bitvmx_ping: &mut Option<Instant>,
+        bitvmx_liveness: &mut BitvmxLiveness,
+        bitvmx_last_msg: Instant,
+    ) {
+        if let Some(ping) = bitvmx_ping
+            && ping.elapsed() > self.bitvmx_not_responding_threshold
+        {
+            if *bitvmx_liveness != BitvmxLiveness::NotResponding {
+                error!("BitVMX is not responding: ping timed out after {:?}", ping.elapsed());
+                *bitvmx_liveness = BitvmxLiveness::NotResponding;
             }
+            *bitvmx_ping = None;
         }
 
         // send ping if we have not received any message from BitVMX for a while and there is no pending ping
@@ -312,7 +329,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
 
     fn send_bitvmx_ping(&self) {
         let ping_id = uuid::Uuid::new_v4();
-        debug!("Sending Ping to BitVMX with uuid: {ping_id}");
+        trace!("Sending Ping to BitVMX with uuid: {ping_id}");
 
         let result = self.bitvmx_broker.send(IncomingBitVMXApiMessages::Ping(ping_id));
 
@@ -321,10 +338,24 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         }
     }
 
-    fn check_bitvmx_pong(event: &OutgoingBitVMXApiMessages) -> bool {
+    fn check_bitvmx_pong(
+        event: &OutgoingBitVMXApiMessages,
+        bitvmx_liveness: &mut BitvmxLiveness,
+    ) -> bool {
         match event {
             OutgoingBitVMXApiMessages::Pong(uuid) => {
-                debug!("Received Pong from BitVMX with uuid: {uuid}");
+                match bitvmx_liveness {
+                    BitvmxLiveness::Unknown => {
+                        info!("BitVMX is responsive (first Pong uuid: {uuid})");
+                    }
+                    BitvmxLiveness::NotResponding => {
+                        info!("BitVMX is back online (Pong uuid: {uuid})");
+                    }
+                    BitvmxLiveness::Healthy => {
+                        trace!("Received Pong from BitVMX with uuid: {uuid}");
+                    }
+                }
+                *bitvmx_liveness = BitvmxLiveness::Healthy;
                 true
             }
             _ => false,
