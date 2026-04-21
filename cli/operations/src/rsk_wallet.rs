@@ -201,6 +201,7 @@ pub async fn handle_operator_funding(
     env: Environment,
     stream_id: u64,
     stream_manager_address: Option<&str>,
+    roles: Option<&str>,
 ) -> Result<()> {
     match env {
         Environment::Local => {
@@ -209,7 +210,9 @@ pub async fn handle_operator_funding(
         Environment::Docker => {
             fund_local_docker(stream_id)?;
         }
-        Environment::Remote(_) => print_instructions(&env, stream_id, stream_manager_address)?,
+        Environment::Remote(_) => {
+            print_instructions(&env, stream_id, stream_manager_address, roles)?
+        }
     }
     Ok(())
 }
@@ -527,15 +530,18 @@ fn print_instructions(
     env: &Environment,
     stream_id: u64,
     stream_manager_address: Option<&str>,
+    roles: Option<&str>,
 ) -> Result<()> {
     let env_name = env.get_name();
 
     let hosts = env.hosts()?;
+    let expected = hosts.len();
     let rpc_url = env.rpc_url()?;
     let stream_manager_address = stream_manager_address
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| anyhow!("--stream-manager-address is required for remote environments"))?;
+    let roles = parse_remote_operator_roles(roles, expected)?;
 
     println!("[docker-fund] gathering operator wallets from {} hosts", env_name);
     let ssh_user = env.remote_ssh_user()?;
@@ -556,11 +562,12 @@ fn print_instructions(
             &rpc_url,
             stream_manager_address,
             stream_id,
-            role_for_operator_index(index),
+            roles[index],
         )?;
         println!(
-            "  operator -> {} (required: {} RBTC / {} wei)",
+            "  operator -> {} [{}] (required: {} RBTC / {} wei)",
             address,
+            roles[index].as_str(),
             format_wei_as_rbtc(required_balance),
             required_balance
         );
@@ -573,7 +580,7 @@ fn print_instructions(
             &rpc_url,
             stream_manager_address,
             stream_id,
-            role_for_operator_index(index),
+            roles[index],
         )?;
         println!(
             "  cast send {} --value {} --private-key <PRIVATE_KEY> --rpc-url {}",
@@ -584,7 +591,7 @@ fn print_instructions(
     Ok(())
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum CommitteeFundingRole {
     Prover,
     Verifier,
@@ -597,6 +604,13 @@ impl CommitteeFundingRole {
             CommitteeFundingRole::Verifier => 2,
         }
     }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            CommitteeFundingRole::Prover => "prover",
+            CommitteeFundingRole::Verifier => "verifier",
+        }
+    }
 }
 
 fn role_for_operator_index(index: usize) -> CommitteeFundingRole {
@@ -605,6 +619,46 @@ fn role_for_operator_index(index: usize) -> CommitteeFundingRole {
     } else {
         CommitteeFundingRole::Verifier
     }
+}
+
+fn parse_remote_operator_roles(
+    roles: Option<&str>,
+    expected_count: usize,
+) -> Result<Vec<CommitteeFundingRole>> {
+    let roles = roles
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            anyhow!(
+                "--roles is required for remote environments; expected {} comma-separated role(s) like prover,prover,verifier,verifier",
+                expected_count
+            )
+        })?;
+
+    let parsed = roles
+        .split(',')
+        .map(str::trim)
+        .enumerate()
+        .map(|(index, role)| match role {
+            "prover" => Ok(CommitteeFundingRole::Prover),
+            "verifier" => Ok(CommitteeFundingRole::Verifier),
+            _ => Err(anyhow!(
+                "invalid remote role '{}' at position {}; expected 'prover' or 'verifier'",
+                role,
+                index + 1
+            )),
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    if parsed.len() != expected_count {
+        bail!(
+            "--roles count mismatch: expected {} role(s) but got {}",
+            expected_count,
+            parsed.len()
+        );
+    }
+
+    Ok(parsed)
 }
 
 fn required_user_rsk_balance(stream_id: u64) -> Result<U256> {
@@ -945,5 +999,31 @@ mod tests {
         .unwrap_err();
 
         assert!(err.to_string().contains("expected a 32-byte hex private key"));
+    }
+
+    #[test]
+    fn parses_remote_operator_roles() {
+        let roles = parse_remote_operator_roles(Some("prover, prover, verifier"), 3).unwrap();
+        assert!(matches!(roles[0], CommitteeFundingRole::Prover));
+        assert!(matches!(roles[1], CommitteeFundingRole::Prover));
+        assert!(matches!(roles[2], CommitteeFundingRole::Verifier));
+    }
+
+    #[test]
+    fn remote_operator_roles_are_required() {
+        let err = parse_remote_operator_roles(None, 2).unwrap_err();
+        assert!(err.to_string().contains("--roles is required for remote environments"));
+    }
+
+    #[test]
+    fn remote_operator_roles_validate_count() {
+        let err = parse_remote_operator_roles(Some("prover,verifier"), 3).unwrap_err();
+        assert!(err.to_string().contains("--roles count mismatch"));
+    }
+
+    #[test]
+    fn remote_operator_roles_validate_values() {
+        let err = parse_remote_operator_roles(Some("prover,operator"), 2).unwrap_err();
+        assert!(err.to_string().contains("invalid remote role"));
     }
 }

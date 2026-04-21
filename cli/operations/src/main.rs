@@ -123,6 +123,11 @@ enum OperatorCommands {
         #[arg(long = "stream-manager-address", value_name = "ADDRESS")]
         stream_manager_address: Option<String>,
 
+        /// Comma-separated operator roles for remote environments, in signer/host order.
+        /// Example: `prover,prover,verifier,verifier`
+        #[arg(long = "roles", value_name = "ROLES")]
+        roles: Option<String>,
+
         /// Execute the wallet commands programmatically instead of just printing them
         #[arg(long = "execute", default_value_t = false)]
         execute: bool,
@@ -256,6 +261,7 @@ async fn main() -> Result<()> {
                 env,
                 stream_id,
                 stream_manager_address,
+                roles,
                 execute,
                 fund_amount,
             } => {
@@ -264,6 +270,7 @@ async fn main() -> Result<()> {
                     env.clone(),
                     stream_id,
                     stream_manager_address.as_deref(),
+                    roles.as_deref(),
                 )
                 .await?;
                 println!("=== Funding Bitcoin addresses ===");
