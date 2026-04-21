@@ -298,16 +298,19 @@ fn collect_user_rsk_addresses_from_cargo_logs(first_only: bool) -> Result<Vec<(S
     let all_ids = operator_ids();
     let ids: &[u8] = if first_only { &[1] } else { &all_ids };
     for operator_id in ids {
-        let log_path = logs_dir.join(format!("user-api-{}.log", operator_id));
-        if !log_path.exists() {
+        let log_paths = local_log_paths(&logs_dir, "user-api", *operator_id)?;
+        if log_paths.is_empty() {
             continue;
         }
 
-        let contents = fs::read_to_string(&log_path)
-            .with_context(|| format!("failed to read {}", log_path.display()))?;
+        for log_path in log_paths {
+            let contents = fs::read_to_string(&log_path)
+                .with_context(|| format!("failed to read {}", log_path.display()))?;
 
-        if let Some(address) = extract_user_rsk_address(&contents) {
-            addresses.push((format!("user-api-{}", operator_id), address));
+            if let Some(address) = extract_user_rsk_address(&contents) {
+                addresses.push((format!("user-api-{}", operator_id), address));
+                break;
+            }
         }
     }
 
@@ -683,23 +686,36 @@ fn collect_local_signers_from_logs(marker: &str) -> Result<Vec<(String, String)>
     let log_type = if marker == MEMBER_LOG_MARKER { "coordinator" } else { "user-api" };
 
     for operator_id in operator_ids() {
-        let log_path = logs_dir.join(format!("{}-{}.log", log_type, operator_id));
-        if !log_path.exists() {
+        let log_paths = local_log_paths(&logs_dir, log_type, operator_id)?;
+        if log_paths.is_empty() {
             bail!(
-                "expected {} log at {} but it does not exist. ensure the services have been started via `cargo run -- run`.",
+                "expected {} log for operator {} under {} but none exist. ensure the services have been started via `cargo run -- run`.",
                 log_type,
-                log_path.display()
+                operator_id,
+                logs_dir.display()
             );
         }
 
-        let contents = fs::read_to_string(&log_path)
-            .with_context(|| format!("failed to read {}", log_path.display()))?;
-        let mut addresses = extract_signer_addresses(&contents, marker);
+        let mut addresses = Vec::new();
+        for log_path in &log_paths {
+            let contents = fs::read_to_string(log_path)
+                .with_context(|| format!("failed to read {}", log_path.display()))?;
+            addresses.extend(extract_signer_addresses(&contents, marker));
+            if !addresses.is_empty() {
+                break;
+            }
+        }
+
         if addresses.is_empty() {
+            let searched_paths = log_paths
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
             bail!(
-                "no {} signer addresses found in {}. wait for the {} to emit the log line and try again.",
+                "no {} signer addresses found in [{}]. wait for the {} to emit the log line and try again.",
                 log_type,
-                log_path.display(),
+                searched_paths,
                 log_type
             );
         } else {
@@ -711,6 +727,45 @@ fn collect_local_signers_from_logs(marker: &str) -> Result<Vec<(String, String)>
     }
 
     Ok(signers)
+}
+
+fn local_log_paths(logs_dir: &Path, log_type: &str, operator_id: u8) -> Result<Vec<PathBuf>> {
+    let current_name = format!("{log_type}-{operator_id}.log");
+    let rotated_prefix = format!("{log_type}-{operator_id}.");
+    let mut rotated = Vec::new();
+
+    for entry in
+        fs::read_dir(logs_dir).with_context(|| format!("failed to read {}", logs_dir.display()))?
+    {
+        let entry = entry.with_context(|| format!("failed to read {}", logs_dir.display()))?;
+        let file_name = entry.file_name();
+        let file_name = file_name.to_string_lossy();
+
+        if file_name == current_name {
+            continue;
+        }
+
+        if !file_name.starts_with(&rotated_prefix) || !file_name.ends_with(".log") {
+            continue;
+        }
+
+        let suffix = &file_name[rotated_prefix.len()..file_name.len() - ".log".len()];
+        let Ok(index) = suffix.parse::<u32>() else {
+            continue;
+        };
+        rotated.push((index, entry.path()));
+    }
+
+    rotated.sort_by_key(|(index, _)| *index);
+
+    let mut paths = Vec::new();
+    let current_path = logs_dir.join(&current_name);
+    if current_path.exists() {
+        paths.push(current_path);
+    }
+    paths.extend(rotated.into_iter().map(|(_, path)| path));
+
+    Ok(paths)
 }
 
 fn collect_local_signers(marker: &str) -> Result<Vec<(String, String)>> {

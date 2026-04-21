@@ -23,11 +23,14 @@ background mining.
 # Stop mining + all Docker infra
 ./cli-infra.sh --stop
 
-# Start blockchains only
+# Start blockchains + background mining
 ./cli-infra.sh --start-blockchains [--fresh] [--contracts-tag TAG]
 
-# Stop blockchains only
+# Stop background mining + blockchains
 ./cli-infra.sh --stop-blockchains
+
+# Stop background mining only
+./cli-infra.sh --stop-mining
 
 # Start BitVMX only
 ./cli-infra.sh --start-bitvmx [--fresh]
@@ -35,15 +38,20 @@ background mining.
 # Stop BitVMX only
 ./cli-infra.sh --stop-bitvmx
 
-# Start or stop background mining
-./cli-infra.sh --start-mine
-./cli-infra.sh --stop-mine
-```
+``` 
 
 ## Scripts
 
 - `start-blockchains.sh`: starts bitcoind (regtest) + anvil + deploys contracts
+- `cli-infra.sh --start-blockchains`: wraps blockchain startup, bootstraps the Bitcoin miner wallet with 101 blocks when needed, and then starts background mining
 - `start-bitvmx.sh`: starts 4 BitVMX client instances
+
+Mining is coupled to the blockchain lifecycle in this wrapper:
+
+- `cli-infra.sh --start`: starts blockchains, BitVMX, and background mining
+- `cli-infra.sh --start-blockchains`: starts blockchains, ensures `mainwallet` has mature regtest funds, and starts background mining
+- `cli-infra.sh --stop-blockchains`: stops background mining and blockchains
+- `cli-infra.sh --stop-mining`: stops background mining only; run this if mining gets stuck
 
 ## Contracts Version
 

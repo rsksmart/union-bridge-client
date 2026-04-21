@@ -13,7 +13,7 @@ use bitcoincore_rpc::RpcApi;
 use chrono::{DateTime, Utc};
 use clap::Parser;
 use rustyline::error::ReadlineError;
-use serde_json::json;
+use serde_json::{Value, json};
 use ub_wallet::bitcoin::utils::find_vout_for_address;
 use ub_wallet::cli::{CliOpts, WalletMode, setup_editor};
 use ub_wallet::config::Config;
@@ -441,18 +441,28 @@ fn handle_command(wallet: &mut Wallet, line: &str, mode: &WalletMode) -> Result<
                 Some(s) => s.parse().context("invalid amount (satoshis)")?,
                 None => 21_000_000,
             };
-            let send_amount_btc = (amount_sat as f64) / 100_000_000.0;
+            let send_amount_btc = sats_to_btc(amount_sat);
+            let required_balance_sat = amount_sat.saturating_add(MINER_FEE_BUFFER_SAT);
 
-            // Pre-mine 101 blocks to mature coinbase and have spendable balance
             let miner_address: String = client
                 .call("getnewaddress", &[json!("miner"), json!("bech32")])
                 .context("failed to obtain mining address")?;
-            client
-                .call::<Vec<String>>(
-                    "generatetoaddress",
-                    &[json!(101), json!(miner_address.clone())],
-                )
-                .context("failed to pre-mine regtest blocks")?;
+
+            // `--start-blockchains` should have already bootstrapped mature miner funds; this only
+            // falls back to the 101-block regtest bootstrap when the wallet still cannot fund the send.
+            if miner_trusted_balance_sat(client)? < required_balance_sat {
+                eprintln!(
+                    "Warning: miner wallet balance is below {} sat; falling back to 101-block regtest bootstrap.",
+                    required_balance_sat
+                );
+                // Bootstrap regtest funds only when the miner wallet cannot already cover this send.
+                client
+                    .call::<Vec<String>>(
+                        "generatetoaddress",
+                        &[json!(101), json!(miner_address.clone())],
+                    )
+                    .context("failed to pre-mine regtest blocks")?;
+            }
 
             // Send requested amount to the active address
             let txid_hex: String = client
@@ -729,6 +739,31 @@ fn print_utxos(utxos: &Vec<(ub_wallet::wallet::Utxo, u64)>) {
     }
 }
 
+const SATS_PER_BTC: f64 = 100_000_000.0;
+const MINER_FEE_BUFFER_SAT: u64 = 10_000;
+
+fn sats_to_btc(amount_sat: u64) -> f64 {
+    (amount_sat as f64) / SATS_PER_BTC
+}
+
+fn miner_trusted_balance_sat(client: &bitcoincore_rpc::Client) -> Result<u64> {
+    let balances: Value =
+        client.call("getbalances", &[]).context("failed to query wallet balances")?;
+    parse_trusted_balance_sat(&balances)
+}
+
+fn parse_trusted_balance_sat(balances: &Value) -> Result<u64> {
+    let trusted_btc = balances
+        .get("mine")
+        .and_then(|mine| mine.get("trusted"))
+        .and_then(Value::as_f64)
+        .context("bitcoind getbalances response missing mine.trusted")?;
+
+    ensure!(trusted_btc >= 0.0, "bitcoind returned a negative trusted balance");
+
+    Ok((trusted_btc * SATS_PER_BTC).round() as u64)
+}
+
 fn parse_count(raw: Option<&str>) -> Result<usize> {
     match raw {
         None => Ok(1),
@@ -854,5 +889,31 @@ fn format_timestamp(timestamp: u64) -> String {
     match i64::try_from(timestamp).ok().and_then(|secs| DateTime::<Utc>::from_timestamp(secs, 0)) {
         Some(datetime) => datetime.format("%Y-%m-%d %H:%M:%S").to_string(),
         None => timestamp.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_trusted_balance_sat;
+    use serde_json::json;
+
+    #[test]
+    fn parses_trusted_balance_from_getbalances_response() {
+        let balances = json!({
+            "mine": {
+                "trusted": 0.2101,
+                "untrusted_pending": 0.0,
+                "immature": 50.0,
+            }
+        });
+
+        assert_eq!(parse_trusted_balance_sat(&balances).unwrap(), 21_010_000);
+    }
+
+    #[test]
+    fn errors_when_trusted_balance_is_missing() {
+        let balances = json!({ "mine": { "immature": 50.0 } });
+
+        assert!(parse_trusted_balance_sat(&balances).is_err());
     }
 }
