@@ -301,6 +301,9 @@ where
                     );
                     trace!("Received BitVMX message (full): {response:?}");
                 }
+                OutgoingBitVMXApiMessages::Pong(uuid) => {
+                    trace!("Received BitVMX message: Pong({uuid})");
+                }
                 _ => {
                     debug!("Received BitVMX message: {response:?}");
                 }
