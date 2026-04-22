@@ -215,6 +215,8 @@ Notes:
 - `./cli-setup-operators.sh --help` currently supports `--ops 1-10`, but the documented local infra flow remains
   centered on 4 prepared operators and 4 local BitVMX instances.
 - `./cli-infra.sh --help` is the quickest entry point for local blockchains, BitVMX, and background mining.
+- for local debugging snapshots, use [backup-local-logs.sh](scripts/backup-local-logs.sh)
+  with `local` or `docker` mode to collect Union Client's coordinator and BitVMX client logs into a timestamped directory
 
 ### What the Setup Step Produces
 
