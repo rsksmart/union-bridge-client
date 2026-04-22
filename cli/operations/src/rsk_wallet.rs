@@ -1,16 +1,19 @@
 use alloy_primitives::U256;
 use anyhow::{anyhow, bail, Context, Result};
+use reqwest::Client;
 use rpassword::prompt_password;
+use serde::Deserialize;
 use std::process::Command;
 use std::str::FromStr;
 
 use op_funding::{derive_stream_funding_profile, required_member_rsk_balance};
 
+use crate::bitcoin_wallet::collect_user_bitcoin_addresses;
 use crate::constants::{
     operator_and_prover_counts, operator_ids, COMMITTEE_PACKET_SIZE, LOCAL_ANVIL_ADDRESS,
 };
 use crate::environments::*;
-use crate::staged_operator_data::{collect_rsk_addresses, collect_user_bitcoin_addresses, RskRole};
+use crate::member_funding_info::CollectedMemberFundingInfo;
 
 // Keep this aligned with `union-bridge-client/config/base.toml`. Local and docker both point at
 // the same Anvil deployment, so the CLI can rely on this fixed StreamManager address.
@@ -20,23 +23,29 @@ const WEI_PER_SAT: u64 = 10_000_000_000;
 // Fixed local/dev gas headroom added on top of the pegout amount for user wallets.
 const LOCAL_USER_RSK_GAS_BUFFER_WEI: u64 = 30_000_000_000_000_000;
 
+#[derive(Deserialize)]
+struct AddressResponse {
+    address: String,
+}
+
 /// whitelists member RSK addresses on the CommitteeRegistry contract.
 /// collects member signer addresses from staged keystores, then calls
 /// `whitelistAddresses(address[])` via `cast send`.
-pub fn handle_whitelist(
+pub async fn handle_whitelist(
     env: Environment,
     contract_address: &str,
     from_address: Option<&str>,
     private_key: Option<&str>,
+    member_funding_info: &CollectedMemberFundingInfo,
 ) -> Result<()> {
     println!("\n=== Whitelisting member addresses ===\n");
 
-    let member_signers = collect_rsk_addresses(&env, RskRole::Member, false)?;
+    let member_signers = collect_member_rsk_addresses(member_funding_info);
     let unique = unique_addresses(&member_signers);
     let expected = operator_ids().len();
     if unique.len() < expected {
         bail!(
-            "expected {} member RSK address(es) but found {}. ensure the staged operator keystores exist under ~/.union_bridge.",
+            "expected {} member RSK address(es) but found {}. ensure the coordinator and user-api services are running.",
             expected,
             unique.len()
         );
@@ -185,26 +194,28 @@ pub async fn handle_operator_funding(
     stream_id: u64,
     stream_manager_address: Option<&str>,
     roles: Option<&str>,
+    member_funding_info: &CollectedMemberFundingInfo,
 ) -> Result<()> {
     match env {
         Environment::Local => {
-            fund_local(stream_id)?;
+            fund_local(stream_id, member_funding_info).await?;
         }
         Environment::Docker => {
-            fund_local_docker(stream_id)?;
+            fund_local_docker(stream_id, member_funding_info).await?;
         }
         Environment::Remote(_) => {
-            print_instructions(&env, stream_id, stream_manager_address, roles)?
+            print_instructions(&env, stream_id, stream_manager_address, roles, member_funding_info)
+                .await?
         }
     }
     Ok(())
 }
 
 /// displays user addresses and funding instructions
-pub fn handle_user_funding(env: Environment) -> Result<()> {
+pub async fn handle_user_funding(env: Environment) -> Result<()> {
     println!("\n=== User Funding Information ===\n");
 
-    let user_addresses = collect_rsk_addresses(&env, RskRole::User, false)?;
+    let user_addresses = collect_user_rsk_addresses(&env, false).await?;
 
     // print RSK funding instructions
     println!("--- Rootstock (RSK) ---");
@@ -270,21 +281,75 @@ pub fn handle_user_funding(env: Environment) -> Result<()> {
     Ok(())
 }
 
-/// returns the first user RSK address found in staged keystores for the current environment
-/// when `first_only` is true, only resolves operator 1 (used for pegout)
-pub fn get_user_rsk_address(env: &Environment, first_only: bool) -> Result<Option<String>> {
-    let addresses = collect_rsk_addresses(env, RskRole::User, first_only)?;
+/// returns the first user RSK address exposed by user-api for the current environment.
+/// when `first_only` is true, only resolves the first configured endpoint (used for pegout)
+pub async fn get_user_rsk_address(env: &Environment, first_only: bool) -> Result<Option<String>> {
+    let addresses = collect_user_rsk_addresses(env, first_only).await?;
     Ok(addresses.into_iter().next().map(|(_, addr)| addr))
 }
 
-fn fund_local(stream_id: u64) -> Result<()> {
+fn collect_member_rsk_addresses(
+    member_funding_info: &CollectedMemberFundingInfo,
+) -> Vec<(String, String)> {
+    member_funding_info
+        .iter()
+        .map(|(endpoint, info)| (endpoint.clone(), info.rsk_address.clone()))
+        .collect()
+}
+
+async fn collect_user_rsk_addresses(
+    env: &Environment,
+    first_only: bool,
+) -> Result<Vec<(String, String)>> {
+    collect_rsk_addresses_from_user_api(env, "/user/rsk-address", first_only).await
+}
+
+async fn collect_rsk_addresses_from_user_api(
+    env: &Environment,
+    path: &str,
+    first_only: bool,
+) -> Result<Vec<(String, String)>> {
+    let mut endpoints = env.user_api_endpoints()?;
+    if first_only {
+        endpoints.truncate(1);
+    }
+
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .context("failed to build http client")?;
+
+    let mut addresses = Vec::with_capacity(endpoints.len());
+    for endpoint in endpoints {
+        let url = format!("http://{}{}", endpoint, path);
+        let response =
+            client.get(&url).send().await.with_context(|| format!("failed to fetch {}", url))?;
+
+        if !response.status().is_success() {
+            bail!("request to {} failed with status {}", url, response.status());
+        }
+
+        let body: AddressResponse = response
+            .json()
+            .await
+            .with_context(|| format!("failed to decode response body from {}", url))?;
+        addresses.push((endpoint, body.address));
+    }
+
+    Ok(addresses)
+}
+
+async fn fund_local(
+    stream_id: u64,
+    member_funding_info: &CollectedMemberFundingInfo,
+) -> Result<()> {
     println!("[cargo-fund] funding operator wallets via local anvil");
-    let member_signers = collect_rsk_addresses(&Environment::Local, RskRole::Member, false)?;
+    let member_signers = collect_member_rsk_addresses(member_funding_info);
     let unique_members = unique_addresses(&member_signers);
     let expected = operator_ids().len();
     if unique_members.len() < expected {
         bail!(
-            "expected {} member RSK address(es) but found {}. ensure staged member keystores exist under ~/.union_bridge.",
+            "expected {} member RSK address(es) but found {}. ensure coordinator and user-api services are running.",
             expected,
             unique_members.len()
         );
@@ -310,11 +375,11 @@ fn fund_local(stream_id: u64) -> Result<()> {
     }
 
     println!("\n[cargo-fund] funding user wallets via local anvil");
-    let user_signers = collect_rsk_addresses(&Environment::Local, RskRole::User, false)?;
+    let user_signers = collect_user_rsk_addresses(&Environment::Local, false).await?;
     let unique_users = unique_addresses(&user_signers);
     if unique_users.len() < expected {
         bail!(
-            "expected {} user RSK address(es) but found {}. ensure staged user keystores exist under ~/.union_bridge.",
+            "expected {} user RSK address(es) but found {}. ensure user-api services are running.",
             expected,
             unique_users.len()
         );
@@ -337,14 +402,17 @@ fn fund_local(stream_id: u64) -> Result<()> {
     Ok(())
 }
 
-fn fund_local_docker(stream_id: u64) -> Result<()> {
+async fn fund_local_docker(
+    stream_id: u64,
+    member_funding_info: &CollectedMemberFundingInfo,
+) -> Result<()> {
     println!("[docker-fund] funding operator wallets via local anvil");
-    let member_signers = collect_rsk_addresses(&Environment::Docker, RskRole::Member, false)?;
+    let member_signers = collect_member_rsk_addresses(member_funding_info);
     let unique_members = unique_addresses(&member_signers);
     let expected = operator_ids().len();
     if unique_members.len() < expected {
         bail!(
-            "expected {} member RSK address(es) but found {}. ensure staged member keystores exist under ~/.union_bridge.",
+            "expected {} member RSK address(es) but found {}. ensure coordinator and user-api services are running.",
             expected,
             unique_members.len()
         );
@@ -370,11 +438,11 @@ fn fund_local_docker(stream_id: u64) -> Result<()> {
     }
 
     println!("\n[docker-fund] funding user wallets via local anvil");
-    let user_signers = collect_rsk_addresses(&Environment::Docker, RskRole::User, false)?;
+    let user_signers = collect_user_rsk_addresses(&Environment::Docker, false).await?;
     let unique_users = unique_addresses(&user_signers);
     if unique_users.len() < expected {
         bail!(
-            "expected {} user RSK address(es) but found {}. ensure staged user keystores exist under ~/.union_bridge.",
+            "expected {} user RSK address(es) but found {}. ensure user-api services are running.",
             expected,
             unique_users.len()
         );
@@ -397,11 +465,12 @@ fn fund_local_docker(stream_id: u64) -> Result<()> {
     Ok(())
 }
 
-fn print_instructions(
+async fn print_instructions(
     env: &Environment,
     stream_id: u64,
     stream_manager_address: Option<&str>,
     roles: Option<&str>,
+    member_funding_info: &CollectedMemberFundingInfo,
 ) -> Result<()> {
     let env_name = env.get_name();
 
@@ -414,13 +483,13 @@ fn print_instructions(
         .ok_or_else(|| anyhow!("--stream-manager-address is required for remote environments"))?;
     let roles = parse_remote_operator_roles(roles, expected)?;
 
-    println!("[docker-fund] gathering operator wallets from staged keys on {} hosts", env_name);
-    let signers = collect_rsk_addresses(env, RskRole::Member, false)?;
+    println!("[docker-fund] gathering operator wallets from coordinator APIs on {}", env_name);
+    let signers = collect_member_rsk_addresses(member_funding_info);
     let unique = unique_addresses(&signers);
     let expected = hosts.len();
     if unique.len() < expected {
         bail!(
-            "expected {} RSK address(es) but found {}. ensure each remote host has staged operator keys under ~/.union_bridge.",
+            "expected {} RSK address(es) but found {}. ensure each remote host exposes the member user-api endpoint.",
             expected,
             unique.len()
         );

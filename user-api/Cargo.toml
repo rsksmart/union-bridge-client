@@ -19,6 +19,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tower-http = { workspace = true }
 transaction-dispatcher = { path = "../transaction-dispatcher", features = ["types"] }
+uuid = { workspace = true }
 
 [lints.clippy]
 all = "allow" # non-production code, do not require strict linting

@@ -94,16 +94,9 @@ async fn main() -> Result<()> {
     let tx_dispatcher_config: TxDispatcherConfig = TxDispatcherConfig::load(config_file)
         .expect("Failed to load transaction dispatcher config");
 
-    // Create two contract gateways with different roles
     let user_contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib(
         tx_dispatcher_config.clone(),
         transaction_dispatcher::GatewayRole::User,
-    )
-    .await?;
-
-    let member_contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib(
-        tx_dispatcher_config,
-        transaction_dispatcher::GatewayRole::Member,
     )
     .await?;
 
@@ -125,7 +118,6 @@ async fn main() -> Result<()> {
         shutdown_flag.clone(),
         coordinator_client_id,
         user_contracts_gateway,
-        member_contracts_gateway,
     )
     .await;
 

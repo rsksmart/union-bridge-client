@@ -715,7 +715,7 @@ if ! bash cli-operations.sh operator fund --env "$SCRIPT_ENV" --stream "$STREAM_
     exit 1
 fi
 echo ""
-if ! wait_for_bitcoin_transactions 1 15 6; then
+if ! wait_for_bitcoin_transactions 1 15 5; then
     warn "Failed to detect 1 Bitcoin transaction with 5 confirmations within 15 blocks"
     exit 1
 fi
@@ -780,7 +780,7 @@ if ! bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -k "$USER_XONLY
 fi
 success "Pegin transaction created"
 echo ""
-if ! wait_for_log_with_block_timeout "PeginFlow Done" 30; then
+if ! wait_for_log_with_block_timeout "PeginFlow Done" 15; then
     warn "PeginFlow completion log not found within timeout"
     exit 1
 fi
@@ -817,7 +817,7 @@ rm -f /tmp/pegout-$$
 success "Pegout requested"
 echo ""
 
-if ! wait_for_log_with_block_timeout "PegoutFlow Done" 30; then
+if ! wait_for_log_with_block_timeout "PegoutFlow Done" 15; then
     warn "PegoutFlow completion log not found within timeout"
     exit 1
 fi

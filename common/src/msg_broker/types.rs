@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use uuid::Uuid;
 
 use crate::types::{Address, RskBlockAndUncles, RskLog};
 
@@ -12,6 +13,16 @@ pub enum ToServer {
     // log-indexer
     SubscribeLogs(Address),
     UnsubscribeLogs(Address),
+
+    // coordinator -> user-api replies
+    MemberFundingInfo(Uuid, MemberFundingInfo),
+    BitVmxWalletError(Uuid, String),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct MemberFundingInfo {
+    pub bitcoin_address: String,
+    pub rsk_address: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -23,7 +34,7 @@ pub enum FromServer {
 
     // User API
     UserRequest(Value),
-    MemberRequest,
+    MemberRequest(Uuid),
 
     // fake bitvmx incoming messages
     RegisterPegout(Value),

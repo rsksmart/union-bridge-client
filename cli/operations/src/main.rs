@@ -72,10 +72,10 @@ mod bitcoin_wallet;
 mod committee;
 mod constants;
 mod environments;
+mod member_funding_info;
 mod pegin;
 mod pegout;
 mod rsk_wallet;
-mod staged_operator_data;
 mod utils;
 
 use anyhow::Result;
@@ -85,6 +85,7 @@ use op_funding::derive_stream_funding_profile;
 use crate::committee::CommitteeRole;
 use crate::constants::{operator_and_prover_counts, COMMITTEE_PACKET_SIZE};
 use crate::environments::Environment;
+use crate::member_funding_info::collect_member_funding_info;
 
 #[derive(Debug, Parser, Clone)]
 #[command(name = "operations", about = "Union Bridge Operator and User Operations")]
@@ -266,25 +267,36 @@ async fn main() -> Result<()> {
                 execute,
                 fund_amount,
             } => {
+                let member_funding_info = collect_member_funding_info(&env, false).await?;
                 println!("\n=== Funding Rootstock wallets ===");
                 rsk_wallet::handle_operator_funding(
                     env.clone(),
                     stream_id,
                     stream_manager_address.as_deref(),
                     roles.as_deref(),
+                    &member_funding_info,
                 )
                 .await?;
                 println!("=== Funding Bitcoin addresses ===");
-                bitcoin_wallet::handle_bitcoin_funding(env, stream_id, execute, fund_amount)
-                    .await?;
+                bitcoin_wallet::handle_bitcoin_funding(
+                    env,
+                    stream_id,
+                    execute,
+                    fund_amount,
+                    &member_funding_info,
+                )
+                .await?;
             }
             OperatorCommands::Whitelist { env, contract_address, from_address, private_key } => {
+                let member_funding_info = collect_member_funding_info(&env, false).await?;
                 rsk_wallet::handle_whitelist(
                     env,
                     &contract_address,
                     from_address.as_deref(),
                     private_key.as_deref(),
-                )?;
+                    &member_funding_info,
+                )
+                .await?;
             }
             OperatorCommands::FundingAmount { env, stream_id } => {
                 let is_regtest = matches!(env, Environment::Local | Environment::Docker);
@@ -305,7 +317,7 @@ async fn main() -> Result<()> {
         },
         Commands::User { command } => match command {
             UserCommands::Fund { env } => {
-                rsk_wallet::handle_user_funding(env)?;
+                rsk_wallet::handle_user_funding(env).await?;
             }
             UserCommands::Pegin { env, rsk_address, value, btc_pub_key, execute } => {
                 pegin::create_pegin_tx(env, rsk_address, value, btc_pub_key, execute).await?;

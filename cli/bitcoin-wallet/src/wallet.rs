@@ -1011,6 +1011,7 @@ pub fn network_name(network: Network) -> &'static str {
         Network::Testnet4 => "testnet4",
         Network::Signet => "signet",
         Network::Regtest => "regtest",
+        _ => "unknown",
     }
 }
 

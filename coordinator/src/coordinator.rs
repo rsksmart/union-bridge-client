@@ -1,11 +1,13 @@
 use std::rc::Rc;
+use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use bitcoin::Network;
 use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
-use common::msg_broker::broker::BitVmxBrokerClientApi;
+use common::msg_broker::broker::{BitVmxBrokerClientApi, UnionBrokerClientApi};
+use common::msg_broker::types::ToServer;
 use common::runtime_sync::RuntimeSync;
 use common::shutdown_flag::ShutdownFlag;
 use log::{error, info, trace, warn};
@@ -17,17 +19,23 @@ use crate::flows::committee::setup_committee_flow::SetupCommitteeFlowFactory;
 use crate::flows::committee::setup_committee_processor::SetupCommitteeProcessor;
 use crate::flows::common::GlobalContext;
 use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
-use crate::flows::fund_bitvmx_flow::FundBitvmxProcessor;
+use crate::flows::funding_info_flow::FundingInfoProcessor;
 use crate::flows::operator_take::AdvanceFundsFlowProcessor;
 use crate::flows::pegin::pegin_processor::PeginFlowProcessor;
 use crate::flows::pegout::pegout_processor::PegoutFlowProcessor;
 use crate::monitor::MonitorApi;
 use crate::store::CoordinatorStoreApi;
-
-pub struct Coordinator<M: MonitorApi, BC: BitVmxBrokerClientApi, S: CoordinatorStoreApi> {
+pub struct Coordinator<
+    M: MonitorApi,
+    BC: BitVmxBrokerClientApi,
+    UC: UnionBrokerClientApi,
+    S: CoordinatorStoreApi,
+> {
     monitor: M,
     bitvmx_broker: Rc<BC>,
+    user_broker: UC,
     processors: Vec<Box<dyn EventProcessor>>,
+    user_reply_rx: Receiver<ToServer>,
     check_period: Duration,
     bitvmx_not_responding_threshold: Duration,
     bitvmx_ping_after_silence: Duration,
@@ -47,8 +55,12 @@ fn uses_fake_native_bridge(runtime_environment: &str) -> bool {
     runtime_environment.eq_ignore_ascii_case(RUNTIME_ENV_LOCAL)
 }
 
-impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi + 'static>
-    Coordinator<M, BC, S>
+impl<
+    M: MonitorApi,
+    BC: BitVmxBrokerClientApi + 'static,
+    UC: UnionBrokerClientApi,
+    S: CoordinatorStoreApi + 'static,
+> Coordinator<M, BC, UC, S>
 {
     fn build_native_bridge_verifier<CG: RskContractsGatewayApi + 'static>(
         runtime_environment: &str,
@@ -81,6 +93,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         monitor: M,
         contracts_gateway: CG,
         bitvmx_broker: &Rc<BC>,
+        user_broker: UC,
         store: S,
         shutdown_flag: ShutdownFlag,
         bitcoin_network: Network,
@@ -122,6 +135,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
             btc_confirmations,
             native_bridge_btc_confirmations_buffer,
         );
+        let (user_reply_tx, user_reply_rx) = mpsc::channel();
 
         let processors: Vec<Box<dyn EventProcessor>> = vec![
             Box::new(PeginFlowProcessor::new(
@@ -169,13 +183,19 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                 bitvmx_broker.as_ref(),
                 rsk_confirmations,
             )),
-            Box::new(FundBitvmxProcessor::new(bitvmx_broker.clone(), bitcoin_network)),
+            Box::new(FundingInfoProcessor::new(
+                bitvmx_broker.clone(),
+                contracts_arc.clone(),
+                user_reply_tx,
+            )),
         ];
 
         Self {
             monitor,
             bitvmx_broker: bitvmx_broker.clone(),
+            user_broker,
             processors,
+            user_reply_rx,
             check_period,
             bitvmx_not_responding_threshold,
             bitvmx_ping_after_silence,
@@ -188,6 +208,7 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
     pub fn new_for_tests(
         monitor: M,
         bitvmx_broker: BC,
+        user_broker: UC,
         processors: Vec<Box<dyn EventProcessor>>,
         shutdown_flag: ShutdownFlag,
         store: S,
@@ -195,7 +216,9 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
         Self {
             monitor,
             bitvmx_broker: Rc::new(bitvmx_broker),
+            user_broker,
             processors,
+            user_reply_rx: mpsc::channel().1,
             check_period: Duration::from_millis(1),
             bitvmx_not_responding_threshold: Duration::from_secs(30),
             bitvmx_ping_after_silence: Duration::from_secs(15),
@@ -244,6 +267,12 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
                     });
 
                     // no sleep, try to get new messages asap
+                    message_received = true;
+                }
+
+                // check if we have received a reply from the user
+                while let Ok(reply) = self.user_reply_rx.try_recv() {
+                    self.send_user_reply(reply).context("Error sending user reply")?;
                     message_received = true;
                 }
 
@@ -377,6 +406,13 @@ impl<M: MonitorApi, BC: BitVmxBrokerClientApi + 'static, S: CoordinatorStoreApi 
     fn is_running(&self) -> bool {
         !self.shutdown_flag.is_on()
     }
+
+    fn send_user_reply(&mut self, reply: ToServer) -> Result<()> {
+        if !self.user_broker.send(reply)? {
+            bail!("Broker could not deliver user reply");
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -386,6 +422,7 @@ pub(crate) mod tests {
 
     use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
     use common::msg_broker::broker::MockBrokerClientApi;
+    use common::msg_broker::types::{FromServer, ToServer};
     use common::shutdown_flag::ShutdownFlag;
     use common::test_utils::rsk_block_generator::{
         create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
@@ -483,10 +520,12 @@ pub(crate) mod tests {
 
         let mut mock_store = MockCoordinatorStoreApi::new();
         mock_store.expect_save_context().with(always()).returning(|_| Ok(()));
+        let mock_user_broker = MockBrokerClientApi::<ToServer, FromServer>::new();
 
         let mut coordinator = Coordinator::new_for_tests(
             mock_monitor,
             bitvmx_broker,
+            mock_user_broker,
             generate_ok_processors(),
             shutdown_flag,
             mock_store,
@@ -552,10 +591,12 @@ pub(crate) mod tests {
 
         let mut mock_store = MockCoordinatorStoreApi::new();
         mock_store.expect_save_context().with(always()).returning(|_| Ok(()));
+        let mock_user_broker = MockBrokerClientApi::<ToServer, FromServer>::new();
 
         let mut coordinator = Coordinator::new_for_tests(
             mock_monitor,
             bitvmx_broker,
+            mock_user_broker,
             generate_ok_processors(),
             shutdown_flag,
             mock_store,
