@@ -279,7 +279,12 @@ For the automated local happy-path flow:
 ```bash
 ./cli-infra.sh --start-blockchains [--fresh]
 ./cli-infra.sh --start-bitvmx [--fresh]
-bash tests/run-happy-path.sh --ops
+bash tests/run-happy-path.sh
+bash tests/run-happy-path.sh --ops 4
+bash tests/run-happy-path.sh --setup
+bash tests/run-happy-path.sh --pegin
+bash tests/run-happy-path.sh --pegout
+bash tests/run-happy-path.sh --advance-funds
 ./cli-infra.sh --stop
 ```
 
@@ -290,7 +295,12 @@ Notes:
 
 - `./cli-infra.sh --start-blockchains` starts Anvil + bitcoind and background mining.
 - If mining gets stuck, run `./cli-infra.sh --stop-mining` before restarting it.
-- `bash tests/run-happy-path.sh --ops` starts the local Rust operators with `bash cli-run.sh --fresh` before the test.
+- `bash tests/run-happy-path.sh` runs the default `happy` mode.
+- `bash tests/run-happy-path.sh --ops 4` does the same, but shows the optional operator-count override.
+- `bash tests/run-happy-path.sh --setup` runs only the preliminary phases so you can later launch `--pegin` and `--pegout` separately against the prepared state.
+- `bash tests/run-happy-path.sh --pegin` runs only the pegin flow and reuses existing wallet, funding, whitelist, stream, and committee state.
+- `bash tests/run-happy-path.sh --pegout` runs only the pegout flow and reuses existing wallet, funding, whitelist, stream, and committee state.
+- `bash tests/run-happy-path.sh --advance-funds` runs a pegout that forces the advance-funds path in local mode, writes the selected operator address to `/tmp/FORCE_ADVANCE`, and reuses existing wallet, funding, whitelist, stream, and committee state.
 - Use `./cli-infra.sh --start --fresh` instead when you want the all-in-one stack, including BitVMX, from the outset.
 
 The user flows now require explicit Bitcoin public keys in the request body. For manual testing, the same derivation

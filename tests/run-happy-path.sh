@@ -9,101 +9,203 @@
 #   - USER_BITCOIN_WIF environment variable set (for bitcoin-wallet operations)
 #   - MEMBER_BITCOIN_WIF environment variable set (for member operations)
 #
-# usage: bash tests/run-happy-path.sh [--stream <0-4>]
+# usage: bash tests/run-happy-path.sh [--env <local|docker>] [--ops <1-10>] [--stream <0-4>] [--setup|--pegin|--pegout|--advance-funds]
 
 set -euo pipefail
 
-# Load environment from root .envrc (only if direnv hasn't already loaded it)
-if [[ -z "${DIRENV_DIR:-}" ]]; then
-    cd "$(dirname "$0")/.."
-    ENVRC_FILE="$(pwd)/.envrc"
-    if [[ -f "$ENVRC_FILE" ]]; then
-        source "$ENVRC_FILE"
-    fi
-fi
+MODE="happy"
+SCRIPT_ENV=""
+OPS_FROM_FLAG=""
+STREAM_ID=0
+NUM_OPERATORS=""
+STREAM_DENOMINATION=""
+VALUE=""
+USER_UTXO_VALUE=""
+MEMBER_UTXO_VALUE=""
+RSK_ADDRESS=""
+COMMITTEE_REGISTRY_ADDRESS="0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82"
+FORCE_ADVANCE_FILE="/tmp/FORCE_ADVANCE"
+FORCE_ADVANCE_TARGET_OPERATOR_ID=""
+USER_API_HOST="localhost"
+BASE_USER_API_PORT=40001
+INTERRUPTED_SIGNAL=""
 
-# Initialize SCRIPT_ENV from UC_ENV if set and valid, otherwise default to "local"
-if [[ -n "${UC_ENV:-}" ]]; then
-    if [[ "$UC_ENV" == "local" || "$UC_ENV" == "docker" ]]; then
-        SCRIPT_ENV="$UC_ENV"
+# Committee setup can take longer to emit completion markers in all operators.
+# Committee setup can take longer in mixed (local client + docker BitVMX) and full-docker flows.
+COMMITTEE_SETUP_MAX_BLOCKS=120
+ADVANCE_FUNDS_MAX_BLOCKS=900
+
+# colors
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+NC='\033[0m'
+
+log() { echo -e "${BLUE}[INFO]${NC} $1"; }
+success() { echo -e "${GREEN}[✓]${NC} $1"; }
+warn() { echo -e "${YELLOW}[!]${NC} $1"; }
+step() {
+    echo ""
+    echo -e "${GREEN}========== $1 ==========${NC}"
+    echo ""
+}
+
+usage() {
+    local script_name
+    script_name=$(basename "${BASH_SOURCE[0]}")
+    cat <<EOF
+Usage: ${script_name} [--env <local|docker>] [--ops <1-10>] [--stream <0-4>] [--setup|--pegin|--pegout|--advance-funds]
+
+  --env      Environment: local or docker (default: from UC_ENV or local)
+  --ops      Number of operators (1-10, default: from docker-deploy.env or 4)
+  --stream   Stream identifier (0-4). Defaults to 0.
+  --setup    Run only the setup phases: wallet prep, funding, whitelist, apply-stream,
+             and committee wait.
+  --pegin    Run only the pegin flow. Reuses existing setup, funding, and committee state.
+  --pegout   Run only the pegout flow. Reuses existing setup, funding, and committee state.
+  --advance-funds
+             Run a pegout that forces the advance-funds path by writing the
+             selected operator address to ${FORCE_ADVANCE_FILE} in the active
+             runtime (host for local, coordinator containers for docker).
+EOF
+}
+
+load_envrc_if_needed() {
+    if [[ -n "${DIRENV_DIR:-}" ]]; then
+        return 0
+    fi
+
+    local repo_root
+    repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
+    if [[ -f "${repo_root}/.envrc" ]]; then
+        # shellcheck source=/dev/null
+        source "${repo_root}/.envrc"
+    fi
+}
+
+initialize_script_env_default() {
+    if [[ -n "${UC_ENV:-}" ]]; then
+        if [[ "$UC_ENV" == "local" || "$UC_ENV" == "docker" ]]; then
+            SCRIPT_ENV="$UC_ENV"
+        else
+            SCRIPT_ENV="local"
+        fi
     else
         SCRIPT_ENV="local"
     fi
-else
-    SCRIPT_ENV="local"
-fi
-
-usage() {
-    echo "Usage: $0 [--env <local|docker>] [--ops <1-10>] [--stream <0-4>]"
-    echo ""
-    echo "  --env    Environment: local or docker (default: from UC_ENV or local)"
-    echo "  --ops    Number of operators (1-10, default: from docker-deploy.env or 4)"
-    echo "  --stream   Stream identifier (0-4). Defaults to 0."
-    exit 1
 }
 
-OPS_FROM_FLAG=""
-STREAM_ID=0
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-    --env)
-        SCRIPT_ENV="${2:-}"
-        if [[ -z "$SCRIPT_ENV" ]]; then
+parse_args() {
+    local setup_only=false
+    local pegin_only=false
+    local pegout_only=false
+    local advance_funds_only=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+        --env)
+            SCRIPT_ENV="${2:-}"
+            if [[ -z "$SCRIPT_ENV" ]]; then
+                usage
+                return 1
+            fi
+            if [[ "$SCRIPT_ENV" != "local" && "$SCRIPT_ENV" != "docker" ]]; then
+                echo "Error: --env must be 'local' or 'docker'" >&2
+                usage
+                return 1
+            fi
+            shift 2
+            ;;
+        --ops)
+            OPS_FROM_FLAG="${2:-}"
+            if [[ -z "$OPS_FROM_FLAG" ]] || ! [[ "$OPS_FROM_FLAG" =~ ^(10|[1-9])$ ]]; then
+                echo "Error: --ops must be between 1 and 10" >&2
+                return 1
+            fi
+            shift 2
+            ;;
+        --stream)
+            STREAM_ID="${2:-}"
+            if [[ -z "$STREAM_ID" ]] || ! [[ "$STREAM_ID" =~ ^[0-4]$ ]]; then
+                echo "Error: --stream must be between 0 and 4" >&2
+                return 1
+            fi
+            shift 2
+            ;;
+        --setup)
+            setup_only=true
+            shift
+            ;;
+        --pegin)
+            pegin_only=true
+            shift
+            ;;
+        --pegout)
+            pegout_only=true
+            shift
+            ;;
+        --advance-funds)
+            advance_funds_only=true
+            shift
+            ;;
+        *)
             usage
-        fi
-        if [[ "$SCRIPT_ENV" != "local" && "$SCRIPT_ENV" != "docker" ]]; then
-            echo "Error: --env must be 'local' or 'docker'"
-            usage
-        fi
-        shift 2
-        ;;
-    --ops)
-        OPS_FROM_FLAG="${2:-}"
-        if [[ -z "$OPS_FROM_FLAG" ]] || ! [[ "$OPS_FROM_FLAG" =~ ^(10|[1-9])$ ]]; then
-            echo "Error: --ops must be between 1 and 10"
-            exit 1
-        fi
-        shift 2
-        ;;
-    --stream)
-        STREAM_ID="${2:-}"
-        if [[ -z "$STREAM_ID" ]] || ! [[ "$STREAM_ID" =~ ^[0-4]$ ]]; then
-            echo "Error: --stream must be between 0 and 4"
-            exit 1
-        fi
-        shift 2
-        ;;
-    *)
+            return 1
+            ;;
+        esac
+    done
+
+    local selected_modes=0
+    [[ "$setup_only" == true ]] && selected_modes=$((selected_modes + 1))
+    [[ "$pegin_only" == true ]] && selected_modes=$((selected_modes + 1))
+    [[ "$pegout_only" == true ]] && selected_modes=$((selected_modes + 1))
+    [[ "$advance_funds_only" == true ]] && selected_modes=$((selected_modes + 1))
+
+    if [[ "$selected_modes" -gt 1 ]]; then
+        echo "Error: --setup, --pegin, --pegout, and --advance-funds are mutually exclusive" >&2
         usage
-        ;;
-    esac
-done
+        return 1
+    fi
 
-# Final validation that SCRIPT_ENV is valid
-if [[ "$SCRIPT_ENV" != "local" && "$SCRIPT_ENV" != "docker" ]]; then
-    echo "Error: SCRIPT_ENV must be 'local' or 'docker'"
-    exit 1
-fi
+    if [[ "$setup_only" == true ]]; then
+        MODE="setup"
+    elif [[ "$pegin_only" == true ]]; then
+        MODE="pegin"
+    elif [[ "$pegout_only" == true ]]; then
+        MODE="pegout"
+    elif [[ "$advance_funds_only" == true ]]; then
+        MODE="advance-funds"
+    else
+        MODE="happy"
+    fi
+}
 
-# change to project root (parent of tests directory)
-cd "$(dirname "$0")/.."
+validate_script_env() {
+    if [[ "$SCRIPT_ENV" != "local" && "$SCRIPT_ENV" != "docker" ]]; then
+        echo "Error: SCRIPT_ENV must be 'local' or 'docker'" >&2
+        return 1
+    fi
+}
 
-# Load NUM_OPERATORS: --ops flag > docker-deploy.env > default (4)
-if [[ -n "$OPS_FROM_FLAG" ]]; then
-    NUM_OPERATORS="$OPS_FROM_FLAG"
-else
+load_num_operators() {
+    if [[ -n "$OPS_FROM_FLAG" ]]; then
+        NUM_OPERATORS="$OPS_FROM_FLAG"
+        return 0
+    fi
+
     NUM_OPERATORS=4
-    _env_local="docker/operator/docker-deploy.env"
-    if [[ -f "$_env_local" ]]; then
-        _num=$(grep -E '^\s*NUM_OPERATORS=' "$_env_local" | tail -1 | cut -d= -f2 | tr -d ' "'\''')
-        if [[ -n "$_num" ]] && [[ "$_num" =~ ^[0-9]+$ ]] && [[ "$_num" -ge 1 ]] && [[ "$_num" -le 10 ]]; then
-            NUM_OPERATORS="$_num"
+    local env_file="docker/operator/docker-deploy.env"
+    if [[ -f "$env_file" ]]; then
+        local configured_ops=""
+        configured_ops=$(grep -E '^\s*NUM_OPERATORS=' "$env_file" | tail -1 | cut -d= -f2 | tr -d ' "'\''')
+        if [[ -n "$configured_ops" ]] && [[ "$configured_ops" =~ ^[0-9]+$ ]] && [[ "$configured_ops" -ge 1 ]] && [[ "$configured_ops" -le 10 ]]; then
+            NUM_OPERATORS="$configured_ops"
         fi
     fi
-    unset _env_local _num
-fi
+}
 
-# stream configuration
 stream_denomination() {
     case "$1" in
         0) echo 100000 ;;
@@ -136,32 +238,21 @@ derived_member_wallet_utxo_value() {
     echo $((per_operator_funding * operator_count + wallet_fee_buffer))
 }
 
-STREAM_DENOMINATION=$(stream_denomination "$STREAM_ID")
-VALUE="$STREAM_DENOMINATION"
-USER_UTXO_VALUE=$(derived_wallet_utxo_value "$STREAM_DENOMINATION")
-MEMBER_UTXO_VALUE=$(derived_member_wallet_utxo_value "$STREAM_ID" "$NUM_OPERATORS")
+initialize_mode_config() {
+    STREAM_DENOMINATION=$(stream_denomination "$STREAM_ID")
+    VALUE="$STREAM_DENOMINATION"
 
-RSK_ADDRESS="0x$(openssl rand -hex 20)" # random address each run
-COMMITTEE_REGISTRY_ADDRESS="0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82"
+    if [[ "$MODE" == "happy" || "$MODE" == "setup" || "$MODE" == "pegin" ]]; then
+        RSK_ADDRESS="0x$(openssl rand -hex 20)"
+    fi
 
-# Committee setup can take longer to emit completion markers in all operators.
-# Committee setup can take longer in mixed (local client + docker BitVMX) and full-docker flows.
-COMMITTEE_SETUP_MAX_BLOCKS=120
+    if [[ "$MODE" == "happy" || "$MODE" == "pegin" ]]; then
+        USER_UTXO_VALUE=$(derived_wallet_utxo_value "$STREAM_DENOMINATION")
+    fi
 
-# colors
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-PURPLE='\033[0;35m'
-NC='\033[0m'
-
-log() { echo -e "${BLUE}[INFO]${NC} $1"; }
-success() { echo -e "${GREEN}[✓]${NC} $1"; }
-warn() { echo -e "${YELLOW}[!]${NC} $1"; }
-step() {
-    echo ""
-    echo -e "${GREEN}========== $1 ==========${NC}"
-    echo ""
+    if [[ "$MODE" == "happy" || "$MODE" == "setup" ]]; then
+        MEMBER_UTXO_VALUE=$(derived_member_wallet_utxo_value "$STREAM_ID" "$NUM_OPERATORS")
+    fi
 }
 
 format_duration() {
@@ -205,10 +296,33 @@ notify_completion() {
     notify_os_notification "$title" "$message" || notify_terminal_bell
 }
 
+log_startup_configuration() {
+    case "$MODE" in
+    happy)
+        log "Configuration: mode=$MODE, stream=$STREAM_ID, denomination=$STREAM_DENOMINATION, rsk=$RSK_ADDRESS, amount=$VALUE, env=$SCRIPT_ENV, user_wallet_utxo=$USER_UTXO_VALUE, member_wallet_utxo=$MEMBER_UTXO_VALUE"
+        ;;
+    setup)
+        log "Configuration: mode=$MODE, stream=$STREAM_ID, denomination=$STREAM_DENOMINATION, rsk=$RSK_ADDRESS, amount=$VALUE, env=$SCRIPT_ENV, member_wallet_utxo=$MEMBER_UTXO_VALUE"
+        ;;
+    pegin)
+        log "Configuration: mode=$MODE, stream=$STREAM_ID, denomination=$STREAM_DENOMINATION, rsk=$RSK_ADDRESS, amount=$VALUE, env=$SCRIPT_ENV, user_wallet_utxo=$USER_UTXO_VALUE"
+        ;;
+    pegout)
+        log "Configuration: mode=$MODE, stream=$STREAM_ID, denomination=$STREAM_DENOMINATION, amount=$VALUE, env=$SCRIPT_ENV"
+        ;;
+    advance-funds)
+        log "Configuration: mode=$MODE, stream=$STREAM_ID, denomination=$STREAM_DENOMINATION, amount=$VALUE, env=$SCRIPT_ENV"
+        ;;
+    esac
+    log "Prerequisite: keep mining disabled until infra is ready; only start it when the flow needs block progress"
+    echo ""
+}
+
 # get current bitcoin block height
 get_current_bitcoin_height() {
-    local height=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount 2>/dev/null || echo "0")
-    height=${height:-0}  # ensure it's set to 0 if empty
+    local height
+    height=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount 2>/dev/null || echo "0")
+    height=${height:-0}
     echo "$height"
 }
 
@@ -245,7 +359,10 @@ docker_bitvmx_container_healthy() {
     local container_name="$1"
     local status
 
-    status=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "${container_name}" 2>/dev/null || true)
+    if ! status=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "${container_name}" 2>/dev/null); then
+        return 1
+    fi
+
     [[ "${status}" == "healthy" ]]
 }
 
@@ -261,26 +378,26 @@ wait_for_docker_bitvmx_health() {
 
 wait_for_test_prereqs() {
     if ! wait_for_condition "Anvil RPC" 30 cast rpc eth_chainId --rpc-url http://localhost:8545; then
-        echo "Error: Anvil not ready on localhost:8545"
-        exit 1
+        echo "Error: Anvil not ready on localhost:8545" >&2
+        return 1
     fi
 
     if ! wait_for_condition "Bitcoin RPC" 30 check_bitcoin_connectivity; then
-        echo "Error: Bitcoin regtest node not accessible"
-        echo "Please ensure Bitcoin Core is running with:"
-        echo "  bitcoind -regtest -rpcuser=foo -rpcpassword=rpcpassword"
-        exit 1
+        echo "Error: Bitcoin regtest node not accessible" >&2
+        echo "Please ensure Bitcoin Core is running with:" >&2
+        echo "  bitcoind -regtest -rpcuser=foo -rpcpassword=rpcpassword" >&2
+        return 1
     fi
 
     if ! wait_for_condition "Bitcoin wallet 'mainwallet'" 30 check_bitcoin_wallet; then
-        echo "Error: Bitcoin wallet 'mainwallet' is not loaded"
-        exit 1
+        echo "Error: Bitcoin wallet 'mainwallet' is not loaded" >&2
+        return 1
     fi
 
     if [[ "$SCRIPT_ENV" == "docker" ]]; then
         if ! wait_for_docker_bitvmx_health; then
-            echo "Error: Docker BitVMX clients are not healthy"
-            exit 1
+            echo "Error: Docker BitVMX clients are not healthy" >&2
+            return 1
         fi
     fi
 }
@@ -331,16 +448,17 @@ user_compressed_pubkey_from_wif() {
     echo "0x${pubkey}"
 }
 
-# check prerequisites
-if ! command -v cargo &> /dev/null || ! command -v cast &> /dev/null || ! command -v bitcoin-cli &> /dev/null; then
-    echo "Error: cargo, cast, and bitcoin-cli required"
-    exit 1
-fi
+check_required_commands() {
+    if ! command -v cargo &> /dev/null || ! command -v cast &> /dev/null || ! command -v bitcoin-cli &> /dev/null || ! command -v curl &> /dev/null || ! command -v jq &> /dev/null; then
+        echo "Error: cargo, cast, bitcoin-cli, curl, and jq required" >&2
+        return 1
+    fi
 
-wait_for_test_prereqs
-
-echo "All prerequisites met!"
-echo ""
+    if [[ "$SCRIPT_ENV" == "docker" ]] && ! command -v docker &> /dev/null; then
+        echo "Error: docker is required for --env docker" >&2
+        return 1
+    fi
+}
 
 # Find recent log match in docker compose logs (all operators)
 # Checks all logs (no time restriction) since we're already polling in a loop
@@ -351,7 +469,6 @@ find_recent_docker_log_match() {
     for op_id in $(seq 1 "$NUM_OPERATORS"); do
         local project="op_${op_id}"
         local line
-        # Check all logs - the polling loop already handles timing
         line=$(docker compose -p "$project" logs coordinator 2>/dev/null | grep -E "$pattern" | tail -1)
         if [ -n "$line" ]; then
             echo "${project}:${line}"
@@ -366,7 +483,6 @@ find_recent_docker_log_match() {
 find_recent_file_log_match() {
     local pattern="$1"
 
-    # min timestamp as string (1 minute ago)
     local min_ts
     min_ts=$(date -v-1M "+%Y-%m-%d %H:%M:%S" 2>/dev/null || date -d "1 minute ago" "+%Y-%m-%d %H:%M:%S")
 
@@ -391,19 +507,16 @@ count_transactions_in_blocks() {
     local start_height=$1
     local end_height=$2
     local total_txs=0
+    local h
     for ((h=start_height + 1; h<=end_height; h++)); do
         local stats
-        stats=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword \
-                getblockstats "$h" 2>/dev/null) || continue
-        # Extract "txs" (total tx count including coinbase) - use jq if available, fallback to sed
+        stats=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockstats "$h" 2>/dev/null) || continue
         local total_tx_count
         total_tx_count=$(jq -r '.txs // empty' 2>/dev/null <<<"$stats" || echo "$stats" | tr -d '\n' | sed -E 's/.*"txs"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/')
-        # Subtract 1 to exclude the coinbase
         if [ -n "$total_tx_count" ] && [ "$total_tx_count" -gt 1 ]; then
             local non_coinbase_count=$((total_tx_count - 1))
             total_txs=$((total_txs + non_coinbase_count))
         fi
-        # If total_tx_count <= 1, there's only coinbase, so we add 0
     done
     echo "$total_txs"
 }
@@ -416,66 +529,60 @@ wait_for_bitcoin_transactions() {
     local expected_count=$1
     local max_blocks=$2
     local confirmations=$3
-    local start_height=$(get_current_bitcoin_height)
+    local start_height
+    start_height=$(get_current_bitcoin_height)
 
-    # target height accounts for finding transactions + getting confirmations
     local target_height=$((start_height + max_blocks + confirmations))
-    local first_tx_height=0  # block height where transactions were first found
+    local first_tx_height=0
 
     log "Waiting for $expected_count Bitcoin transactions in mined blocks (max $max_blocks blocks to find) with $confirmations confirmations..."
     log "Starting height: $start_height, Max target height: $target_height"
 
     while true; do
-        local current_height=$(get_current_bitcoin_height)
+        local current_height
+        current_height=$(get_current_bitcoin_height)
         local blocks_mined=$((current_height - start_height))
 
-        # safeguard
-        if [ $blocks_mined -lt 0 ]; then
+        if [ "$blocks_mined" -lt 0 ]; then
             sleep 1
             continue
         fi
 
-        # count transactions in blocks from start_height+1 to current_height
         local transactions_found=0
-        if [ $blocks_mined -gt 0 ]; then
-            transactions_found=$(count_transactions_in_blocks $start_height $current_height)
+        if [ "$blocks_mined" -gt 0 ]; then
+            transactions_found=$(count_transactions_in_blocks "$start_height" "$current_height")
         fi
 
-        # track the first block height where we found the expected count of transactions
-        if [ $transactions_found -ge $expected_count ] && [ $first_tx_height -eq 0 ]; then
+        if [ "$transactions_found" -ge "$expected_count" ] && [ "$first_tx_height" -eq 0 ]; then
             first_tx_height=$current_height
             log "Found $expected_count transactions at height $first_tx_height, waiting for $confirmations confirmations..."
         fi
 
-        # calculate confirmations if we've found transactions
         local current_confirmations=0
-        if [ $first_tx_height -gt 0 ]; then
+        if [ "$first_tx_height" -gt 0 ]; then
             current_confirmations=$((current_height - first_tx_height))
         fi
 
-        if [ $first_tx_height -gt 0 ]; then
+        if [ "$first_tx_height" -gt 0 ]; then
             echo -ne "\r  Blocks mined: $blocks_mined | Transactions: $transactions_found/$expected_count | Confirmations: $current_confirmations/$confirmations  "
         else
             echo -ne "\r  Blocks mined: $blocks_mined/$max_blocks | Transactions found: $transactions_found/$expected_count  "
         fi
 
-        # check if we have enough transactions AND enough confirmations
-        if [ $transactions_found -ge $expected_count ] && [ $first_tx_height -gt 0 ] && [ $current_confirmations -ge $confirmations ]; then
-            echo ""  # newline after the progress display
+        if [ "$transactions_found" -ge "$expected_count" ] && [ "$first_tx_height" -gt 0 ] && [ "$current_confirmations" -ge "$confirmations" ]; then
+            echo ""
             success "$expected_count Bitcoin transactions found with $confirmations confirmations (height: $start_height -> $current_height, tx at $first_tx_height)"
             return 0
         fi
 
-        # Check if we've exceeded the block limit before finding transactions
-        if [ $current_height -ge $target_height ] && [ $first_tx_height -eq 0 ]; then
-            echo ""  # newline after the progress display
+        if [ "$current_height" -ge "$target_height" ] && [ "$first_tx_height" -eq 0 ]; then
+            echo ""
             warn "Only $transactions_found/$expected_count Bitcoin transactions found after $max_blocks blocks (height: $start_height -> $current_height)"
             return 1
         fi
 
-        # Check if we found transactions but didn't get enough confirmations in time
-        if [ $first_tx_height -gt 0 ] && [ $current_height -ge $target_height ]; then
-            echo ""  # newline after the progress display
+        if [ "$first_tx_height" -gt 0 ] && [ "$current_height" -ge "$target_height" ]; then
+            echo ""
             warn "Found $expected_count transactions at height $first_tx_height but only got $current_confirmations/$confirmations confirmations (timeout at height $target_height)"
             return 1
         fi
@@ -487,23 +594,24 @@ wait_for_bitcoin_transactions() {
 # wait for N bitcoin blocks to be mined
 wait_for_bitcoin_blocks() {
     local count=$1
-    local start_height=$(get_current_bitcoin_height)
+    local start_height
+    start_height=$(get_current_bitcoin_height)
     local target_height=$((start_height + count))
 
     log "Waiting for $count Bitcoin blocks to be mined..."
 
     while true; do
-        local current_height=$(get_current_bitcoin_height)
+        local current_height
+        current_height=$(get_current_bitcoin_height)
         local blocks_mined=$((current_height - start_height))
-        # safeguard
-        if [ $blocks_mined -lt 0 ]; then
+        if [ "$blocks_mined" -lt 0 ]; then
             continue
         fi
 
         echo -ne "\r  Bitcoin Blocks mined: $blocks_mined/$count (current height: $current_height)  "
 
-        if [ $current_height -ge $target_height ]; then
-            echo ""  # newline after the progress display
+        if [ "$current_height" -ge "$target_height" ]; then
+            echo ""
             success "$count Bitcoin blocks mined (height: $start_height -> $current_height)"
             break
         fi
@@ -519,24 +627,24 @@ wait_for_log_with_block_timeout() {
     local pattern="$1"
     local max_blocks=$2
 
-    local start_height=$(get_current_bitcoin_height)
+    local start_height
+    start_height=$(get_current_bitcoin_height)
     local target_height=$((start_height + max_blocks))
 
     log "Waiting for log pattern: $pattern (max $max_blocks blocks)..."
 
     while true; do
-        local current_height=$(get_current_bitcoin_height)
+        local current_height
+        current_height=$(get_current_bitcoin_height)
         local blocks_mined=$((current_height - start_height))
 
-        # safeguard
-        if [ $blocks_mined -lt 0 ]; then
+        if [ "$blocks_mined" -lt 0 ]; then
             sleep 1
             continue
         fi
 
         echo -ne "\r  Blocks mined: $blocks_mined/$max_blocks | Checking logs...  "
 
-        # Check for log pattern in coordinator logs
         local result=""
         if [[ "$SCRIPT_ENV" == "docker" ]]; then
             result=$(find_recent_docker_log_match "$pattern")
@@ -545,19 +653,17 @@ wait_for_log_with_block_timeout() {
         fi
 
         if [ -n "$result" ]; then
-            # parse "source:line" format
             local found_source="${result%%:*}"
             local found_line="${result#*:}"
-            echo ""  # newline after the progress display
+            echo ""
             success "Log pattern found after $blocks_mined blocks!"
             log "Found in: $found_source"
             echo "$found_line"
             return 0
         fi
 
-        # Check if we've exceeded the block limit
-        if [ $current_height -ge $target_height ]; then
-            echo ""  # newline after the progress display
+        if [ "$current_height" -ge "$target_height" ]; then
+            echo ""
             warn "Log pattern not found after $max_blocks blocks (height: $start_height -> $current_height)"
             if [[ "$SCRIPT_ENV" == "docker" ]]; then
                 warn "Check Docker logs manually: docker compose -p op_{1..$NUM_OPERATORS} logs coordinator"
@@ -576,7 +682,8 @@ wait_for_log_in_all_operators() {
     local max_blocks=$2
     local operator_count=${3:-$NUM_OPERATORS}
 
-    local start_height=$(get_current_bitcoin_height)
+    local start_height
+    start_height=$(get_current_bitcoin_height)
     local target_height=$((start_height + max_blocks))
 
     log "Waiting for log pattern in all $operator_count operators: $pattern (max $max_blocks blocks)..."
@@ -584,10 +691,11 @@ wait_for_log_in_all_operators() {
     declare -A found_operators=()
 
     while true; do
-        local current_height=$(get_current_bitcoin_height)
+        local current_height
+        current_height=$(get_current_bitcoin_height)
         local blocks_mined=$((current_height - start_height))
 
-        if [ $blocks_mined -lt 0 ]; then
+        if [ "$blocks_mined" -lt 0 ]; then
             sleep 1
             continue
         fi
@@ -596,7 +704,8 @@ wait_for_log_in_all_operators() {
         echo -ne "\r  Blocks mined: $blocks_mined/$max_blocks | Operators matched: $found_count/$operator_count  "
 
         if [[ "$SCRIPT_ENV" == "docker" ]]; then
-            for op_id in $(seq 1 $operator_count); do
+            local op_id
+            for op_id in $(seq 1 "$operator_count"); do
                 [[ -n "${found_operators[$op_id]:-}" ]] && continue
                 local project="op_${op_id}"
                 local line
@@ -611,8 +720,8 @@ wait_for_log_in_all_operators() {
         else
             local min_ts
             min_ts=$(date -v-1M "+%Y-%m-%d %H:%M:%S" 2>/dev/null || date -d "1 minute ago" "+%Y-%m-%d %H:%M:%S")
-
-            for op_id in $(seq 1 $operator_count); do
+            local op_id
+            for op_id in $(seq 1 "$operator_count"); do
                 [[ -n "${found_operators[$op_id]:-}" ]] && continue
                 local log_file="logs/coordinator-${op_id}.log"
                 [[ -f "$log_file" ]] || continue
@@ -629,17 +738,18 @@ wait_for_log_in_all_operators() {
             done
         fi
 
-        if [ ${#found_operators[@]} -ge $operator_count ]; then
+        if [ "${#found_operators[@]}" -ge "$operator_count" ]; then
             echo ""
             success "Log pattern found in all $operator_count operators after $blocks_mined blocks!"
             return 0
         fi
 
-        if [ $current_height -ge $target_height ]; then
+        if [ "$current_height" -ge "$target_height" ]; then
             echo ""
             warn "Log pattern not found in all operators after $max_blocks blocks (height: $start_height -> $current_height)"
             warn "Missing operators:"
-            for op_id in $(seq 1 $operator_count); do
+            local op_id
+            for op_id in $(seq 1 "$operator_count"); do
                 if [[ -z "${found_operators[$op_id]:-}" ]]; then
                     warn "  - operator $op_id"
                 fi
@@ -651,202 +761,587 @@ wait_for_log_in_all_operators() {
     done
 }
 
+user_api_endpoint_for_operator() {
+    local op_id="$1"
+    local port=$((BASE_USER_API_PORT + op_id - 1))
+    echo "${USER_API_HOST}:${port}"
+}
+
+fetch_member_rsk_address_from_user_api() {
+    local endpoint="$1"
+    local response=""
+    response=$(curl -fsS --max-time 10 "http://${endpoint}/member/funding-info" 2>/dev/null) || return 1
+
+    local address=""
+    address=$(printf '%s' "$response" | jq -r '.rsk_address // empty' 2>/dev/null) || return 1
+    [[ -n "$address" ]] || return 1
+
+    echo "$address"
+}
+
+resolve_force_advance_target_address() {
+    FORCE_ADVANCE_TARGET_OPERATOR_ID=""
+    local op_id
+    for op_id in $(seq 1 "$NUM_OPERATORS"); do
+        local endpoint=""
+        endpoint=$(user_api_endpoint_for_operator "$op_id")
+        local address=""
+        if address=$(fetch_member_rsk_address_from_user_api "$endpoint"); then
+            FORCE_ADVANCE_TARGET_OPERATOR_ID="$op_id"
+            echo "$address"
+            return 0
+        fi
+    done
+
+    echo "Error: failed to resolve a member signer address from user-api /member/funding-info for FORCE_ADVANCE" >&2
+    return 1
+}
+
+docker_coordinator_container_id() {
+    local op_id="$1"
+    local project="op_${op_id}"
+
+    docker ps -q \
+        --filter "label=com.docker.compose.project=${project}" \
+        --filter "label=com.docker.compose.service=coordinator" \
+        | head -n 1
+}
+
+find_active_force_advance_local() {
+    if [[ -s "$FORCE_ADVANCE_FILE" ]]; then
+        local address=""
+        address=$(tr -d '\r\n' < "$FORCE_ADVANCE_FILE")
+        if [[ -n "$address" ]]; then
+            echo "host file $FORCE_ADVANCE_FILE ($address)"
+            return 0
+        fi
+    fi
+
+    if [[ -n "${FORCE_ADVANCE:-}" ]]; then
+        echo "host environment FORCE_ADVANCE (${FORCE_ADVANCE})"
+        return 0
+    fi
+
+    return 1
+}
+
+find_active_force_advance_in_docker() {
+    local op_id
+
+    for op_id in $(seq 1 "$NUM_OPERATORS"); do
+        local container_id=""
+        container_id=$(docker_coordinator_container_id "$op_id")
+        [[ -n "$container_id" ]] || continue
+
+        local state=""
+        if ! state=$(docker exec "$container_id" sh -c '
+            if [ -s "$1" ]; then
+                value=$(tr -d "\r\n" < "$1")
+                if [ -n "$value" ]; then
+                    printf "file %s (%s)" "$1" "$value"
+                    exit 0
+                fi
+            fi
+
+            if [ -n "${FORCE_ADVANCE:-}" ]; then
+                printf "environment FORCE_ADVANCE (%s)" "$FORCE_ADVANCE"
+                exit 0
+            fi
+
+            exit 1
+        ' sh "$FORCE_ADVANCE_FILE" 2>/dev/null); then
+            continue
+        fi
+
+        if [[ -n "$state" ]]; then
+            echo "coordinator op_${op_id} ${state}"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+ensure_force_advance_inactive_unless_requested() {
+    if [[ "$MODE" == "advance-funds" ]]; then
+        return 0
+    fi
+
+    local active_state=""
+    if [[ "$SCRIPT_ENV" == "docker" ]]; then
+        if active_state=$(find_active_force_advance_in_docker); then
+            :
+        else
+            active_state=""
+        fi
+    else
+        if active_state=$(find_active_force_advance_local); then
+            :
+        else
+            active_state=""
+        fi
+    fi
+
+    if [[ -n "$active_state" ]]; then
+        echo "Error: FORCE_ADVANCE is already active via ${active_state}, but mode is '$MODE'. Clear it or rerun with --advance-funds." >&2
+        return 1
+    fi
+
+    return 0
+}
+
+write_force_advance_in_docker() {
+    local target_address="$1"
+    local op_id="${FORCE_ADVANCE_TARGET_OPERATOR_ID:-}"
+    if [[ -z "$op_id" ]]; then
+        warn "Target operator id not resolved for docker FORCE_ADVANCE"
+        return 1
+    fi
+
+    local container_id=""
+    container_id=$(docker_coordinator_container_id "$op_id")
+    if [[ -z "$container_id" ]]; then
+        warn "Coordinator container not found for operator $op_id"
+        return 1
+    fi
+
+    if ! docker exec "$container_id" sh -c 'printf "%s\n" "$1" > "$2"' sh "$target_address" "$FORCE_ADVANCE_FILE"; then
+        warn "Failed to write $FORCE_ADVANCE_FILE in coordinator container for operator $op_id"
+        return 1
+    fi
+}
+
+remove_force_advance_in_docker() {
+    local op_id
+
+    for op_id in $(seq 1 "$NUM_OPERATORS"); do
+        local container_id=""
+        container_id=$(docker_coordinator_container_id "$op_id")
+        if [[ -z "$container_id" ]]; then
+            continue
+        fi
+
+        if ! docker exec "$container_id" sh -c 'rm -f "$1"' sh "$FORCE_ADVANCE_FILE" >/dev/null 2>&1; then
+            warn "Failed to remove $FORCE_ADVANCE_FILE from coordinator container op_${op_id}"
+        fi
+    done
+}
+
+enable_force_advance() {
+    local target_address="$1"
+
+    if [[ "$SCRIPT_ENV" == "docker" ]]; then
+        write_force_advance_in_docker "$target_address" || return 1
+        log "FORCE_ADVANCE enabled via $FORCE_ADVANCE_FILE in coordinator container op_${FORCE_ADVANCE_TARGET_OPERATOR_ID} for operator $target_address"
+        return 0
+    fi
+
+    printf '%s\n' "$target_address" > "$FORCE_ADVANCE_FILE"
+    log "FORCE_ADVANCE enabled via $FORCE_ADVANCE_FILE for operator $target_address"
+}
+
+restore_force_advance() {
+    rm -f "$FORCE_ADVANCE_FILE"
+
+    if [[ "$SCRIPT_ENV" == "docker" ]]; then
+        remove_force_advance_in_docker
+    fi
+}
+
 cleanup() {
+    restore_force_advance
     rm -f /tmp/apply-operators-$$ /tmp/pegout-$$
 }
 
 on_exit() {
     local exit_code=$?
+    local final_exit_code="$exit_code"
     cleanup
 
-    if [[ $exit_code -eq 0 ]]; then
-        notify_completion "Happy Path script" "Completed"
-    else
-        notify_completion "Happy Path script" "Failed (exit $exit_code)"
+    if [[ -n "$INTERRUPTED_SIGNAL" ]]; then
+        case "$INTERRUPTED_SIGNAL" in
+        SIGINT)
+            final_exit_code=130
+            ;;
+        SIGTERM)
+            final_exit_code=143
+            ;;
+        *)
+            final_exit_code="$exit_code"
+            ;;
+        esac
     fi
 
-    return "$exit_code"
+    if [[ $final_exit_code -eq 0 ]]; then
+        notify_completion "Happy Path script" "Completed"
+    elif [[ -n "$INTERRUPTED_SIGNAL" ]]; then
+        notify_completion "Happy Path script" "Interrupted (${INTERRUPTED_SIGNAL})"
+    else
+        notify_completion "Happy Path script" "Failed (exit $final_exit_code)"
+    fi
+
+    return "$final_exit_code"
 }
-trap on_exit EXIT
 
-clear
-log "Configuration: stream=$STREAM_ID, denomination=$STREAM_DENOMINATION, rsk=$RSK_ADDRESS, amount=$VALUE, env=$SCRIPT_ENV, user_wallet_utxo=$USER_UTXO_VALUE, member_wallet_utxo=$MEMBER_UTXO_VALUE"
-log "Prerequisite: keep mining disabled until infra is ready; only start it when the flow needs block progress"
-echo ""
+on_signal() {
+    local signal="$1"
+    INTERRUPTED_SIGNAL="$signal"
+    case "$signal" in
+    SIGINT)
+        exit 130
+        ;;
+    SIGTERM)
+        exit 143
+        ;;
+    *)
+        exit 1
+        ;;
+    esac
+}
 
-SCRIPT_START_TIME=$(date +%s)
-SETUP_START_TIME=$SCRIPT_START_TIME
+run_wallet_prep_phase() {
+    step "Step 0: Prepare Wallets"
+    log "Clearing member wallet database and funding member wallet-specific UTXO..."
+    log "Note: First run compiles release binaries for bitcoin-wallet (~1 min), subsequent runs are fast"
+    echo ""
 
-# prepare wallets
-step "Step 0: Prepare Wallets"
-log "Clearing wallet databases and funding wallet-specific UTXOs..."
-log "Note: First run compiles release binaries for bitcoin-wallet (~1 min), subsequent runs are fast"
-echo ""
+    log "Member wallet: clear_db"
+    bash cli-bitcoin-wallet.sh member clear_db || warn "Member wallet clear_db failed (may be expected if db is empty)"
 
-log "User wallet: clear_db"
-bash cli-bitcoin-wallet.sh user clear_db || warn "User wallet clear_db failed (may be expected if db is empty)"
+    log "Member wallet: mine_utxo $MEMBER_UTXO_VALUE"
+    if ! bash cli-bitcoin-wallet.sh member mine_utxo "$MEMBER_UTXO_VALUE"; then
+        warn "Member wallet mine_utxo failed!"
+        return 1
+    fi
 
-log "Member wallet: clear_db"
-bash cli-bitcoin-wallet.sh member clear_db || warn "Member wallet clear_db failed (may be expected if db is empty)"
+    success "Member wallet prepared with funded UTXO"
+    echo ""
+}
 
-log "User wallet: mine_utxo $USER_UTXO_VALUE"
-if ! bash cli-bitcoin-wallet.sh user mine_utxo "$USER_UTXO_VALUE"; then
-  warn "User wallet mine_utxo failed!"
-  exit 1
-fi
+prepare_user_wallet_for_pegin() {
+    log "User wallet: clear_db"
+    bash cli-bitcoin-wallet.sh user clear_db || warn "User wallet clear_db failed (may be expected if db is empty)"
 
-log "Member wallet: mine_utxo $MEMBER_UTXO_VALUE"
-if ! bash cli-bitcoin-wallet.sh member mine_utxo "$MEMBER_UTXO_VALUE"; then
-  warn "Member wallet mine_utxo failed!"
-  exit 1
-fi
+    log "User wallet: mine_utxo $USER_UTXO_VALUE"
+    if ! bash cli-bitcoin-wallet.sh user mine_utxo "$USER_UTXO_VALUE"; then
+        warn "User wallet mine_utxo failed!"
+        return 1
+    fi
 
-success "Wallets prepared with funded UTXOs"
-echo ""
+    success "User wallet prepared for pegin"
+    echo ""
+}
 
-# step 1: fund operator wallets
-step "Step 1: Fund Operator Wallets"
-# operator fund with --execute handles BitVMX funding automatically
-# Must pass $SCRIPT_ENV so it knows where to find the BitVMX addresses (local logs vs Docker logs)
-log "Command: bash cli-operations.sh operator fund --env $SCRIPT_ENV --stream $STREAM_ID --execute"
-echo ""
-if ! bash cli-operations.sh operator fund --env "$SCRIPT_ENV" --stream "$STREAM_ID" --execute; then
-    warn "Command failed!"
-    exit 1
-fi
-echo ""
-if ! wait_for_bitcoin_transactions 1 15 5; then
-    warn "Failed to detect 1 Bitcoin transaction with 5 confirmations within 15 blocks"
-    exit 1
-fi
-echo ""
-success "Operator wallets funded (including BitVMX)"
+run_operator_funding_phase() {
+    step "Step 1: Fund Operator Wallets"
+    log "Command: bash cli-operations.sh operator fund --env $SCRIPT_ENV --stream $STREAM_ID --execute"
+    echo ""
+    if ! bash cli-operations.sh operator fund --env "$SCRIPT_ENV" --stream "$STREAM_ID" --execute; then
+        warn "Command failed!"
+        return 1
+    fi
+    echo ""
+    if ! wait_for_bitcoin_transactions 1 15 5; then
+        warn "Failed to detect 1 Bitcoin transaction with 5 confirmations within 15 blocks"
+        return 1
+    fi
+    echo ""
+    success "Operator wallets funded (including BitVMX)"
+}
 
-# step 2: whitelist member addresses on CommitteeRegistry
-step "Step 2: Whitelist Member Addresses"
-log "Command: bash cli-operations.sh operator whitelist --env $SCRIPT_ENV --contract-address $COMMITTEE_REGISTRY_ADDRESS"
-echo ""
-if ! bash cli-operations.sh operator whitelist --env "$SCRIPT_ENV" \
-    --contract-address "$COMMITTEE_REGISTRY_ADDRESS"; then
-    warn "Whitelist command failed!"
-    exit 1
-fi
-success "Member addresses whitelisted"
-echo ""
+run_whitelist_phase() {
+    step "Step 2: Whitelist Member Addresses"
+    log "Command: bash cli-operations.sh operator whitelist --env $SCRIPT_ENV --contract-address $COMMITTEE_REGISTRY_ADDRESS"
+    echo ""
+    if ! bash cli-operations.sh operator whitelist --env "$SCRIPT_ENV" --contract-address "$COMMITTEE_REGISTRY_ADDRESS"; then
+        warn "Whitelist command failed!"
+        return 1
+    fi
+    success "Member addresses whitelisted"
+    echo ""
+}
 
-# step 3: apply operators
-step "Step 3: Apply Operators to Stream"
-log "Command: bash cli-operations.sh operator apply-stream -s $STREAM_ID --env $SCRIPT_ENV"
-echo ""
-if ! bash cli-operations.sh operator apply-stream -s $STREAM_ID --env "$SCRIPT_ENV" > /tmp/apply-operators-$$ 2>&1; then
-    warn "Command failed! Output:"
-    cat /tmp/apply-operators-$$
+run_committee_apply_phase() {
+    step "Step 3: Apply Operators to Stream"
+    log "Command: bash cli-operations.sh operator apply-stream -s $STREAM_ID --env $SCRIPT_ENV"
+    echo ""
+    if ! bash cli-operations.sh operator apply-stream -s "$STREAM_ID" --env "$SCRIPT_ENV" > /tmp/apply-operators-$$ 2>&1; then
+        warn "Command failed! Output:"
+        cat /tmp/apply-operators-$$
+        rm -f /tmp/apply-operators-$$
+        return 1
+    fi
     rm -f /tmp/apply-operators-$$
-    exit 1
-fi
-rm -f /tmp/apply-operators-$$
-success "Operators applied to stream $STREAM_ID"
-echo ""
-if ! wait_for_log_in_all_operators "CommitteeSetupFlow Done:" "$COMMITTEE_SETUP_MAX_BLOCKS"; then
-    warn "Committee setup not completed by all operators within timeout"
-    exit 1
-fi
-echo ""
+    success "Operators applied to stream $STREAM_ID"
+    echo ""
+    if ! wait_for_log_in_all_operators "CommitteeSetupFlow Done:" "$COMMITTEE_SETUP_MAX_BLOCKS"; then
+        warn "Committee setup not completed by all operators within timeout"
+        return 1
+    fi
+    echo ""
+}
 
-SETUP_END_TIME=$(date +%s)
-SETUP_DURATION=$((SETUP_END_TIME - SETUP_START_TIME))
-success "Setup completed in $(format_duration "$SETUP_DURATION")"
-echo ""
+run_full_setup_phase() {
+    local setup_start_time
+    setup_start_time=$(date +%s)
 
-# step 4: request pegin
-step "Step 4: Request Pegin"
-PEGIN_START_TIME=$(date +%s)
+    run_wallet_prep_phase
+    run_operator_funding_phase
+    run_whitelist_phase
+    run_committee_apply_phase
 
-# Derive x-only public key for pegin (32 bytes with 0x prefix)
-USER_XONLY_PUBKEY=$(user_xonly_pubkey_from_wif)
-if [[ -z "$USER_XONLY_PUBKEY" ]]; then
-    warn "Failed to derive user x-only public key from WIF"
-    exit 1
-fi
+    local setup_end_time
+    setup_end_time=$(date +%s)
+    SETUP_DURATION=$((setup_end_time - setup_start_time))
+    success "Setup completed in $(format_duration "$SETUP_DURATION")"
+    echo ""
+}
 
-log "RSK Address: $RSK_ADDRESS"
-log "Amount: $VALUE sats"
-log "BTC Pub Key: $USER_XONLY_PUBKEY"
-log "Command: bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -k $USER_XONLY_PUBKEY --env $SCRIPT_ENV --execute"
-echo ""
-if ! bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -k "$USER_XONLY_PUBKEY" --env "$SCRIPT_ENV" --execute; then
-    warn "Command failed!"
-    exit 1
-fi
-success "Pegin transaction created"
-echo ""
-if ! wait_for_log_with_block_timeout "PeginFlow Done" 15; then
-    warn "PeginFlow completion log not found within timeout"
-    exit 1
-fi
-echo ""
+run_pegin_phase() {
+    if [[ "$MODE" == "happy" ]]; then
+        step "Step 4: Request Pegin"
+    else
+        step "Pegin"
+    fi
+    local pegin_start_time
+    pegin_start_time=$(date +%s)
 
-PEGIN_END_TIME=$(date +%s)
-PEGIN_DURATION=$((PEGIN_END_TIME - PEGIN_START_TIME))
-success "Pegin completed in $(format_duration "$PEGIN_DURATION")"
-echo ""
+    log "Preparing user wallet for pegin..."
+    if ! prepare_user_wallet_for_pegin; then
+        return 1
+    fi
 
-# step 5: request pegout
-step "Step 5: Request Pegout"
-PEGOUT_START_TIME=$(date +%s)
+    local user_xonly_pubkey
+    user_xonly_pubkey=$(user_xonly_pubkey_from_wif)
+    if [[ -z "$user_xonly_pubkey" ]]; then
+        warn "Failed to derive user x-only public key from WIF"
+        return 1
+    fi
 
-# Derive compressed public key for pegout (33 bytes with 0x prefix)
-USER_COMPRESSED_PUBKEY=$(user_compressed_pubkey_from_wif)
-if [[ -z "$USER_COMPRESSED_PUBKEY" ]]; then
-    warn "Failed to derive user compressed public key from WIF"
-    exit 1
-fi
+    log "RSK Address: $RSK_ADDRESS"
+    log "Amount: $VALUE sats"
+    log "BTC Pub Key: $user_xonly_pubkey"
+    log "Command: bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -k $user_xonly_pubkey --env $SCRIPT_ENV --execute"
+    echo ""
+    if ! bash cli-operations.sh user pegin -a "$RSK_ADDRESS" -v "$VALUE" -k "$user_xonly_pubkey" --env "$SCRIPT_ENV" --execute; then
+        warn "Command failed!"
+        return 1
+    fi
+    success "Pegin transaction created"
+    echo ""
+    if ! wait_for_log_with_block_timeout "PeginFlow Done" 15; then
+        warn "PeginFlow completion log not found within timeout"
+        return 1
+    fi
+    echo ""
 
-log "Command: bash cli-operations.sh user pegout -v $VALUE -k $USER_COMPRESSED_PUBKEY --env $SCRIPT_ENV"
-log "Amount: $VALUE sats"
-log "USR Pub Key: $USER_COMPRESSED_PUBKEY"
-echo ""
+    local pegin_end_time
+    pegin_end_time=$(date +%s)
+    PEGIN_DURATION=$((pegin_end_time - pegin_start_time))
+    success "Pegin completed in $(format_duration "$PEGIN_DURATION")"
+    echo ""
+}
 
-if ! bash cli-operations.sh user pegout -v $VALUE -k "$USER_COMPRESSED_PUBKEY" --env "$SCRIPT_ENV" > /tmp/pegout-$$ 2>&1; then
-    warn "Command failed! Output:"
-    cat /tmp/pegout-$$
+run_pegout_phase() {
+    if [[ "$MODE" == "happy" ]]; then
+        step "Step 5: Request Pegout"
+    else
+        step "Pegout"
+    fi
+    local pegout_start_time
+    pegout_start_time=$(date +%s)
+
+    local user_compressed_pubkey
+    user_compressed_pubkey=$(user_compressed_pubkey_from_wif)
+    if [[ -z "$user_compressed_pubkey" ]]; then
+        warn "Failed to derive user compressed public key from WIF"
+        return 1
+    fi
+
+    log "Command: bash cli-operations.sh user pegout -v $VALUE -k $user_compressed_pubkey --env $SCRIPT_ENV"
+    log "Amount: $VALUE sats"
+    log "USR Pub Key: $user_compressed_pubkey"
+    echo ""
+
+    if ! bash cli-operations.sh user pegout -v "$VALUE" -k "$user_compressed_pubkey" --env "$SCRIPT_ENV" > /tmp/pegout-$$ 2>&1; then
+        warn "Command failed! Output:"
+        cat /tmp/pegout-$$
+        rm -f /tmp/pegout-$$
+        return 1
+    fi
     rm -f /tmp/pegout-$$
-    exit 1
-fi
-rm -f /tmp/pegout-$$
-success "Pegout requested"
-echo ""
+    success "Pegout requested"
+    echo ""
 
-if ! wait_for_log_with_block_timeout "PegoutFlow Done" 15; then
-    warn "PegoutFlow completion log not found within timeout"
-    exit 1
-fi
-echo ""
+    if ! wait_for_log_with_block_timeout "PegoutFlow Done" 15; then
+        warn "PegoutFlow completion log not found within timeout"
+        return 1
+    fi
+    echo ""
 
-PEGOUT_END_TIME=$(date +%s)
-PEGOUT_DURATION=$((PEGOUT_END_TIME - PEGOUT_START_TIME))
-success "Pegout completed in $(format_duration "$PEGOUT_DURATION")"
-echo ""
+    local pegout_end_time
+    pegout_end_time=$(date +%s)
+    PEGOUT_DURATION=$((pegout_end_time - pegout_start_time))
+    success "Pegout completed in $(format_duration "$PEGOUT_DURATION")"
+    echo ""
+}
 
-# step 6: verify pegout completion
-step "Step 6: Verify Pegout Completion"
-# Note: PegoutFlow completion is already checked in the wait_for_log_with_block_timeout call above
-# This step is kept for consistency but the verification already happened
-success "PegoutFlow completion verified"
-SUCCESS=true
-echo ""
+run_pegout_verification_phase() {
+    if [[ "$MODE" != "happy" ]]; then
+        return 0
+    fi
 
-step "Complete"
+    step "Step 6: Verify Pegout Completion"
+    # Pegout completion is already enforced by run_pegout_phase; keep this
+    # separate step for the full happy-path output expected by older usage.
+    success "PegoutFlow completion verified"
+    echo ""
+}
 
-if [ "$SUCCESS" = true ]; then
-    success "E2E test completed successfully!"
-    TOTAL_DURATION=$(( $(date +%s) - SCRIPT_START_TIME ))
-    log "Timing summary:"
-    log "  Setup:  $(format_duration "$SETUP_DURATION")"
-    log "  Pegin:  $(format_duration "$PEGIN_DURATION")"
-    log "  Pegout: $(format_duration "$PEGOUT_DURATION")"
-    log "  Total:  $(format_duration "$TOTAL_DURATION")"
-else
-    warn "E2E test completed with warnings - PegoutFlow completion not verified"
-    exit 1
+run_advance_funds_phase() {
+    step "Advance Funds"
+    local advance_funds_start_time
+    advance_funds_start_time=$(date +%s)
+
+    local target_address=""
+    target_address=$(resolve_force_advance_target_address)
+
+    local user_compressed_pubkey
+    user_compressed_pubkey=$(user_compressed_pubkey_from_wif)
+    if [[ -z "$user_compressed_pubkey" ]]; then
+        warn "Failed to derive user compressed public key from WIF"
+        return 1
+    fi
+
+    enable_force_advance "$target_address" || return 1
+
+    log "Target operator: $target_address"
+    log "Command: bash cli-operations.sh user pegout -v $VALUE -k $user_compressed_pubkey --env $SCRIPT_ENV"
+    log "Amount: $VALUE sats"
+    log "USR Pub Key: $user_compressed_pubkey"
+    echo ""
+
+    if ! bash cli-operations.sh user pegout -v "$VALUE" -k "$user_compressed_pubkey" --env "$SCRIPT_ENV" > /tmp/pegout-$$ 2>&1; then
+        warn "Command failed! Output:"
+        cat /tmp/pegout-$$
+        rm -f /tmp/pegout-$$
+        return 1
+    fi
+    rm -f /tmp/pegout-$$
+    success "Advance-funds pegout requested"
+    echo ""
+
+    if ! wait_for_log_in_all_operators "AdvanceFundsFlow .*: Done" "$ADVANCE_FUNDS_MAX_BLOCKS"; then
+        warn "AdvanceFundsFlow completion log not found in all operators within timeout"
+        return 1
+    fi
+    echo ""
+
+    restore_force_advance
+
+    local advance_funds_end_time
+    advance_funds_end_time=$(date +%s)
+    ADVANCE_FUNDS_DURATION=$((advance_funds_end_time - advance_funds_start_time))
+    success "Advance funds completed in $(format_duration "$ADVANCE_FUNDS_DURATION")"
+    echo ""
+}
+
+print_success_summary() {
+    local total_duration
+    total_duration=$(( $(date +%s) - SCRIPT_START_TIME ))
+
+    step "Complete"
+
+    case "$MODE" in
+    happy)
+        success "Happy path completed successfully!"
+        log "Timing summary:"
+        log "  Setup:  $(format_duration "${SETUP_DURATION:-0}")"
+        log "  Pegin:  $(format_duration "${PEGIN_DURATION:-0}")"
+        log "  Pegout: $(format_duration "${PEGOUT_DURATION:-0}")"
+        log "  Total:  $(format_duration "$total_duration")"
+        ;;
+    setup)
+        success "Setup completed successfully!"
+        log "Timing summary:"
+        log "  Setup: $(format_duration "${SETUP_DURATION:-0}")"
+        log "  Total: $(format_duration "$total_duration")"
+        ;;
+    pegin)
+        success "Pegin happy path completed successfully!"
+        log "Timing summary:"
+        log "  Pegin: $(format_duration "${PEGIN_DURATION:-0}")"
+        log "  Total: $(format_duration "$total_duration")"
+        ;;
+    pegout)
+        success "Pegout happy path completed successfully!"
+        log "Timing summary:"
+        log "  Pegout: $(format_duration "${PEGOUT_DURATION:-0}")"
+        log "  Total:  $(format_duration "$total_duration")"
+        ;;
+    advance-funds)
+        success "Advance-funds happy path completed successfully!"
+        log "Timing summary:"
+        log "  Advance funds: $(format_duration "${ADVANCE_FUNDS_DURATION:-0}")"
+        log "  Total:         $(format_duration "$total_duration")"
+        ;;
+    esac
+}
+
+main() {
+    load_envrc_if_needed
+    initialize_script_env_default
+    parse_args "$@" || return 1
+    validate_script_env || return 1
+
+    cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+    load_num_operators
+    initialize_mode_config
+    check_required_commands || return 1
+    wait_for_test_prereqs || return 1
+    ensure_force_advance_inactive_unless_requested || return 1
+
+    echo "All prerequisites met!"
+    echo ""
+
+    trap on_exit EXIT
+    trap 'on_signal SIGINT' INT
+    trap 'on_signal SIGTERM' TERM
+
+    clear
+    log_startup_configuration
+
+    SCRIPT_START_TIME=$(date +%s)
+
+    case "$MODE" in
+    happy)
+        run_full_setup_phase || return 1
+        run_pegin_phase || return 1
+        run_pegout_phase || return 1
+        run_pegout_verification_phase || return 1
+        ;;
+    setup)
+        run_full_setup_phase || return 1
+        ;;
+    pegin)
+        run_pegin_phase || return 1
+        ;;
+    pegout)
+        run_pegout_phase || return 1
+        ;;
+    advance-funds)
+        run_advance_funds_phase || return 1
+        ;;
+    *)
+        echo "Error: unsupported mode '$MODE'" >&2
+        return 1
+        ;;
+    esac
+
+    print_success_summary
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
 fi
