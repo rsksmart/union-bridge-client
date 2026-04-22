@@ -643,8 +643,11 @@ completion_marker_matches_kind() {
 
     case "$kind" in
         setup)
-            completion_marker_payload_json "$ref" | jq -e --argjson stream_id "$EXPECTED_SETUP_STREAM_ID" \
-                '.payload.stream_id == $stream_id' > /dev/null
+            completion_marker_payload_json "$ref" | jq -e \
+                --argjson stream_id "$EXPECTED_SETUP_STREAM_ID" \
+                --argjson started_at_epoch "$EXPECTED_SETUP_STARTED_AT_EPOCH" \
+                '.payload.stream_id == $stream_id and (.completed_at | fromdateiso8601) >= $started_at_epoch' \
+                > /dev/null
             ;;
         pegin)
             completion_marker_payload_json "$ref" | jq -e --arg pegin_txid "$EXPECTED_PEGIN_TXID" \
@@ -1462,6 +1465,7 @@ run_whitelist_phase() {
 run_committee_phase() {
     step "Step 3: Apply Operators to Stream"
     EXPECTED_SETUP_STREAM_ID="$STREAM_ID"
+    EXPECTED_SETUP_STARTED_AT_EPOCH="$(date +%s)"
     log "Command: bash cli-operations.sh operator apply-stream -s $STREAM_ID --env $SCRIPT_ENV"
     echo ""
     if ! bash cli-operations.sh operator apply-stream -s "$STREAM_ID" --env "$SCRIPT_ENV" > /tmp/apply-operators-$$ 2>&1; then
