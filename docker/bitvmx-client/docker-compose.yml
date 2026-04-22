@@ -1,7 +1,7 @@
 services:
   bitvmx-client:
     # Published by the upstream BitVMX client project; override if you mirror the image or need a different ref.
-    image: ghcr.io/fairgatelabs/rust-bitvmx-workspace/bitvmx-client:v0.7.0
+    image: ghcr.io/fairgatelabs/rust-bitvmx-workspace/bitvmx-client:v0.7.1
     # container_name: bitvmx-client-container
     restart: unless-stopped
     entrypoint: [ "./run.sh" ]

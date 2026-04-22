@@ -328,7 +328,7 @@ where
                     );
                     Self::continue_flow(flow, StepData::CommInfo(comm_info.clone()));
                 } else {
-                    warn!("Received unmatched BitVMX CommInfo for req_id {req_id}");
+                    trace!("Received unmatched BitVMX CommInfo for req_id {req_id}");
                 }
             }
 

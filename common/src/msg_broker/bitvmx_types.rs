@@ -20,6 +20,7 @@ use uuid::Uuid;
 pub const ACCEPT_PEGIN_TX: &str = "ACCEPT_PEGIN_TX";
 pub const OPERATOR_TAKE_TX: &str = "OPERATOR_TAKE_TX";
 pub const OPERATOR_WON_TX: &str = "OPERATOR_WON_TX";
+pub const RSK_PEGIN_TAG: &[u8] = b"RSK_PEGIN";
 
 // DisputeChannel related constants and types
 pub const OP_COSIGN_UTXOS: &str = "OP_COSIGN_UTXOS";
@@ -78,6 +79,8 @@ pub enum OutgoingBitVMXApiMessages {
     Pong(Uuid),
     // response for transaction get and dispatch
     Transaction(Uuid, TransactionStatus, Option<String>),
+    // Represents when a transaction matching a generic output pattern is found
+    OutputPatternTransactionFound(Txid, TransactionStatus, Vec<u8>),
     // Represents when pegin transactions is found
     PeginTransactionFound(Txid, TransactionStatus),
     // Represents when a spending utxo transaction is found

@@ -34,8 +34,8 @@ const EXAMPLE_TOTAL_FUNDING_SAFETY_BUFFER: u64 = 10_000;
 const OPERATOR_FUNDING_MARGIN_NUMERATOR: u64 = 25;
 const OPERATOR_FUNDING_MARGIN_DENOMINATOR: u64 = 100;
 // Mirrors BitVMX's get_fee_rate (sats/vbyte): regtest uses 10, mainnet/testnet use 1.
-const REGTEST_FEE_RATE: u64 = 10; // TODO(iago) this should come from config or contracts settings
-const NON_REGTEST_FEE_RATE: u64 = 1; // TODO(iago) this should come from config or contracts settings
+const REGTEST_FEE_RATE: u64 = 10; // TODO this should come from config or contracts settings
+const NON_REGTEST_FEE_RATE: u64 = 1; // TODO this should come from config or contracts settings
 
 // Pure shared baseline for operator/member RSK funding. Callers remain responsible for obtaining
 // `min_deposit`; this crate adds both a percentage uplift and a probabilistic gas reserve so the
@@ -213,8 +213,8 @@ mod tests {
     };
 
     const COMMITTEE_PACKET_SIZE: u64 = 100;
-    const OPERATOR_COUNT: u64 = 4; // TODO(iago) this should come from config or contracts settings
-    const PROVER_COUNT: u64 = 2; // TODO(iago) this should come from config or contracts settings
+    const OPERATOR_COUNT: u64 = 4; // TODO this should come from config or contracts settings
+    const PROVER_COUNT: u64 = 2; // TODO this should come from config or contracts settings
 
     #[test]
     fn derives_regtest_stream_zero_profile() {

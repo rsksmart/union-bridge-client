@@ -6,7 +6,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::Txid;
 use common::msg_broker::bitvmx_types::{
     BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PeginAcceptedMessage,
-    TransactionStatus, VariableTypes,
+    RSK_PEGIN_TAG, TransactionStatus, VariableTypes,
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
@@ -637,10 +637,17 @@ where
     }
 
     fn handle_pegin_transaction_found(&mut self, tx_id: Txid) -> Result<()> {
+        let temp_flow_id = get_temp_pegin_pid(tx_id);
+        if self.pegin_request_tracker.contains(&tx_id)
+            || self.pegin_flows.contains_key(&temp_flow_id)
+        {
+            debug!("Ignoring duplicate BitVMX pegin event for tx_id={tx_id}");
+            return Ok(());
+        }
+
         self.pegin_request_tracker.insert(tx_id);
 
         // Create a new pegin flow from Bitcoin transaction
-        let temp_flow_id = get_temp_pegin_pid(tx_id);
 
         let mut flow = PeginFlow::new(
             Rc::clone(&self.contracts_gateway),
@@ -778,6 +785,19 @@ where
         trace!("Processing BitVMX event: {event:?}");
 
         match event {
+            OutgoingBitVMXApiMessages::OutputPatternTransactionFound(tx_id, _tx_status, tag) => {
+                if tag.as_slice() == RSK_PEGIN_TAG {
+                    debug!(
+                        "Received BitVMX OutputPatternTransactionFound for RSK pegin: tx_id={tx_id}"
+                    );
+                    self.handle_pegin_transaction_found(*tx_id)?;
+                } else {
+                    trace!(
+                        "Ignoring BitVMX OutputPatternTransactionFound with non-pegin tag: {:?}",
+                        String::from_utf8_lossy(tag)
+                    );
+                }
+            }
             // Handle PeginTransactionFound from BitVMX
             OutgoingBitVMXApiMessages::PeginTransactionFound(tx_id, _tx_status) => {
                 debug!("Received BitVMX PeginTransactionFound: tx_id={tx_id}");

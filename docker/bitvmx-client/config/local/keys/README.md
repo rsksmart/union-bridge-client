@@ -12,6 +12,7 @@ For the local template, the generated files are:
 - `l2.key`
 - `emulator.key`
 - `prover.key`
+- `garbler.key`
 
 So, for example, `op_1` ends up with:
 
@@ -20,3 +21,4 @@ So, for example, `op_1` ends up with:
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_1/bitvmx/keys/l2.key`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_1/bitvmx/keys/emulator.key`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_1/bitvmx/keys/prover.key`
+- `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_1/bitvmx/keys/garbler.key`
