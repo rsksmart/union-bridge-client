@@ -17,8 +17,8 @@ use crate::RUNTIME_ENV_LOCAL;
 use crate::event_processor::EventProcessor;
 use crate::flows::committee::setup_committee_flow::SetupCommitteeFlowFactory;
 use crate::flows::committee::setup_committee_processor::SetupCommitteeProcessor;
-use crate::flows::common::GlobalContext;
 use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
+use crate::flows::common::{GlobalContext, Signaling};
 use crate::flows::funding_info_flow::FundingInfoProcessor;
 use crate::flows::operator_take::AdvanceFundsFlowProcessor;
 use crate::flows::pegin::pegin_processor::PeginFlowProcessor;
@@ -107,6 +107,7 @@ impl<
         pegout_advance_funds_timeout_secs: u64,
         committee_drp_program_definition: String,
         native_bridge_btc_confirmations_buffer: u32,
+        completion_marker_root: &str,
     ) -> Self {
         let contracts_arc = Rc::new(contracts_gateway);
         let store_rc = Rc::new(store);
@@ -116,6 +117,7 @@ impl<
                 warn!("No context found in DB, starting with empty one");
                 GlobalContext::new()
             });
+        let signaling = Rc::new(Signaling::new(completion_marker_root, runtime_environment));
 
         let setup_committee_flow_factory = SetupCommitteeFlowFactory::new(
             Rc::clone(&contracts_arc),
@@ -126,6 +128,7 @@ impl<
             Rc::clone(&store_rc),
             committee_drp_program_definition,
             btc_confirmations,
+            signaling.clone(),
         );
 
         let native_bridge_verifier = Self::build_native_bridge_verifier(
@@ -144,6 +147,7 @@ impl<
                 bitvmx_broker.clone(),
                 global_context.clone(),
                 &store_rc,
+                signaling.clone(),
                 native_bridge_verifier.clone(),
                 rsk_confirmations,
                 btc_confirmations,
@@ -156,6 +160,7 @@ impl<
                     bitvmx_broker.clone(),
                     global_context.clone(),
                     &store_rc,
+                    signaling.clone(),
                     native_bridge_verifier.clone(),
                     pegout_advance_funds_timeout_secs,
                     rsk_confirmations,
@@ -172,6 +177,7 @@ impl<
                 rt_sync.clone(),
                 bitvmx_broker.clone(),
                 global_context.clone(),
+                signaling,
                 rsk_confirmations,
                 btc_status_retry_blocks,
                 native_bridge_verifier.clone(),

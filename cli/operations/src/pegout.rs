@@ -15,6 +15,7 @@ struct RequestPegoutPayload {
 #[derive(Debug, Deserialize)]
 struct PegoutResponse {
     result: Option<String>,
+    transaction_hash: Option<String>,
     error: Option<String>,
 }
 
@@ -84,6 +85,9 @@ pub async fn request_pegout(
     println!("Pegout request successful!");
     if let Some(result) = pegout_response.result {
         println!("Result: {}", result);
+    }
+    if let Some(transaction_hash) = pegout_response.transaction_hash {
+        println!("Transaction hash: {}", transaction_hash);
     }
 
     Ok(())

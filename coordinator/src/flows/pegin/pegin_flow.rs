@@ -14,6 +14,7 @@ use common::runtime_sync::RuntimeSync;
 use common::types::{CommitteeId, TxIdParser};
 use log::{debug, info, trace};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use transaction_dispatcher::types::{
     GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,
@@ -23,7 +24,7 @@ use union_contracts::bindings::pegin_manager::PeginManager::{PeginAccepted, Pegi
 use uuid::Uuid;
 
 use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
-use crate::flows::common::{COMM_KEY_INDEX, build_communication_data};
+use crate::flows::common::{COMM_KEY_INDEX, Signaling, build_communication_data};
 use crate::flows::pegin::utils::{get_accept_pegin_pid, get_temp_pegin_pid};
 use crate::store::{CoordinatorStoreApi, StoreKey};
 
@@ -152,6 +153,7 @@ where
     bitvmx_broker: Rc<BC>,
     state: State,
     store: Rc<S>,
+    signaling: Rc<Signaling>,
     native_bridge_verifier: NativeBridgeVerifier<CG>,
 }
 
@@ -168,6 +170,7 @@ where
         bitvmx_broker: Rc<BC>,
         btc_tx_id: Txid,
         store: Rc<S>,
+        signaling: Rc<Signaling>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Self {
         let temp_flow_id = get_temp_pegin_pid(btc_tx_id);
@@ -199,6 +202,7 @@ where
                 },
             },
             store,
+            signaling,
             native_bridge_verifier,
         }
     }
@@ -209,9 +213,10 @@ where
         bitvmx_broker: Rc<BC>,
         state: State,
         store: Rc<S>,
+        signaling: Rc<Signaling>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Self {
-        Self { contracts, rt_sync, bitvmx_broker, state, store, native_bridge_verifier }
+        Self { contracts, rt_sync, bitvmx_broker, state, store, signaling, native_bridge_verifier }
     }
 
     fn persist_state(&self) -> Result<()> {
@@ -308,6 +313,7 @@ where
             }
             Steps::Done => {
                 self.send_pegin_accepted_to_bitvmx()?;
+                self.write_completion_marker()?;
                 info!("PeginFlow Done: {}", self.state.flow_id);
             }
         }
@@ -602,6 +608,22 @@ where
         );
 
         self.send_bitvmx_msg(msg)
+    }
+
+    fn write_completion_marker(&self) -> Result<()> {
+        let payload = json!({
+            "official_flow_id": self.state.ctx.official_flow_id,
+            "temp_flow_id": self.state.ctx.temp_flow_id,
+            "request_pegin_btc_tx_id": self.state.ctx.request_pegin_btc_tx_id.map(|txid| txid.to_string()),
+            "request_pegin_txid": self.state.ctx.pegin_requested.as_ref().map(|event| format!("{:#066x}", event.requestPeginTxid)),
+            "accept_pegin_txid": self.state.ctx.pegin_accepted.as_ref().map(|event| format!("{:#066x}", event.acceptPeginTxid)),
+            "committee_id": self.state.ctx.pegin_requested.as_ref().map(|event| event.committeeId.to_string()),
+            "slot_id": self.state.ctx.pegin_requested.as_ref().map(|event| event.streamPosition.slotId),
+            "rsk_destination_address": self.state.ctx.pegin_accepted.as_ref().map(|event| event.rskDestinationAddress.to_string()),
+            "rbtc_amount": self.state.ctx.pegin_accepted.as_ref().map(|event| event.rbtcAmount.to_string()),
+        });
+
+        self.signaling.signal_done("pegin", self.state.flow_id, &payload)
     }
 
     fn extract_pegin_amount(&self) -> Result<u64> {
@@ -1097,6 +1119,7 @@ mod tests {
             mock_broker,
             state,
             mock_store,
+            std::rc::Rc::new(crate::flows::common::Signaling::new("/tmp", "disabled")),
             NativeBridgeVerifier::Dummy,
         );
 
@@ -1223,6 +1246,7 @@ mod tests {
             mock_broker,
             state,
             mock_store,
+            std::rc::Rc::new(crate::flows::common::Signaling::new("/tmp", "disabled")),
             NativeBridgeVerifier::Dummy,
         );
 
@@ -1274,6 +1298,7 @@ mod tests {
             mock_broker,
             state,
             mock_store,
+            std::rc::Rc::new(crate::flows::common::Signaling::new("/tmp", "disabled")),
             NativeBridgeVerifier::Dummy,
         );
 
@@ -1330,6 +1355,7 @@ mod tests {
             mock_broker,
             state,
             mock_store,
+            std::rc::Rc::new(crate::flows::common::Signaling::new("/tmp", "disabled")),
             NativeBridgeVerifier::Dummy,
         );
 
@@ -1386,6 +1412,7 @@ mod tests {
             mock_broker,
             state,
             mock_store,
+            std::rc::Rc::new(crate::flows::common::Signaling::new("/tmp", "disabled")),
             NativeBridgeVerifier::Dummy,
         );
 
@@ -1429,6 +1456,7 @@ mod tests {
             mock_broker,
             state,
             mock_store,
+            std::rc::Rc::new(crate::flows::common::Signaling::new("/tmp", "disabled")),
             NativeBridgeVerifier::Dummy,
         );
 

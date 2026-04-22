@@ -19,6 +19,7 @@ use log::{debug, error, info, trace, warn};
 use mockall::automock;
 use op_funding::{derive_stream_funding_profile, required_member_rsk_balance};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sha2::{Digest, Sha256};
 use tiny_keccak::{Hasher, Keccak};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
@@ -45,7 +46,8 @@ use crate::flows::committee::dispute_core_setup::{
 };
 use crate::flows::committee::full_penalization_setup::FullPenalizationSetup;
 use crate::flows::common::{
-    COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, TAKE_KEY_INDEX, build_communication_data,
+    COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, Signaling, TAKE_KEY_INDEX,
+    build_communication_data,
 };
 use crate::flows::errors::{FailableFlow, FlowError, FlowResultExt};
 use crate::store::{CoordinatorStoreApi, StoreKey};
@@ -457,6 +459,7 @@ pub(crate) struct SetupCommitteeFlow<
     store: Rc<S>,
     drp_program_definition: String,
     btc_confirmations: u32,
+    signaling: Rc<Signaling>,
 }
 
 const REGTEST_FEE_RATE: u64 = 10;
@@ -509,6 +512,7 @@ where
         store: Rc<S>,
         drp_program_definition: String,
         btc_confirmations: u32,
+        signaling: Rc<Signaling>,
     ) -> Self {
         Self {
             contracts,
@@ -520,6 +524,7 @@ where
             store,
             drp_program_definition,
             btc_confirmations,
+            signaling,
         }
     }
 
@@ -534,6 +539,7 @@ where
         store: Rc<S>,
         drp_program_definition: String,
         btc_confirmations: u32,
+        signaling: Rc<Signaling>,
     ) -> Self {
         Self {
             contracts,
@@ -545,6 +551,7 @@ where
             store,
             drp_program_definition,
             btc_confirmations,
+            signaling,
         }
     }
 
@@ -1568,6 +1575,7 @@ where
                 trace!("Requested {req_count} FullPenalization Setup");
             }
             Steps::Done => {
+                self.write_completion_marker()?;
                 info!("CommitteeSetupFlow Done: {}", self.state.internal_id);
             }
             Steps::Failed => {
@@ -2219,6 +2227,26 @@ where
     }
 }
 
+impl<CG, BC, S> SetupCommitteeFlow<CG, BC, S>
+where
+    CG: RskContractsGatewayApi,
+    BC: BitVmxBrokerClientApi,
+    S: CoordinatorStoreApi,
+{
+    fn write_completion_marker(&self) -> Result<()> {
+        let payload = json!({
+            "stream_id": self.ctx().get_stream_id().ok().map(|stream_id| *stream_id),
+            "committee_id": self
+                .ctx()
+                .committee_pending_ev
+                .as_ref()
+                .map(|event| event.inner.committeeId.to_string()),
+        });
+
+        self.signaling.signal_done("setup", self.state.internal_id, &payload)
+    }
+}
+
 pub(crate) struct SetupCommitteeFlowFactory<CG, BC, S>
 where
     CG: RskContractsGatewayApi,
@@ -2233,6 +2261,7 @@ where
     store: Rc<S>,
     drp_program_definition: String,
     btc_confirmations: u32,
+    signaling: Rc<Signaling>,
 }
 
 impl<CG, BC, S> SetupCommitteeFlowFactory<CG, BC, S>
@@ -2251,6 +2280,7 @@ where
         store: Rc<S>,
         drp_program_definition: String,
         btc_confirmations: u32,
+        signaling: Rc<Signaling>,
     ) -> Self {
         Self {
             contracts_gateway,
@@ -2261,6 +2291,7 @@ where
             store,
             drp_program_definition,
             btc_confirmations,
+            signaling,
         }
     }
 }
@@ -2282,6 +2313,7 @@ where
             Rc::clone(&self.store),
             self.drp_program_definition.clone(),
             self.btc_confirmations,
+            Rc::clone(&self.signaling),
         )
     }
 
@@ -2296,6 +2328,7 @@ where
             Rc::clone(&self.store),
             self.drp_program_definition.clone(),
             self.btc_confirmations,
+            Rc::clone(&self.signaling),
         )
     }
 }
@@ -2569,6 +2602,7 @@ mod tests {
             Rc::new(MockCoordinatorStoreApi::new()),
             String::new(),
             1,
+            Rc::new(Signaling::new("/tmp", "disabled")),
         )
     }
 
@@ -2806,6 +2840,7 @@ mod tests {
             Rc::new(MockCoordinatorStoreApi::new()),
             String::new(),
             1,
+            Rc::new(Signaling::new("/tmp", "disabled")),
         );
         flow.state.ctx.user_input = Some(test_apply_to_stream(55));
 
@@ -2951,6 +2986,7 @@ mod tests {
             Rc::new(MockCoordinatorStoreApi::new()),
             String::new(),
             1,
+            Rc::new(Signaling::new("/tmp", "disabled")),
         );
 
         let internal_id = Uuid::new_v4();

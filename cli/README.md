@@ -20,6 +20,13 @@ Run the wrapper scripts below from the repository root.
 - local Docker operator runtime: use `--env docker` after following the [Operator Docker Runtime Guide](../docker/operator/README.md)
 - remote CLI profile: use `--env <profile>` with a matching `cli/.env.<profile>`
 
+For the automated happy-path script:
+
+- `bash tests/run-flows.sh --setup` prepares member/operator state only
+- `bash tests/run-flows.sh --committee` applies operators to the stream and waits for committee completion
+- `bash tests/run-flows.sh --pegin`, `--pegout`, and `--operator-take` reuse the prepared state
+- the script does not start `cli-infra.sh`, `cli-run.sh`, or `docker/operator/start-operators.sh` for you
+
 ## `cli-run.sh`
 
 Launch one or more Union Bridge clients locally for development and testing.

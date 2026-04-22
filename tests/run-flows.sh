@@ -9,7 +9,7 @@
 #   - USER_BITCOIN_WIF environment variable set (for bitcoin-wallet operations)
 #   - MEMBER_BITCOIN_WIF environment variable set (for member operations)
 #
-# usage: bash tests/run-happy-path.sh [--env <local|docker>] [--ops <1-10>] [--stream <0-4>] [--setup|--pegin|--pegout|--advance-funds]
+# usage: bash tests/run-flows.sh [--env <local|docker>] [--ops <1-10>] [--stream <0-4>] [--happy|--setup|--committee|--pegin|--pegout|--operator-take]
 
 set -euo pipefail
 
@@ -29,11 +29,14 @@ FORCE_ADVANCE_TARGET_OPERATOR_ID=""
 USER_API_HOST="localhost"
 BASE_USER_API_PORT=40001
 INTERRUPTED_SIGNAL=""
+USER_BALANCE_FEE_MARGIN_SATS=10000
+COMPLETION_MARKER_DIR_NAME="union-bridge-flow-completion-markers"
+COMPLETION_MARKER_DOCKER_DIR="/app/db/coordinator/${COMPLETION_MARKER_DIR_NAME}"
 
 # Committee setup can take longer to emit completion markers in all operators.
 # Committee setup can take longer in mixed (local client + docker BitVMX) and full-docker flows.
 COMMITTEE_SETUP_MAX_BLOCKS=120
-ADVANCE_FUNDS_MAX_BLOCKS=900
+OPERATOR_TAKE_MAX_BLOCKS=900
 
 # colors
 GREEN='\033[0;32m'
@@ -55,21 +58,48 @@ usage() {
     local script_name
     script_name=$(basename "${BASH_SOURCE[0]}")
     cat <<EOF
-Usage: ${script_name} [--env <local|docker>] [--ops <1-10>] [--stream <0-4>] [--setup|--pegin|--pegout|--advance-funds]
+Usage: ${script_name} [--env <local|docker>] [--ops <1-10>] [--stream <0-4>] [--happy|--setup|--committee|--pegin|--pegout|--operator-take]
+
+Modes:
+  default (no mode flags)
+             happy: run --setup, --committee, --pegin, and --pegout in sequence.
+  --happy    Full happy path: runs --setup and --committee first, then pegin and pegout.
+  --setup    Prep-only: member wallet prep, operator funding, and whitelist.
+  --committee
+             Committee-only: apply operators to the stream and wait for setup completion.
+  --pegin    Pegin-only: prepares the user wallet and requests pegin.
+  --pegout   Pegout-only: requests pegout.
+  --operator-take
+             Operator-take-only: requests pegout with FORCE_ADVANCE enabled.
 
   --env      Environment: local or docker (default: from UC_ENV or local)
-  --ops      Number of operators (1-10, default: from docker-deploy.env or 4)
+  --ops      Number of operators (1-10, default: 4 for local, docker-deploy.env or 4 for docker)
   --stream   Stream identifier (0-4). Defaults to 0.
-  --setup    Run only the setup phases: wallet prep, funding, whitelist, apply-stream,
-             and committee wait.
-  --pegin    Run only the pegin flow. Reuses existing setup, funding, and committee state.
-  --pegout   Run only the pegout flow. Reuses existing setup, funding, and committee state.
-  --advance-funds
-             Run a pegout that forces the advance-funds path by writing the
-             selected operator address to ${FORCE_ADVANCE_FILE} in the active
-             runtime (host for local, coordinator containers for docker).
+  --help     Show this help text.
+
+Guides:
+  1. Start infra and operators outside this script first.
+  2. Most convenient: run with no mode flags for the full happy path.
+  3. Use --setup and --committee only when you want to split preparation from user flows.
+  4. Run --pegin, --pegout, or --operator-take against that prepared state.
+
+Examples:
+  bash tests/run-flows.sh
+  bash tests/run-flows.sh --env docker --setup
+  bash tests/run-flows.sh --env docker --committee
+  bash tests/run-flows.sh --pegin
+  bash tests/run-flows.sh --operator-take
+
+Notes:
+  - This script does not start cli-infra.sh, cli-run.sh, or docker/operator/start-operators.sh.
+  - --happy is the only mode that runs both --setup and --committee automatically.
+  - --setup does not create a committee; use --committee for apply-stream + committee completion.
+  - --pegin, --pegout, and --operator-take assume setup/committee state already exists.
+  - --pegout and --operator-take also assume there is already a matching pegin in place for the user and amount being tested.
 EOF
 }
+
+# ===== Script configuration and argument parsing =====
 
 load_envrc_if_needed() {
     if [[ -n "${DIRENV_DIR:-}" ]]; then
@@ -98,10 +128,13 @@ initialize_script_env_default() {
 }
 
 parse_args() {
+    local happy_only=false
     local setup_only=false
+    local committee_only=false
     local pegin_only=false
     local pegout_only=false
-    local advance_funds_only=false
+    local operator_take_only=false
+    local mode_flag_provided=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -134,20 +167,38 @@ parse_args() {
             fi
             shift 2
             ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        --happy)
+            happy_only=true
+            mode_flag_provided=true
+            shift
+            ;;
         --setup)
             setup_only=true
+            mode_flag_provided=true
+            shift
+            ;;
+        --committee)
+            committee_only=true
+            mode_flag_provided=true
             shift
             ;;
         --pegin)
             pegin_only=true
+            mode_flag_provided=true
             shift
             ;;
         --pegout)
             pegout_only=true
+            mode_flag_provided=true
             shift
             ;;
-        --advance-funds)
-            advance_funds_only=true
+        --operator-take)
+            operator_take_only=true
+            mode_flag_provided=true
             shift
             ;;
         *)
@@ -158,27 +209,34 @@ parse_args() {
     done
 
     local selected_modes=0
+    [[ "$happy_only" == true ]] && selected_modes=$((selected_modes + 1))
     [[ "$setup_only" == true ]] && selected_modes=$((selected_modes + 1))
+    [[ "$committee_only" == true ]] && selected_modes=$((selected_modes + 1))
     [[ "$pegin_only" == true ]] && selected_modes=$((selected_modes + 1))
     [[ "$pegout_only" == true ]] && selected_modes=$((selected_modes + 1))
-    [[ "$advance_funds_only" == true ]] && selected_modes=$((selected_modes + 1))
+    [[ "$operator_take_only" == true ]] && selected_modes=$((selected_modes + 1))
 
     if [[ "$selected_modes" -gt 1 ]]; then
-        echo "Error: --setup, --pegin, --pegout, and --advance-funds are mutually exclusive" >&2
+        echo "Error: --happy, --setup, --committee, --pegin, --pegout, and --operator-take are mutually exclusive" >&2
         usage
         return 1
     fi
 
-    if [[ "$setup_only" == true ]]; then
+    if [[ "$happy_only" == true ]]; then
+        MODE="happy"
+    elif [[ "$setup_only" == true ]]; then
         MODE="setup"
+    elif [[ "$committee_only" == true ]]; then
+        MODE="committee"
     elif [[ "$pegin_only" == true ]]; then
         MODE="pegin"
     elif [[ "$pegout_only" == true ]]; then
         MODE="pegout"
-    elif [[ "$advance_funds_only" == true ]]; then
-        MODE="advance-funds"
+    elif [[ "$operator_take_only" == true ]]; then
+        MODE="operator-take"
     else
         MODE="happy"
+        log "No mode flag provided; defaulting to --happy."
     fi
 }
 
@@ -196,6 +254,10 @@ load_num_operators() {
     fi
 
     NUM_OPERATORS=4
+    if [[ "$SCRIPT_ENV" != "docker" ]]; then
+        return 0
+    fi
+
     local env_file="docker/operator/docker-deploy.env"
     if [[ -f "$env_file" ]]; then
         local configured_ops=""
@@ -242,10 +304,6 @@ initialize_mode_config() {
     STREAM_DENOMINATION=$(stream_denomination "$STREAM_ID")
     VALUE="$STREAM_DENOMINATION"
 
-    if [[ "$MODE" == "happy" || "$MODE" == "setup" || "$MODE" == "pegin" ]]; then
-        RSK_ADDRESS="0x$(openssl rand -hex 20)"
-    fi
-
     if [[ "$MODE" == "happy" || "$MODE" == "pegin" ]]; then
         USER_UTXO_VALUE=$(derived_wallet_utxo_value "$STREAM_DENOMINATION")
     fi
@@ -254,6 +312,8 @@ initialize_mode_config() {
         MEMBER_UTXO_VALUE=$(derived_member_wallet_utxo_value "$STREAM_ID" "$NUM_OPERATORS")
     fi
 }
+
+# ===== Shared utilities and prerequisite checks =====
 
 format_duration() {
     local total_seconds=$1
@@ -310,7 +370,7 @@ log_startup_configuration() {
     pegout)
         log "Configuration: mode=$MODE, stream=$STREAM_ID, denomination=$STREAM_DENOMINATION, amount=$VALUE, env=$SCRIPT_ENV"
         ;;
-    advance-funds)
+    operator-take)
         log "Configuration: mode=$MODE, stream=$STREAM_ID, denomination=$STREAM_DENOMINATION, amount=$VALUE, env=$SCRIPT_ENV"
         ;;
     esac
@@ -376,6 +436,38 @@ wait_for_docker_bitvmx_health() {
     done
 }
 
+all_user_api_endpoints_ready() {
+    local op_id
+
+    for op_id in $(seq 1 "$NUM_OPERATORS"); do
+        local endpoint=""
+        endpoint=$(user_api_endpoint_for_operator "$op_id")
+        if ! fetch_member_rsk_address_from_user_api "$endpoint" > /dev/null; then
+            return 1
+        fi
+    done
+}
+
+report_unready_user_api_endpoints() {
+    local missing=()
+    local op_id
+
+    for op_id in $(seq 1 "$NUM_OPERATORS"); do
+        local endpoint=""
+        endpoint=$(user_api_endpoint_for_operator "$op_id")
+        if ! fetch_member_rsk_address_from_user_api "$endpoint" > /dev/null; then
+            missing+=("${op_id} (${endpoint})")
+        fi
+    done
+
+    if [[ "${#missing[@]}" -eq 0 ]]; then
+        return 0
+    fi
+
+    printf 'Error: user-api not ready for operator(s): %s\n' "${missing[*]}" >&2
+    return 1
+}
+
 wait_for_test_prereqs() {
     if ! wait_for_condition "Anvil RPC" 30 cast rpc eth_chainId --rpc-url http://localhost:8545; then
         echo "Error: Anvil not ready on localhost:8545" >&2
@@ -391,6 +483,13 @@ wait_for_test_prereqs() {
 
     if ! wait_for_condition "Bitcoin wallet 'mainwallet'" 30 check_bitcoin_wallet; then
         echo "Error: Bitcoin wallet 'mainwallet' is not loaded" >&2
+        return 1
+    fi
+
+    if ! wait_for_condition "all ${NUM_OPERATORS} user-api endpoints" 60 all_user_api_endpoints_ready; then
+        if ! report_unready_user_api_endpoints; then
+            :
+        fi
         return 1
     fi
 
@@ -460,46 +559,481 @@ check_required_commands() {
     fi
 }
 
-# Find recent log match in docker compose logs (all operators)
-# Checks all logs (no time restriction) since we're already polling in a loop
-# Output format: "source:line" or empty if not found
-find_recent_docker_log_match() {
-    local pattern="$1"
+# ===== Completion marker helpers =====
+
+local_coordinator_store_path_for_operator() {
+    local op_id="$1"
+    echo "${BASE_STORAGE_PATH:-.}/.union_bridge/op_${op_id}/local_database/coordinator"
+}
+
+local_completion_marker_dir_for_operator() {
+    local op_id="$1"
+    echo "$(local_coordinator_store_path_for_operator "$op_id")/${COMPLETION_MARKER_DIR_NAME}"
+}
+
+collect_completion_marker_refs_local() {
+    local kind="$1"
+    local op_id
 
     for op_id in $(seq 1 "$NUM_OPERATORS"); do
-        local project="op_${op_id}"
-        local line
-        line=$(docker compose -p "$project" logs coordinator 2>/dev/null | grep -E "$pattern" | tail -1)
-        if [ -n "$line" ]; then
-            echo "${project}:${line}"
-            return 0
-        fi
+        local marker_dir=""
+        marker_dir=$(local_completion_marker_dir_for_operator "$op_id")
+        [[ -d "$marker_dir" ]] || continue
+        find "$marker_dir" -maxdepth 1 -type f -name "${kind}-*.json" | sort | while IFS= read -r marker_path; do
+            [[ -n "$marker_path" ]] || continue
+            echo "local|${op_id}|${marker_path}"
+        done
     done
 }
 
-# Find recent log match in local log files
-# Uses awk with string comparison (ISO timestamps are lexicographically sortable)
-# Output format: "source:line" or empty if not found
-find_recent_file_log_match() {
-    local pattern="$1"
+collect_completion_marker_refs_docker() {
+    local kind="$1"
+    local op_id
 
-    local min_ts
-    min_ts=$(date -v-1M "+%Y-%m-%d %H:%M:%S" 2>/dev/null || date -d "1 minute ago" "+%Y-%m-%d %H:%M:%S")
+    for op_id in $(seq 1 "$NUM_OPERATORS"); do
+        local container_id=""
+        container_id=$(docker_coordinator_container_id "$op_id")
+        [[ -n "$container_id" ]] || continue
+        if ! docker exec "$container_id" test -d "$COMPLETION_MARKER_DOCKER_DIR" 2>/dev/null; then
+            continue
+        fi
 
-    shopt -s nullglob
-    for log_file in logs/coordinator-*.log; do
-        [[ -f "$log_file" ]] || continue
+        docker exec "$container_id" sh -lc \
+            "find '$COMPLETION_MARKER_DOCKER_DIR' -maxdepth 1 -type f -name '${kind}-*.json' | sort" \
+            2>/dev/null | while IFS= read -r marker_path; do
+                [[ -n "$marker_path" ]] || continue
+                echo "docker|${op_id}|${container_id}|${marker_path}"
+            done
+    done
+}
 
-        local found_line
-        found_line=$(awk -v pattern="$pattern" -v min_ts="$min_ts" '
-            $0 ~ pattern && substr($0, 1, 19) >= min_ts { print; exit }
-        ' "$log_file")
+collect_completion_marker_refs() {
+    local kind="$1"
+    if [[ "$SCRIPT_ENV" == "docker" ]]; then
+        collect_completion_marker_refs_docker "$kind"
+        return 0
+    fi
 
-        if [ -n "$found_line" ]; then
-            echo "${log_file}:${found_line}"
+    collect_completion_marker_refs_local "$kind"
+}
+
+completion_marker_ref_basename() {
+    local ref="$1"
+    IFS='|' read -r scope _arg1 _arg2 _arg3 <<< "$ref"
+    if [[ "$scope" == "docker" ]]; then
+        basename "$_arg3"
+    else
+        basename "$_arg2"
+    fi
+}
+
+completion_marker_payload_json() {
+    local ref="$1"
+    IFS='|' read -r scope arg1 arg2 arg3 <<< "$ref"
+    if [[ "$scope" == "docker" ]]; then
+        docker exec "$arg2" cat "$arg3"
+    else
+        cat "$arg2"
+    fi
+}
+
+completion_marker_matches_kind() {
+    local kind="$1"
+    local ref="$2"
+
+    case "$kind" in
+        setup)
+            completion_marker_payload_json "$ref" | jq -e --argjson stream_id "$EXPECTED_SETUP_STREAM_ID" \
+                '.payload.stream_id == $stream_id' > /dev/null
+            ;;
+        pegin)
+            completion_marker_payload_json "$ref" | jq -e --arg pegin_txid "$EXPECTED_PEGIN_TXID" \
+                '.payload.request_pegin_btc_tx_id == $pegin_txid' > /dev/null
+            ;;
+        pegout|advance-funds)
+            completion_marker_payload_json "$ref" | jq -e --arg request_tx_hash "$EXPECTED_REQUEST_PEGOUT_TX_HASH" \
+                '.payload.request_pegout_tx_hash == $request_tx_hash' > /dev/null
+            ;;
+        *)
+            echo "Error: unsupported marker kind '$kind'" >&2
+            return 1
+            ;;
+    esac
+}
+
+collect_matching_completion_marker_refs() {
+    local kind="$1"
+    local output_file="$2"
+    : > "$output_file"
+
+    while IFS= read -r ref; do
+        [[ -n "$ref" ]] || continue
+        if completion_marker_matches_kind "$kind" "$ref"; then
+            echo "$ref" >> "$output_file"
+        fi
+    done < <(collect_completion_marker_refs "$kind")
+}
+
+first_matching_completion_marker_ref() {
+    local kind="$1"
+    local refs_file
+    refs_file=$(mktemp)
+
+    collect_matching_completion_marker_refs "$kind" "$refs_file"
+
+    local first_ref=""
+    first_ref=$(head -n 1 "$refs_file")
+    rm -f "$refs_file"
+
+    if [[ -z "$first_ref" ]]; then
+        return 1
+    fi
+
+    printf '%s\n' "$first_ref"
+}
+
+count_completion_marker_refs_in_file() {
+    local refs_file="$1"
+    if [[ ! -f "$refs_file" ]]; then
+        echo 0
+        return 0
+    fi
+    wc -l < "$refs_file" | tr -d ' '
+}
+
+print_completion_marker_refs() {
+    local refs_file="$1"
+    while IFS= read -r ref; do
+        [[ -n "$ref" ]] || continue
+        IFS='|' read -r scope op_id arg2 _arg3 <<< "$ref"
+        if [[ "$scope" == "docker" ]]; then
+            log "Completion marker (operator ${op_id}, container ${arg2}): $(completion_marker_ref_basename "$ref")"
+        else
+            log "Completion marker (operator ${op_id}): $(completion_marker_ref_basename "$ref")"
+        fi
+    done < "$refs_file"
+}
+
+wait_for_correlated_completion_markers() {
+    local kind="$1"
+    local expected_count="$2"
+    local max_blocks="$3"
+
+    local start_height
+    start_height=$(get_current_bitcoin_height)
+    local target_height=$((start_height + max_blocks))
+    local matches_file
+    matches_file=$(mktemp)
+
+    log "Waiting for ${expected_count} correlated ${kind} completion marker(s) (max $max_blocks blocks)..."
+
+    while true; do
+        local current_height
+        current_height=$(get_current_bitcoin_height)
+        local blocks_mined=$((current_height - start_height))
+
+        if [ "$blocks_mined" -lt 0 ]; then
+            sleep 1
+            continue
+        fi
+
+        collect_matching_completion_marker_refs "$kind" "$matches_file"
+        local current_count=0
+        current_count=$(count_completion_marker_refs_in_file "$matches_file")
+
+        echo -ne "\r  Blocks mined: $blocks_mined/$max_blocks | Operators completed: $current_count/$expected_count  "
+
+        if [ "$current_count" -ge "$expected_count" ]; then
+            echo ""
+            success "${kind} correlated completion marker detected"
+            print_completion_marker_refs "$matches_file"
+            rm -f "$matches_file"
             return 0
         fi
+
+        if [ "$current_height" -ge "$target_height" ]; then
+            echo ""
+            warn "${kind} correlated completion marker not found after $max_blocks blocks (height: $start_height -> $current_height)"
+            rm -f "$matches_file"
+            return 1
+        fi
+
+        sleep 1
     done
+}
+
+# ===== User wallet and balance helpers =====
+
+user_rsk_balance_wei() {
+    local address="$1"
+    cast balance "$address" --rpc-url http://localhost:8545
+}
+
+user_active_bitcoin_address() {
+    bash cli-bitcoin-wallet.sh user list_addresses 2>/dev/null | awk '/\(active\)/ { print $1; exit }'
+}
+
+user_btc_balance_sat() {
+    local address=""
+    address=$(user_active_bitcoin_address)
+    if [[ -z "$address" ]]; then
+        echo "Error: failed to resolve active user Bitcoin address" >&2
+        return 1
+    fi
+
+    bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword \
+        scantxoutset start "[\"addr(${address})\"]" \
+        | jq -r '(.total_amount * 100000000 | round) // 0'
+}
+
+format_btc_amount_from_sat() {
+    local sat="$1"
+    awk -v sat="$sat" 'BEGIN { printf "%.8f BTC", sat / 100000000 }'
+}
+
+format_rbtc_amount_from_wei() {
+    local wei="$1"
+    awk -v wei="$wei" 'BEGIN { printf "%.18f RBTC", wei / 1000000000000000000 }'
+}
+
+extract_pegin_txid_from_output() {
+    local output="$1"
+    printf '%s\n' "$output" | awk -F= '/txid=/{print $2}' | tail -1 | tr -d '[:space:]'
+}
+
+extract_pegout_request_tx_hash_from_output() {
+    local output="$1"
+    printf '%s\n' "$output" | sed -nE 's/.*Transaction hash:[[:space:]]*(0x[0-9a-fA-F]{64}).*/\1/p' | tail -1
+}
+
+run_user_pegin_and_capture_txid() {
+    local rsk_address="$1"
+    local value="$2"
+    local user_xonly_pubkey="$3"
+    local output=""
+
+    if ! output=$(bash cli-operations.sh user pegin -a "$rsk_address" -v "$value" -k "$user_xonly_pubkey" --env "$SCRIPT_ENV" --execute 2>&1); then
+        echo -e "${YELLOW}[!]${NC} Command failed!" >&2
+        printf '%s\n' "$output" >&2
+        return 1
+    fi
+
+    local pegin_txid=""
+    pegin_txid=$(extract_pegin_txid_from_output "$output")
+
+    if [[ -z "$pegin_txid" ]]; then
+        echo -e "${YELLOW}[!]${NC} Failed to extract pegin txid from command output" >&2
+        return 1
+    fi
+
+    printf '%s\n' "$pegin_txid"
+}
+
+run_user_pegout_and_capture_request_tx_hash() {
+    local value="$1"
+    local user_compressed_pubkey="$2"
+    local output=""
+
+    if ! output=$(bash cli-operations.sh user pegout -v "$value" -k "$user_compressed_pubkey" --env "$SCRIPT_ENV" 2>&1); then
+        echo -e "${YELLOW}[!]${NC} Command failed! Output:" >&2
+        printf '%s\n' "$output" >&2
+        return 1
+    fi
+
+    local request_tx_hash=""
+    request_tx_hash=$(extract_pegout_request_tx_hash_from_output "$output")
+
+    if [[ -z "$request_tx_hash" ]]; then
+        echo -e "${YELLOW}[!]${NC} Failed to extract pegout request tx hash from command output" >&2
+        return 1
+    fi
+
+    printf '%s\n' "$request_tx_hash"
+}
+
+assert_user_rsk_balance_increase() {
+    local before_wei="$1"
+    local after_wei="$2"
+    local min_increase_wei="$3"
+
+    local actual_increase_wei=$((after_wei - before_wei))
+    if (( actual_increase_wei < min_increase_wei )); then
+        warn "User RBTC balance increase too small: got $(format_rbtc_amount_from_wei "$actual_increase_wei"), expected at least $(format_rbtc_amount_from_wei "$min_increase_wei")"
+        return 1
+    fi
+
+    success "User RBTC balance increased by $(format_rbtc_amount_from_wei "$actual_increase_wei")"
+}
+
+assert_user_btc_balance_increase() {
+    local before_sat="$1"
+    local after_sat="$2"
+    local min_increase_sat="$3"
+
+    local actual_increase_sat=$((after_sat - before_sat))
+    if (( actual_increase_sat < min_increase_sat )); then
+        warn "User BTC balance increase too small: got $(format_btc_amount_from_sat "$actual_increase_sat"), expected at least $(format_btc_amount_from_sat "$min_increase_sat")"
+        return 1
+    fi
+
+    success "User BTC balance increased by $(format_btc_amount_from_sat "$actual_increase_sat")"
+}
+
+assert_user_rsk_balance_decrease() {
+    local before_wei="$1"
+    local after_wei="$2"
+    local min_decrease_wei="$3"
+
+    local actual_decrease_wei=$((before_wei - after_wei))
+    if (( actual_decrease_wei < min_decrease_wei )); then
+        warn "User RBTC balance decrease too small: got $(format_rbtc_amount_from_wei "$actual_decrease_wei"), expected at least $(format_rbtc_amount_from_wei "$min_decrease_wei")"
+        return 1
+    fi
+
+    success "User RBTC balance decreased by $(format_rbtc_amount_from_wei "$actual_decrease_wei")"
+}
+
+assert_user_btc_balance_decrease() {
+    local before_sat="$1"
+    local after_sat="$2"
+    local min_decrease_sat="$3"
+
+    local actual_decrease_sat=$((before_sat - after_sat))
+    if (( actual_decrease_sat < min_decrease_sat )); then
+        warn "User BTC balance decrease too small: got $(format_btc_amount_from_sat "$actual_decrease_sat"), expected at least $(format_btc_amount_from_sat "$min_decrease_sat")"
+        return 1
+    fi
+
+    success "User BTC balance decreased by $(format_btc_amount_from_sat "$actual_decrease_sat")"
+}
+
+verify_user_balance_change() {
+    local asset="$1"
+    local direction="$2"
+    local before_value="$3"
+    local after_value="$4"
+    local expected_min_delta="$5"
+
+    case "$asset" in
+        rsk)
+            case "$direction" in
+                increase)
+                    assert_user_rsk_balance_increase \
+                        "$before_value" \
+                        "$after_value" \
+                        "$expected_min_delta" || return 1
+                    ;;
+                decrease)
+                    assert_user_rsk_balance_decrease \
+                        "$before_value" \
+                        "$after_value" \
+                        "$expected_min_delta" || return 1
+                    ;;
+                *)
+                    echo "Error: unsupported balance direction '$direction'" >&2
+                    return 1
+                    ;;
+            esac
+            ;;
+        btc)
+            case "$direction" in
+                increase)
+                    assert_user_btc_balance_increase \
+                        "$before_value" \
+                        "$after_value" \
+                        "$expected_min_delta" || return 1
+                    ;;
+                decrease)
+                    assert_user_btc_balance_decrease \
+                        "$before_value" \
+                        "$after_value" \
+                        "$expected_min_delta" || return 1
+                    ;;
+                *)
+                    echo "Error: unsupported balance direction '$direction'" >&2
+                    return 1
+                    ;;
+            esac
+            ;;
+        *)
+            echo "Error: unsupported asset '$asset'" >&2
+            return 1
+            ;;
+    esac
+
+    echo ""
+}
+
+verify_user_btc_balance_for_value() {
+    local direction="$1"
+    local before_sat="$2"
+    local min_delta_sat="$3"
+    local after_sat
+    after_sat=$(user_btc_balance_sat)
+
+    verify_user_balance_change btc "$direction" "$before_sat" "$after_sat" "$min_delta_sat"
+}
+
+verify_user_rsk_balance_for_value() {
+    local direction="$1"
+    local before_wei="$2"
+    local min_delta_wei="$3"
+    local after_wei
+    after_wei=$(user_rsk_balance_wei "$RSK_ADDRESS")
+
+    verify_user_balance_change rsk "$direction" "$before_wei" "$after_wei" "$min_delta_wei"
+}
+
+pegin_expected_rbtc_amount_wei() {
+    local ref=""
+    ref=$(first_matching_completion_marker_ref "pegin") || {
+        echo "Error: failed to find correlated pegin completion marker for rbtc_amount" >&2
+        return 1
+    }
+
+    local amount=""
+    amount=$(completion_marker_payload_json "$ref" | jq -r '.payload.rbtc_amount // empty' 2>/dev/null) || return 1
+    [[ -n "$amount" ]] || {
+        echo "Error: correlated pegin completion marker is missing payload.rbtc_amount" >&2
+        return 1
+    }
+
+    printf '%s\n' "$amount"
+}
+
+verify_user_btc_balance_increase_for_value() {
+    local before_sat="$1"
+    local expected_min_increase_sat=$((VALUE - USER_BALANCE_FEE_MARGIN_SATS))
+    if (( expected_min_increase_sat < 0 )); then
+        expected_min_increase_sat=0
+    fi
+
+    verify_user_btc_balance_for_value increase "$before_sat" "$expected_min_increase_sat"
+}
+
+verify_user_btc_balance_decrease_for_value() {
+    local before_sat="$1"
+    verify_user_btc_balance_for_value decrease "$before_sat" "$VALUE"
+}
+
+verify_user_rsk_balance_increase_for_value() {
+    local before_wei="$1"
+    local expected_min_increase_wei=$((VALUE * 10000000000))
+    verify_user_rsk_balance_for_value increase "$before_wei" "$expected_min_increase_wei"
+}
+
+verify_user_rsk_balance_increase_for_pegin() {
+    local before_wei="$1"
+    local expected_min_increase_wei=""
+    expected_min_increase_wei=$(pegin_expected_rbtc_amount_wei) || return 1
+
+    verify_user_rsk_balance_for_value increase "$before_wei" "$expected_min_increase_wei"
+}
+
+verify_user_rsk_balance_decrease_for_value() {
+    local before_wei="$1"
+    local expected_min_decrease_wei=$((VALUE * 10000000000))
+    verify_user_rsk_balance_for_value decrease "$before_wei" "$expected_min_decrease_wei"
 }
 
 # count transactions in blocks from start_height to end_height (excluding coinbase)
@@ -591,175 +1125,7 @@ wait_for_bitcoin_transactions() {
     done
 }
 
-# wait for N bitcoin blocks to be mined
-wait_for_bitcoin_blocks() {
-    local count=$1
-    local start_height
-    start_height=$(get_current_bitcoin_height)
-    local target_height=$((start_height + count))
-
-    log "Waiting for $count Bitcoin blocks to be mined..."
-
-    while true; do
-        local current_height
-        current_height=$(get_current_bitcoin_height)
-        local blocks_mined=$((current_height - start_height))
-        if [ "$blocks_mined" -lt 0 ]; then
-            continue
-        fi
-
-        echo -ne "\r  Bitcoin Blocks mined: $blocks_mined/$count (current height: $current_height)  "
-
-        if [ "$current_height" -ge "$target_height" ]; then
-            echo ""
-            success "$count Bitcoin blocks mined (height: $start_height -> $current_height)"
-            break
-        fi
-
-        sleep 0.25s
-    done
-    echo ""
-}
-
-# Wait for a log pattern to appear, with a block-based timeout
-# Usage: wait_for_log_with_block_timeout <pattern> <max_blocks>
-wait_for_log_with_block_timeout() {
-    local pattern="$1"
-    local max_blocks=$2
-
-    local start_height
-    start_height=$(get_current_bitcoin_height)
-    local target_height=$((start_height + max_blocks))
-
-    log "Waiting for log pattern: $pattern (max $max_blocks blocks)..."
-
-    while true; do
-        local current_height
-        current_height=$(get_current_bitcoin_height)
-        local blocks_mined=$((current_height - start_height))
-
-        if [ "$blocks_mined" -lt 0 ]; then
-            sleep 1
-            continue
-        fi
-
-        echo -ne "\r  Blocks mined: $blocks_mined/$max_blocks | Checking logs...  "
-
-        local result=""
-        if [[ "$SCRIPT_ENV" == "docker" ]]; then
-            result=$(find_recent_docker_log_match "$pattern")
-        else
-            result=$(find_recent_file_log_match "$pattern")
-        fi
-
-        if [ -n "$result" ]; then
-            local found_source="${result%%:*}"
-            local found_line="${result#*:}"
-            echo ""
-            success "Log pattern found after $blocks_mined blocks!"
-            log "Found in: $found_source"
-            echo "$found_line"
-            return 0
-        fi
-
-        if [ "$current_height" -ge "$target_height" ]; then
-            echo ""
-            warn "Log pattern not found after $max_blocks blocks (height: $start_height -> $current_height)"
-            if [[ "$SCRIPT_ENV" == "docker" ]]; then
-                warn "Check Docker logs manually: docker compose -p op_{1..$NUM_OPERATORS} logs coordinator"
-            else
-                warn "Check logs/coordinator-*.log manually"
-            fi
-            return 1
-        fi
-
-        sleep 1
-    done
-}
-
-wait_for_log_in_all_operators() {
-    local pattern="$1"
-    local max_blocks=$2
-    local operator_count=${3:-$NUM_OPERATORS}
-
-    local start_height
-    start_height=$(get_current_bitcoin_height)
-    local target_height=$((start_height + max_blocks))
-
-    log "Waiting for log pattern in all $operator_count operators: $pattern (max $max_blocks blocks)..."
-
-    declare -A found_operators=()
-
-    while true; do
-        local current_height
-        current_height=$(get_current_bitcoin_height)
-        local blocks_mined=$((current_height - start_height))
-
-        if [ "$blocks_mined" -lt 0 ]; then
-            sleep 1
-            continue
-        fi
-
-        local found_count="${#found_operators[@]}"
-        echo -ne "\r  Blocks mined: $blocks_mined/$max_blocks | Operators matched: $found_count/$operator_count  "
-
-        if [[ "$SCRIPT_ENV" == "docker" ]]; then
-            local op_id
-            for op_id in $(seq 1 "$operator_count"); do
-                [[ -n "${found_operators[$op_id]:-}" ]] && continue
-                local project="op_${op_id}"
-                local line
-                line=$(docker compose -p "$project" logs coordinator 2>/dev/null | grep -E "$pattern" | tail -1)
-                if [ -n "$line" ]; then
-                    found_operators[$op_id]="$line"
-                    echo ""
-                    success "Pattern found in $project"
-                    echo "  $line"
-                fi
-            done
-        else
-            local min_ts
-            min_ts=$(date -v-1M "+%Y-%m-%d %H:%M:%S" 2>/dev/null || date -d "1 minute ago" "+%Y-%m-%d %H:%M:%S")
-            local op_id
-            for op_id in $(seq 1 "$operator_count"); do
-                [[ -n "${found_operators[$op_id]:-}" ]] && continue
-                local log_file="logs/coordinator-${op_id}.log"
-                [[ -f "$log_file" ]] || continue
-                local found_line
-                found_line=$(awk -v pattern="$pattern" -v min_ts="$min_ts" '
-                    $0 ~ pattern && substr($0, 1, 19) >= min_ts { print; exit }
-                ' "$log_file")
-                if [ -n "$found_line" ]; then
-                    found_operators[$op_id]="$found_line"
-                    echo ""
-                    success "Pattern found in coordinator-${op_id}"
-                    echo "  $found_line"
-                fi
-            done
-        fi
-
-        if [ "${#found_operators[@]}" -ge "$operator_count" ]; then
-            echo ""
-            success "Log pattern found in all $operator_count operators after $blocks_mined blocks!"
-            return 0
-        fi
-
-        if [ "$current_height" -ge "$target_height" ]; then
-            echo ""
-            warn "Log pattern not found in all operators after $max_blocks blocks (height: $start_height -> $current_height)"
-            warn "Missing operators:"
-            local op_id
-            for op_id in $(seq 1 "$operator_count"); do
-                if [[ -z "${found_operators[$op_id]:-}" ]]; then
-                    warn "  - operator $op_id"
-                fi
-            done
-            return 1
-        fi
-
-        sleep 1
-    done
-}
+# ===== user-api address resolution =====
 
 user_api_endpoint_for_operator() {
     local op_id="$1"
@@ -779,6 +1145,34 @@ fetch_member_rsk_address_from_user_api() {
     echo "$address"
 }
 
+fetch_user_rsk_address_from_user_api() {
+    local endpoint="$1"
+    local response=""
+    response=$(curl -fsS --max-time 10 "http://${endpoint}/user/rsk-address" 2>/dev/null) || return 1
+
+    local address=""
+    address=$(printf '%s' "$response" | jq -r '.address // empty' 2>/dev/null) || return 1
+    [[ -n "$address" ]] || return 1
+
+    echo "$address"
+}
+
+resolve_user_rsk_address() {
+    local op_id
+    for op_id in $(seq 1 "$NUM_OPERATORS"); do
+        local endpoint=""
+        endpoint=$(user_api_endpoint_for_operator "$op_id")
+        local address=""
+        if address=$(fetch_user_rsk_address_from_user_api "$endpoint"); then
+            echo "$address"
+            return 0
+        fi
+    done
+
+    echo "Error: failed to resolve user RSK address from user-api /user/rsk-address" >&2
+    return 1
+}
+
 resolve_force_advance_target_address() {
     FORCE_ADVANCE_TARGET_OPERATOR_ID=""
     local op_id
@@ -796,6 +1190,8 @@ resolve_force_advance_target_address() {
     echo "Error: failed to resolve a member signer address from user-api /member/funding-info for FORCE_ADVANCE" >&2
     return 1
 }
+
+# ===== FORCE_ADVANCE / operator-take helpers =====
 
 docker_coordinator_container_id() {
     local op_id="$1"
@@ -863,7 +1259,7 @@ find_active_force_advance_in_docker() {
 }
 
 ensure_force_advance_inactive_unless_requested() {
-    if [[ "$MODE" == "advance-funds" ]]; then
+    if [[ "$MODE" == "operator-take" ]]; then
         return 0
     fi
 
@@ -883,7 +1279,7 @@ ensure_force_advance_inactive_unless_requested() {
     fi
 
     if [[ -n "$active_state" ]]; then
-        echo "Error: FORCE_ADVANCE is already active via ${active_state}, but mode is '$MODE'. Clear it or rerun with --advance-funds." >&2
+        echo "Error: FORCE_ADVANCE is already active via ${active_state}, but mode is '$MODE'. Clear it or rerun with --operator-take." >&2
         return 1
     fi
 
@@ -999,6 +1395,8 @@ on_signal() {
     esac
 }
 
+# ===== Setup, committee, and user-flow phases =====
+
 run_wallet_prep_phase() {
     step "Step 0: Prepare Wallets"
     log "Clearing member wallet database and funding member wallet-specific UTXO..."
@@ -1061,8 +1459,9 @@ run_whitelist_phase() {
     echo ""
 }
 
-run_committee_apply_phase() {
+run_committee_phase() {
     step "Step 3: Apply Operators to Stream"
+    EXPECTED_SETUP_STREAM_ID="$STREAM_ID"
     log "Command: bash cli-operations.sh operator apply-stream -s $STREAM_ID --env $SCRIPT_ENV"
     echo ""
     if ! bash cli-operations.sh operator apply-stream -s "$STREAM_ID" --env "$SCRIPT_ENV" > /tmp/apply-operators-$$ 2>&1; then
@@ -1074,26 +1473,30 @@ run_committee_apply_phase() {
     rm -f /tmp/apply-operators-$$
     success "Operators applied to stream $STREAM_ID"
     echo ""
-    if ! wait_for_log_in_all_operators "CommitteeSetupFlow Done:" "$COMMITTEE_SETUP_MAX_BLOCKS"; then
-        warn "Committee setup not completed by all operators within timeout"
+    if ! wait_for_correlated_completion_markers "setup" "$NUM_OPERATORS" "$COMMITTEE_SETUP_MAX_BLOCKS"; then
+        warn "Committee setup completion markers not found in all operators within timeout"
         return 1
     fi
     echo ""
 }
 
-run_full_setup_phase() {
-    local setup_start_time
-    setup_start_time=$(date +%s)
-
+run_setup_phase() {
     run_wallet_prep_phase
     run_operator_funding_phase
     run_whitelist_phase
-    run_committee_apply_phase
+}
+
+run_setup_and_committee_phases() {
+    local setup_start_time
+    setup_start_time=$(date +%s)
+
+    run_setup_phase
+    run_committee_phase
 
     local setup_end_time
     setup_end_time=$(date +%s)
     SETUP_DURATION=$((setup_end_time - setup_start_time))
-    success "Setup completed in $(format_duration "$SETUP_DURATION")"
+    success "Setup and committee completed in $(format_duration "$SETUP_DURATION")"
     echo ""
 }
 
@@ -1110,6 +1513,12 @@ run_pegin_phase() {
     if ! prepare_user_wallet_for_pegin; then
         return 1
     fi
+    RSK_ADDRESS=$(resolve_user_rsk_address) || return 1
+
+    local user_rsk_balance_before_wei
+    user_rsk_balance_before_wei=$(user_rsk_balance_wei "$RSK_ADDRESS")
+    local user_btc_balance_before_sat
+    user_btc_balance_before_sat=$(user_btc_balance_sat)
 
     local user_xonly_pubkey
     user_xonly_pubkey=$(user_xonly_pubkey_from_wif)
@@ -1123,17 +1532,22 @@ run_pegin_phase() {
     log "BTC Pub Key: $user_xonly_pubkey"
     log "Command: bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -k $user_xonly_pubkey --env $SCRIPT_ENV --execute"
     echo ""
-    if ! bash cli-operations.sh user pegin -a "$RSK_ADDRESS" -v "$VALUE" -k "$user_xonly_pubkey" --env "$SCRIPT_ENV" --execute; then
-        warn "Command failed!"
+    if ! EXPECTED_PEGIN_TXID=$(run_user_pegin_and_capture_txid "$RSK_ADDRESS" "$VALUE" "$user_xonly_pubkey"); then
         return 1
     fi
     success "Pegin transaction created"
     echo ""
-    if ! wait_for_log_with_block_timeout "PeginFlow Done" 15; then
-        warn "PeginFlow completion log not found within timeout"
+    if ! wait_for_correlated_completion_markers "pegin" "$NUM_OPERATORS" 15; then
+        warn "Pegin completion marker not found within timeout"
         return 1
     fi
     echo ""
+    if ! verify_user_rsk_balance_increase_for_pegin "$user_rsk_balance_before_wei"; then
+        return 1
+    fi
+    if ! verify_user_btc_balance_decrease_for_value "$user_btc_balance_before_sat"; then
+        return 1
+    fi
 
     local pegin_end_time
     pegin_end_time=$(date +%s)
@@ -1150,6 +1564,11 @@ run_pegout_phase() {
     fi
     local pegout_start_time
     pegout_start_time=$(date +%s)
+    RSK_ADDRESS=$(resolve_user_rsk_address) || return 1
+    local user_btc_balance_before_sat
+    user_btc_balance_before_sat=$(user_btc_balance_sat)
+    local user_rsk_balance_before_wei
+    user_rsk_balance_before_wei=$(user_rsk_balance_wei "$RSK_ADDRESS")
 
     local user_compressed_pubkey
     user_compressed_pubkey=$(user_compressed_pubkey_from_wif)
@@ -1163,21 +1582,23 @@ run_pegout_phase() {
     log "USR Pub Key: $user_compressed_pubkey"
     echo ""
 
-    if ! bash cli-operations.sh user pegout -v "$VALUE" -k "$user_compressed_pubkey" --env "$SCRIPT_ENV" > /tmp/pegout-$$ 2>&1; then
-        warn "Command failed! Output:"
-        cat /tmp/pegout-$$
-        rm -f /tmp/pegout-$$
+    if ! EXPECTED_REQUEST_PEGOUT_TX_HASH=$(run_user_pegout_and_capture_request_tx_hash "$VALUE" "$user_compressed_pubkey"); then
         return 1
     fi
-    rm -f /tmp/pegout-$$
     success "Pegout requested"
     echo ""
 
-    if ! wait_for_log_with_block_timeout "PegoutFlow Done" 15; then
-        warn "PegoutFlow completion log not found within timeout"
+    if ! wait_for_correlated_completion_markers "pegout" "$NUM_OPERATORS" 15; then
+        warn "Pegout completion marker not found within timeout"
         return 1
     fi
     echo ""
+    if ! verify_user_btc_balance_increase_for_value "$user_btc_balance_before_sat"; then
+        return 1
+    fi
+    if ! verify_user_rsk_balance_decrease_for_value "$user_rsk_balance_before_wei"; then
+        return 1
+    fi
 
     local pegout_end_time
     pegout_end_time=$(date +%s)
@@ -1198,10 +1619,15 @@ run_pegout_verification_phase() {
     echo ""
 }
 
-run_advance_funds_phase() {
-    step "Advance Funds"
-    local advance_funds_start_time
-    advance_funds_start_time=$(date +%s)
+run_operator_take_phase() {
+    step "Operator Take"
+    local operator_take_start_time
+    operator_take_start_time=$(date +%s)
+    RSK_ADDRESS=$(resolve_user_rsk_address) || return 1
+    local user_btc_balance_before_sat
+    user_btc_balance_before_sat=$(user_btc_balance_sat)
+    local user_rsk_balance_before_wei
+    user_rsk_balance_before_wei=$(user_rsk_balance_wei "$RSK_ADDRESS")
 
     local target_address=""
     target_address=$(resolve_force_advance_target_address)
@@ -1221,28 +1647,30 @@ run_advance_funds_phase() {
     log "USR Pub Key: $user_compressed_pubkey"
     echo ""
 
-    if ! bash cli-operations.sh user pegout -v "$VALUE" -k "$user_compressed_pubkey" --env "$SCRIPT_ENV" > /tmp/pegout-$$ 2>&1; then
-        warn "Command failed! Output:"
-        cat /tmp/pegout-$$
-        rm -f /tmp/pegout-$$
+    if ! EXPECTED_REQUEST_PEGOUT_TX_HASH=$(run_user_pegout_and_capture_request_tx_hash "$VALUE" "$user_compressed_pubkey"); then
         return 1
     fi
-    rm -f /tmp/pegout-$$
-    success "Advance-funds pegout requested"
+    success "Operator-take pegout requested"
     echo ""
 
-    if ! wait_for_log_in_all_operators "AdvanceFundsFlow .*: Done" "$ADVANCE_FUNDS_MAX_BLOCKS"; then
-        warn "AdvanceFundsFlow completion log not found in all operators within timeout"
+    if ! wait_for_correlated_completion_markers "advance-funds" "$NUM_OPERATORS" "$OPERATOR_TAKE_MAX_BLOCKS"; then
+        warn "Operator-take completion markers not found in all operators within timeout"
         return 1
     fi
     echo ""
+    if ! verify_user_btc_balance_increase_for_value "$user_btc_balance_before_sat"; then
+        return 1
+    fi
+    if ! verify_user_rsk_balance_decrease_for_value "$user_rsk_balance_before_wei"; then
+        return 1
+    fi
 
     restore_force_advance
 
-    local advance_funds_end_time
-    advance_funds_end_time=$(date +%s)
-    ADVANCE_FUNDS_DURATION=$((advance_funds_end_time - advance_funds_start_time))
-    success "Advance funds completed in $(format_duration "$ADVANCE_FUNDS_DURATION")"
+    local operator_take_end_time
+    operator_take_end_time=$(date +%s)
+    OPERATOR_TAKE_DURATION=$((operator_take_end_time - operator_take_start_time))
+    success "Operator take completed in $(format_duration "$OPERATOR_TAKE_DURATION")"
     echo ""
 }
 
@@ -1256,7 +1684,7 @@ print_success_summary() {
     happy)
         success "Happy path completed successfully!"
         log "Timing summary:"
-        log "  Setup:  $(format_duration "${SETUP_DURATION:-0}")"
+        log "  Setup + Committee: $(format_duration "${SETUP_DURATION:-0}")"
         log "  Pegin:  $(format_duration "${PEGIN_DURATION:-0}")"
         log "  Pegout: $(format_duration "${PEGOUT_DURATION:-0}")"
         log "  Total:  $(format_duration "$total_duration")"
@@ -1266,6 +1694,12 @@ print_success_summary() {
         log "Timing summary:"
         log "  Setup: $(format_duration "${SETUP_DURATION:-0}")"
         log "  Total: $(format_duration "$total_duration")"
+        ;;
+    committee)
+        success "Committee completed successfully!"
+        log "Timing summary:"
+        log "  Committee: $(format_duration "${SETUP_DURATION:-0}")"
+        log "  Total:     $(format_duration "$total_duration")"
         ;;
     pegin)
         success "Pegin happy path completed successfully!"
@@ -1279,10 +1713,10 @@ print_success_summary() {
         log "  Pegout: $(format_duration "${PEGOUT_DURATION:-0}")"
         log "  Total:  $(format_duration "$total_duration")"
         ;;
-    advance-funds)
-        success "Advance-funds happy path completed successfully!"
+    operator-take)
+        success "Operator-take happy path completed successfully!"
         log "Timing summary:"
-        log "  Advance funds: $(format_duration "${ADVANCE_FUNDS_DURATION:-0}")"
+        log "  Operator take: $(format_duration "${OPERATOR_TAKE_DURATION:-0}")"
         log "  Total:         $(format_duration "$total_duration")"
         ;;
     esac
@@ -1309,20 +1743,24 @@ main() {
     trap 'on_signal SIGINT' INT
     trap 'on_signal SIGTERM' TERM
 
-    clear
     log_startup_configuration
 
     SCRIPT_START_TIME=$(date +%s)
 
     case "$MODE" in
     happy)
-        run_full_setup_phase || return 1
+        run_setup_and_committee_phases || return 1
         run_pegin_phase || return 1
         run_pegout_phase || return 1
         run_pegout_verification_phase || return 1
         ;;
     setup)
-        run_full_setup_phase || return 1
+        run_setup_phase || return 1
+        SETUP_DURATION=$(( $(date +%s) - SCRIPT_START_TIME ))
+        ;;
+    committee)
+        run_committee_phase || return 1
+        SETUP_DURATION=$(( $(date +%s) - SCRIPT_START_TIME ))
         ;;
     pegin)
         run_pegin_phase || return 1
@@ -1330,8 +1768,8 @@ main() {
     pegout)
         run_pegout_phase || return 1
         ;;
-    advance-funds)
-        run_advance_funds_phase || return 1
+    operator-take)
+        run_operator_take_phase || return 1
         ;;
     *)
         echo "Error: unsupported mode '$MODE'" >&2

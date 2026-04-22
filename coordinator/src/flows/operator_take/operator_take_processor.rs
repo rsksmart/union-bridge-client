@@ -7,7 +7,7 @@ use common::msg_broker::bitvmx_types::{
     UnionTxType, VariableTypes,
 };
 use common::runtime_sync::RuntimeSync;
-use common::types::{Hash256, RskBlockAndUncles, TxIdParser};
+use common::types::{CommitteeId, Hash256, RskBlockAndUncles, TxIdParser};
 use log::{debug, error, info, trace, warn};
 use primitive_types::H256;
 use sha2::{Digest, Sha256};
@@ -16,8 +16,8 @@ use uuid::Uuid;
 
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
 use crate::event_processor::EventProcessor;
-use crate::flows::common::GlobalContext;
 use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
+use crate::flows::common::{GlobalContext, Signaling};
 use crate::flows::operator_take::operator_take_flow::{
     AdvanceFundsFlow, OperatorTakeTriggerData, StepData, Steps,
 };
@@ -58,6 +58,8 @@ where
     unconfirmed_register_operator_take: HashMap<Uuid, i16>,
     register_operator_take_retry_scheduler: TickScheduler<Uuid>,
     btc_status_retry_blocks: u32,
+    signaling: Rc<Signaling>,
+    request_pegout_tx_hashes: HashMap<(CommitteeId, u64), String>,
 }
 
 impl<CG, BC> AdvanceFundsFlowProcessor<CG, BC>
@@ -71,6 +73,7 @@ where
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
+        signaling: Rc<Signaling>,
         required_confirmations: u32,
         btc_status_retry_blocks: u32,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
@@ -92,6 +95,8 @@ where
             unconfirmed_register_operator_take: HashMap::new(),
             register_operator_take_retry_scheduler: TickScheduler::new(),
             btc_status_retry_blocks,
+            signaling,
+            request_pegout_tx_hashes: HashMap::new(),
         }
     }
 
@@ -118,6 +123,8 @@ where
             unconfirmed_register_operator_take: HashMap::new(),
             register_operator_take_retry_scheduler: TickScheduler::new(),
             btc_status_retry_blocks: 20,
+            signaling: Rc::new(Signaling::new("/tmp", "disabled")),
+            request_pegout_tx_hashes: HashMap::new(),
         }
     }
 
@@ -296,8 +303,13 @@ where
         &mut self,
         event: &OperatorTakeTriggeredEvent,
     ) -> Result<()> {
-        let trigger_data = OperatorTakeTriggerData::try_from_event(event)?;
-        let committee_id = trigger_data.committee_id;
+        let committee_id: CommitteeId = event.inner.pegoutInfo.committeeId.into();
+        let request_pegout_tx_hash = self
+            .request_pegout_tx_hashes
+            .get(&(committee_id, event.inner.streamPosition.slotId))
+            .cloned();
+        let trigger_data = OperatorTakeTriggerData::try_from_event(event, request_pegout_tx_hash)?;
+        let committee_id = trigger_data.committee_id.clone();
 
         if !self.global_context.my_committees().im_member(&committee_id) {
             debug!("Skipping OperatorTakeTriggered for committee {committee_id} - not a member",);
@@ -323,9 +335,10 @@ where
             self.rt_sync.clone(),
             self.bitvmx_broker.clone(),
             self.native_bridge_verifier.clone(),
+            self.signaling.clone(),
             flow_id,
-            event,
-        )?;
+            trigger_data,
+        );
 
         flow.complete_step(StepData::OperatorTakeTriggered)?;
         self.flows.insert(flow_id, flow);
@@ -419,6 +432,13 @@ where
 
     fn process_confirmed_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         match event {
+            RskPegManagerEvents::PegoutRequested(pegout_requested) => {
+                let committee_id: CommitteeId = pegout_requested.inner.committeeId.try_into()?;
+                self.request_pegout_tx_hashes.insert(
+                    (committee_id, pegout_requested.inner.slotId),
+                    pegout_requested.tx_hash.to_string(),
+                );
+            }
             RskPegManagerEvents::OperatorTakeTriggered(op_take) => {
                 info!(
                     "Processing confirmed OperatorTakeTriggered event: flow tx {:?}",
@@ -454,6 +474,17 @@ where
 
         self.cleanup_completed_flows();
         Ok(())
+    }
+
+    fn build_pegout_requested_event_info(
+        event: &crate::types::PegoutRequestedEvent,
+    ) -> (String, EventStatus, common::types::BlockNumber, RskPegManagerEvents) {
+        (
+            format!("advance-funds-pegout-requested-{}", event.tx_hash),
+            event.removed,
+            event.block_number,
+            RskPegManagerEvents::PegoutRequested(event.clone()),
+        )
     }
 
     fn build_operator_take_triggered_event_info(
@@ -817,6 +848,7 @@ where
         }
 
         let (id, is_removal, block_num, managed_event) = match event {
+            RskPegManagerEvents::PegoutRequested(e) => Self::build_pegout_requested_event_info(e),
             RskPegManagerEvents::OperatorTakeTriggered(e) => {
                 Self::build_operator_take_triggered_event_info(e)
             }
@@ -949,6 +981,7 @@ mod tests {
             committee_id: CommitteeId::from(committee_id.as_u128()),
             slot_id: slot_index as u64,
             slot_index,
+            request_pegout_tx_hash: None,
             user_pubkey: PublicKey::from_str(
                 "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
             )

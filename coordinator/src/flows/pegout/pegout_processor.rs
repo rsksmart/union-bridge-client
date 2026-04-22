@@ -23,8 +23,8 @@ use crate::flows::btc_signature::btc_signature_subflow::{
     BaseBtcSignatureSubFlow, BtcSignatureSubFlowApi, BtcSignatureSubFlowFactory,
     BtcSignatureSubFlowFactoryApi,
 };
-use crate::flows::common::GlobalContext;
 use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
+use crate::flows::common::{GlobalContext, Signaling};
 use crate::flows::pegout::pegout_flow::{PegoutFlow, State, StepData, Steps};
 use crate::store::{CoordinatorStoreApi, StorePrefix, cleanup_completed_flows, restore_flows};
 use crate::types::{
@@ -77,6 +77,7 @@ where
     btc_status_retry_blocks: u32,
     // Runtime environment for force flags (only active when config.environment is local)
     environment: Option<String>,
+    signaling: Rc<Signaling>,
 }
 
 impl<CG, BC, S>
@@ -99,6 +100,7 @@ where
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
         store: Rc<S>,
+        signaling: Rc<Signaling>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
         advance_funds_timeout_secs: u64,
         required_confirmations: u32,
@@ -133,6 +135,7 @@ where
             btc_confirmations,
             btc_status_retry_blocks,
             environment: environment.map(String::from),
+            signaling,
         }
     }
 
@@ -143,6 +146,7 @@ where
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
         store: &Rc<S>,
+        signaling: Rc<Signaling>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
         advance_funds_timeout_secs: u64,
         required_confirmations: u32,
@@ -156,6 +160,7 @@ where
             bitvmx_broker,
             global_context,
             Rc::clone(store),
+            signaling,
             native_bridge_verifier,
             advance_funds_timeout_secs,
             required_confirmations,
@@ -171,6 +176,7 @@ where
                 Rc::clone(&processor.bitvmx_broker),
                 saved_state,
                 Rc::clone(&processor.store),
+                processor.signaling.clone(),
                 processor.native_bridge_verifier.clone(),
             )
         };
@@ -199,8 +205,11 @@ where
     }
 
     /// Create a new flow for a `PegoutRequested` event
-    pub fn create_flow_for_pegout_requested(&mut self, event: &PegoutRequested) -> Result<()> {
-        let committee_id: CommitteeId = event.committeeId.try_into()?;
+    pub fn create_flow_for_pegout_requested(
+        &mut self,
+        event: &crate::types::PegoutRequestedEvent,
+    ) -> Result<()> {
+        let committee_id: CommitteeId = event.inner.committeeId.try_into()?;
 
         // Check if we are members of the committee
         if !self.global_context.my_committees().im_member(&committee_id) {
@@ -211,9 +220,9 @@ where
             "Handling PegoutRequested event with committee id {committee_id}, as member I should respond"
         );
 
-        let slot_index = usize::try_from(event.slotId)
-            .map_err(|_| anyhow!("slotId {} too large for usize", event.slotId))?;
-        let committee_uuid: Uuid = Uuid::from_u128(event.committeeId.try_into()?);
+        let slot_index = usize::try_from(event.inner.slotId)
+            .map_err(|_| anyhow!("slotId {} too large for usize", event.inner.slotId))?;
+        let committee_uuid: Uuid = Uuid::from_u128(event.inner.committeeId.try_into()?);
         let flow_id = Self::get_user_take_pid(committee_uuid, slot_index)?;
 
         let mut flow = PegoutFlow::new(
@@ -223,6 +232,7 @@ where
             flow_id,
             event,
             Rc::clone(&self.store),
+            self.signaling.clone(),
             self.native_bridge_verifier.clone(),
         );
 
@@ -271,7 +281,7 @@ where
                     return Ok(());
                 }
                 info!("Processing confirmed PegoutRequested event: {pr:?}");
-                self.create_flow_for_pegout_requested(&pr.inner)?;
+                self.create_flow_for_pegout_requested(pr)?;
             }
             RskPegManagerEvents::PegoutRegistered(pr) => {
                 self.handle_pegout_registered(pr)?;
@@ -932,6 +942,7 @@ mod tests {
                 broker.clone(),
                 GlobalContext::new(),
                 store.clone(),
+                Rc::new(crate::flows::common::Signaling::new("/tmp", "disabled")),
                 NativeBridgeVerifier::Dummy,
                 600,
                 5, // required_confirmations for tests
@@ -949,6 +960,9 @@ mod tests {
                 step: Steps::Done,
                 ctx: FlowContext {
                     pegout_requested: create_fake_pegout_requested(),
+                    request_pegout_tx_hash:
+                        "0xfeedfacecafebeef000000000000000000000000000000000000000000000000"
+                            .to_string(),
                     my_p2p_address: None,
                     committee_output: None,
                     peg_out_accepted: None,
@@ -964,6 +978,7 @@ mod tests {
                 self.broker.clone(),
                 state,
                 self.store.clone(),
+                std::rc::Rc::new(crate::flows::common::Signaling::new("/tmp", "disabled")),
                 NativeBridgeVerifier::Dummy,
             )
         }

@@ -675,6 +675,7 @@ mod tests {
             Rc::new(store),
             String::new(),
             1,
+            Rc::new(crate::flows::common::Signaling::new("/tmp", "disabled")),
         );
 
         let mut flow = factory.create_flow(internal_id);

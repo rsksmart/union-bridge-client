@@ -312,7 +312,13 @@ impl Server {
         let input = RequestPegoutInput { amount_in_wei, usr_pub_key };
         let res = contracts.request_pegout(input);
         match res {
-            Ok(_tx_sent_output) => (StatusCode::OK, Json(json!({ "result": "ok" }))),
+            Ok(tx_sent_output) => (
+                StatusCode::OK,
+                Json(json!({
+                    "result": "ok",
+                    "transaction_hash": tx_sent_output.transaction_hash,
+                })),
+            ),
             Err(e) => {
                 error!("Error requesting pegout: {e}");
                 (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() })))

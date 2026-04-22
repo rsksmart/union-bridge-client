@@ -12,6 +12,7 @@ use common::types::CommitteeId;
 use hex;
 use log::{debug, info, trace, warn};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{
     GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,
@@ -21,7 +22,7 @@ use union_contracts::bindings::pegout_manager::PegoutManager::{PegoutRegistered,
 use uuid::Uuid;
 
 use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
-use crate::flows::common::{COMM_KEY_INDEX, build_communication_data};
+use crate::flows::common::{COMM_KEY_INDEX, Signaling, build_communication_data};
 use crate::store::{CoordinatorStoreApi, StoreKey};
 
 pub const PROGRAM_TYPE_USER_TAKE: &str = "take";
@@ -62,6 +63,7 @@ pub enum StepData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlowContext {
     pub pegout_requested: PegoutRequested,
+    pub request_pegout_tx_hash: String,
     pub my_p2p_address: Option<CommsAddress>,
     pub committee_output: Option<GetCommitteeOutput>,
     pub peg_out_accepted: Option<PegOutAccepted>,
@@ -88,6 +90,7 @@ where
     bitvmx_broker: Rc<BC>,
     state: State,
     store: Rc<S>,
+    signaling: Rc<Signaling>,
     native_bridge_verifier: NativeBridgeVerifier<CG>,
 }
 
@@ -103,8 +106,9 @@ where
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
         internal_id: Uuid,
-        pegout_requested: &PegoutRequested,
+        pegout_requested: &crate::types::PegoutRequestedEvent,
         store: Rc<S>,
+        signaling: Rc<Signaling>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Self {
         Self {
@@ -115,7 +119,8 @@ where
                 flow_id: internal_id,
                 step: Steps::PegoutRequested,
                 ctx: FlowContext {
-                    pegout_requested: pegout_requested.clone(),
+                    pegout_requested: pegout_requested.inner.clone(),
+                    request_pegout_tx_hash: pegout_requested.tx_hash.to_string(),
                     my_p2p_address: None,
                     committee_output: None,
                     peg_out_accepted: None,
@@ -125,6 +130,7 @@ where
                 },
             },
             store,
+            signaling,
             native_bridge_verifier,
         }
     }
@@ -135,9 +141,10 @@ where
         bitvmx_broker: Rc<BC>,
         state: State,
         store: Rc<S>,
+        signaling: Rc<Signaling>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Self {
-        Self { contracts, rt_sync, bitvmx_broker, state, store, native_bridge_verifier }
+        Self { contracts, rt_sync, bitvmx_broker, state, store, signaling, native_bridge_verifier }
     }
 
     fn persist_state(&self) -> Result<()> {
@@ -219,6 +226,7 @@ where
             }
             Steps::Done => {
                 if previous_step == Steps::RegisterPegout {
+                    self.write_completion_marker()?;
                     info!("PegoutFlow Done: {}", self.state.flow_id);
                 }
             }
@@ -452,6 +460,21 @@ where
         );
 
         self.send_bitvmx_msg(msg)
+    }
+
+    fn write_completion_marker(&self) -> Result<()> {
+        let payload = json!({
+            "request_pegout_tx_hash": self.state.ctx.request_pegout_tx_hash,
+            "committee_id": self.state.ctx.pegout_requested.committeeId.to_string(),
+            "stream_id": self.state.ctx.pegout_requested.streamId,
+            "packet_number": self.state.ctx.pegout_requested.packetNumber,
+            "slot_id": self.state.ctx.pegout_requested.slotId,
+            "amount": self.state.ctx.pegout_requested.amount.to_string(),
+            "user_take_txid": self.state.ctx.peg_out_accepted.as_ref().map(|accepted| accepted.user_take_txid.to_string()),
+            "registered_txid": self.state.ctx.pegout_registered_tx,
+        });
+
+        self.signaling.signal_done("pegout", self.state.flow_id, &payload)
     }
 
     fn pegout_requested_to_bitvmx_request(

@@ -279,12 +279,13 @@ For the automated local happy-path flow:
 ```bash
 ./cli-infra.sh --start-blockchains [--fresh]
 ./cli-infra.sh --start-bitvmx [--fresh]
-bash tests/run-happy-path.sh
-bash tests/run-happy-path.sh --ops 4
-bash tests/run-happy-path.sh --setup
-bash tests/run-happy-path.sh --pegin
-bash tests/run-happy-path.sh --pegout
-bash tests/run-happy-path.sh --advance-funds
+bash tests/run-flows.sh
+bash tests/run-flows.sh --ops 4
+bash tests/run-flows.sh --setup
+bash tests/run-flows.sh --committee
+bash tests/run-flows.sh --pegin
+bash tests/run-flows.sh --pegout
+bash tests/run-flows.sh --operator-take
 ./cli-infra.sh --stop
 ```
 
@@ -294,17 +295,19 @@ before background mining starts, so the automated happy path only needs to fund 
 Notes:
 
 - `./cli-infra.sh --start-blockchains` starts Anvil + bitcoind and background mining.
+- Start `./cli-run.sh` for local mode or `docker/operator/start-operators.sh` for docker mode before using the happy-path script.
 - If mining gets stuck, run `./cli-infra.sh --stop-mining` before restarting it.
-- `bash tests/run-happy-path.sh` runs the default `happy` mode.
-- `bash tests/run-happy-path.sh --ops 4` does the same, but shows the optional operator-count override.
-- `bash tests/run-happy-path.sh --setup` runs only the preliminary phases so you can later launch `--pegin` and `--pegout` separately against the prepared state.
-- `bash tests/run-happy-path.sh --pegin` runs only the pegin flow and reuses existing wallet, funding, whitelist, stream, and committee state.
-- `bash tests/run-happy-path.sh --pegout` runs only the pegout flow and reuses existing wallet, funding, whitelist, stream, and committee state.
-- `bash tests/run-happy-path.sh --advance-funds` runs a pegout that forces the advance-funds path in local mode, writes the selected operator address to `/tmp/FORCE_ADVANCE`, and reuses existing wallet, funding, whitelist, stream, and committee state.
+- `bash tests/run-flows.sh` runs the default `happy` mode.
+- `bash tests/run-flows.sh --ops 4` does the same, but shows the optional operator-count override.
+- `bash tests/run-flows.sh --setup` runs only the preparation phases: member wallet prep, operator funding, and whitelist.
+- `bash tests/run-flows.sh --committee` runs only the committee creation phases: apply-stream and committee completion wait.
+- `bash tests/run-flows.sh --pegin` runs only the pegin flow and reuses existing setup and committee state.
+- `bash tests/run-flows.sh --pegout` runs only the pegout flow and reuses existing setup and committee state.
+- `bash tests/run-flows.sh --operator-take` runs a pegout that forces the operator-take path, writes the selected operator address to `/tmp/FORCE_ADVANCE` in the active runtime, and reuses existing setup and committee state.
 - Use `./cli-infra.sh --start --fresh` instead when you want the all-in-one stack, including BitVMX, from the outset.
 
 The user flows now require explicit Bitcoin public keys in the request body. For manual testing, the same derivation
-used by `tests/run-happy-path.sh` is:
+used by `tests/run-flows.sh` is:
 
 ```bash
 # 32-byte x-only pubkey for pegin
