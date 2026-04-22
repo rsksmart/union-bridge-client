@@ -23,8 +23,8 @@ use crate::flows::btc_signature::btc_signature_subflow::{
     BaseBtcSignatureSubFlow, BtcSignatureSubFlowApi, BtcSignatureSubFlowFactory,
     BtcSignatureSubFlowFactoryApi,
 };
-use crate::flows::common::GlobalContext;
 use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
+use crate::flows::common::{GlobalContext, Signaling};
 use crate::flows::pegin::pegin_flow::{PeginFlow, State, StepData, Steps};
 use crate::flows::pegin::utils::get_temp_pegin_pid;
 use crate::store::{
@@ -75,6 +75,7 @@ where
     unconfirmed_accept_pegin: HashMap<Uuid, i16>,
     accept_pegin_retry_scheduler: TickScheduler<Uuid>,
     store: Rc<S>,
+    signaling: Rc<Signaling>,
     native_bridge_verifier: NativeBridgeVerifier<CG>,
     required_confirmations: u32,
     btc_confirmations: u32,
@@ -101,6 +102,7 @@ where
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
         store: &Rc<S>,
+        signaling: Rc<Signaling>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
         required_confirmations: u32,
         btc_confirmations: u32,
@@ -135,6 +137,7 @@ where
             unconfirmed_accept_pegin: HashMap::new(),
             accept_pegin_retry_scheduler: TickScheduler::new(),
             store: Rc::clone(store),
+            signaling,
             native_bridge_verifier,
             required_confirmations,
             btc_confirmations,
@@ -148,6 +151,7 @@ where
                 Rc::clone(&processor.bitvmx_broker),
                 saved_state,
                 Rc::clone(&processor.store),
+                processor.signaling.clone(),
                 processor.native_bridge_verifier.clone(),
             )
         };
@@ -644,6 +648,7 @@ where
             Rc::clone(&self.bitvmx_broker),
             tx_id,
             Rc::clone(&self.store),
+            self.signaling.clone(),
             self.native_bridge_verifier.clone(),
         );
 

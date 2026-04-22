@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use anyhow::Result;
 use common::types::{BlockNumber, RskBlock, RskBlockAndUncles};
-use log::{debug, info, warn};
+use log::{debug, info, trace, warn};
 
 use crate::types::RskPegManagerEvents;
 
@@ -179,7 +179,7 @@ impl BlockchainView {
         if let Some(ref prev_tip) = prev_tip {
             Self::validate_consecutive_block(new_block.block(), prev_tip.block());
         }
-        debug!("Adding new tip {} ({}) to BlockchainView", new_block.number(), new_block.hash());
+        trace!("Adding new tip {} ({}) to BlockchainView", new_block.number(), new_block.hash());
         self.notify_added_block(new_block);
     }
 

@@ -17,7 +17,6 @@ use transaction_dispatcher::config::Config as TxDispatcherConfig;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config";
-
 fn create_broker(
     host: String,
     port: u16,
@@ -55,6 +54,7 @@ fn parse_cli_args() -> Option<String> {
                 .help("Configuration profile name (e.g., local, docker, alphanet)"),
         )
         .get_matches();
+
     Logger::init(matches.get_one::<String>(LOGGER_CLI_FLAG)).expect("Failed to load logger");
     matches.get_one::<String>(CONFIG_CLI_FLAG).cloned()
 }
@@ -179,6 +179,7 @@ fn main() -> Result<()> {
         config.flows.pegout.advance_funds_timeout_secs,
         config.flows.committee.drp_program_definition.clone(),
         config.flows.native_bridge.btc_confirmations_buffer,
+        store_path,
     );
     coordinator.run().inspect_err(|e| {
         error!("Unrecoverable error running coordinator: {e:?}"); // signal other threads to shut down

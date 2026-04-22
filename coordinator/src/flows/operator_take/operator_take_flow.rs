@@ -12,11 +12,13 @@ use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::{Address, CommitteeId, Hash256};
 use log::{debug, info, trace};
+use serde_json::json;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{RegisterAdvanceFundsInput, RequestPeginInput};
 use union_contracts::bindings::pegout_manager::PegoutManager::PegoutRegistered;
 use uuid::Uuid;
 
+use crate::flows::common::Signaling;
 use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
 use crate::types::OperatorTakeTriggeredEvent;
 
@@ -66,13 +68,17 @@ pub struct OperatorTakeTriggerData {
     pub committee_id: CommitteeId,
     pub slot_id: u64,
     pub slot_index: usize,
+    pub request_pegout_tx_hash: Option<String>,
     pub user_pubkey: PublicKey,
     pub take_operator_address: Address,
     pub operator_take_pubkey: PublicKey,
 }
 
 impl OperatorTakeTriggerData {
-    pub fn try_from_event(event: &OperatorTakeTriggeredEvent) -> Result<Self> {
+    pub fn try_from_event(
+        event: &OperatorTakeTriggeredEvent,
+        request_pegout_tx_hash: Option<String>,
+    ) -> Result<Self> {
         let inner = &event.inner;
         let pegout_txid = Hash256::from(inner.pegoutTxid);
         let pegout_id = Hash256::from(inner.pegoutInfo.pegoutId);
@@ -90,6 +96,7 @@ impl OperatorTakeTriggerData {
             committee_id,
             slot_id,
             slot_index,
+            request_pegout_tx_hash,
             user_pubkey,
             take_operator_address,
             operator_take_pubkey,
@@ -119,6 +126,7 @@ where
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
     native_bridge_verifier: NativeBridgeVerifier<CG>,
+    signaling: Rc<Signaling>,
     pub(crate) state: FlowContext,
 }
 
@@ -132,16 +140,16 @@ where
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
+        signaling: Rc<Signaling>,
         flow_id: Uuid,
-        event: &OperatorTakeTriggeredEvent,
-    ) -> Result<Self> {
-        let trigger_data = OperatorTakeTriggerData::try_from_event(event)?;
-
-        Ok(Self {
+        trigger_data: OperatorTakeTriggerData,
+    ) -> Self {
+        Self {
             contracts,
             rt_sync,
             bitvmx_broker,
             native_bridge_verifier,
+            signaling,
             state: FlowContext {
                 flow_id,
                 step: Steps::OperatorTakeTriggered,
@@ -153,7 +161,7 @@ where
                 reimbursement_kickoff_spv: None,
                 operator_take_spv: None,
             },
-        })
+        }
     }
 
     #[cfg(test)]
@@ -169,6 +177,7 @@ where
             rt_sync: RuntimeSync::new().expect("Failed to create runtime sync for test flow"),
             bitvmx_broker,
             native_bridge_verifier: NativeBridgeVerifier::Dummy,
+            signaling: Rc::new(Signaling::new("/tmp", "disabled")),
             state: FlowContext {
                 flow_id,
                 step,
@@ -311,6 +320,7 @@ where
                 );
             }
             Steps::Done => {
+                self.write_completion_marker()?;
                 info!("AdvanceFundsFlow {}: Done", self.state.flow_id);
             }
         }
@@ -587,6 +597,23 @@ where
         self.contracts.my_address() == self.state.trigger_data.take_operator_address
     }
 
+    fn write_completion_marker(&self) -> Result<()> {
+        let payload = json!({
+            "request_pegout_tx_hash": self.state.trigger_data.request_pegout_tx_hash,
+            "pegout_txid": self.state.trigger_data.pegout_txid.to_string(),
+            "pegout_id": self.state.trigger_data.pegout_id.to_string(),
+            "committee_id": self.state.trigger_data.committee_id.to_string(),
+            "slot_id": self.state.trigger_data.slot_id,
+            "slot_index": self.state.trigger_data.slot_index,
+            "selected_operator_address": self.state.trigger_data.take_operator_address.to_string(),
+            "was_selected_operator": self.was_selected_operator(),
+            "accept_pegin_txid": self.state.accept_pegin_txid.map(|txid| format!("{txid:#066x}")),
+            "advance_funds_txid": self.state.advance_funds_registered.as_ref().map(|event| event.txid.to_string()),
+        });
+
+        self.signaling.signal_done("advance-funds", self.state.flow_id, &payload)
+    }
+
     pub fn flow_id(&self) -> Uuid {
         self.state.flow_id
     }
@@ -665,6 +692,7 @@ mod tests {
             committee_id: CommitteeId::from(committee_id.as_u128()),
             slot_id: slot_index as u64,
             slot_index,
+            request_pegout_tx_hash: None,
             user_pubkey: PublicKey::from_str(
                 "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
             )

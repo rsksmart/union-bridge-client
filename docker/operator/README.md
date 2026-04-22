@@ -77,6 +77,8 @@ Notes:
 - This sequence starts the blockchains from `docker/local-infra` and the wrapper's background mining loop.
 - `start-operators.sh` includes the `bitvmx-client` service in the operator compose stack.
 - `bash start-operators.sh up -d` reuses the current operator containers and volumes.
+- After the Docker operator runtime is up, you can use `bash tests/run-flows.sh --env docker --setup`,
+  then `--committee`, then the user-flow modes.
 
 For broader workflow context, go back to the [Contributing Guide](../../CONTRIBUTING.md) or the
 [Local Infra Guide](../local-infra/README.md).

@@ -711,14 +711,14 @@ fn launch_client_services(
                 client_id, block_port, log_port
             );
 
-            // wait for both indexer broker ports to be listening (up to 60 seconds)
+            // wait for both indexer broker ports to be listening (up to 180 seconds)
             if let Some(port) = block_port {
-                wait_for_port(port, Duration::from_secs(60))
+                wait_for_port(port, Duration::from_secs(180))
                     .with_context(|| format!("block-indexer broker not ready for {}", client_id))?;
                 println!("  block-indexer broker ready on port {}", port);
             }
             if let Some(port) = log_port {
-                wait_for_port(port, Duration::from_secs(60))
+                wait_for_port(port, Duration::from_secs(180))
                     .with_context(|| format!("log-indexer broker not ready for {}", client_id))?;
                 println!("  log-indexer broker ready on port {}", port);
             }
