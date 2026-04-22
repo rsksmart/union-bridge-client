@@ -100,127 +100,33 @@ cleanup_dir() {
   rm -rf "${path}"
 }
 
-latest_coordinator_start_line() {
-  local path="$1"
-
-  awk '/Loading configuration profile:/ { line = NR } END { if (line) print line }' "${path}"
-}
-
-list_coordinator_instances() {
-  local source_dir="$1"
-  local path
-  local base
-  local instance
-  local instances=""
-
-  shopt -s nullglob
-  for path in "${source_dir}"/coordinator-*.log; do
-    base="$(basename "${path}")"
-    if [[ "${base}" =~ ^coordinator-([0-9]+)(\.[0-9]+)?\.log$ ]]; then
-      instance="${BASH_REMATCH[1]}"
-      case " ${instances} " in
-        *" ${instance} "*) ;;
-        *) instances="${instances} ${instance}" ;;
-      esac
-    fi
-  done
-  shopt -u nullglob
-
-  for instance in ${instances}; do
-    printf '%s\n' "${instance}"
-  done | sort -n
-}
-
-build_latest_coordinator_session_snapshot() {
-  local raw_dir="$1"
-  local snapshot_root="$2"
-  local instance="$3"
-  local snapshot_path="${snapshot_root}/union-client-${instance}.log"
-  local merged_path="${snapshot_path}.tmp"
-  local path
-  local last_start_line
-  local rotated_paths=()
-
-  rm -f "${merged_path}"
-  : > "${merged_path}"
-
-  shopt -s nullglob
-  rotated_paths=( "${raw_dir}/coordinator-${instance}."*.log )
-  shopt -u nullglob
-
-  if [[ ${#rotated_paths[@]} -gt 0 ]]; then
-    while IFS= read -r path; do
-      [[ -n "${path}" ]] || continue
-      cat "${path}" >> "${merged_path}"
-    done < <(
-      for path in "${rotated_paths[@]}"; do
-        if [[ "$(basename "${path}")" =~ ^coordinator-[0-9]+\.([0-9]+)\.log$ ]]; then
-          printf '%08d\t%s\n' "${BASH_REMATCH[1]}" "${path}"
-        fi
-      done | sort -r -n | cut -f2-
-    )
-  fi
-
-  if [[ -f "${raw_dir}/coordinator-${instance}.log" ]]; then
-    cat "${raw_dir}/coordinator-${instance}.log" >> "${merged_path}"
-  fi
-
-  if [[ ! -s "${merged_path}" ]]; then
-    rm -f "${merged_path}"
-    return 1
-  fi
-
-  last_start_line="$(latest_coordinator_start_line "${merged_path}")"
-  if [[ -n "${last_start_line}" ]]; then
-    tail -n +"${last_start_line}" "${merged_path}" > "${snapshot_path}"
-    echo "[${display_ts}] Extracted latest run snapshot for coordinator-${instance}.log (start line ${last_start_line})"
-    rm -f "${merged_path}"
-  else
-    mv "${merged_path}" "${snapshot_path}"
-    echo "[${display_ts}] Extracted latest run snapshot for coordinator-${instance}.log (no startup marker)"
-  fi
-}
-
 backup_local_coordinator_logs() {
   local source_dir="${PROJECT_ROOT}/logs"
-  local temp_dir=""
   local copied_any=false
-  local built_snapshot=false
+  local path
   local instance
+  local target_path
 
   if [[ ! -d "${source_dir}" ]]; then
     capture_missing "coordinator" "Missing local log directory: ${source_dir}" "local coordinator logs"
     return
   fi
 
-  temp_dir="$(mktemp -d "${log_dir}/.coordinator.XXXXXX")"
-  trap "cleanup_dir '${temp_dir}'" RETURN
-
   for path in "${source_dir}"/coordinator-*.log; do
-    local target_path
-
     if [[ ! -e "${path}" ]]; then
       continue
     fi
     copied_any=true
-    target_path="${temp_dir}/$(basename "${path}")"
-    cp "${path}" "${target_path}"
+    if [[ "$(basename "${path}")" =~ ^coordinator-([0-9]+)\.log$ ]]; then
+      instance="${BASH_REMATCH[1]}"
+      target_path="${log_dir}/union-client-${instance}.log"
+      cp "${path}" "${target_path}"
+      echo "[${display_ts}] Copied current coordinator-${instance}.log to $(basename "${target_path}")"
+    fi
   done
 
   if [[ "${copied_any}" != "true" ]]; then
     capture_missing "coordinator" "No local coordinator logs found in ${source_dir}" "local coordinator logs"
-    return
-  fi
-
-  while IFS= read -r instance; do
-    [[ -n "${instance}" ]] || continue
-    if build_latest_coordinator_session_snapshot "${temp_dir}" "${log_dir}" "${instance}"; then
-      built_snapshot=true
-    fi
-  done < <(list_coordinator_instances "${temp_dir}")
-
-  if [[ "${built_snapshot}" != "true" ]]; then
-    echo "[${display_ts}] Copied local coordinator logs but extracted no cargo run snapshots"
   fi
 }
 

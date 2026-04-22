@@ -13,6 +13,30 @@ set -euo pipefail
 # change to script directory to ensure relative paths work
 cd "$(dirname "$0")"
 
+rotate_logs_dir() {
+  local timestamp
+  local rotated_dir
+
+  if [[ ! -d "logs" ]]; then
+    return
+  fi
+
+  timestamp="$(date +%Y%m%d%H%M%S)"
+  rotated_dir="logs/${timestamp}"
+
+  while [[ -e "${rotated_dir}" ]]; do
+    timestamp="$(date +%Y%m%d%H%M%S)"
+    rotated_dir="logs/${timestamp}"
+    sleep 1
+  done
+
+  mkdir -p "${rotated_dir}"
+
+  if find "logs" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
+    find "logs" -mindepth 1 -maxdepth 1 -exec mv {} "${rotated_dir}/" \;
+  fi
+}
+
 # handle --logs option
 if [[ "${1:-}" == "--logs" ]]; then
   (
@@ -34,6 +58,8 @@ if [[ "${1:-}" == "--logs" ]]; then
   )
   exit 0
 fi
+
+rotate_logs_dir
 
 # forward all arguments to run
 RUST_BACKTRACE=1 exec cargo run --manifest-path cli/run/Cargo.toml -- "$@"
