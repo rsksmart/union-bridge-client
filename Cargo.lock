@@ -7504,6 +7504,7 @@ dependencies = [
  "tokio",
  "tower-http",
  "transaction-dispatcher",
+ "uuid 1.23.0",
 ]
 
 [[package]]

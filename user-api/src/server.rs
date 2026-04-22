@@ -7,15 +7,19 @@ use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
 use common::msg_broker::broker::{BrokerServer, BrokerServerApi, Identifier};
-use common::msg_broker::types::FromServer;
+use common::msg_broker::types::{FromServer, MemberFundingInfo, ToServer};
 use common::shutdown_flag::ShutdownFlag;
+use common::types::Address;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
+use tokio::sync::{Mutex, Notify};
+use tokio::time::{sleep, Instant};
 use tower_http::timeout::TimeoutLayer;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{PeginAddressInput, RequestPegoutInput};
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RequestPeginInput {
@@ -29,6 +33,112 @@ pub struct UserRequestPegoutInput {
     pub usr_pub_key: String,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AddressResponse {
+    pub address: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MemberFundingInfoResponse {
+    pub bitcoin_address: String,
+    pub rsk_address: String,
+}
+
+struct FundingSyncBroker {
+    broker: Arc<BrokerServer>,
+    destination: Identifier,
+    funding_info_state: Mutex<FundingInfoState>,
+}
+
+#[derive(Clone)]
+enum FundingInfoState {
+    Empty,
+    Loading(Arc<Notify>),
+    Ready(MemberFundingInfo),
+}
+
+impl FundingSyncBroker {
+    async fn send(&self, msg: &FromServer) -> Result<(), (StatusCode, Json<Value>)> {
+        self.broker.send(msg, &self.destination).map_err(internal_error)
+    }
+
+    async fn request_funding_info(&self) -> Result<MemberFundingInfo, (StatusCode, Json<Value>)> {
+        loop {
+            let waiter = {
+                let mut state = self.funding_info_state.lock().await;
+                match &*state {
+                    FundingInfoState::Ready(info) => return Ok(info.clone()),
+                    FundingInfoState::Loading(notify) => Some(notify.clone()),
+                    FundingInfoState::Empty => {
+                        let notify = Arc::new(Notify::new());
+                        *state = FundingInfoState::Loading(notify.clone());
+                        None
+                    }
+                }
+            };
+
+            if let Some(notify) = waiter {
+                notify.notified().await;
+                continue;
+            }
+
+            let result = self.fetch_funding_info().await;
+            let mut state = self.funding_info_state.lock().await;
+            let notify = match &*state {
+                FundingInfoState::Loading(notify) => notify.clone(),
+                FundingInfoState::Empty | FundingInfoState::Ready(_) => Arc::new(Notify::new()),
+            };
+            if let Ok(info) = &result {
+                *state = FundingInfoState::Ready(info.clone());
+            } else {
+                *state = FundingInfoState::Empty;
+            }
+            notify.notify_waiters();
+            return result;
+        }
+    }
+
+    async fn fetch_funding_info(&self) -> Result<MemberFundingInfo, (StatusCode, Json<Value>)> {
+        info!("Received member_funding_info for destination: {}", self.destination);
+        let req_id = Uuid::new_v4();
+        let deadline = Instant::now() + Duration::from_secs(9);
+
+        self.broker
+            .send(&FromServer::MemberRequest(req_id), &self.destination)
+            .map_err(internal_error)?;
+
+        loop {
+            if Instant::now() >= deadline {
+                return Err((
+                    StatusCode::REQUEST_TIMEOUT,
+                    Json(json!({ "error": "timed out waiting for member funding info" })),
+                ));
+            }
+
+            let message = self.broker.try_recv().map_err(internal_error)?;
+
+            match message {
+                Some((ToServer::MemberFundingInfo(response_id, info), _sender))
+                    if response_id == req_id =>
+                {
+                    return Ok(info);
+                }
+                Some((ToServer::BitVmxWalletError(response_id, error), _sender))
+                    if response_id == req_id =>
+                {
+                    return Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({ "error": error })),
+                    ));
+                }
+                Some(_) | None => {
+                    sleep(Duration::from_millis(50)).await;
+                }
+            }
+        }
+    }
+}
+
 pub struct Server {
     listener: TcpListener,
     app: Router,
@@ -36,27 +146,27 @@ pub struct Server {
 }
 
 impl Server {
-    pub async fn new<UCG, MCG>(
+    pub async fn new<UCG>(
         listener: TcpListener,
         broker_server: Arc<BrokerServer>,
         shutdown_flag: ShutdownFlag,
         coordinator_client_id: Identifier,
         user_contracts_gateway: UCG,
-        member_contracts_gateway: MCG,
     ) -> Self
     where
         UCG: RskContractsGatewayApi + Send + Sync + 'static,
-        MCG: RskContractsGatewayApi + Send + Sync + 'static,
     {
         // Wrap gateways for sync access
         let user_sync_gateway: Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi> =
             Arc::new(crate::sync_contracts_gateway::SyncContractsGateway::new(
                 user_contracts_gateway,
             ));
-        let member_sync_gateway: Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi> =
-            Arc::new(crate::sync_contracts_gateway::SyncContractsGateway::new(
-                member_contracts_gateway,
-            ));
+
+        let funding_broker = Arc::new(FundingSyncBroker {
+            broker: broker_server.clone(),
+            destination: coordinator_client_id.clone(),
+            funding_info_state: Mutex::new(FundingInfoState::Empty),
+        });
 
         let mut app = Router::new().route("/health", get(Self::health_check));
 
@@ -66,6 +176,7 @@ impl Server {
             Router::new()
                 .route("/pegin-address", post(Self::pegin_address))
                 .route("/request-pegout", post(Self::request_pegout))
+                .route("/rsk-address", get(Self::user_rsk_address))
                 .layer(Extension(user_sync_gateway.clone())),
         );
 
@@ -74,14 +185,14 @@ impl Server {
             "/member",
             Router::new()
                 .route("/apply-stream", post(Self::apply_stream))
-                .route("/bitvmx-address", get(Self::bitvmx_address))
-                .layer(Extension(member_sync_gateway.clone())),
+                .layer(Extension(broker_server))
+                .route("/funding-info", get(Self::member_funding_info))
+                .layer(Extension(funding_broker)),
         );
 
-        app = app.layer((
-            TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(10)),
-            Extension(broker_server.clone()),
-            Extension(coordinator_client_id),
+        app = app.layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(10),
         ));
 
         Self { listener, app, shutdown_flag }
@@ -98,33 +209,33 @@ impl Server {
         (StatusCode::OK, Json(json!({ "status": "ok" })))
     }
 
-    async fn bitvmx_address(
-        Extension(broker): Extension<Arc<BrokerServer>>,
-        Extension(destination): Extension<Identifier>,
+    async fn member_funding_info(
+        Extension(broker): Extension<Arc<FundingSyncBroker>>,
     ) -> impl IntoResponse {
-        info!("Received bitvmx_address for destination: {destination}",);
-
-        let res = broker.send(&FromServer::MemberRequest, &destination);
-        match res {
-            Ok(_) => (StatusCode::OK, Json(json!({ "result": "ok" }))),
-            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))),
+        match broker.request_funding_info().await {
+            Ok(info) => (
+                StatusCode::OK,
+                Json(json!(MemberFundingInfoResponse {
+                    bitcoin_address: info.bitcoin_address,
+                    rsk_address: info.rsk_address,
+                })),
+            ),
+            Err(err) => err,
         }
     }
 
     async fn apply_stream(
-        Extension(broker): Extension<Arc<BrokerServer>>,
-        Extension(destination): Extension<Identifier>,
+        Extension(broker): Extension<Arc<FundingSyncBroker>>,
         Json(payload): Json<Value>,
     ) -> impl IntoResponse {
         info!(
             "Received apply stream request for destination: {} with payload: {:?}",
-            destination, payload
+            broker.destination, payload
         );
 
-        let res = broker.send(&FromServer::UserRequest(payload), &destination);
-        match res {
+        match broker.send(&FromServer::UserRequest(payload)).await {
             Ok(_) => (StatusCode::OK, Json(json!({ "result": "ok" }))),
-            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))),
+            Err(err) => err,
         }
     }
 
@@ -163,6 +274,15 @@ impl Server {
         }
     }
 
+    async fn user_rsk_address(
+        Extension(contracts): Extension<
+            Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi>,
+        >,
+    ) -> impl IntoResponse {
+        let address: Address = contracts.my_address();
+        (StatusCode::OK, Json(json!(AddressResponse { address: address.to_string() })))
+    }
+
     async fn request_pegout(
         Extension(contracts): Extension<
             Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi>,
@@ -199,6 +319,10 @@ impl Server {
             }
         }
     }
+}
+
+fn internal_error(err: impl ToString) -> (StatusCode, Json<Value>) {
+    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": err.to_string() })))
 }
 
 /// Validates a 32-byte X-only public key with 0x prefix

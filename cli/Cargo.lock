@@ -838,9 +838,9 @@ dependencies = [
 
 [[package]]
 name = "bitcoin"
-version = "0.32.8"
+version = "0.32.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e499f9fc0407f50fe98af744ab44fa67d409f76b6772e1689ec8485eb0c0f66"
+checksum = "ad8929a18b8e33ea6b3c09297b687baaa71fb1b97353243a3f1029fad5c59c5b"
 dependencies = [
  "base58ck",
  "bech32 0.11.1",
@@ -3014,6 +3014,7 @@ version = "0.3.0"
 dependencies = [
  "alloy-primitives",
  "anyhow",
+ "bitcoin 0.32.6",
  "clap",
  "key-manager",
  "op-funding",
@@ -3021,6 +3022,7 @@ dependencies = [
  "rpassword",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 
@@ -4737,7 +4739,7 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "base64 0.13.1",
- "bitcoin 0.32.8",
+ "bitcoin 0.32.6",
  "bitcoincore-rpc",
  "bollard",
  "chrono",

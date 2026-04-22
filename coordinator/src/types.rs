@@ -36,6 +36,7 @@ use union_contracts::bindings::signature_manager::SignatureManager::{
     AllOperatorTakeTxidsAdded, SignatureManagerEvents,
 };
 use union_contracts::bindings::stream_manager::StreamManager::StreamManagerEvents;
+use uuid::Uuid;
 
 use crate::user_requests::ApplyToStream;
 
@@ -62,7 +63,7 @@ pub enum RskPegManagerEvents {
 
 #[derive(Debug, Deserialize)]
 pub enum UserRequests {
-    GetBitVMXFundingAddress,
+    FundingInfo(Uuid),
     ApplyToStream(ApplyToStream),
 }
 

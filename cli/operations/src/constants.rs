@@ -17,11 +17,9 @@ pub fn operator_and_prover_counts() -> (u64, u64) {
     (operator_count, prover_count)
 }
 
-// project name for one-operator deployments
-pub const ONE_OPERATOR_COMPOSE_PROJECT: &str = "union-operator";
-
 // local anvil default address
 pub const LOCAL_ANVIL_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 
 // Must stay aligned with the packet size used by the committee setup flow.
 pub const COMMITTEE_PACKET_SIZE: u64 = 100; // TODO(iago) this should come from config
+pub const UNION_BRIDGE_DIR: &str = ".union_bridge";

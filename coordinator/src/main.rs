@@ -116,14 +116,14 @@ fn main() -> Result<()> {
 
     let user_pubkey_hash = require_pubkey_hash(&config.coordinator.user.pubkey_hash, "user")?;
     debug!("Coordinator user broker target pubkey_hash={user_pubkey_hash}");
-    let user_broker = create_broker(
+    let user_broker = Rc::new(create_broker(
         config.coordinator.user.host,
         config.coordinator.user.port,
         user_pubkey_hash,
         broker_client_id,
         broker_key_path,
         "user",
-    )?;
+    )?);
 
     let bitvmx_pubkey_hash = require_pubkey_hash(&config.coordinator.bitvmx.pubkey_hash, "bitvmx")?;
     debug!("Coordinator BitVMX broker target pubkey_hash={bitvmx_pubkey_hash}");
@@ -141,7 +141,7 @@ fn main() -> Result<()> {
     let monitor = Monitor::new(
         log_broker,
         block_broker,
-        user_broker,
+        user_broker.clone(),
         bitvmx_broker.clone(),
         contract_addresses,
     );
@@ -165,6 +165,7 @@ fn main() -> Result<()> {
         monitor,
         contracts_gateway,
         &bitvmx_broker,
+        user_broker,
         store,
         shutdown_flag.clone(),
         bitcoin_network,

@@ -304,18 +304,13 @@ where
 {
     fn process_user_request(&mut self, req: &UserRequests) -> Result<()> {
         info!("Processing user request: {req:?}");
-        match req {
-            UserRequests::ApplyToStream(input) => {
-                let internal_id = Uuid::new_v4();
-                let mut flow = self.flow_factory.create_flow(internal_id);
+        if let UserRequests::ApplyToStream(input) = req {
+            let internal_id = Uuid::new_v4();
+            let mut flow = self.flow_factory.create_flow(internal_id);
 
-                Self::continue_flow(&mut flow, StepData::UserRequest(input.clone()));
+            Self::continue_flow(&mut flow, StepData::UserRequest(input.clone()));
 
-                self.flows.insert(internal_id, flow);
-            }
-            UserRequests::GetBitVMXFundingAddress => {
-                trace!("Ignoring user request: {req:?}");
-            }
+            self.flows.insert(internal_id, flow);
         }
         Ok(())
     }
