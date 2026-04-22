@@ -82,11 +82,17 @@ Configuration ownership is:
 | `BASE_STORAGE_PATH` | shell or `.envrc` | `./cli-run.sh`, `./cli-operations.sh`, `./cli-bitcoin-wallet.sh`, some local scripts | required for local cargo workflows and wallet DB resolution |
 | `KEY_STORE_PASSWORD` | shell or `.envrc`; can also be written into generated `docker-service.env` during setup | local cargo client, setup helpers, Docker operator runtime | required when creating or unlocking member/user keystores |
 | `USER_BITCOIN_WIF` | shell or `.envrc`; can also be written into generated `docker-service.env` during setup | user flows, wallet helpers, Docker operator runtime, happy-path testing | required for user-facing Bitcoin operations |
+| `MEMBER_BITCOIN_WIF` | shell or `.envrc` | `./cli-bitcoin-wallet.sh`, happy-path testing | required for member wallet operations in local happy-path setup and automated flow tests |
 | `BITCOIND_URL` | shell or `.envrc` | `./cli-setup-operators.sh` while patching generated BitVMX configs | required before preparing operator artifacts for Docker-backed local flows |
 | `docker-compose.env` | generated under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/` | `docker/operator/start-operators.sh` / Docker compose | Docker operator runtime only |
 | `docker-service.env` | generated under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/` | operator containers | Docker operator runtime only |
 | `UB__...` overrides | shell, `.envrc`, CI, or container env | application config loader | use when you need to override TOML config without editing files |
 | `docker/local-infra/.env.local` | tracked under `docker/local-infra/` | `start-blockchains.sh` and `start-bitvmx.sh` | local infra Docker scripts only |
+
+Wrapper script note:
+
+- `./cli-infra.sh` and `./cli-run.sh` read environment variables from your current shell, so load `.envrc` with `direnv allow` or export the variables manually before running them.
+- `bash tests/run-flows.sh` sources repo-root `.envrc` automatically when `direnv` is not active.
 
 ### `BASE_STORAGE_PATH` Contract
 
@@ -187,7 +193,8 @@ Use repo-root commands only:
 export BASE_STORAGE_PATH="$HOME"
 export KEY_STORE_PASSWORD=<your-password>
 export USER_BITCOIN_WIF=<your-user-wif>
-export BITCOIND_URL=http://user:password@localhost:18443
+export MEMBER_BITCOIN_WIF=<your-member-wif>
+export BITCOIND_URL=http://foo:rpcpassword@host.docker.internal:18443
 
 # Generate or refresh operator runtime artifacts
 ./cli-setup-operators.sh --ops 4
@@ -281,6 +288,7 @@ For the automated local happy-path flow:
 ```bash
 ./cli-infra.sh --start-blockchains [--fresh]
 ./cli-infra.sh --start-bitvmx [--fresh]
+./cli-run.sh [--fresh]
 bash tests/run-flows.sh
 bash tests/run-flows.sh --ops 4
 bash tests/run-flows.sh --setup
@@ -298,6 +306,7 @@ Notes:
 
 - `./cli-infra.sh --start-blockchains` starts Anvil + bitcoind and background mining.
 - Start `./cli-run.sh` for local mode or `docker/operator/start-operators.sh` for docker mode before using the happy-path script.
+- Local happy-path runs require `USER_BITCOIN_WIF` and `MEMBER_BITCOIN_WIF`; `tests/run-flows.sh` uses the user wallet for pegin and pegout and the member wallet during setup funding.
 - If mining gets stuck, run `./cli-infra.sh --stop-mining` before restarting it.
 - `bash tests/run-flows.sh` runs the default `happy` mode.
 - `bash tests/run-flows.sh --ops 4` does the same, but shows the optional operator-count override.

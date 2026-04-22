@@ -5,6 +5,11 @@ This doc owns the Docker-backed local infrastructure used when Union Bridge runs
 For the full startup order, shared env rules, and the recommended local workflow, start with the
 [Contributing Guide](../../CONTRIBUTING.md).
 
+Environment note:
+
+- `./cli-infra.sh` reads `BASE_STORAGE_PATH` and any other exported variables from your current shell; it does not source `.envrc` itself.
+- For the Docker-backed local setup, the generated BitVMX configs are patched from `BITCOIND_URL`, which should match the local Docker value in [`.env.local`](./.env.local): `http://foo:rpcpassword@host.docker.internal:18443`.
+
 ## Related Docs
 
 - [Docker Guide](../README.md): Docker flow selection
