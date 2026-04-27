@@ -898,7 +898,6 @@ mod tests {
 
     use alloy_primitives::{Bytes, FixedBytes, U256 as AlloyU256};
     use bitcoin::Txid;
-    use bitcoin::hashes::Hash;
     use common::msg_broker::bitvmx_types::{
         IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PegOutAccepted,
     };
@@ -1067,9 +1066,7 @@ mod tests {
     }
 
     fn test_txid(bytes: [u8; 32]) -> Txid {
-        Txid::from_raw_hash(
-            bitcoin::hashes::sha256d::Hash::from_slice(&bytes).expect("invalid txid bytes"),
-        )
+        TxIdParser::fb_32_to_txid(FixedBytes::from(bytes))
     }
 
     fn default_pub_nonce() -> PubNonce {

@@ -691,14 +691,13 @@ mod tests {
 
     use alloy_primitives::{Bytes, FixedBytes, U256 as AlloyU256};
     use bitcoin::Txid;
-    use bitcoin::hashes::Hash;
     use common::msg_broker::bitvmx_types::{
         BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PegOutAccepted,
         VariableTypes,
     };
     use common::msg_broker::broker::MockBrokerClientApi;
     use common::runtime_sync::RuntimeSync;
-    use common::types::{BlockHash, BlockNumber, TxHash};
+    use common::types::{BlockHash, BlockNumber, TxHash, TxIdParser};
     use mockall::predicate::function;
     use musig2::PubNonce;
     use musig2::secp::MaybeScalar;
@@ -740,9 +739,7 @@ mod tests {
     }
 
     fn test_txid(bytes: [u8; 32]) -> Txid {
-        Txid::from_raw_hash(
-            bitcoin::hashes::sha256d::Hash::from_slice(&bytes).expect("invalid txid bytes"),
-        )
+        TxIdParser::fb_32_to_txid(FixedBytes::from(bytes))
     }
 
     fn default_pub_nonce() -> PubNonce {

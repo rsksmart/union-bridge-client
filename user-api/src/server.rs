@@ -115,6 +115,10 @@ impl FundingSyncBroker {
                 ));
             }
 
+            // This endpoint is currently the only user-api consumer of broker replies, and the
+            // expected inbound messages are funding-info responses keyed by req_id. If more
+            // request/response flows are added to this broker, move try_recv into a shared
+            // router that demultiplexes replies by UUID instead of polling from each endpoint.
             let message = self.broker.try_recv().map_err(internal_error)?;
 
             match message {
