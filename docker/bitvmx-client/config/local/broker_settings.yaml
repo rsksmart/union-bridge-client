@@ -10,4 +10,4 @@ queue_channel_config:
   retry_max_delay_msecs: 20000 # Maximum delay before retrying a message send
 
 msg_size_config:
-  max_frame_size_kb: 8192 # 1024*8 - Maximum frame size in kilobytes (entire message)
+  max_frame_size_kb: 102400 # 1024*1000 - Maximum frame size in kilobytes (entire message)
