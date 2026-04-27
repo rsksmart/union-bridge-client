@@ -16,8 +16,18 @@ cd "$(dirname "$0")"
 rotate_logs_dir() {
   local timestamp
   local rotated_dir
+  local log_files=()
+  local log_file
 
   if [[ ! -d "logs" ]]; then
+    return
+  fi
+
+  while IFS= read -r -d '' log_file; do
+    log_files+=("${log_file}")
+  done < <(find "logs" -mindepth 1 -maxdepth 1 -type f -print0)
+
+  if [[ "${#log_files[@]}" -eq 0 ]]; then
     return
   fi
 
@@ -31,10 +41,7 @@ rotate_logs_dir() {
   done
 
   mkdir -p "${rotated_dir}"
-
-  if find "logs" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
-    find "logs" -mindepth 1 -maxdepth 1 -exec mv {} "${rotated_dir}/" \;
-  fi
+  mv "${log_files[@]}" "${rotated_dir}/"
 }
 
 # handle --logs option
