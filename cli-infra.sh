@@ -355,7 +355,7 @@ case "${1:-}" in
         echo ""
         echo "Options:"
         echo "  --fresh                                              Clean/reset volumes before starting"
-        echo "  --contracts-tag TAG                                  Contracts image tag (only for blockchains; e.g. local-build or v0.2.0-alpha.1)"
+        echo "  --contracts-tag TAG                                  Predeployed Anvil/contracts tag (only for blockchains; e.g. local-build or v0.2.0-alpha.1)"
         exit 1
         ;;
 esac

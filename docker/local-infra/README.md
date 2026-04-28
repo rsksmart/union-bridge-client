@@ -47,7 +47,7 @@ background mining.
 
 ## Scripts
 
-- `start-blockchains.sh`: starts bitcoind (regtest) + anvil + deploys contracts
+- `start-blockchains.sh`: starts bitcoind (regtest) + Anvil loaded with predeployed contract state
 - `cli-infra.sh --start-blockchains`: wraps blockchain startup, bootstraps the Bitcoin miner wallet with 101 blocks when needed, and then starts background mining
 - `start-bitvmx.sh`: starts 4 BitVMX client instances
 
@@ -60,8 +60,12 @@ Mining is coupled to the blockchain lifecycle in this wrapper:
 
 ## Contracts Version
 
-By default, `start-blockchains.sh` uses the contracts version from `Cargo.toml`. Override with `--contracts-tag
-local-build` when you want to use a local contracts checkout instead of the registry image.
+By default, `start-blockchains.sh` uses the contracts version from `Cargo.toml` and pulls the matching predeployed
+Anvil image from `PREDEPLOYED_ANVIL_IMAGE_BASE`. That image contains an Anvil state snapshot with the local contracts
+already deployed, so `cli-infra` does not run a contract deployment container during startup.
+
+Override with `--contracts-tag local-build` when you want to build a predeployed Anvil image from a local contracts
+checkout instead of using the registry image. Contract changes require rebuilding this image.
 
 ## Scope
 
