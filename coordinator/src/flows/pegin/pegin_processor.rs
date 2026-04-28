@@ -675,8 +675,6 @@ where
             return Ok(());
         }
 
-        self.pegin_request_tracker.insert(tx_id);
-
         // Create a new pegin flow from Bitcoin transaction
 
         let mut flow = PeginFlow::new(
@@ -696,6 +694,7 @@ where
         flow.complete_step(&step_data)?;
 
         self.pegin_flows.insert(temp_flow_id, flow);
+        self.pegin_request_tracker.insert(tx_id);
 
         Ok(())
     }
