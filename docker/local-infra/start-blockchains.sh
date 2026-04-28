@@ -119,6 +119,24 @@ wait_for_bitcoind_wallet() {
   return 1
 }
 
+wait_for_anvil_rpc() {
+  local timeout_secs="${1:-60}"
+  local elapsed=0
+
+  echo "Waiting for ${ANVIL_CONTAINER} RPC..."
+  while [[ "${elapsed}" -lt "${timeout_secs}" ]]; do
+    if docker exec "${ANVIL_CONTAINER}" cast rpc eth_chainId --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1; then
+      echo "${ANVIL_CONTAINER} RPC is ready."
+      return 0
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+
+  echo "Error: ${ANVIL_CONTAINER} RPC was not ready after ${timeout_secs}s."
+  return 1
+}
+
 # Resolve CONTRACTS_IMAGE_TAG: --contracts-tag > Cargo.toml (no env var override)
 PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 CARGO_TOML="${PROJECT_ROOT}/Cargo.toml"
@@ -217,12 +235,16 @@ if [[ "${FRESH}" == true ]]; then
 fi
 
 BITCOIND_CONTAINER="bitcoind"
-RUNNING_COUNT=$(docker compose -p blockchains --env-file "$ENV_PATH" -f "$COMPOSE_FILE" --profile local ps --status running -q ${BITCOIND_CONTAINER} anvil | wc -l | tr -d ' ')
+ANVIL_CONTAINER="anvil"
+RUNNING_COUNT=$(docker compose -p blockchains --env-file "$ENV_PATH" -f "$COMPOSE_FILE" --profile local ps --status running -q "${BITCOIND_CONTAINER}" "${ANVIL_CONTAINER}" | wc -l | tr -d ' ')
 
 echo "Detected $RUNNING_COUNT running containers in the local blockchains stack."
 
 if [[ "${IS_UP_COMMAND}" == true && "${RUNNING_COUNT}" -ge 2 ]]; then
-  echo "Local blockchains stack already running; skipping 'up'. Run 'down' to start again" && exit 0
+  echo "Local blockchains stack already running; skipping 'up'. Run 'down' to start again"
+  wait_for_bitcoind_rpc
+  wait_for_anvil_rpc
+  exit 0
 fi
 
 # Finally, run the requested docker compose command
@@ -233,6 +255,7 @@ fi
 
 if [[ "${IS_UP_COMMAND}" == true ]]; then
   wait_for_bitcoind_rpc
+  wait_for_anvil_rpc
 fi
 
 # If using 'up' command after a fresh teardown, create the Bitcoin wallet.
