@@ -23,10 +23,10 @@ print_help() {
   echo "  --pull-contracts            Pull predeployed Anvil image from registry even if it exists locally"
   echo ""
   echo "Predeployed Anvil image:"
-  echo "  Default: derived from Cargo.toml (union-contracts tag) — uses local image if present, otherwise pulls from PREDEPLOYED_ANVIL_IMAGE_BASE"
+  echo "  Default: derived from Cargo.toml (union-contracts tag) — pulls from PREDEPLOYED_ANVIL_IMAGE_BASE"
   echo "  Override: use --contracts-tag flag"
   echo "    ${CONTRACTS_TAG_LOCAL_BUILD}  → build from CONTRACTS_CONTEXT_PATH (e.g. for contract development)"
-  echo "    <tag>       → use that image tag locally, pulling only if missing or --pull-contracts is passed"
+  echo "    <tag>       → use that registry tag (always pulls; if digest or tag changed, runs fresh)"
   echo ""
   echo "Common Docker Compose Arguments can be used, examples:"
   echo "  up                         Create and start containers"
@@ -38,6 +38,7 @@ print_help() {
   echo "Examples:"
   echo "  $0 up -d                            # Start (uses contracts version from Cargo.toml)"
   echo "  $0 --fresh up -d                    # Clean and start local blockchains"
+  echo "  $0 --contracts-tag ${CONTRACTS_TAG_LOCAL_BUILD} up -d # Build predeployed Anvil from local contracts"
   echo "  $0 --contracts-tag ${CONTRACTS_TAG_LOCAL_BUILD} up -d # Build predeployed Anvil from local contracts"
   echo "  $0 --contracts-tag v0.2.0-alpha.1 up -d   # Use specific registry tag"
   echo "  $0 --contracts-tag v0.2.0-alpha.1 --pull-contracts up -d # Force pull specific registry tag"
@@ -169,6 +170,7 @@ else
   esac
 fi
 export PREDEPLOYED_ANVIL_IMAGE_BASE
+export PREDEPLOYED_ANVIL_IMAGE_BASE
 export CONTRACTS_IMAGE_TAG
 
 # Disallow user-provided --build (script injects it when using ${CONTRACTS_TAG_LOCAL_BUILD})
@@ -201,6 +203,7 @@ fi
 # When using a registry tag (not ${CONTRACTS_TAG_LOCAL_BUILD}): use a local image if present.
 # Pull only if the image is missing locally or --pull-contracts was requested.
 if [[ "${IS_UP_COMMAND}" == true && "${CONTRACTS_IMAGE_TAG}" != "${CONTRACTS_TAG_LOCAL_BUILD}" ]]; then
+  PREDEPLOYED_ANVIL_IMAGE="${PREDEPLOYED_ANVIL_IMAGE_BASE}:${CONTRACTS_IMAGE_TAG}"
   PREDEPLOYED_ANVIL_IMAGE="${PREDEPLOYED_ANVIL_IMAGE_BASE}:${CONTRACTS_IMAGE_TAG}"
   DIGEST_BEFORE=""
   IMAGE_EXISTS=false
@@ -235,10 +238,14 @@ if [[ "${IS_UP_COMMAND}" == true && "${CONTRACTS_IMAGE_TAG}" != "${CONTRACTS_TAG
 fi
 
 # When switching contracts tag: force fresh start so Anvil loads the matching chain state
+# When switching contracts tag: force fresh start so Anvil loads the matching chain state
 if [[ "${IS_UP_COMMAND}" == true ]]; then
   CURRENT_IMAGE=$(docker inspect anvil --format '{{.Config.Image}}' 2>/dev/null || true)
   EXPECTED_IMAGE="${PREDEPLOYED_ANVIL_IMAGE_BASE}:${CONTRACTS_IMAGE_TAG}"
+  CURRENT_IMAGE=$(docker inspect anvil --format '{{.Config.Image}}' 2>/dev/null || true)
+  EXPECTED_IMAGE="${PREDEPLOYED_ANVIL_IMAGE_BASE}:${CONTRACTS_IMAGE_TAG}"
   if [[ -n "$CURRENT_IMAGE" && "$CURRENT_IMAGE" != "$EXPECTED_IMAGE" ]]; then
+    echo "Contracts tag changed ($CURRENT_IMAGE -> $EXPECTED_IMAGE); forcing fresh start"
     echo "Contracts tag changed ($CURRENT_IMAGE -> $EXPECTED_IMAGE); forcing fresh start"
     FRESH=true
   fi
@@ -278,6 +285,7 @@ if [[ "${IS_UP_COMMAND}" == true ]]; then
   wait_for_anvil_rpc
 fi
 
+# If using 'up' command after a fresh teardown, create the Bitcoin wallet.
 # If using 'up' command after a fresh teardown, create the Bitcoin wallet.
 if [[ "${IS_UP_COMMAND}" == true && "${FRESH}" == true ]]; then
   # Create wallet
