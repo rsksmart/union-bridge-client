@@ -301,6 +301,16 @@ where
                     );
                     trace!("Received BitVMX message (full): {response:?}");
                 }
+                OutgoingBitVMXApiMessages::OutputPatternTransactionFound(tx_id, tx_status, tag) => {
+                    debug!(
+                        "Received BitVMX message: OutputPatternTransactionFound(tx_id: {}, confirmations: {}, status: {:?}, tag: {:?})",
+                        tx_id,
+                        tx_status.confirmations,
+                        tx_status.status,
+                        String::from_utf8_lossy(tag)
+                    );
+                    trace!("Received BitVMX message (full): {response:?}");
+                }
                 OutgoingBitVMXApiMessages::Pong(uuid) => {
                     trace!("Received BitVMX message: Pong({uuid})");
                 }

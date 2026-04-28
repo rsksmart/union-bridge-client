@@ -317,6 +317,27 @@ patch_bitvmx_component_pubkey_hash() {
   fi
 }
 
+ensure_bitvmx_broker_settings() {
+  local cfg_file="$1"
+
+  if grep -q '^[[:space:]]*settings:[[:space:]]*config/broker_settings.yaml[[:space:]]*$' "${cfg_file}"; then
+    return 0
+  fi
+
+  BITVMX_BROKER_SETTINGS_PATH="config/broker_settings.yaml" \
+    perl -0pi -e 's/(^broker:\s*\n)/${1}  settings: $ENV{BITVMX_BROKER_SETTINGS_PATH}\n/m' "${cfg_file}"
+}
+
+sync_bitvmx_support_files() {
+  local template_dir="$1"
+  local target_dir="$2"
+  local support_file
+
+  while IFS= read -r support_file; do
+    cp "${support_file}" "${target_dir}/$(basename "${support_file}")"
+  done < <(find "${template_dir}" -maxdepth 1 -type f ! -name 'op_*.yaml' | sort)
+}
+
 ensure_operator_bitvmx_config_tree() {
   local op_num="$1"
   local template_dir="$2"
@@ -683,6 +704,8 @@ prepare_operator_bitvmx_config() {
   fi
 
   ensure_operator_bitvmx_config_tree "${op_num}" "${template_dir}" "${target_dir}" "${cfg_file}"
+  sync_bitvmx_support_files "${template_dir}" "${target_dir}"
+  ensure_bitvmx_broker_settings "${cfg_file}"
   resolve_bitvmx_mnemonic_sentence "${op_num}" "${cfg_file}"
   bitvmx_mnemonic_sentence="${RESOLVED_BITVMX_MNEMONIC_SENTENCE}"
   resolve_bitvmx_mnemonic_passphrase "${cfg_file}"

@@ -455,7 +455,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeChannelSetup<BC> {
     }
 
     fn set_union_verifier_inputs(&self, drp_id: Uuid) -> Result<()> {
-        // Match the union verifier setup used by bitvmx-client v0.7.0 examples/union.
+        // Match the union verifier setup used by bitvmx-client examples/union.
         self.set_program_input(drp_id, 0, UNION_DRP_JOURNAL_SIZE_WORDS.to_le_bytes().to_vec())?;
         self.set_program_input(
             drp_id,
