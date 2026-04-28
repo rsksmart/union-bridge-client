@@ -41,6 +41,7 @@ print_help() {
   echo "  - host-side Rootstock keystores under ${BASE_STORAGE_PATH}/.union_bridge/op_N/union-client/keystore/{member,user}"
   echo "    used by local cargo mode and docker/operator"
   echo "  Existing selected operator folders are removed before setup starts."
+  echo "  Current KEY_STORE_PASSWORD and USER_BITCOIN_WIF must be exported or entered when prompted."
   echo ""
   echo "Options:"
   echo "  --ops <N>                  Number of operators to prepare (1-10)"
@@ -555,17 +556,8 @@ resolve_bitvmx_mnemonic_passphrase() {
   RESOLVED_BITVMX_MNEMONIC_PASSPHRASE=""
 }
 
-read_env_value() {
-  local env_file="$1"
-  local key="$2"
-
-  awk -F= -v key="${key}" '$1 == key {print substr($0, index($0, "=") + 1); exit}' "${env_file}"
-}
-
 resolve_key_store_password() {
   local op_num="$1"
-  local env_file="$2"
-  local existing_password=""
 
   if [[ -n "${KEY_STORE_PASSWORD:-}" ]]; then
     if [[ "${USED_EXPORTED_KEY_STORE_PASSWORD}" != true ]]; then
@@ -574,14 +566,6 @@ resolve_key_store_password() {
     fi
     RESOLVED_KEY_STORE_PASSWORD="${KEY_STORE_PASSWORD}"
     return 0
-  fi
-
-  if [[ -f "${env_file}" ]]; then
-    existing_password="$(read_env_value "${env_file}" "KEY_STORE_PASSWORD")"
-    if [[ -n "${existing_password}" ]]; then
-      RESOLVED_KEY_STORE_PASSWORD="${existing_password}"
-      return 0
-    fi
   fi
 
   if [[ -z "${NEW_KEY_STORE_PASSWORD}" ]]; then
@@ -599,20 +583,6 @@ resolve_key_store_password() {
 
 resolve_user_bitcoin_wif() {
   local op_num="$1"
-  local env_file="$2"
-  local existing_wif=""
-
-  if [[ -f "${env_file}" ]]; then
-    existing_wif="$(read_env_value "${env_file}" "USER_BITCOIN_WIF")"
-    if [[ -n "${existing_wif}" ]]; then
-      RESOLVED_USER_BITCOIN_WIF="${existing_wif}"
-      return 0
-    fi
-
-    echo "Error: existing operator env file ${env_file} is missing USER_BITCOIN_WIF." >&2
-    echo "Fix the file or delete it and rerun cli-setup-operators.sh." >&2
-    exit 1
-  fi
 
   if [[ -z "${NEW_USER_BITCOIN_WIF}" ]]; then
     while [[ -z "${NEW_USER_BITCOIN_WIF}" ]]; do
@@ -814,9 +784,9 @@ confirm_and_remove_operator_roots
 for op_num in "${OPERATORS_TO_RUN[@]}"; do
   compose_env_file_path="$(operator_compose_env_file_path "${op_num}")"
   runtime_env_file_path="$(operator_runtime_env_file_path "${op_num}")"
-  resolve_key_store_password "${op_num}" "${runtime_env_file_path}"
+  resolve_key_store_password "${op_num}"
   key_store_password_value="${RESOLVED_KEY_STORE_PASSWORD}"
-  resolve_user_bitcoin_wif "${op_num}" "${runtime_env_file_path}"
+  resolve_user_bitcoin_wif "${op_num}"
   user_bitcoin_wif_value="${RESOLVED_USER_BITCOIN_WIF}"
 
   echo "=== op_${op_num} ==="

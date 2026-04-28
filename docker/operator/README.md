@@ -30,7 +30,7 @@ export BITCOIND_URL=http://user:password@localhost:18443
 export KEY_STORE_PASSWORD=<your-password>
 export USER_BITCOIN_WIF=<your-user-wif>
 
-# Prepare staged operator payloads from the repository root.
+# Prepare fresh staged operator payloads from the repository root.
 # Add -y to skip the removal confirmation for existing op_N folders.
 ./cli-setup-operators.sh --ops 4
 ```
@@ -50,10 +50,11 @@ by hand.
 
 The setup flow also patches the generated local BitVMX YAMLs with the current `BITCOIND_URL`, the keystore password,
 and the required broker pubkey hashes. `KEY_STORE_PASSWORD` and `USER_BITCOIN_WIF` are written into each operator's
-`docker-service.env`.
+`docker-service.env` from the current environment or interactive prompts.
 
 If selected operator folders already exist, `cli-setup-operators.sh` lists them and asks before removing them. Use
-`./cli-setup-operators.sh --ops 4 -y` for non-interactive reset and setup.
+`./cli-setup-operators.sh --ops 4 -y` for non-interactive reset and setup. Setup does not reuse secrets from a previous
+`docker-service.env`; export the intended `KEY_STORE_PASSWORD` and `USER_BITCOIN_WIF` before running non-interactively.
 
 The coordinator and user-api containers bind-mount
 `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/keystore/` as `/keystore`. The same keystores serve local
@@ -163,7 +164,8 @@ If `start-operators.sh` reports a missing `docker-compose.env` or `docker-servic
 ### Missing BitVMX Config
 
 If `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/` is missing or stale, rerun `./cli-setup-operators.sh`.
-The setup script removes the affected selected operator directory before recreating it.
+The setup script removes the affected selected operator directory before recreating it, using current exported values
+or prompts for required secrets.
 
 ### Compose Variants
 
