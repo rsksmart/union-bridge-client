@@ -30,7 +30,8 @@ export BITCOIND_URL=http://user:password@localhost:18443
 export KEY_STORE_PASSWORD=<your-password>
 export USER_BITCOIN_WIF=<your-user-wif>
 
-# Prepare staged operator payloads from the repository root
+# Prepare staged operator payloads from the repository root.
+# Add -y to skip the removal confirmation for existing op_N folders.
 ./cli-setup-operators.sh --ops 4
 ```
 
@@ -51,10 +52,13 @@ The setup flow also patches the generated local BitVMX YAMLs with the current `B
 and the required broker pubkey hashes. `KEY_STORE_PASSWORD` and `USER_BITCOIN_WIF` are written into each operator's
 `docker-service.env`.
 
+If selected operator folders already exist, `cli-setup-operators.sh` lists them and asks before removing them. Use
+`./cli-setup-operators.sh --ops 4 -y` for non-interactive reset and setup.
+
 The coordinator and user-api containers bind-mount
-`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/keystore/` as `/keystore` and reuse the existing host
-files. The same keystores serve local cargo mode. Containers do not generate replacement keys; `cli-setup-operators.sh`
-creates or reuses them ahead of time via the `key-manager` crate.
+`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/keystore/` as `/keystore`. The same keystores serve local
+cargo mode. Containers do not generate replacement keys; `cli-setup-operators.sh` creates them ahead of time via the
+`key-manager` crate.
 
 ## Local Startup
 
@@ -158,8 +162,8 @@ If `start-operators.sh` reports a missing `docker-compose.env` or `docker-servic
 
 ### Missing BitVMX Config
 
-If `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/` is missing or stale, delete the affected operator
-directory and rerun `./cli-setup-operators.sh`.
+If `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/` is missing or stale, rerun `./cli-setup-operators.sh`.
+The setup script removes the affected selected operator directory before recreating it.
 
 ### Compose Variants
 

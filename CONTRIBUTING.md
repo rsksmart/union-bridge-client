@@ -225,15 +225,16 @@ Notes:
 
 - `./cli-run.sh` defaults to the Docker-backed BitVMX identity mode; use `--bitvmx-mode repo` only for the advanced
   repo-mode path.
-- `./cli-setup-operators.sh --help` currently supports `--ops 1-10`, but the documented local infra flow remains
-  centered on 4 prepared operators and 4 local BitVMX instances.
+- `./cli-setup-operators.sh --help` currently supports `--ops 1-10` and `-y/--yes`, but the documented local infra
+  flow remains centered on 4 prepared operators and 4 local BitVMX instances.
 - `./cli-infra.sh --help` is the quickest entry point for local blockchains, BitVMX, and background mining.
 - for local debugging snapshots, use [backup-local-logs.sh](scripts/backup-local-logs.sh)
   with `local` or `docker` mode to collect Union Client's coordinator and BitVMX client logs into a timestamped directory
 
 ### What the Setup Step Produces
 
-`./cli-setup-operators.sh --ops 4` creates or refreshes host-side runtime artifacts under
+`./cli-setup-operators.sh --ops 4` removes the selected existing operator folders after confirmation, then creates
+host-side runtime artifacts under
 `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/`, including:
 
 - `union-client/<service>.pem`
@@ -245,7 +246,8 @@ Notes:
 
 Host-side `keystore/{member,user}` is used by both local cargo mode and Docker operator runs. Docker operator
 containers bind-mount the host keystore directory and reuse the existing files; they do not generate replacement keys.
-`cli-setup-operators.sh` creates or reuses these files via the `key-manager` crate before Docker startup.
+`cli-setup-operators.sh` creates these files via the `key-manager` crate before Docker startup. Use
+`./cli-setup-operators.sh --ops 4 -y` for non-interactive reset and setup.
 
 ### DRP Program Files
 

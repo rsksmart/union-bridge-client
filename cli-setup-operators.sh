@@ -11,6 +11,7 @@ cd "${SCRIPT_DIR}" || {
 }
 
 NUM_OPERATORS=""
+AUTO_CONFIRM=false
 BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
 OPERATORS_TO_RUN=()
 NEW_USER_BITCOIN_WIF="${USER_BITCOIN_WIF:-}"
@@ -32,17 +33,18 @@ RESOLVED_BITVMX_MNEMONIC_SENTENCE=""
 RESOLVED_BITVMX_MNEMONIC_PASSPHRASE=""
 
 print_help() {
-  echo "Usage: $0 [--ops <N>]"
+  echo "Usage: $0 [--ops <N>] [--yes|-y]"
   echo ""
-  echo "Creates or reuses host-side local operator artifacts:"
+  echo "Removes and recreates host-side local operator artifacts:"
   echo "  - service identities under ${BASE_STORAGE_PATH}/.union_bridge/op_N/union-client/broker/<service>.*"
   echo "  - generated operator docker-compose.env/docker-service.env files under ${BASE_STORAGE_PATH}/.union_bridge/op_N/"
   echo "  - host-side Rootstock keystores under ${BASE_STORAGE_PATH}/.union_bridge/op_N/union-client/keystore/{member,user}"
-  echo "    reused by local cargo mode and docker/operator"
-  echo "  Existing operator env files are refreshed in place."
+  echo "    used by local cargo mode and docker/operator"
+  echo "  Existing selected operator folders are removed before setup starts."
   echo ""
   echo "Options:"
   echo "  --ops <N>                  Number of operators to prepare (1-10)"
+  echo "  --yes, -y                  Automatic yes to operator folder removal confirmation"
   echo "  --help                     Display this help message"
   exit 0
 }
@@ -100,6 +102,46 @@ operator_root_path() {
   local op_num="$1"
 
   echo "${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}"
+}
+
+confirm_and_remove_operator_roots() {
+  local op_num
+  local op_root
+  local confirmation
+  local -a existing_roots=()
+
+  for op_num in "${OPERATORS_TO_RUN[@]}"; do
+    op_root="$(operator_root_path "${op_num}")"
+    if [[ "${op_root}" != /* || ! "${op_root}" =~ /[.]union_bridge/op_(10|[1-9])$ ]]; then
+      echo "Error: refusing to remove unexpected operator path ${op_root}" >&2
+      echo "Set BASE_STORAGE_PATH to an absolute path before running setup." >&2
+      exit 1
+    fi
+    if [[ -d "${op_root}" ]]; then
+      existing_roots+=("${op_root}")
+    fi
+  done
+
+  if [[ ${#existing_roots[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  echo "The following operator folders will be removed before setup:"
+  for op_root in "${existing_roots[@]}"; do
+    echo "  - ${op_root}"
+  done
+
+  if [[ "${AUTO_CONFIRM}" != true ]]; then
+    read -r -p "Are you sure you want to continue? (yes/no): " confirmation
+    if [[ "${confirmation}" != "yes" ]]; then
+      echo "Aborted."
+      exit 1
+    fi
+  fi
+
+  for op_root in "${existing_roots[@]}"; do
+    rm -rf -- "${op_root}"
+  done
 }
 
 operator_compose_env_file_path() {
@@ -743,6 +785,10 @@ while [[ $# -gt 0 ]]; do
       fi
       shift 2
       ;;
+    --yes|-y)
+      AUTO_CONFIRM=true
+      shift
+      ;;
     *)
       echo "Error: unknown argument '$1'"
       echo "Run '$0 --help' for usage information."
@@ -762,6 +808,8 @@ OPERATORS_TO_RUN=()
 while IFS= read -r op_num; do
   OPERATORS_TO_RUN+=("${op_num}")
 done < <(seq 1 "${NUM_OPERATORS}")
+
+confirm_and_remove_operator_roots
 
 for op_num in "${OPERATORS_TO_RUN[@]}"; do
   compose_env_file_path="$(operator_compose_env_file_path "${op_num}")"
