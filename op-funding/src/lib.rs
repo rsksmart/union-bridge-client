@@ -58,48 +58,60 @@ fn stream_denomination(stream_id: u64) -> Option<u64> {
     usize::try_from(stream_id).ok().and_then(|index| STREAM_DENOMINATIONS.get(index)).copied()
 }
 
-fn calculate_advance_funds_value(stream_denomination: u64) -> u64 {
-    stream_denomination * 12 / 10
+fn calculate_advance_funds_value(stream_denomination: u64) -> Option<u64> {
+    stream_denomination.checked_mul(12)?.checked_div(10)
 }
 
-fn estimate_fee(input_quantity: u64, output_quantity: u64, fee_rate: u64) -> u64 {
-    (46 + input_quantity * 68 + output_quantity * 34) * fee_rate
+fn estimate_fee(input_quantity: u64, output_quantity: u64, fee_rate: u64) -> Option<u64> {
+    46_u64
+        .checked_add(input_quantity.checked_mul(68)?)?
+        .checked_add(output_quantity.checked_mul(34)?)?
+        .checked_mul(fee_rate)
 }
 
 fn fee_rate(is_regtest: bool) -> u64 {
     if is_regtest { REGTEST_FEE_RATE } else { NON_REGTEST_FEE_RATE }
 }
 
-fn operator_funding_value(slots_per_package: u64, is_regtest: bool) -> u64 {
-    FUNDING_AMOUNT_PER_SLOT * slots_per_package
-        + SPEEDUP_VALUE
-        + estimate_fee(1, slots_per_package + 2, fee_rate(is_regtest))
+fn operator_funding_value(slots_per_package: u64, is_regtest: bool) -> Option<u64> {
+    FUNDING_AMOUNT_PER_SLOT
+        .checked_mul(slots_per_package)?
+        .checked_add(SPEEDUP_VALUE)?
+        .checked_add(estimate_fee(1, slots_per_package.checked_add(2)?, fee_rate(is_regtest))?)
 }
 
-fn watchtower_funding_value(committee_member_count: u64, is_regtest: bool) -> u64 {
-    DISPUTE_CHANNEL_FUNDING_PER_MEMBER * committee_member_count
-        + SPEEDUP_VALUE
-        + estimate_fee(1, committee_member_count + 2, fee_rate(is_regtest))
+fn watchtower_funding_value(committee_member_count: u64, is_regtest: bool) -> Option<u64> {
+    DISPUTE_CHANNEL_FUNDING_PER_MEMBER
+        .checked_mul(committee_member_count)?
+        .checked_add(SPEEDUP_VALUE)?
+        .checked_add(estimate_fee(1, committee_member_count.checked_add(2)?, fee_rate(is_regtest))?)
 }
 
-fn funding_wt_disabler_directory_value(prover_count: u64, is_regtest: bool) -> u64 {
-    DUST_VALUE * prover_count * 2
-        + SPEEDUP_VALUE
-        + estimate_fee(2, prover_count * 2, fee_rate(is_regtest))
+fn funding_wt_disabler_directory_value(prover_count: u64, is_regtest: bool) -> Option<u64> {
+    let output_quantity = prover_count.checked_mul(2)?;
+
+    DUST_VALUE
+        .checked_mul(prover_count)?
+        .checked_mul(2)?
+        .checked_add(SPEEDUP_VALUE)?
+        .checked_add(estimate_fee(2, output_quantity, fee_rate(is_regtest))?)
 }
 
-fn funding_op_disabler_directory_value(slots_per_package: u64, is_regtest: bool) -> u64 {
-    DUST_VALUE * slots_per_package
-        + SPEEDUP_VALUE
-        + estimate_fee(2, slots_per_package + 1, fee_rate(is_regtest))
+fn funding_op_disabler_directory_value(slots_per_package: u64, is_regtest: bool) -> Option<u64> {
+    DUST_VALUE
+        .checked_mul(slots_per_package)?
+        .checked_add(SPEEDUP_VALUE)?
+        .checked_add(estimate_fee(2, slots_per_package.checked_add(1)?, fee_rate(is_regtest))?)
 }
 
 fn speedup_funds_value(is_regtest: bool) -> u64 {
     if is_regtest { REGTEST_SPEEDUP_FUNDS_VALUE } else { NON_REGTEST_SPEEDUP_FUNDS_VALUE }
 }
 
-fn operator_funding_margin(denomination: u64) -> u64 {
-    denomination * OPERATOR_FUNDING_MARGIN_NUMERATOR / OPERATOR_FUNDING_MARGIN_DENOMINATOR
+fn operator_funding_margin(denomination: u64) -> Option<u64> {
+    denomination
+        .checked_mul(OPERATOR_FUNDING_MARGIN_NUMERATOR)?
+        .checked_div(OPERATOR_FUNDING_MARGIN_DENOMINATOR)
 }
 
 #[must_use]
@@ -112,20 +124,24 @@ pub fn derive_stream_funding_profile(
 ) -> Option<StreamFundingProfile> {
     let denomination = stream_denomination(stream_id)?;
     let speed_up_utxo = speedup_funds_value(is_regtest);
-    let advance_funds = calculate_advance_funds_value(denomination);
-    let protocol_funding = operator_funding_value(slots_per_package, is_regtest)
-        + funding_op_disabler_directory_value(slots_per_package, is_regtest)
-        + watchtower_funding_value(committee_member_count, is_regtest)
-        + funding_wt_disabler_directory_value(prover_count, is_regtest)
-        + EXAMPLE_PROTOCOL_FUNDING_SAFETY_BUFFER;
+    let advance_funds = calculate_advance_funds_value(denomination)?;
+    let operator_funding = operator_funding_value(slots_per_package, is_regtest)?;
+    let op_disabler_funding = funding_op_disabler_directory_value(slots_per_package, is_regtest)?;
+    let watchtower_funding = watchtower_funding_value(committee_member_count, is_regtest)?;
+    let wt_disabler_funding = funding_wt_disabler_directory_value(prover_count, is_regtest)?;
+    let protocol_funding = operator_funding
+        .checked_add(op_disabler_funding)?
+        .checked_add(watchtower_funding)?
+        .checked_add(wt_disabler_funding)?
+        .checked_add(EXAMPLE_PROTOCOL_FUNDING_SAFETY_BUFFER)?;
     let operator_fund_amount = speed_up_utxo
-        + advance_funds
-        + operator_funding_value(slots_per_package, is_regtest)
-        + funding_op_disabler_directory_value(slots_per_package, is_regtest)
-        + watchtower_funding_value(committee_member_count, is_regtest)
-        + funding_wt_disabler_directory_value(prover_count, is_regtest)
-        + EXAMPLE_TOTAL_FUNDING_SAFETY_BUFFER
-        + operator_funding_margin(denomination);
+        .checked_add(advance_funds)?
+        .checked_add(operator_funding)?
+        .checked_add(op_disabler_funding)?
+        .checked_add(watchtower_funding)?
+        .checked_add(wt_disabler_funding)?
+        .checked_add(EXAMPLE_TOTAL_FUNDING_SAFETY_BUFFER)?
+        .checked_add(operator_funding_margin(denomination)?)?;
 
     Some(StreamFundingProfile {
         denomination,
@@ -147,19 +163,26 @@ pub fn required_rsk_balance(min_deposit: U256) -> U256 {
 /// # Panics
 /// Panics if the computed slot budget does not fit in `u64`.
 pub fn budgeted_slot_count(slots_per_package: u64, committee_member_count: u64) -> u64 {
+    checked_budgeted_slot_count(slots_per_package, committee_member_count)
+        .expect("slot budget arithmetic does not overflow")
+}
+
+fn checked_budgeted_slot_count(slots_per_package: u64, committee_member_count: u64) -> Option<u64> {
     let slots_per_package = u128::from(slots_per_package);
     let committee_member_count = u128::from(committee_member_count.max(1));
 
     if slots_per_package == 0 {
-        return 0;
+        return Some(0);
     }
 
-    let sqrt_term = ceil_sqrt(slots_per_package * (committee_member_count - 1));
-    let numerator = slots_per_package * SLOT_BUDGET_Z_SCORE_DENOMINATOR
-        + SLOT_BUDGET_Z_SCORE_NUMERATOR * sqrt_term;
-    let denominator = SLOT_BUDGET_Z_SCORE_DENOMINATOR * committee_member_count;
+    let sqrt_term =
+        ceil_sqrt(slots_per_package.checked_mul(committee_member_count.checked_sub(1)?)?);
+    let numerator = slots_per_package
+        .checked_mul(SLOT_BUDGET_Z_SCORE_DENOMINATOR)?
+        .checked_add(SLOT_BUDGET_Z_SCORE_NUMERATOR.checked_mul(sqrt_term)?)?;
+    let denominator = SLOT_BUDGET_Z_SCORE_DENOMINATOR.checked_mul(committee_member_count)?;
 
-    u64::try_from(ceil_div(numerator, denominator)).expect("slot budget fits in u64")
+    u64::try_from(ceil_div(numerator, denominator)).ok()
 }
 
 #[must_use]
