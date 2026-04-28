@@ -251,7 +251,6 @@ where
         pr: &crate::types::EventWithBlock<PegoutRegistered>,
     ) -> Result<()> {
         info!("Processing confirmed PegoutRegistered event: {pr:?}");
-        // Find the flow corresponding to this pegout registration using event tx_hash with  flow.state.pegout_registered_tx
         let pegout_registered = pr.inner.clone();
         let pegout_registered_txid: Txid = TxIdParser::fb_32_to_txid(pegout_registered.txid);
         let flow_opt = self
@@ -260,7 +259,21 @@ where
             .find(|flow| flow.get_user_take_txid() == Some(pegout_registered_txid));
 
         if let Some(flow) = flow_opt {
-            flow.complete_step(&StepData::PegoutRegistered(pegout_registered))?;
+            // Keep correlation strict: PegoutRegistered is matched only by user_take_txid.
+            // We intentionally do not broaden matching by committee or slot, because the
+            // PegoutAccepted checkpoint gives the flow the shared txid needed for safe
+            // convergence on the confirmed terminal event. Once a matched flow is already
+            // Done, a later duplicate PegoutRegistered must be ignored.
+            if flow.current_step() == Steps::Done {
+                debug!(
+                    "Ignoring PegoutRegistered for completed flow {} with user_take_txid {}",
+                    flow.flow_id(),
+                    pegout_registered_txid
+                );
+                return Ok(());
+            }
+
+            flow.complete_step(&StepData::PegoutRegistered(pr.clone()))?;
         } else {
             warn!("No matching pegout flow found for PegoutRegistered event: {pr:?}");
         }
@@ -884,11 +897,18 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use alloy_primitives::{Bytes, FixedBytes, U256 as AlloyU256};
-    use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+    use bitcoin::Txid;
+    use common::msg_broker::bitvmx_types::{
+        IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PegOutAccepted,
+    };
     use common::msg_broker::broker::MockBrokerClientApi;
     use common::test_utils::rsk_block_generator::FakeBlockGenerator;
+    use common::types::{BlockHash, TxHash, TxIdParser};
+    use musig2::PubNonce;
+    use musig2::secp::MaybeScalar;
+    use primitive_types::H256;
     use union_contracts::bindings::pegout_manager::PegoutManager::{
-        BitcoinSignatureData, BtcTransaction,
+        BitcoinSignatureData, BtcTransaction, StreamPosition,
     };
 
     use super::*;
@@ -932,8 +952,12 @@ mod tests {
     impl TestHarness {
         fn new() -> Self {
             let contracts = Rc::new(MockRskContractsGatewayApi::new());
-            let broker = Rc::new(MockBitVmxBroker::new());
-            let store = Rc::new(MockCoordinatorStoreApi::new());
+            let mut broker = MockBitVmxBroker::new();
+            broker.expect_send().returning(|_| Ok(true));
+            let broker = Rc::new(broker);
+            let mut store = MockCoordinatorStoreApi::new();
+            store.expect_save_flow::<State>().returning(|_, _| Ok(()));
+            let store = Rc::new(store);
             let rt_sync = RuntimeSync::new().unwrap();
 
             let processor = PegoutFlowProcessor::new(
@@ -965,7 +989,38 @@ mod tests {
                             .to_string(),
                     my_p2p_address: None,
                     committee_output: None,
-                    peg_out_accepted: None,
+                    peg_out_accepted: Some(fake_pegout_accepted(test_txid([3u8; 32]))),
+                    pegout_registered: None,
+                    pegout_registered_tx: None,
+                    spv_proof: None,
+                    transaction_status: None,
+                },
+            };
+
+            PegoutFlow::from_saved_state(
+                self.contracts.clone(),
+                self.rt_sync.clone(),
+                self.broker.clone(),
+                state,
+                self.store.clone(),
+                std::rc::Rc::new(crate::flows::common::Signaling::new("/tmp", "disabled")),
+                NativeBridgeVerifier::Dummy,
+            )
+        }
+
+        fn create_flow_at_step(&self, flow_id: Uuid, step: Steps) -> TestPegoutFlow {
+            let state = State {
+                flow_id,
+                step,
+                ctx: FlowContext {
+                    pegout_requested: create_fake_pegout_requested(),
+                    request_pegout_tx_hash:
+                        "0xfeedfacecafebeef000000000000000000000000000000000000000000000000"
+                            .to_string(),
+                    my_p2p_address: None,
+                    committee_output: None,
+                    peg_out_accepted: Some(fake_pegout_accepted(test_txid([3u8; 32]))),
+                    pegout_registered: None,
                     pegout_registered_tx: None,
                     spv_proof: None,
                     transaction_status: None,
@@ -1010,6 +1065,47 @@ mod tests {
         }
     }
 
+    fn test_txid(bytes: [u8; 32]) -> Txid {
+        TxIdParser::fb_32_to_txid(FixedBytes::from(bytes))
+    }
+
+    fn default_pub_nonce() -> PubNonce {
+        "0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798032DE2662628C90B03F5E720284EB52FF7D71F4284F627B68A853D78C78E1FFE93"
+            .parse::<PubNonce>()
+            .expect("invalid pub nonce")
+    }
+
+    fn fake_pegout_accepted(user_take_txid: Txid) -> PegOutAccepted {
+        PegOutAccepted {
+            committee_id: Uuid::from_u128(1),
+            user_take_txid,
+            user_take_sighash: vec![7u8; 32],
+            user_take_nonce: default_pub_nonce(),
+            user_take_signature: MaybeScalar::Zero,
+        }
+    }
+
+    fn fake_pegout_registered_event(user_take_txid: Txid) -> crate::types::PegoutRegisteredEvent {
+        crate::types::EventWithBlock {
+            inner: PegoutRegistered {
+                blockHash: FixedBytes::from([1u8; 32]),
+                txid: TxIdParser::txid_to_fb_32(user_take_txid),
+                acceptPeginTxid: FixedBytes::from([2u8; 32]),
+                committeeId: 1,
+                streamInfo: StreamPosition {
+                    streamId: 0,
+                    packetNumber: 0,
+                    slotId: 0,
+                    pegStatus: 0,
+                },
+            },
+            block_number: BlockNumber::from(50),
+            block_hash: BlockHash::from(H256::from_low_u64_be(51)),
+            removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(52)),
+        }
+    }
+
     /// Regression test for the bug where a signature flow completing after
     /// the advance-funds timeout caused "Invalid state transition: Done with
     /// data `DispatchTransaction`".
@@ -1048,5 +1144,66 @@ mod tests {
         let result = harness.processor.process_unhandled_confirmed_sig_flow_events(&block);
         assert!(result.is_ok(), "second call expected Ok, got: {:?}", result.err());
         assert!(!harness.processor.signature_flows.contains_key(&flow_id));
+    }
+
+    #[test]
+    fn handle_pegout_registered_delivers_to_confirm_user_take_transaction() {
+        let mut harness = TestHarness::new();
+        let flow_id = Uuid::new_v4();
+        harness.processor.pegout_flows.insert(
+            flow_id,
+            harness.create_flow_at_step(flow_id, Steps::ConfirmUserTakeTransaction),
+        );
+        let event = fake_pegout_registered_event(test_txid([3u8; 32]));
+
+        harness
+            .processor
+            .handle_pegout_registered(&event)
+            .expect("confirmed event should fast-forward");
+
+        let flow = harness.processor.pegout_flows.get(&flow_id).expect("flow exists");
+        assert_eq!(flow.current_step(), Steps::Done);
+        assert_eq!(flow.get_state().ctx.pegout_registered.as_ref(), Some(&event.inner));
+        assert_eq!(
+            flow.get_state().ctx.pegout_registered_tx.as_deref(),
+            Some(event.tx_hash.to_string().as_str())
+        );
+    }
+
+    #[test]
+    fn handle_pegout_registered_delivers_to_request_user_take_spv_proof() {
+        let mut harness = TestHarness::new();
+        let flow_id = Uuid::new_v4();
+        harness
+            .processor
+            .pegout_flows
+            .insert(flow_id, harness.create_flow_at_step(flow_id, Steps::RequestUserTakeSpvProof));
+        let event = fake_pegout_registered_event(test_txid([3u8; 32]));
+
+        harness
+            .processor
+            .handle_pegout_registered(&event)
+            .expect("confirmed event should fast-forward");
+
+        let flow = harness.processor.pegout_flows.get(&flow_id).expect("flow exists");
+        assert_eq!(flow.current_step(), Steps::Done);
+        assert_eq!(flow.get_state().ctx.pegout_registered.as_ref(), Some(&event.inner));
+        assert_eq!(
+            flow.get_state().ctx.pegout_registered_tx.as_deref(),
+            Some(event.tx_hash.to_string().as_str())
+        );
+    }
+
+    #[test]
+    fn done_flow_ignores_late_pegout_registered() {
+        let mut harness = TestHarness::new();
+        let flow_id = Uuid::new_v4();
+        harness.processor.pegout_flows.insert(flow_id, harness.create_flow_at_done(flow_id));
+        let event = fake_pegout_registered_event(test_txid([3u8; 32]));
+
+        let result = harness.processor.handle_pegout_registered(&event);
+
+        assert!(result.is_ok(), "expected late PegoutRegistered to be ignored");
+        assert_eq!(harness.processor.pegout_flows[&flow_id].current_step(), Steps::Done);
     }
 }
