@@ -17,7 +17,7 @@ const PROGRAM_TYPE_DISPUTE_CORE: &str = "dispute_core";
 pub(super) const DEFAULT_OPERATOR_COUNT: u64 = 4; // TODO this should come from config or contracts settings
 pub(super) const DEFAULT_PROVER_COUNT: u64 = 2; // TODO this should come from config or contracts settings
 // Must cover the full slot range assigned by StreamManager for one packet.
-pub(super) const PACKET_SIZE: u32 = 100;
+pub(super) const PACKET_SIZE: u32 = 10; // TODO resume 100 when clarified with Fairgate
 
 #[derive(Clone, Copy)]
 pub struct AggregatedKeys {
