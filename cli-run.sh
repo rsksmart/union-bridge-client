@@ -5,7 +5,7 @@
 #        ./cli-run.sh --features anvil
 #        ./cli-run.sh --bitvmx-mode repo
 #        ./cli-run.sh --help
-#        ./cli-run.sh --logs
+#        ./cli-run.sh --logs         # follow logs from latest run
 #        ./cli-run.sh --kill          # kill all existing running services and exit
 
 set -euo pipefail
@@ -13,39 +13,39 @@ set -euo pipefail
 # change to script directory to ensure relative paths work
 cd "$(dirname "$0")"
 
-rotate_logs_dir() {
-  local timestamp
-  local rotated_dir
-  local log_files=()
-  local log_file
-
-  if [[ ! -d "logs" ]]; then
+resolve_logs_dir() {
+  if [[ -n "${UB_LOG_DIR:-}" ]]; then
+    mkdir -p "${UB_LOG_DIR}"
+    printf '%s\n' "${UB_LOG_DIR}"
     return
   fi
 
-  while IFS= read -r -d '' log_file; do
-    log_files+=("${log_file}")
-  done < <(find "logs" -mindepth 1 -maxdepth 1 -type f -print0)
+  local ts_date ts_time log_subdir
+  ts_date="$(date +%y%m%d)"
+  ts_time="$(date +%H%M%S)"
+  log_subdir="logs/${ts_date}/${ts_time}"
+  mkdir -p "${log_subdir}"
+  ln -sfn "${ts_date}/${ts_time}" logs/latest
+  printf '%s\n' "${log_subdir}"
+}
 
-  if [[ "${#log_files[@]}" -eq 0 ]]; then
+latest_logs_dir() {
+  if [[ -n "${UB_LOG_DIR:-}" ]]; then
+    printf '%s\n' "${UB_LOG_DIR}"
     return
   fi
-
-  timestamp="$(date +%Y%m%d%H%M%S)"
-  rotated_dir="logs/${timestamp}"
-
-  while [[ -e "${rotated_dir}" ]]; do
-    timestamp="$(date +%Y%m%d%H%M%S)"
-    rotated_dir="logs/${timestamp}"
-    sleep 1
-  done
-
-  mkdir -p "${rotated_dir}"
-  mv "${log_files[@]}" "${rotated_dir}/"
+  if [[ -L "logs/latest" ]]; then
+    printf '%s\n' "logs/$(readlink logs/latest)"
+    return
+  fi
+  printf '%s\n' "logs"
 }
 
 # handle --logs option
 if [[ "${1:-}" == "--logs" ]]; then
+  logs_dir="$(latest_logs_dir)"
+  echo "Following logs from ${logs_dir}"
+
   (
     pids=()
 
@@ -57,7 +57,7 @@ if [[ "${1:-}" == "--logs" ]]; then
     trap cleanup INT TERM
 
     for i in {1..4}; do
-      tail -n0 -F "logs/coordinator-$i.log" | sed "s/^/[op-$i] /" &
+      tail -n0 -F "${logs_dir}/coordinator-$i.log" | sed "s/^/[op-$i] /" &
       pids+=($!)
     done
 
@@ -66,7 +66,10 @@ if [[ "${1:-}" == "--logs" ]]; then
   exit 0
 fi
 
-rotate_logs_dir
+UB_LOG_DIR="$(resolve_logs_dir)"
+export UB_LOG_DIR
+
+echo "Logging to ${UB_LOG_DIR}"
 
 # forward all arguments to run
 RUST_BACKTRACE=1 exec cargo run --manifest-path cli/run/Cargo.toml -- "$@"

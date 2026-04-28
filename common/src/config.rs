@@ -16,7 +16,9 @@ use crate::types::{BlockHash, RskBlock};
 const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 const BASE_CONFIG_PATH: &str = "config/base";
 const CONFIG_DIR_PATH: &str = "config";
+const DEFAULT_LOG_DIR: &str = "./logs";
 const EXTENSION_TYPE: &str = "toml";
+const LOG_DIR_ENV_VAR: &str = "UB_LOG_DIR";
 
 #[derive(Debug, Deserialize)]
 pub struct CommonConfig {
@@ -252,21 +254,31 @@ impl CommonConfig {
         // Replace placeholders if any in the spec
         config_str = config_str.replace("{CRATE_NAME}", crate_name);
 
-        let default_destination = &format!("{project_root}/logs");
-        config_str = config_str.replace("{DESTINATION}", default_destination);
+        let log_destination = Self::log_destination()?;
+        config_str = config_str.replace("{DESTINATION}", &log_destination);
 
         let client_id = std::env::var("CLIENT_ID").unwrap_or_else(|_| "0".to_string());
         config_str = config_str.replace("{CLIENT_ID}", &client_id);
 
         println!(
             "Logging to {:?}",
-            format!("{}/{}-{}.log", default_destination, crate_name, client_id)
+            format!("{}/{}-{}.log", log_destination, crate_name, client_id)
         );
 
         // Parse and initialize log4rs
         let config = serde_yaml::from_str::<RawConfig>(&config_str)
             .context("Failed to parse log4rs config")?;
         log4rs::init_raw_config(config).context("Failed to initialize log4rs")
+    }
+
+    fn log_destination() -> Result<String> {
+        match std::env::var(LOG_DIR_ENV_VAR) {
+            Ok(path) if !path.is_empty() => Ok(path),
+            Ok(_) | Err(std::env::VarError::NotPresent) => Ok(DEFAULT_LOG_DIR.to_string()),
+            Err(std::env::VarError::NotUnicode(_)) => {
+                bail!("{LOG_DIR_ENV_VAR} must be valid UTF-8")
+            }
+        }
     }
 
     fn project_root() -> String {
@@ -304,6 +316,7 @@ mod tests {
 
     fn cleanup_env_vars() {
         unsafe {
+            remove_var(LOG_DIR_ENV_VAR);
             remove_var("UB__INDEXER__STORAGE__PATH");
             remove_var("UB__INDEXER__CACHE__SIZE");
             remove_var("UB__PROVIDER__ROOTSTOCK__URL");
@@ -441,5 +454,33 @@ mod tests {
                 panic!("unexpected error variant: {other:?}");
             }
         }
+    }
+
+    #[test]
+    fn test_log_destination_defaults_to_logs_when_env_var_is_not_set() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+
+        unsafe {
+            remove_var(LOG_DIR_ENV_VAR);
+        }
+
+        let destination = CommonConfig::log_destination().expect("Failed to resolve log dir");
+
+        assert_eq!(DEFAULT_LOG_DIR, destination);
+    }
+
+    #[test]
+    fn test_log_destination_uses_ub_log_dir_when_env_var_is_set() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let expected_destination = "/tmp/union-bridge-client-logs";
+
+        unsafe {
+            set_var(LOG_DIR_ENV_VAR, expected_destination);
+        }
+
+        let destination = CommonConfig::log_destination().expect("Failed to resolve log dir");
+
+        assert_eq!(expected_destination, destination);
+        cleanup_env_vars();
     }
 }
