@@ -84,9 +84,9 @@ Configuration ownership is:
 | `USER_BITCOIN_WIF` | shell or `.envrc`; can also be written into generated `docker-service.env` during setup | user flows, wallet helpers, Docker operator runtime, happy-path testing | required for user-facing Bitcoin operations |
 | `MEMBER_BITCOIN_WIF` | shell or `.envrc` | `./cli-bitcoin-wallet.sh`, happy-path testing | required for member wallet operations in local happy-path setup and automated flow tests |
 | `BITCOIND_URL` | shell or `.envrc` | `./cli-setup-operators.sh` while patching generated BitVMX configs | required before preparing operator artifacts for Docker-backed local flows |
-| `SLOTS_PER_PACKAGE` | shell or `.envrc` | coordinator, BitVMX dispute setup, and `./cli-operations.sh` | required; local default is `100` |
-| `COMMITTEE_MEMBER_COUNT` | shell or `.envrc` | coordinator and `./cli-operations.sh`; passed into `op-funding` calculations | required; local default is `4` |
-| `COMMITTEE_PROVER_COUNT` | shell or `.envrc` | coordinator and `./cli-operations.sh`; passed into `op-funding` calculations | required; local default is `2` |
+| `SLOTS_PER_PACKAGE` | shell or `.envrc` | coordinator, BitVMX dispute setup, and `./cli-operations.sh` | optional; defaults to `100` |
+| `COMMITTEE_MEMBER_COUNT` | shell or `.envrc` | coordinator and `./cli-operations.sh`; passed into `op-funding` calculations | optional; defaults to `4` |
+| `COMMITTEE_PROVER_COUNT` | shell or `.envrc` | coordinator and `./cli-operations.sh`; passed into `op-funding` calculations | optional; defaults to `2` |
 | `docker-compose.env` | generated under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/` | `docker/operator/start-operators.sh` / Docker compose | Docker operator runtime only |
 | `docker-service.env` | generated under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/` | operator containers | Docker operator runtime only |
 | `UB__...` overrides | shell, `.envrc`, CI, or container env | application config loader | use when you need to override TOML config without editing files |

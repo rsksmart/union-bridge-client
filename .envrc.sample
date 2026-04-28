@@ -14,7 +14,7 @@ export KEY_STORE_PASSWORD="<super-secret-password>"
 # optional (with fallback)
 export CHECK_FORK_REQUIRED_NUM_BLOCKS=5
 # Temporary until we gather them from contracts; must match current contract values
-export SLOTS_PER_PACKAGE=10
+export SLOTS_PER_PACKAGE=100
 export COMMITTEE_MEMBER_COUNT=4
 export COMMITTEE_PROVER_COUNT=2
 

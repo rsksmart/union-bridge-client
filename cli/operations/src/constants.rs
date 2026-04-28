@@ -3,6 +3,9 @@ use anyhow::{Context, Result};
 
 pub const DEFAULT_NUM_OPERATORS: u8 = 4;
 pub const MAX_OPERATORS: u8 = 10;
+const DEFAULT_SLOTS_PER_PACKAGE: u64 = 100;
+const DEFAULT_COMMITTEE_MEMBER_COUNT: u64 = 4;
+const DEFAULT_COMMITTEE_PROVER_COUNT: u64 = 2;
 
 pub fn operator_ids() -> Vec<u8> {
     let count = std::env::var("NUM_OPERATORS")
@@ -20,27 +23,23 @@ pub fn operator_ids() -> Vec<u8> {
 // contracts expose or enforce them. Keep shared config/env values for parameters not exposed by
 // contracts yet, such as prover count, and for local/dev testing.
 pub fn committee_member_count() -> Result<u64> {
-    required_env_u64("COMMITTEE_MEMBER_COUNT")
+    env_u64_or_default("COMMITTEE_MEMBER_COUNT", DEFAULT_COMMITTEE_MEMBER_COUNT)
 }
 
 pub fn prover_count() -> Result<u64> {
-    required_env_u64("COMMITTEE_PROVER_COUNT")
+    env_u64_or_default("COMMITTEE_PROVER_COUNT", DEFAULT_COMMITTEE_PROVER_COUNT)
 }
 
 pub fn slots_per_package() -> Result<u64> {
-    Ok(u64::from(
-        std::env::var("SLOTS_PER_PACKAGE")
-            .context("SLOTS_PER_PACKAGE environment variable is required")?
-            .parse::<u32>()
-            .context("SLOTS_PER_PACKAGE must be a valid u32")?,
-    ))
+    env_u64_or_default("SLOTS_PER_PACKAGE", DEFAULT_SLOTS_PER_PACKAGE)
 }
 
-fn required_env_u64(env_var: &str) -> Result<u64> {
-    std::env::var(env_var)
-        .with_context(|| format!("{env_var} environment variable is required"))?
-        .parse::<u64>()
-        .with_context(|| format!("{env_var} must be a valid u64"))
+fn env_u64_or_default(env_var: &str, default: u64) -> Result<u64> {
+    match std::env::var(env_var) {
+        Ok(value) => value.parse::<u64>().with_context(|| format!("{env_var} must be a valid u64")),
+        Err(std::env::VarError::NotPresent) => Ok(default),
+        Err(err) => Err(err).with_context(|| format!("failed to read {env_var}")),
+    }
 }
 
 // local anvil default address
