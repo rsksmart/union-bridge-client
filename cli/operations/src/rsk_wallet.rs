@@ -7,11 +7,10 @@ use std::process::Command;
 use std::str::FromStr;
 
 use op_funding::{derive_stream_funding_profile, required_member_rsk_balance};
+use protocol_params::{committee_member_count, prover_count, slots_per_package};
 
 use crate::bitcoin_wallet::collect_user_bitcoin_addresses;
-use crate::constants::{
-    committee_member_count, operator_ids, prover_count, slots_per_package, LOCAL_ANVIL_ADDRESS,
-};
+use crate::constants::{operator_ids, LOCAL_ANVIL_ADDRESS};
 use crate::environments::*;
 use crate::member_funding_info::CollectedMemberFundingInfo;
 
@@ -553,7 +552,7 @@ impl CommitteeFundingRole {
 }
 
 fn role_for_operator_index(index: usize) -> CommitteeFundingRole {
-    if index % 2 == 0 {
+    if index.is_multiple_of(2) {
         CommitteeFundingRole::Prover
     } else {
         CommitteeFundingRole::Verifier

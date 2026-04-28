@@ -69,6 +69,7 @@ services:
     environment:
       KEY_STORE_PASSWORD: ${KEY_STORE_PASSWORD}
       CONFIG: ${CONFIG:-dummy-config-name}
+      # Temporary protocol sizing workaround until we source these values from contracts.
       SLOTS_PER_PACKAGE:
       COMMITTEE_MEMBER_COUNT:
       COMMITTEE_PROVER_COUNT:

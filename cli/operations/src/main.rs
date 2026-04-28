@@ -81,9 +81,9 @@ mod utils;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use op_funding::derive_stream_funding_profile;
+use protocol_params::{committee_member_count, prover_count, slots_per_package};
 
 use crate::committee::CommitteeRole;
-use crate::constants::{committee_member_count, prover_count, slots_per_package};
 use crate::environments::Environment;
 use crate::member_funding_info::collect_member_funding_info;
 

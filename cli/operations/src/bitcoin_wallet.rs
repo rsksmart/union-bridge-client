@@ -7,10 +7,9 @@ use anyhow::{anyhow, bail, Context, Result};
 use bitcoin::address::Address as BitcoinAddress;
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{CompressedPublicKey, Network, NetworkKind, PrivateKey};
+use protocol_params::{committee_member_count, prover_count, slots_per_package};
 
-use crate::constants::{
-    committee_member_count, operator_ids, prover_count, slots_per_package, UNION_BRIDGE_DIR,
-};
+use crate::constants::{operator_ids, UNION_BRIDGE_DIR};
 use crate::environments::*;
 use crate::member_funding_info::CollectedMemberFundingInfo;
 use crate::utils::command_to_string;

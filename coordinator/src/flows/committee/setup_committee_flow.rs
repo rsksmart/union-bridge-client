@@ -18,6 +18,7 @@ use log::{debug, error, info, trace, warn};
 #[cfg(test)]
 use mockall::automock;
 use op_funding::{derive_stream_funding_profile, required_member_rsk_balance};
+use protocol_params::{committee_member_count, prover_count, slots_per_package};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -44,7 +45,6 @@ use crate::flows::committee::dispute_core_setup::{
     AggregatedKeys, CommitteeConfirmations, DisputeCoreSetup,
 };
 use crate::flows::committee::full_penalization_setup::FullPenalizationSetup;
-use crate::flows::committee::params::{committee_member_count, prover_count, slots_per_package};
 use crate::flows::common::{
     COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, Signaling, TAKE_KEY_INDEX,
     build_communication_data,
