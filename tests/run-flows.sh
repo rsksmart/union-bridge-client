@@ -1485,17 +1485,17 @@ run_committee_phase() {
 }
 
 run_setup_phase() {
-    run_wallet_prep_phase
-    run_operator_funding_phase
-    run_whitelist_phase
+    run_wallet_prep_phase || return 1
+    run_operator_funding_phase || return 1
+    run_whitelist_phase || return 1
 }
 
 run_setup_and_committee_phases() {
     local setup_start_time
     setup_start_time=$(date +%s)
 
-    run_setup_phase
-    run_committee_phase
+    run_setup_phase || return 1
+    run_committee_phase || return 1
 
     local setup_end_time
     setup_end_time=$(date +%s)

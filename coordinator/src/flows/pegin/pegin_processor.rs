@@ -69,6 +69,7 @@ where
     events_confirming: HashMap<String, ConfirmableEventWithData>,
     tx_status_scheduler: TickScheduler<Uuid>,
     pegin_request_tracker: HashSet<Txid>,
+    pending_pegin_requested: HashMap<Txid, PeginRequestedEvent>,
     // For retry logic when native bridge lacks confirmations
     unconfirmed_pegin_requests: HashMap<String, (BtcTxSPVProof, i16)>,
     pegin_retry_scheduler: TickScheduler<String>,
@@ -132,6 +133,7 @@ where
             signature_flows: HashMap::new(),
             tx_status_scheduler: TickScheduler::new(),
             pegin_request_tracker: HashSet::new(),
+            pending_pegin_requested: HashMap::new(),
             unconfirmed_pegin_requests: HashMap::new(),
             pegin_retry_scheduler: TickScheduler::new(),
             unconfirmed_accept_pegin: HashMap::new(),
@@ -162,7 +164,7 @@ where
         processor
     }
 
-    /// Handle `PeginRequested` event by finding and updating existing flow
+    /// Handle `PeginRequested` event by finding and updating existing flow.
     fn create_flow_for_pegin_requested(&mut self, event: &PeginRequested) -> Result<()> {
         let committee_id: CommitteeId = event.committeeId.into();
 
@@ -252,7 +254,21 @@ where
                     return Ok(());
                 }
                 info!("Processing confirmed PeginRequested event: {pr:?}");
-                self.create_flow_for_pegin_requested(&pr.inner)?;
+                let btc_tx_id = TxIdParser::fb_32_to_txid(pr.inner.requestPeginTxid);
+                let temp_flow_id = get_temp_pegin_pid(btc_tx_id);
+                let should_buffer = self
+                    .pegin_flows
+                    .get(&temp_flow_id)
+                    .is_none_or(|flow| flow.current_step() != Steps::PeginRequested);
+
+                if should_buffer {
+                    info!(
+                        "Buffering PeginRequested for Bitcoin tx: {btc_tx_id} until request SPV flow is ready"
+                    );
+                    self.pending_pegin_requested.insert(btc_tx_id, pr.clone());
+                } else {
+                    self.create_flow_for_pegin_requested(&pr.inner)?;
+                }
             }
             RskPegManagerEvents::PeginAccepted(pa) => {
                 self.handle_pegin_accepted(pa)?;
@@ -501,9 +517,9 @@ where
         self.accept_pegin_retry_scheduler.schedule(flow_id, self.btc_status_retry_blocks);
     }
 
-    fn handle_pegin_retry_tick(&mut self) {
+    fn handle_pegin_retry_tick(&mut self) -> Result<()> {
         if self.pegin_retry_scheduler.is_empty() && self.accept_pegin_retry_scheduler.is_empty() {
-            return;
+            return Ok(());
         }
 
         for block_hash in self.pegin_retry_scheduler.tick() {
@@ -529,6 +545,7 @@ where
             let Err(err) = flow.complete_step(&StepData::RetryRequestPegin) else {
                 info!("Request pegin succeeded on retry for block {block_hash}");
                 self.pegin_request_tracker.remove(&tx_id);
+                self.replay_pending_pegin_requested(&tx_id)?;
                 continue;
             };
 
@@ -582,6 +599,19 @@ where
                 "Still missing confirmations on native bridge, scheduling another retry",
             );
         }
+
+        Ok(())
+    }
+
+    fn replay_pending_pegin_requested(&mut self, tx_id: &Txid) -> Result<()> {
+        if let Some(pegin_requested_event) = self.pending_pegin_requested.remove(tx_id) {
+            info!("Replaying buffered PeginRequested for Bitcoin tx: {tx_id}");
+            self.process_confirmed_rsk_event(&RskPegManagerEvents::PeginRequested(
+                pegin_requested_event,
+            ))?;
+        }
+
+        Ok(())
     }
 
     fn stop_confirming_event(&mut self, id: &str) -> Option<ConfirmableEventWithData> {
@@ -719,7 +749,8 @@ where
 
         self.pegin_request_tracker.remove(tx_id);
         debug!("Removed request_pegin_txid from tracking: tx_id={tx_id}");
-        Ok(())
+
+        self.replay_pending_pegin_requested(tx_id)
     }
 
     fn handle_spv_proof_for_accept_pegin(
@@ -981,7 +1012,7 @@ where
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
         self.process_unhandled_confirmed_sig_flow_events(block)?;
         self.handle_transaction_status_tick()?;
-        self.handle_pegin_retry_tick();
+        self.handle_pegin_retry_tick()?;
         self.process_block_confirmations(block)?;
 
         Ok(())
@@ -998,6 +1029,7 @@ where
         self.accept_pegin_retry_scheduler.clear();
         self.unconfirmed_accept_pegin.clear();
         self.pegin_request_tracker.clear();
+        self.pending_pegin_requested.clear();
         self.signature_flows.clear();
     }
 }
