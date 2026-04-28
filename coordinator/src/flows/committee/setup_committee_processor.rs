@@ -681,15 +681,9 @@ mod tests {
         let mut flow = factory.create_flow(internal_id);
         flow.complete_step(StepData::UserRequest(test_apply_to_stream(stream_id)))
             .expect("init should advance to ValidateBalances");
-        let min_funding_balance = derive_stream_funding_profile(
-            stream_id,
-            true,
-            crate::flows::committee::dispute_core_setup::PACKET_SIZE.into(),
-            crate::flows::committee::dispute_core_setup::DEFAULT_OPERATOR_COUNT,
-            crate::flows::committee::dispute_core_setup::DEFAULT_PROVER_COUNT,
-        )
-        .expect("valid stream id for test")
-        .operator_fund_amount;
+        let min_funding_balance = derive_stream_funding_profile(stream_id, true, 100, 4, 2)
+            .expect("valid stream id for test")
+            .operator_fund_amount;
         flow.complete_step(StepData::BitVmxFundingBalance(min_funding_balance))
             .expect("validate balances should advance to GetMyCommInfo");
 

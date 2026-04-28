@@ -9,7 +9,7 @@ use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{CompressedPublicKey, Network, NetworkKind, PrivateKey};
 
 use crate::constants::{
-    operator_and_prover_counts, operator_ids, COMMITTEE_PACKET_SIZE, UNION_BRIDGE_DIR,
+    committee_member_count, operator_ids, prover_count, slots_per_package, UNION_BRIDGE_DIR,
 };
 use crate::environments::*;
 use crate::member_funding_info::CollectedMemberFundingInfo;
@@ -27,13 +27,12 @@ pub async fn handle_bitcoin_funding(
         bail!("--execute flag is only supported for local environments (`local`/`docker`). For remote environments, please run the wallet commands manually.");
     }
 
-    let (operator_count, prover_count) = operator_and_prover_counts();
     let funding_profile = derive_stream_funding_profile(
         stream_id,
         matches!(environment, Environment::Local | Environment::Docker),
-        COMMITTEE_PACKET_SIZE,
-        operator_count,
-        prover_count,
+        slots_per_package()?,
+        committee_member_count()?,
+        prover_count()?,
     )
     .with_context(|| format!("invalid stream id {} (expected 0-4)", stream_id))?;
     let amount = amount_override.unwrap_or(funding_profile.operator_fund_amount);

@@ -41,10 +41,10 @@ use crate::flows::committee::dispute_channel_setup::{
     DisputeChannelSetup, DisputeChannelSetupRequest,
 };
 use crate::flows::committee::dispute_core_setup::{
-    AggregatedKeys, CommitteeConfirmations, DEFAULT_OPERATOR_COUNT, DEFAULT_PROVER_COUNT,
-    DisputeCoreSetup, PACKET_SIZE,
+    AggregatedKeys, CommitteeConfirmations, DisputeCoreSetup,
 };
 use crate::flows::committee::full_penalization_setup::FullPenalizationSetup;
+use crate::flows::committee::params::{committee_member_count, prover_count, slots_per_package};
 use crate::flows::common::{
     COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, Signaling, TAKE_KEY_INDEX,
     build_communication_data,
@@ -718,9 +718,9 @@ where
         let profile = derive_stream_funding_profile(
             *stream_id,
             is_regtest,
-            PACKET_SIZE.into(),
-            DEFAULT_OPERATOR_COUNT,
-            DEFAULT_PROVER_COUNT,
+            slots_per_package()?,
+            committee_member_count()?,
+            prover_count()?,
         )
         .with_context(|| format!("Unsupported stream id {}", *stream_id))?;
         let min_funding_balance = profile.operator_fund_amount;
@@ -766,8 +766,11 @@ where
         let stream_id_u8 = stream_id.as_u8()?;
         let min_deposit =
             self.rt_sync.run(self.contracts.get_minimum_deposit(stream_id_u8, role))?;
-        let min_rsk_balance =
-            required_member_rsk_balance(min_deposit, PACKET_SIZE.into(), DEFAULT_OPERATOR_COUNT);
+        let min_rsk_balance = required_member_rsk_balance(
+            min_deposit,
+            slots_per_package()?,
+            committee_member_count()?,
+        );
 
         if balance_wei < min_rsk_balance {
             bail!("Insufficient RSK balance: {balance_wei} < {min_rsk_balance}")

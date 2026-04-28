@@ -10,7 +10,7 @@ use op_funding::{derive_stream_funding_profile, required_member_rsk_balance};
 
 use crate::bitcoin_wallet::collect_user_bitcoin_addresses;
 use crate::constants::{
-    operator_and_prover_counts, operator_ids, COMMITTEE_PACKET_SIZE, LOCAL_ANVIL_ADDRESS,
+    committee_member_count, operator_ids, prover_count, slots_per_package, LOCAL_ANVIL_ADDRESS,
 };
 use crate::environments::*;
 use crate::member_funding_info::CollectedMemberFundingInfo;
@@ -601,13 +601,12 @@ fn parse_remote_operator_roles(
 }
 
 fn required_user_rsk_balance(stream_id: u64) -> Result<U256> {
-    let (operator_count, prover_count) = operator_and_prover_counts();
     let amount_in_wei = derive_stream_funding_profile(
         stream_id,
         true,
-        COMMITTEE_PACKET_SIZE,
-        operator_count,
-        prover_count,
+        slots_per_package()?,
+        committee_member_count()?,
+        prover_count()?,
     )
     .map(|profile| U256::from(profile.denomination) * U256::from(WEI_PER_SAT))
     .ok_or_else(|| anyhow!("invalid stream id {} (expected 0-4)", stream_id))?;
@@ -633,8 +632,13 @@ fn required_operator_rsk_balance(
     role: CommitteeFundingRole,
 ) -> Result<U256> {
     let min_deposit = fetch_stream_min_deposit(rpc_url, stream_manager_address, stream_id, role)?;
-    let operator_count = u64::try_from(operator_ids().len()).expect("operator count fits in u64");
-    Ok(required_member_rsk_balance(min_deposit, COMMITTEE_PACKET_SIZE, operator_count))
+    let committee_member_count =
+        u64::try_from(operator_ids().len()).expect("committee member count fits in u64");
+    Ok(required_member_rsk_balance(
+        min_deposit,
+        slots_per_package()?,
+        committee_member_count,
+    ))
 }
 
 fn fetch_stream_min_deposit(

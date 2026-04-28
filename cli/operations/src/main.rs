@@ -83,7 +83,7 @@ use clap::{Parser, Subcommand};
 use op_funding::derive_stream_funding_profile;
 
 use crate::committee::CommitteeRole;
-use crate::constants::{operator_and_prover_counts, COMMITTEE_PACKET_SIZE};
+use crate::constants::{committee_member_count, prover_count, slots_per_package};
 use crate::environments::Environment;
 use crate::member_funding_info::collect_member_funding_info;
 
@@ -300,13 +300,12 @@ async fn main() -> Result<()> {
             }
             OperatorCommands::FundingAmount { env, stream_id } => {
                 let is_regtest = matches!(env, Environment::Local | Environment::Docker);
-                let (operator_count, prover_count) = operator_and_prover_counts();
                 let profile = derive_stream_funding_profile(
                     stream_id,
                     is_regtest,
-                    COMMITTEE_PACKET_SIZE,
-                    operator_count,
-                    prover_count,
+                    slots_per_package()?,
+                    committee_member_count()?,
+                    prover_count()?,
                 )
                 .ok_or_else(|| anyhow::anyhow!("invalid stream id {} (expected 0-4)", stream_id))?;
                 println!("{}", profile.operator_fund_amount);

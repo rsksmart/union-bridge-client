@@ -70,16 +70,16 @@ fn fee_rate(is_regtest: bool) -> u64 {
     if is_regtest { REGTEST_FEE_RATE } else { NON_REGTEST_FEE_RATE }
 }
 
-fn operator_funding_value(packet_size: u64, is_regtest: bool) -> u64 {
-    FUNDING_AMOUNT_PER_SLOT * packet_size
+fn operator_funding_value(slots_per_package: u64, is_regtest: bool) -> u64 {
+    FUNDING_AMOUNT_PER_SLOT * slots_per_package
         + SPEEDUP_VALUE
-        + estimate_fee(1, packet_size + 2, fee_rate(is_regtest))
+        + estimate_fee(1, slots_per_package + 2, fee_rate(is_regtest))
 }
 
-fn watchtower_funding_value(operator_count: u64, is_regtest: bool) -> u64 {
-    DISPUTE_CHANNEL_FUNDING_PER_MEMBER * operator_count
+fn watchtower_funding_value(committee_member_count: u64, is_regtest: bool) -> u64 {
+    DISPUTE_CHANNEL_FUNDING_PER_MEMBER * committee_member_count
         + SPEEDUP_VALUE
-        + estimate_fee(1, operator_count + 2, fee_rate(is_regtest))
+        + estimate_fee(1, committee_member_count + 2, fee_rate(is_regtest))
 }
 
 fn funding_wt_disabler_directory_value(prover_count: u64, is_regtest: bool) -> u64 {
@@ -88,10 +88,10 @@ fn funding_wt_disabler_directory_value(prover_count: u64, is_regtest: bool) -> u
         + estimate_fee(2, prover_count * 2, fee_rate(is_regtest))
 }
 
-fn funding_op_disabler_directory_value(packet_size: u64, is_regtest: bool) -> u64 {
-    DUST_VALUE * packet_size
+fn funding_op_disabler_directory_value(slots_per_package: u64, is_regtest: bool) -> u64 {
+    DUST_VALUE * slots_per_package
         + SPEEDUP_VALUE
-        + estimate_fee(2, packet_size + 1, fee_rate(is_regtest))
+        + estimate_fee(2, slots_per_package + 1, fee_rate(is_regtest))
 }
 
 fn speedup_funds_value(is_regtest: bool) -> u64 {
@@ -106,23 +106,23 @@ fn operator_funding_margin(denomination: u64) -> u64 {
 pub fn derive_stream_funding_profile(
     stream_id: u64,
     is_regtest: bool,
-    packet_size: u64,
-    operator_count: u64,
+    slots_per_package: u64,
+    committee_member_count: u64,
     prover_count: u64,
 ) -> Option<StreamFundingProfile> {
     let denomination = stream_denomination(stream_id)?;
     let speed_up_utxo = speedup_funds_value(is_regtest);
     let advance_funds = calculate_advance_funds_value(denomination);
-    let protocol_funding = operator_funding_value(packet_size, is_regtest)
-        + funding_op_disabler_directory_value(packet_size, is_regtest)
-        + watchtower_funding_value(operator_count, is_regtest)
+    let protocol_funding = operator_funding_value(slots_per_package, is_regtest)
+        + funding_op_disabler_directory_value(slots_per_package, is_regtest)
+        + watchtower_funding_value(committee_member_count, is_regtest)
         + funding_wt_disabler_directory_value(prover_count, is_regtest)
         + EXAMPLE_PROTOCOL_FUNDING_SAFETY_BUFFER;
     let operator_fund_amount = speed_up_utxo
         + advance_funds
-        + operator_funding_value(packet_size, is_regtest)
-        + funding_op_disabler_directory_value(packet_size, is_regtest)
-        + watchtower_funding_value(operator_count, is_regtest)
+        + operator_funding_value(slots_per_package, is_regtest)
+        + funding_op_disabler_directory_value(slots_per_package, is_regtest)
+        + watchtower_funding_value(committee_member_count, is_regtest)
         + funding_wt_disabler_directory_value(prover_count, is_regtest)
         + EXAMPLE_TOTAL_FUNDING_SAFETY_BUFFER
         + operator_funding_margin(denomination);
@@ -146,18 +146,18 @@ pub fn required_rsk_balance(min_deposit: U256) -> U256 {
 #[must_use]
 /// # Panics
 /// Panics if the computed slot budget does not fit in `u64`.
-pub fn budgeted_slot_count(packet_size: u64, operator_count: u64) -> u64 {
-    let packet_size = u128::from(packet_size);
-    let operator_count = u128::from(operator_count.max(1));
+pub fn budgeted_slot_count(slots_per_package: u64, committee_member_count: u64) -> u64 {
+    let slots_per_package = u128::from(slots_per_package);
+    let committee_member_count = u128::from(committee_member_count.max(1));
 
-    if packet_size == 0 {
+    if slots_per_package == 0 {
         return 0;
     }
 
-    let sqrt_term = ceil_sqrt(packet_size * (operator_count - 1));
-    let numerator =
-        packet_size * SLOT_BUDGET_Z_SCORE_DENOMINATOR + SLOT_BUDGET_Z_SCORE_NUMERATOR * sqrt_term;
-    let denominator = SLOT_BUDGET_Z_SCORE_DENOMINATOR * operator_count;
+    let sqrt_term = ceil_sqrt(slots_per_package * (committee_member_count - 1));
+    let numerator = slots_per_package * SLOT_BUDGET_Z_SCORE_DENOMINATOR
+        + SLOT_BUDGET_Z_SCORE_NUMERATOR * sqrt_term;
+    let denominator = SLOT_BUDGET_Z_SCORE_DENOMINATOR * committee_member_count;
 
     u64::try_from(ceil_div(numerator, denominator)).expect("slot budget fits in u64")
 }
@@ -165,12 +165,12 @@ pub fn budgeted_slot_count(packet_size: u64, operator_count: u64) -> u64 {
 #[must_use]
 pub fn required_member_rsk_balance(
     min_deposit: U256,
-    packet_size: u64,
-    operator_count: u64,
+    slots_per_package: u64,
+    committee_member_count: u64,
 ) -> U256 {
     let percentage_buffer =
         (min_deposit * U256::from(RSK_GAS_BUFFER_PERCENT)) / U256::from(100_u64);
-    let slot_budget = budgeted_slot_count(packet_size, operator_count);
+    let slot_budget = budgeted_slot_count(slots_per_package, committee_member_count);
     let probabilistic_reserve = U256::from(MEMBER_RSK_SETUP_RESERVE_WEI)
         + U256::from(MEMBER_RSK_RESERVE_PER_SLOT_WEI) * U256::from(slot_budget);
 
@@ -212,18 +212,18 @@ mod tests {
         required_rsk_balance,
     };
 
-    const COMMITTEE_PACKET_SIZE: u64 = 100;
-    const OPERATOR_COUNT: u64 = 4; // TODO this should come from config or contracts settings
-    const PROVER_COUNT: u64 = 2; // TODO this should come from config or contracts settings
+    const DEFAULT_COMMITTEE_MEMBER_COUNT: u64 = 4;
+    const DEFAULT_PROVER_COUNT: u64 = 2;
+    const DEFAULT_SLOTS_PER_PACKAGE: u64 = 100;
 
     #[test]
     fn derives_regtest_stream_zero_profile() {
         let profile = derive_stream_funding_profile(
             0,
             true,
-            COMMITTEE_PACKET_SIZE,
-            OPERATOR_COUNT,
-            PROVER_COUNT,
+            DEFAULT_SLOTS_PER_PACKAGE,
+            DEFAULT_COMMITTEE_MEMBER_COUNT,
+            DEFAULT_PROVER_COUNT,
         )
         .expect("stream 0 should exist");
 
@@ -239,9 +239,9 @@ mod tests {
         let profile = derive_stream_funding_profile(
             0,
             false,
-            COMMITTEE_PACKET_SIZE,
-            OPERATOR_COUNT,
-            PROVER_COUNT,
+            DEFAULT_SLOTS_PER_PACKAGE,
+            DEFAULT_COMMITTEE_MEMBER_COUNT,
+            DEFAULT_PROVER_COUNT,
         )
         .expect("stream 0 should exist");
 
@@ -257,9 +257,9 @@ mod tests {
         let profile = derive_stream_funding_profile(
             1,
             true,
-            COMMITTEE_PACKET_SIZE,
-            OPERATOR_COUNT,
-            PROVER_COUNT,
+            DEFAULT_SLOTS_PER_PACKAGE,
+            DEFAULT_COMMITTEE_MEMBER_COUNT,
+            DEFAULT_PROVER_COUNT,
         )
         .expect("stream 1 should exist");
 
@@ -276,9 +276,9 @@ mod tests {
             derive_stream_funding_profile(
                 99,
                 true,
-                COMMITTEE_PACKET_SIZE,
-                OPERATOR_COUNT,
-                PROVER_COUNT
+                DEFAULT_SLOTS_PER_PACKAGE,
+                DEFAULT_COMMITTEE_MEMBER_COUNT,
+                DEFAULT_PROVER_COUNT,
             )
             .is_none()
         );
@@ -303,20 +303,24 @@ mod tests {
     }
 
     #[test]
-    fn budgets_probabilistic_slot_count_for_hundred_slots_and_four_operators() {
-        assert_eq!(budgeted_slot_count(100, OPERATOR_COUNT), 36);
+    fn budgets_probabilistic_slot_count_for_hundred_slots_and_four_members() {
+        assert_eq!(budgeted_slot_count(100, DEFAULT_COMMITTEE_MEMBER_COUNT), 36);
     }
 
     #[test]
-    fn budgets_probabilistic_slot_count_for_ten_slots_and_four_operators() {
-        assert_eq!(budgeted_slot_count(10, OPERATOR_COUNT), 6);
+    fn budgets_probabilistic_slot_count_for_ten_slots_and_four_members() {
+        assert_eq!(budgeted_slot_count(10, DEFAULT_COMMITTEE_MEMBER_COUNT), 6);
     }
 
     #[test]
     fn uses_probabilistic_reserve_for_small_min_deposit() {
         let min_deposit = U256::from(25_000_000_000_000_000_u64);
         assert_eq!(
-            required_member_rsk_balance(min_deposit, COMMITTEE_PACKET_SIZE, OPERATOR_COUNT),
+            required_member_rsk_balance(
+                min_deposit,
+                DEFAULT_SLOTS_PER_PACKAGE,
+                DEFAULT_COMMITTEE_MEMBER_COUNT
+            ),
             U256::from(143_000_000_000_000_000_u64)
         );
     }
@@ -325,7 +329,11 @@ mod tests {
     fn keeps_percentage_buffer_for_large_min_deposit() {
         let min_deposit = U256::from(1_000_000_000_000_000_000_u64);
         assert_eq!(
-            required_member_rsk_balance(min_deposit, COMMITTEE_PACKET_SIZE, OPERATOR_COUNT),
+            required_member_rsk_balance(
+                min_deposit,
+                DEFAULT_SLOTS_PER_PACKAGE,
+                DEFAULT_COMMITTEE_MEMBER_COUNT
+            ),
             U256::from(1_200_000_000_000_000_000_u64)
         );
     }
