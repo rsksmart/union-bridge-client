@@ -790,7 +790,6 @@ where
                     debug!(
                         "Received BitVMX OutputPatternTransactionFound for RSK pegin: tx_id={tx_id}"
                     );
-                    self.handle_pegin_transaction_found(*tx_id)?;
                 } else {
                     trace!(
                         "Ignoring BitVMX OutputPatternTransactionFound with non-pegin tag: {:?}",
