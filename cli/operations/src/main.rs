@@ -306,8 +306,7 @@ async fn main() -> Result<()> {
                     slots_per_package()?,
                     committee_member_count()?,
                     prover_count()?,
-                )
-                .ok_or_else(|| anyhow::anyhow!("invalid stream id {} (expected 0-4)", stream_id))?;
+                )?;
                 println!("{}", profile.operator_fund_amount);
             }
             OperatorCommands::ApplyToStream { stream_id, env, operator_id, role } => {

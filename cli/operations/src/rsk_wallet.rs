@@ -608,8 +608,7 @@ fn required_user_rsk_balance(stream_id: u64) -> Result<U256> {
         committee_member_count()?,
         prover_count()?,
     )
-    .map(|profile| U256::from(profile.denomination) * U256::from(WEI_PER_SAT))
-    .ok_or_else(|| anyhow!("invalid stream id {} (expected 0-4)", stream_id))?;
+    .map(|profile| U256::from(profile.denomination) * U256::from(WEI_PER_SAT))?;
 
     Ok(amount_in_wei + U256::from(LOCAL_USER_RSK_GAS_BUFFER_WEI))
 }
@@ -632,13 +631,7 @@ fn required_operator_rsk_balance(
     role: CommitteeFundingRole,
 ) -> Result<U256> {
     let min_deposit = fetch_stream_min_deposit(rpc_url, stream_manager_address, stream_id, role)?;
-    let committee_member_count =
-        u64::try_from(operator_ids().len()).expect("committee member count fits in u64");
-    Ok(required_member_rsk_balance(
-        min_deposit,
-        slots_per_package()?,
-        committee_member_count,
-    ))
+    Ok(required_member_rsk_balance(min_deposit, slots_per_package()?, committee_member_count()?))
 }
 
 fn fetch_stream_min_deposit(

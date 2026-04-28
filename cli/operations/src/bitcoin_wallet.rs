@@ -33,8 +33,7 @@ pub async fn handle_bitcoin_funding(
         slots_per_package()?,
         committee_member_count()?,
         prover_count()?,
-    )
-    .with_context(|| format!("invalid stream id {} (expected 0-4)", stream_id))?;
+    )?;
     let amount = amount_override.unwrap_or(funding_profile.operator_fund_amount);
 
     let addresses = collect_addresses(&environment, member_funding_info)?;

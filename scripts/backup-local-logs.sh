@@ -55,7 +55,12 @@ capture_command() {
   shift 2
 
   "$@" 2>&1 | strip_ansi > "${destination_file}"
-  local rc=${PIPESTATUS[0]}
+  local command_rc=${PIPESTATUS[0]}
+  local strip_rc=${PIPESTATUS[1]}
+  local rc="${command_rc}"
+  if [[ "${rc}" -eq 0 && "${strip_rc}" -ne 0 ]]; then
+    rc="${strip_rc}"
+  fi
   print_capture_result "${subject}" "${rc}"
 }
 

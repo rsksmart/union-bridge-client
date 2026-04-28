@@ -138,8 +138,7 @@ async fn post_apply(
         slots_per_package()?,
         committee_member_count()?,
         prover_count()?,
-    )
-    .with_context(|| format!("invalid stream id {} (expected 0-4)", stream_id))?;
+    )?;
 
     let payload = ApplyStreamRequest {
         apply_to_stream: ApplyToStream {

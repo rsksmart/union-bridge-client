@@ -4,8 +4,6 @@ use anyhow::{Context, Result};
 pub const DEFAULT_NUM_OPERATORS: u8 = 4;
 pub const MAX_OPERATORS: u8 = 10;
 const DEFAULT_SLOTS_PER_PACKAGE: u64 = 100;
-const DEFAULT_COMMITTEE_MEMBER_COUNT: u64 = 4;
-const DEFAULT_COMMITTEE_PROVER_COUNT: u64 = 2;
 
 pub fn operator_ids() -> Vec<u8> {
     let count = std::env::var("NUM_OPERATORS")
@@ -23,11 +21,13 @@ pub fn operator_ids() -> Vec<u8> {
 // contracts expose or enforce them. Keep shared config/env values for parameters not exposed by
 // contracts yet, such as prover count, and for local/dev testing.
 pub fn committee_member_count() -> Result<u64> {
-    env_u64_or_default("COMMITTEE_MEMBER_COUNT", DEFAULT_COMMITTEE_MEMBER_COUNT)
+    let default = u64::try_from(operator_ids().len()).expect("operator count fits in u64");
+    env_u64_or_default("COMMITTEE_MEMBER_COUNT", default)
 }
 
 pub fn prover_count() -> Result<u64> {
-    env_u64_or_default("COMMITTEE_PROVER_COUNT", DEFAULT_COMMITTEE_PROVER_COUNT)
+    let default = committee_member_count()?.div_ceil(2);
+    env_u64_or_default("COMMITTEE_PROVER_COUNT", default)
 }
 
 pub fn slots_per_package() -> Result<u64> {

@@ -721,8 +721,7 @@ where
             slots_per_package()?,
             committee_member_count()?,
             prover_count()?,
-        )
-        .with_context(|| format!("Unsupported stream id {}", *stream_id))?;
+        )?;
         let min_funding_balance = profile.operator_fund_amount;
 
         let r = self

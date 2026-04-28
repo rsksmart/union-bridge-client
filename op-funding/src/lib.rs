@@ -1,3 +1,5 @@
+use std::fmt;
+
 use alloy_primitives::U256;
 
 const STREAM_DENOMINATIONS: [u64; 5] = [100_000, 1_000_000, 10_000_000, 100_000_000, 1_000_000_000];
@@ -53,6 +55,25 @@ pub struct StreamFundingProfile {
     pub advance_funds: u64,
     pub operator_fund_amount: u64,
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FundingProfileError {
+    UnknownStreamId(u64),
+    ArithmeticOverflow,
+}
+
+impl fmt::Display for FundingProfileError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnknownStreamId(stream_id) => {
+                write!(f, "invalid stream id {stream_id} (expected 0-4)")
+            }
+            Self::ArithmeticOverflow => write!(f, "funding profile arithmetic overflow"),
+        }
+    }
+}
+
+impl std::error::Error for FundingProfileError {}
 
 fn stream_denomination(stream_id: u64) -> Option<u64> {
     usize::try_from(stream_id).ok().and_then(|index| STREAM_DENOMINATIONS.get(index)).copied()
@@ -114,36 +135,52 @@ fn operator_funding_margin(denomination: u64) -> Option<u64> {
         .checked_div(OPERATOR_FUNDING_MARGIN_DENOMINATOR)
 }
 
-#[must_use]
+/// Derives the Bitcoin funding profile for a supported stream.
+///
+/// # Errors
+///
+/// Returns [`FundingProfileError::UnknownStreamId`] when `stream_id` is outside the supported
+/// denomination table. Returns [`FundingProfileError::ArithmeticOverflow`] when the requested
+/// sizing parameters cannot be represented in the funding arithmetic.
 pub fn derive_stream_funding_profile(
     stream_id: u64,
     is_regtest: bool,
     slots_per_package: u64,
     committee_member_count: u64,
     prover_count: u64,
-) -> Option<StreamFundingProfile> {
-    let denomination = stream_denomination(stream_id)?;
+) -> Result<StreamFundingProfile, FundingProfileError> {
+    let denomination =
+        stream_denomination(stream_id).ok_or(FundingProfileError::UnknownStreamId(stream_id))?;
     let speed_up_utxo = speedup_funds_value(is_regtest);
-    let advance_funds = calculate_advance_funds_value(denomination)?;
-    let operator_funding = operator_funding_value(slots_per_package, is_regtest)?;
-    let op_disabler_funding = funding_op_disabler_directory_value(slots_per_package, is_regtest)?;
-    let watchtower_funding = watchtower_funding_value(committee_member_count, is_regtest)?;
-    let wt_disabler_funding = funding_wt_disabler_directory_value(prover_count, is_regtest)?;
+    let advance_funds = calculate_advance_funds_value(denomination)
+        .ok_or(FundingProfileError::ArithmeticOverflow)?;
+    let operator_funding = operator_funding_value(slots_per_package, is_regtest)
+        .ok_or(FundingProfileError::ArithmeticOverflow)?;
+    let op_disabler_funding = funding_op_disabler_directory_value(slots_per_package, is_regtest)
+        .ok_or(FundingProfileError::ArithmeticOverflow)?;
+    let watchtower_funding = watchtower_funding_value(committee_member_count, is_regtest)
+        .ok_or(FundingProfileError::ArithmeticOverflow)?;
+    let wt_disabler_funding = funding_wt_disabler_directory_value(prover_count, is_regtest)
+        .ok_or(FundingProfileError::ArithmeticOverflow)?;
     let protocol_funding = operator_funding
-        .checked_add(op_disabler_funding)?
-        .checked_add(watchtower_funding)?
-        .checked_add(wt_disabler_funding)?
-        .checked_add(EXAMPLE_PROTOCOL_FUNDING_SAFETY_BUFFER)?;
+        .checked_add(op_disabler_funding)
+        .and_then(|value| value.checked_add(watchtower_funding))
+        .and_then(|value| value.checked_add(wt_disabler_funding))
+        .and_then(|value| value.checked_add(EXAMPLE_PROTOCOL_FUNDING_SAFETY_BUFFER))
+        .ok_or(FundingProfileError::ArithmeticOverflow)?;
     let operator_fund_amount = speed_up_utxo
-        .checked_add(advance_funds)?
-        .checked_add(operator_funding)?
-        .checked_add(op_disabler_funding)?
-        .checked_add(watchtower_funding)?
-        .checked_add(wt_disabler_funding)?
-        .checked_add(EXAMPLE_TOTAL_FUNDING_SAFETY_BUFFER)?
-        .checked_add(operator_funding_margin(denomination)?)?;
+        .checked_add(advance_funds)
+        .and_then(|value| value.checked_add(operator_funding))
+        .and_then(|value| value.checked_add(op_disabler_funding))
+        .and_then(|value| value.checked_add(watchtower_funding))
+        .and_then(|value| value.checked_add(wt_disabler_funding))
+        .and_then(|value| value.checked_add(EXAMPLE_TOTAL_FUNDING_SAFETY_BUFFER))
+        .and_then(|value| {
+            operator_funding_margin(denomination).and_then(|margin| value.checked_add(margin))
+        })
+        .ok_or(FundingProfileError::ArithmeticOverflow)?;
 
-    Some(StreamFundingProfile {
+    Ok(StreamFundingProfile {
         denomination,
         protocol_funding,
         speed_up_utxo,
@@ -231,8 +268,8 @@ mod tests {
     use alloy_primitives::U256;
 
     use super::{
-        budgeted_slot_count, derive_stream_funding_profile, required_member_rsk_balance,
-        required_rsk_balance,
+        FundingProfileError, budgeted_slot_count, derive_stream_funding_profile,
+        required_member_rsk_balance, required_rsk_balance,
     };
 
     const DEFAULT_COMMITTEE_MEMBER_COUNT: u64 = 4;
@@ -295,7 +332,7 @@ mod tests {
 
     #[test]
     fn rejects_unknown_stream_id() {
-        assert!(
+        assert_eq!(
             derive_stream_funding_profile(
                 99,
                 true,
@@ -303,7 +340,23 @@ mod tests {
                 DEFAULT_COMMITTEE_MEMBER_COUNT,
                 DEFAULT_PROVER_COUNT,
             )
-            .is_none()
+            .unwrap_err(),
+            FundingProfileError::UnknownStreamId(99)
+        );
+    }
+
+    #[test]
+    fn reports_arithmetic_overflow() {
+        assert_eq!(
+            derive_stream_funding_profile(
+                0,
+                true,
+                u64::MAX,
+                DEFAULT_COMMITTEE_MEMBER_COUNT,
+                DEFAULT_PROVER_COUNT,
+            )
+            .unwrap_err(),
+            FundingProfileError::ArithmeticOverflow
         );
     }
 
