@@ -198,7 +198,7 @@ export KEY_STORE_PASSWORD=<your-password>
 export USER_BITCOIN_WIF=<your-user-wif>
 export MEMBER_BITCOIN_WIF=<your-member-wif>
 export BITCOIND_URL=http://foo:rpcpassword@host.docker.internal:18443
-export SLOTS_PER_PACKAGE=100
+export SLOTS_PER_PACKAGE=10
 export COMMITTEE_MEMBER_COUNT=4
 export COMMITTEE_PROVER_COUNT=2
 
