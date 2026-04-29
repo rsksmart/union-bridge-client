@@ -44,6 +44,7 @@ pub enum Steps {
     RequestUserTakeSpvProof,
     RegisterPegout,
     Done,
+    Failed,
 }
 
 /// Data passed between steps in the pegout flow
@@ -232,6 +233,9 @@ where
                     self.write_completion_marker()?;
                     info!("PegoutFlow Done: {}", self.state.flow_id);
                 }
+            }
+            Steps::Failed => {
+                info!("PegoutFlow Failed: {}", self.state.flow_id);
             }
         }
 
@@ -620,6 +624,15 @@ where
         self.state.step == Steps::Done
     }
 
+    pub fn is_terminal(&self) -> bool {
+        matches!(self.state.step, Steps::Done | Steps::Failed)
+    }
+
+    pub fn mark_failed(&mut self, reason: &str) -> Result<()> {
+        info!("Admin marking pegout flow {} as failed: {reason}", self.state.flow_id);
+        self.start_step(Steps::Failed)
+    }
+
     pub fn flow_id(&self) -> Uuid {
         self.state.flow_id
     }
@@ -681,6 +694,7 @@ fn format_step(step: Steps) -> &'static str {
         Steps::RequestUserTakeSpvProof => "RequestSpvProof",
         Steps::RegisterPegout => "RegisterPegout",
         Steps::Done => "Done",
+        Steps::Failed => "Failed",
     }
 }
 

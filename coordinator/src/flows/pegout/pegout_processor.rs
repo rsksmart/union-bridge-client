@@ -28,8 +28,8 @@ use crate::flows::common::{GlobalContext, Signaling};
 use crate::flows::pegout::pegout_flow::{PegoutFlow, State, StepData, Steps};
 use crate::store::{CoordinatorStoreApi, StorePrefix, cleanup_completed_flows, restore_flows};
 use crate::types::{
-    EventStatus, RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler,
-    TimeBasedScheduler, UserRequests,
+    AdminRequest, EventStatus, FlowKind, RegisterSignaturesBitVmxData, RskPegManagerEvents,
+    TickScheduler, TimeBasedScheduler, UserRequests,
 };
 
 fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
@@ -225,6 +225,13 @@ where
         let committee_uuid: Uuid = Uuid::from_u128(event.inner.committeeId.try_into()?);
         let flow_id = Self::get_user_take_pid(committee_uuid, slot_index)?;
 
+        if let Some(existing_flow) = self.pegout_flows.get(&flow_id)
+            && existing_flow.is_terminal()
+        {
+            // The flow is already Done or Failed; ignore stale events.
+            return Ok(());
+        }
+
         let mut flow = PegoutFlow::new(
             Rc::clone(&self.contracts_gateway),
             self.rt_sync.clone(),
@@ -263,10 +270,10 @@ where
             // We intentionally do not broaden matching by committee or slot, because the
             // PegoutAccepted checkpoint gives the flow the shared txid needed for safe
             // convergence on the confirmed terminal event. Once a matched flow is already
-            // Done, a later duplicate PegoutRegistered must be ignored.
-            if flow.current_step() == Steps::Done {
+            // terminal, a later duplicate PegoutRegistered must be ignored.
+            if flow.is_terminal() {
                 debug!(
-                    "Ignoring PegoutRegistered for completed flow {} with user_take_txid {}",
+                    "Ignoring PegoutRegistered for terminal flow {} with user_take_txid {}",
                     flow.flow_id(),
                     pegout_registered_txid
                 );
@@ -394,6 +401,10 @@ where
 
         let TransactionStatus { tx_id, confirmations, .. } = tx_status;
         let flow_id = flow.flow_id();
+        if flow.is_terminal() {
+            // The flow is already Done or Failed; ignore stale status updates.
+            return Ok(());
+        }
         let expected_txid = flow
             .get_user_take_txid()
             .ok_or_else(|| anyhow!("Expected user take tx_id not found"))?;
@@ -593,6 +604,25 @@ where
         Ok(())
     }
 
+    /// Mark a pegout flow as failed and stop pending local work for it.
+    fn fail_flow(&mut self, flow_id: Uuid, reason: &str) -> Result<()> {
+        if let Some(flow) = self.pegout_flows.get_mut(&flow_id) {
+            flow.mark_failed(reason)?;
+            warn!("Admin marked pegout flow {flow_id} as failed: {reason}");
+        } else {
+            warn!("Admin requested fail for unknown pegout flow {flow_id}: {reason}");
+        }
+
+        self.signature_flows.remove(&flow_id);
+        self.tx_status_scheduler.cancel(&flow_id);
+        self.advance_funds_timeout_scheduler.cancel(&flow_id);
+        self.register_pegout_retry_scheduler.cancel(&flow_id);
+        self.flows_pending_timeout.remove(&flow_id);
+        self.unconfirmed_register_pegout.remove(&flow_id);
+
+        Ok(())
+    }
+
     fn schedule_register_pegout_retry(&mut self, flow_id: Uuid, attempt: i16, reason: &str) {
         info!("{reason} for flow {flow_id} (attempt {attempt})");
         self.unconfirmed_register_pegout.insert(flow_id, attempt);
@@ -656,8 +686,15 @@ where
     BC: BitVmxBrokerClientApi,
     S: CoordinatorStoreApi,
 {
-    fn process_user_request(&mut self, _req: &UserRequests) -> Result<()> {
-        // Pegout flows are created from RSK events, not from user requests
+    fn process_user_request(&mut self, req: &UserRequests) -> Result<()> {
+        // Pegout flows are created from RSK events, not user requests, except for the
+        // admin "fail flow" lever — handled here so the cleanup runs in this processor's
+        // single-threaded context alongside its in-memory state.
+        if let UserRequests::Admin(AdminRequest::FailFlow { kind, flow_id, reason }) = req
+            && *kind == FlowKind::Pegout
+        {
+            self.fail_flow(*flow_id, reason)?;
+        }
         Ok(())
     }
 
@@ -686,6 +723,10 @@ where
                     .pegout_flows
                     .get_mut(flow_id)
                     .ok_or_else(|| anyhow!("Flow not found for flow_id: {flow_id}"))?;
+                if flow.is_terminal() {
+                    // The flow is already Done or Failed; ignore stale BitVMX variables.
+                    return Ok(());
+                }
                 if flow.current_step() != Steps::PrepareUserTakeSetup {
                     bail!(
                         "Mismatch current step for flow {} expected {:?} having {:?}",
@@ -761,6 +802,11 @@ where
                     .get(&flow_id)
                     .map(PegoutFlow::current_step)
                     .ok_or_else(|| anyhow!("Flow not found for flow_id {flow_id}"))?;
+
+                if matches!(current_step, Steps::Done | Steps::Failed) {
+                    // The flow is already Done or Failed; ignore stale SPV proofs.
+                    return Ok(());
+                }
 
                 if current_step != Steps::RequestUserTakeSpvProof {
                     bail!(

@@ -12,7 +12,6 @@ use storage_backend::storage_config::StorageConfig;
 use uuid::Uuid;
 
 use crate::flows::common::GlobalContext;
-
 /// Key used to persist Coordinator data
 pub enum StoreKey {
     GlobalContext,

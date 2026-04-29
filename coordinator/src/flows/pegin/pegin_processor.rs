@@ -31,8 +31,9 @@ use crate::store::{
     CoordinatorStoreApi, StoreKey, StorePrefix, cleanup_completed_flows, restore_flows,
 };
 use crate::types::{
-    AllOperatorTakeTxidsAddedEvent, EventStatus, PeginAcceptedEvent, PeginRequestedEvent,
-    RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler, UserRequests,
+    AdminRequest, AllOperatorTakeTxidsAddedEvent, EventStatus, FlowKind, PeginAcceptedEvent,
+    PeginRequestedEvent, RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler,
+    UserRequests,
 };
 
 const PEGIN_ACCEPTED_INPUT_MSG: &str = "pegin_accepted";
@@ -183,6 +184,11 @@ where
 
         // Find the existing flow that should have been created from PeginTransactionFound
         if let Some(existing_flow) = self.pegin_flows.get_mut(&temp_flow_id) {
+            if existing_flow.is_terminal() {
+                // The flow is already Done or Failed; ignore stale events.
+                return Ok(());
+            }
+
             info!(
                 "Found existing pegin flow {temp_flow_id} for Bitcoin tx: {btc_tx_id}, completing PeginRequested step"
             );
@@ -229,6 +235,10 @@ where
         });
 
         if let Some(flow) = flow_opt {
+            if flow.is_terminal() {
+                // The flow is already Done or Failed; ignore stale events.
+                return Ok(());
+            }
             let step_data = StepData::PeginAccepted(pa.inner.clone());
             flow.complete_step(&step_data)?;
         } else {
@@ -306,6 +316,10 @@ where
         });
 
         if let Some(flow) = flow_opt {
+            if flow.is_terminal() {
+                // The flow is already Done or Failed; ignore stale events.
+                return Ok(());
+            }
             let flow_id = flow.flow_id();
 
             // Start the BTC signature flow if not already started
@@ -434,6 +448,10 @@ where
 
         let TransactionStatus { tx_id, confirmations, .. } = tx_status;
         let flow_id = flow.flow_id();
+        if flow.is_terminal() {
+            // The flow is already Done or Failed; ignore stale status updates.
+            return Ok(());
+        }
         let expected_txid = flow
             .get_accept_pegin_txid()
             .ok_or_else(|| anyhow!("Expected accept pegin tx_id not found"))?;
@@ -494,6 +512,67 @@ where
                     warn!("Skipping delayed transaction status request for unknown flow {flow_id}");
                 }
             }
+        }
+
+        Ok(())
+    }
+
+    /// Resolve the temp and official ids that can point to the same pegin flow.
+    /// If the relationship is not in memory, fall back to the supplied id.
+    fn linked_pegin_flow_ids(&self, flow_id: Uuid) -> Vec<Uuid> {
+        let mut ids = vec![flow_id];
+        let flow = self.pegin_flows.get(&flow_id).or_else(|| {
+            self.pegin_flows.values().find(|flow| {
+                let ctx = &flow.get_state().ctx;
+                ctx.temp_flow_id == Some(flow_id) || ctx.official_flow_id == Some(flow_id)
+            })
+        });
+
+        if let Some(flow) = flow {
+            let ctx = &flow.get_state().ctx;
+            for id in [ctx.temp_flow_id, ctx.official_flow_id].into_iter().flatten() {
+                if !ids.contains(&id) {
+                    ids.push(id);
+                }
+            }
+        }
+        ids
+    }
+
+    /// Mark a pegin flow as failed and stop pending local work for it.
+    fn fail_flow(&mut self, flow_id: Uuid, reason: &str) -> Result<()> {
+        let flow_ids_to_fail = self.linked_pegin_flow_ids(flow_id);
+
+        // Capture the BTC tx id (used as the key for `pegin_retry_scheduler`) before
+        // any later cleanup drops the in-memory flow.
+        let btc_tx_id_keys: Vec<String> = flow_ids_to_fail
+            .iter()
+            .filter_map(|id| self.pegin_flows.get(id))
+            .filter_map(|flow| flow.get_state().ctx.request_pegin_btc_tx_id)
+            .map(|txid| txid.to_string())
+            .collect();
+
+        let mut marked = false;
+        for id in &flow_ids_to_fail {
+            if let Some(flow) = self.pegin_flows.get_mut(id) {
+                flow.mark_failed(reason)?;
+                marked = true;
+            }
+            self.signature_flows.remove(id);
+            self.tx_status_scheduler.cancel(id);
+            self.accept_pegin_retry_scheduler.cancel(id);
+            self.unconfirmed_accept_pegin.remove(id);
+        }
+
+        for key in btc_tx_id_keys {
+            self.pegin_retry_scheduler.cancel(&key);
+            self.unconfirmed_pegin_requests.remove(&key);
+        }
+
+        if marked {
+            warn!("Admin marked pegin flow {flow_id} as failed: {reason}");
+        } else {
+            warn!("Admin requested fail for unknown pegin flow {flow_id}: {reason}");
         }
 
         Ok(())
@@ -676,7 +755,6 @@ where
         }
 
         // Create a new pegin flow from Bitcoin transaction
-
         let mut flow = PeginFlow::new(
             Rc::clone(&self.contracts_gateway),
             self.rt_sync.clone(),
@@ -763,6 +841,10 @@ where
 
         if let Some(flow) = flow_opt {
             info!("Handling accept pegin SPV proof: flow_id={}, tx_id={}", flow.flow_id(), tx_id);
+            if flow.is_terminal() {
+                // The flow is already Done or Failed; ignore stale SPV proofs.
+                return Ok(());
+            }
             let flow_id = flow.flow_id();
             let step_data = StepData::AcceptPeginSpvProof(spv_proof);
             if let Err(err) = flow.complete_step(&step_data) {
@@ -805,8 +887,15 @@ where
     BC: BitVmxBrokerClientApi,
     S: CoordinatorStoreApi + 'static,
 {
-    fn process_user_request(&mut self, _req: &UserRequests) -> Result<()> {
-        // Pegin flows are created from RSK events, not from user requests
+    fn process_user_request(&mut self, req: &UserRequests) -> Result<()> {
+        // Pegin flows are created from RSK / BTC events, not user requests, except for
+        // the admin "fail flow" lever — handled here so cleanup runs alongside this
+        // processor's in-memory state.
+        if let UserRequests::Admin(AdminRequest::FailFlow { kind, flow_id, reason }) = req
+            && *kind == FlowKind::Pegin
+        {
+            self.fail_flow(*flow_id, reason)?;
+        }
         Ok(())
     }
 
@@ -879,6 +968,10 @@ where
                     .pegin_flows
                     .get_mut(flow_id)
                     .ok_or_else(|| anyhow!("Flow not found for flow_id: {flow_id}"))?;
+                if flow.is_terminal() {
+                    // The flow is already Done or Failed; ignore stale BitVMX variables.
+                    return Ok(());
+                }
 
                 if flow.current_step() != Steps::PreparePeginSetup {
                     return Err(anyhow!(

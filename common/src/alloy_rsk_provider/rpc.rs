@@ -69,7 +69,7 @@ impl AlloyProvider {
     fn monitor_shutdown(&self, subscription_id: B256, name: String) {
         let provider_clone = self.inner.clone();
         let unsubscribe_fn = move || {
-            debug!("Unsubscribing from {name} for {subscription_id} on shutdown!",);
+            debug!("Unsubscribing from {name} for {subscription_id} on shutdown!");
             provider_clone.unsubscribe(subscription_id).unwrap();
         };
 

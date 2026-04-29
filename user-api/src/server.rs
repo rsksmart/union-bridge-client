@@ -2,15 +2,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
 use common::msg_broker::broker::{BrokerServer, BrokerServerApi, Identifier};
 use common::msg_broker::types::{FromServer, MemberFundingInfo, ToServer};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::Address;
-use log::{error, info};
+use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
@@ -20,6 +20,12 @@ use tower_http::timeout::TimeoutLayer;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{PeginAddressInput, RequestPegoutInput};
 use uuid::Uuid;
+
+use crate::errors::ApiError;
+
+/// Bearer token gating admin endpoints. None/empty disables them (handler returns 401).
+#[derive(Clone)]
+pub(crate) struct AdminToken(pub Option<String>);
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RequestPeginInput {
@@ -143,6 +149,20 @@ impl FundingSyncBroker {
     }
 }
 
+#[derive(Deserialize, Debug)]
+pub struct FailFlowReq {
+    pub kind: String,
+    pub flow_id: Uuid,
+    pub reason: String,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct ApplyStreamReq {
+    #[serde(rename = "ApplyToStream")]
+    pub apply_to_stream: Value,
+}
+
 pub struct Server {
     listener: TcpListener,
     app: Router,
@@ -156,6 +176,7 @@ impl Server {
         shutdown_flag: ShutdownFlag,
         coordinator_client_id: Identifier,
         user_contracts_gateway: UCG,
+        admin_token: Option<String>,
     ) -> Self
     where
         UCG: RskContractsGatewayApi + Send + Sync + 'static,
@@ -189,9 +210,18 @@ impl Server {
             "/member",
             Router::new()
                 .route("/apply-stream", post(Self::apply_stream))
-                .layer(Extension(broker_server))
                 .route("/funding-info", get(Self::member_funding_info))
-                .layer(Extension(funding_broker)),
+                .layer(Extension(funding_broker.clone())),
+        );
+
+        // Admin endpoints. The handler returns 401 when no token is configured, so the
+        // endpoint is always mounted but inert until an operator sets `admin_token`.
+        app = app.nest(
+            "/admin",
+            Router::new()
+                .route("/fail-flow", post(Self::admin_fail_flow))
+                .layer(Extension(funding_broker))
+                .layer(Extension(AdminToken(admin_token))),
         );
 
         app = app.layer(TimeoutLayer::with_status_code(
@@ -228,15 +258,44 @@ impl Server {
         }
     }
 
+    async fn admin_fail_flow(
+        Extension(broker): Extension<Arc<FundingSyncBroker>>,
+        Extension(admin): Extension<AdminToken>,
+        headers: HeaderMap,
+        Json(body): Json<FailFlowReq>,
+    ) -> Response {
+        if let Err(err) = verify_admin_auth(admin.0.as_deref(), &headers) {
+            return err.into_response();
+        }
+        let payload = match build_fail_flow_payload(&body) {
+            Ok(payload) => payload,
+            Err(err) => return err.into_response(),
+        };
+
+        info!(
+            "admin_fail_flow accepted: kind={}, flow_id={}, reason_len={}",
+            body.kind,
+            body.flow_id,
+            body.reason.len()
+        );
+
+        // Forward to coordinator. 202 = broker accepted; cleanup happens async.
+        match broker.send(&FromServer::UserRequest(payload)).await {
+            Ok(()) => (StatusCode::ACCEPTED, Json(json!({ "result": "accepted" }))).into_response(),
+            Err(err) => err.into_response(),
+        }
+    }
+
     async fn apply_stream(
         Extension(broker): Extension<Arc<FundingSyncBroker>>,
-        Json(payload): Json<Value>,
+        Json(body): Json<ApplyStreamReq>,
     ) -> impl IntoResponse {
         info!(
             "Received apply stream request for destination: {} with payload: {:?}",
-            broker.destination, payload
+            broker.destination, body
         );
 
+        let payload = build_apply_stream_payload(&body);
         match broker.send(&FromServer::UserRequest(payload)).await {
             Ok(_) => (StatusCode::OK, Json(json!({ "result": "ok" }))),
             Err(err) => err,
@@ -335,6 +394,49 @@ fn internal_error(err: impl ToString) -> (StatusCode, Json<Value>) {
     (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": err.to_string() })))
 }
 
+/// Authorise an admin request. Returns `Unauthorized` either when no token is
+/// configured (endpoint disabled) or when the bearer header doesn't match.
+fn verify_admin_auth(configured_token: Option<&str>, headers: &HeaderMap) -> Result<(), ApiError> {
+    let Some(expected) = configured_token.filter(|t| !t.is_empty()) else {
+        return Err(ApiError::Unauthorized("admin endpoints disabled".into()));
+    };
+    let provided = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "));
+    if provided != Some(expected) {
+        warn!("admin_fail_flow rejected: invalid or missing bearer token");
+        return Err(ApiError::Unauthorized("invalid token".into()));
+    }
+    Ok(())
+}
+
+/// Validate the `FailFlow` body and re-emit it in the wire shape the coordinator
+/// expects (`{"Admin":{"FailFlow":{...}}}`). Pure: no side effects.
+fn build_fail_flow_payload(body: &FailFlowReq) -> Result<Value, ApiError> {
+    const ALLOWED_KINDS: [&str; 3] = ["pegin", "pegout", "advance-funds"];
+    if !ALLOWED_KINDS.contains(&body.kind.as_str()) {
+        return Err(ApiError::InvalidData(format!("kind must be one of {ALLOWED_KINDS:?}")));
+    }
+    if body.reason.trim().is_empty() || body.reason.len() > 512 {
+        return Err(ApiError::InvalidData("reason must be 1..=512 chars".into()));
+    }
+    Ok(json!({
+        "Admin": {
+            "FailFlow": {
+                "kind": body.kind,
+                "flow_id": body.flow_id,
+                "reason": body.reason,
+            }
+        }
+    }))
+}
+
+/// Rebuild the only coordinator request shape accepted by `/member/apply-stream`.
+fn build_apply_stream_payload(body: &ApplyStreamReq) -> Value {
+    json!({ "ApplyToStream": &body.apply_to_stream })
+}
+
 /// Validates a 32-byte X-only public key with 0x prefix
 fn is_valid_xonly_pubkey(key: &str) -> bool {
     key.len() == 66 && key.starts_with("0x") && key[2..].chars().all(|c| c.is_ascii_hexdigit())
@@ -343,4 +445,167 @@ fn is_valid_xonly_pubkey(key: &str) -> bool {
 /// Validates a 33-byte compressed public key with 0x prefix
 fn is_valid_compressed_pubkey(key: &str) -> bool {
     key.len() == 68 && key.starts_with("0x") && key[2..].chars().all(|c| c.is_ascii_hexdigit())
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::HeaderValue;
+
+    use super::*;
+
+    fn header_with_auth(value: &str) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert("authorization", HeaderValue::from_str(value).expect("header"));
+        h
+    }
+
+    #[test]
+    fn verify_admin_auth_disabled_when_no_token_configured() {
+        for token in [None, Some(""), Some("   ").map(|_| "")] {
+            let headers = header_with_auth("Bearer whatever");
+            let err = verify_admin_auth(token, &headers).expect_err("expected disabled");
+            assert!(
+                matches!(err, ApiError::Unauthorized(ref msg) if msg.contains("disabled")),
+                "got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn verify_admin_auth_rejects_missing_or_wrong_bearer() {
+        // No header at all.
+        let err = verify_admin_auth(Some("secret"), &HeaderMap::new())
+            .expect_err("missing header should be rejected");
+        assert!(matches!(err, ApiError::Unauthorized(_)));
+
+        // Wrong scheme.
+        let headers = header_with_auth("Basic secret");
+        let err = verify_admin_auth(Some("secret"), &headers)
+            .expect_err("non-Bearer scheme should be rejected");
+        assert!(matches!(err, ApiError::Unauthorized(_)));
+
+        // Right scheme, wrong token.
+        let headers = header_with_auth("Bearer wrong");
+        let err = verify_admin_auth(Some("secret"), &headers)
+            .expect_err("mismatched token should be rejected");
+        assert!(matches!(err, ApiError::Unauthorized(ref msg) if msg.contains("invalid")));
+    }
+
+    #[test]
+    fn verify_admin_auth_accepts_matching_bearer() {
+        let headers = header_with_auth("Bearer s3cret");
+        verify_admin_auth(Some("s3cret"), &headers).expect("auth should succeed");
+    }
+
+    fn req(kind: &str, reason: &str) -> FailFlowReq {
+        FailFlowReq { kind: kind.into(), flow_id: uuid::Uuid::new_v4(), reason: reason.into() }
+    }
+
+    #[test]
+    fn build_fail_flow_payload_rejects_unknown_kind() {
+        let err = build_fail_flow_payload(&req("frobnicate", "ok"))
+            .expect_err("unknown kind should be rejected");
+        assert!(matches!(err, ApiError::InvalidData(ref msg) if msg.contains("kind")));
+    }
+
+    #[test]
+    fn build_fail_flow_payload_rejects_empty_reason() {
+        let err = build_fail_flow_payload(&req("pegin", "   "))
+            .expect_err("blank reason should be rejected");
+        assert!(matches!(err, ApiError::InvalidData(ref msg) if msg.contains("reason")));
+    }
+
+    #[test]
+    fn build_fail_flow_payload_rejects_oversized_reason() {
+        let huge = "x".repeat(513);
+        let err = build_fail_flow_payload(&req("pegin", &huge))
+            .expect_err("reason >512 chars should be rejected");
+        assert!(matches!(err, ApiError::InvalidData(ref msg) if msg.contains("reason")));
+    }
+
+    #[test]
+    fn build_fail_flow_payload_emits_admin_failflow_shape() {
+        let body = req("advance-funds", "manual cleanup");
+        let payload = build_fail_flow_payload(&body).expect("valid payload");
+
+        // Must round-trip into the coordinator's UserRequests::Admin(FailFlow{...}).
+        // We assert the raw JSON shape so coordinator-side serde changes show up here.
+        let admin = payload.get("Admin").expect("Admin key");
+        let fail = admin.get("FailFlow").expect("FailFlow key");
+        assert_eq!(fail.get("kind").and_then(Value::as_str), Some("advance-funds"));
+        assert_eq!(
+            fail.get("flow_id").and_then(Value::as_str),
+            Some(body.flow_id.to_string()).as_deref()
+        );
+        assert_eq!(fail.get("reason").and_then(Value::as_str), Some("manual cleanup"));
+    }
+
+    #[test]
+    fn build_fail_flow_payload_accepts_all_documented_kinds() {
+        for kind in ["pegin", "pegout", "advance-funds"] {
+            build_fail_flow_payload(&req(kind, "x")).unwrap_or_else(|e| {
+                panic!("kind {kind} should be valid, got {e:?}");
+            });
+        }
+    }
+
+    #[test]
+    fn apply_stream_payload_rebuilds_only_apply_to_stream_shape() {
+        let body: ApplyStreamReq = serde_json::from_value(json!({
+            "ApplyToStream": {
+                "stream_id": 1,
+                "role": "Prover",
+                "funding_utxo": { "value": 10 },
+                "speed_up_utxo": { "value": 20 },
+                "advance_funds": { "value": 30 }
+            }
+        }))
+        .expect("valid apply-stream payload");
+
+        let payload = build_apply_stream_payload(&body);
+
+        assert!(payload.get("Admin").is_none());
+        assert_eq!(payload["ApplyToStream"]["stream_id"], 1);
+        assert_eq!(payload["ApplyToStream"]["role"], "Prover");
+        assert_eq!(payload["ApplyToStream"]["funding_utxo"]["value"], 10);
+    }
+
+    #[test]
+    fn apply_stream_payload_rejects_admin_shape() {
+        let payload = json!({
+            "Admin": {
+                "FailFlow": {
+                    "kind": "pegin",
+                    "flow_id": Uuid::new_v4(),
+                    "reason": "bypass"
+                }
+            }
+        });
+
+        serde_json::from_value::<ApplyStreamReq>(payload)
+            .expect_err("admin request must not deserialize as apply-stream");
+    }
+
+    #[test]
+    fn apply_stream_payload_rejects_extra_top_level_fields() {
+        let payload = json!({
+            "ApplyToStream": {
+                "stream_id": 1,
+                "role": "Verifier",
+                "funding_utxo": { "value": 10 },
+                "speed_up_utxo": { "value": 20 },
+                "advance_funds": { "value": 30 }
+            },
+            "Admin": {
+                "FailFlow": {
+                    "kind": "pegin",
+                    "flow_id": Uuid::new_v4(),
+                    "reason": "bypass"
+                }
+            }
+        });
+
+        serde_json::from_value::<ApplyStreamReq>(payload)
+            .expect_err("extra top-level fields must be rejected");
+    }
 }

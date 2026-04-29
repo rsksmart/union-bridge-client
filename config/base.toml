@@ -125,6 +125,8 @@ coordinator.pubkey_hash = "<to_patch_with_env>"
 broker_key_path = "/{BASE_STORAGE_PATH}/.union_bridge/op_1/union-client/broker/user-api.pem"
 notifier.port = 30001
 http.port = 40001
+# Bearer token for admin endpoints (e.g., POST /admin/fail-flow). Leave unset to disable.
+# admin_token = ""
 
 # ═══════════════════════════════════════════════════════
 # Bridge Flow Configuration

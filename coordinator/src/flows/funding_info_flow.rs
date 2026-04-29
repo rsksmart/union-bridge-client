@@ -45,7 +45,7 @@ where
                 self.pending_requests.insert(*req_id);
                 self.bitvmx_broker.send(IncomingBitVMXApiMessages::GetFundingAddress(*req_id))?;
             }
-            UserRequests::ApplyToStream(_) => {
+            UserRequests::ApplyToStream(_) | UserRequests::Admin(_) => {
                 trace!("FundingInfoProcessor: Ignoring user request {event:?}");
             }
         }
