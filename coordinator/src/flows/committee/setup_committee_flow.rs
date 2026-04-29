@@ -18,6 +18,7 @@ use log::{debug, error, info, trace, warn};
 #[cfg(test)]
 use mockall::automock;
 use op_funding::{derive_stream_funding_profile, required_member_rsk_balance};
+use protocol_params::{committee_member_count, prover_count, slots_per_package};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -41,8 +42,7 @@ use crate::flows::committee::dispute_channel_setup::{
     DisputeChannelSetup, DisputeChannelSetupRequest,
 };
 use crate::flows::committee::dispute_core_setup::{
-    AggregatedKeys, CommitteeConfirmations, DEFAULT_OPERATOR_COUNT, DEFAULT_PROVER_COUNT,
-    DisputeCoreSetup, PACKET_SIZE,
+    AggregatedKeys, CommitteeConfirmations, DisputeCoreSetup,
 };
 use crate::flows::committee::full_penalization_setup::FullPenalizationSetup;
 use crate::flows::common::{
@@ -718,11 +718,10 @@ where
         let profile = derive_stream_funding_profile(
             *stream_id,
             is_regtest,
-            PACKET_SIZE.into(),
-            DEFAULT_OPERATOR_COUNT,
-            DEFAULT_PROVER_COUNT,
-        )
-        .with_context(|| format!("Unsupported stream id {}", *stream_id))?;
+            slots_per_package()?,
+            committee_member_count()?,
+            prover_count()?,
+        )?;
         let min_funding_balance = profile.operator_fund_amount;
 
         let r = self
@@ -766,8 +765,11 @@ where
         let stream_id_u8 = stream_id.as_u8()?;
         let min_deposit =
             self.rt_sync.run(self.contracts.get_minimum_deposit(stream_id_u8, role))?;
-        let min_rsk_balance =
-            required_member_rsk_balance(min_deposit, PACKET_SIZE.into(), DEFAULT_OPERATOR_COUNT);
+        let min_rsk_balance = required_member_rsk_balance(
+            min_deposit,
+            slots_per_package()?,
+            committee_member_count()?,
+        );
 
         if balance_wei < min_rsk_balance {
             bail!("Insufficient RSK balance: {balance_wei} < {min_rsk_balance}")

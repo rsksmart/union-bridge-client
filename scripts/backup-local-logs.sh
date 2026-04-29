@@ -44,14 +44,24 @@ print_capture_result() {
   fi
 }
 
+strip_ansi() {
+  perl -pe 's/\e\[[0-?]*[ -\/]*[@-~]//g'
+}
+
 capture_command() {
   local label="$1"
   local subject="$2"
   local destination_file="${log_dir}/${label}.log"
   shift 2
 
-  "$@" > "${destination_file}" 2>&1
-  local rc=$?
+  "$@" 2>&1 | strip_ansi > "${destination_file}"
+  local pipeline_status=("${PIPESTATUS[@]}")
+  local command_rc="${pipeline_status[0]}"
+  local strip_rc="${pipeline_status[1]}"
+  local rc="${command_rc}"
+  if [[ "${rc}" -eq 0 && "${strip_rc}" -ne 0 ]]; then
+    rc="${strip_rc}"
+  fi
   print_capture_result "${subject}" "${rc}"
 }
 

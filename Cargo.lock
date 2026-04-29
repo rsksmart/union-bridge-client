@@ -2239,6 +2239,7 @@ dependencies = [
  "musig2",
  "op-funding",
  "primitive-types 0.13.1",
+ "protocol-params",
  "rust-bitvmx-storage-backend",
  "serde",
  "serde_json",
@@ -5239,6 +5240,13 @@ dependencies = [
  "rusty-fork",
  "tempfile",
  "unarray",
+]
+
+[[package]]
+name = "protocol-params"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
 ]
 
 [[package]]

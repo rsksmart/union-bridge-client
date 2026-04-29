@@ -32,6 +32,8 @@ COPY log-indexer log-indexer
 COPY transaction-dispatcher transaction-dispatcher
 COPY key-manager key-manager
 COPY check-fork check-fork
+COPY op-funding op-funding
+COPY protocol-params protocol-params
 COPY coordinator coordinator
 COPY user-api user-api
 

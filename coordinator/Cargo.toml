@@ -22,6 +22,7 @@ log = { workspace = true }
 musig2 = { workspace = true }
 op-funding = { path = "../op-funding" }
 primitive-types = { workspace = true }
+protocol-params = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_path_to_error = "0.1.20"

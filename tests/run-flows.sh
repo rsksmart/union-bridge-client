@@ -18,6 +18,7 @@ SCRIPT_ENV=""
 OPS_FROM_FLAG=""
 STREAM_ID=0
 NUM_OPERATORS=""
+COMMITTEE_MEMBER_COUNT=""
 STREAM_DENOMINATION=""
 VALUE=""
 USER_UTXO_VALUE=""
@@ -250,11 +251,15 @@ validate_script_env() {
 load_num_operators() {
     if [[ -n "$OPS_FROM_FLAG" ]]; then
         NUM_OPERATORS="$OPS_FROM_FLAG"
+        COMMITTEE_MEMBER_COUNT="$NUM_OPERATORS"
+        export COMMITTEE_MEMBER_COUNT
         return 0
     fi
 
     NUM_OPERATORS=4
     if [[ "$SCRIPT_ENV" != "docker" ]]; then
+        COMMITTEE_MEMBER_COUNT="$NUM_OPERATORS"
+        export COMMITTEE_MEMBER_COUNT
         return 0
     fi
 
@@ -266,6 +271,9 @@ load_num_operators() {
             NUM_OPERATORS="$configured_ops"
         fi
     fi
+
+    COMMITTEE_MEMBER_COUNT="$NUM_OPERATORS"
+    export COMMITTEE_MEMBER_COUNT
 }
 
 stream_denomination() {
@@ -292,12 +300,12 @@ derived_wallet_utxo_value() {
 
 derived_member_wallet_utxo_value() {
     local stream_id="$1"
-    local operator_count="$2"
+    local committee_member_count="$2"
     local wallet_fee_buffer=10000
-    local per_operator_funding
-    per_operator_funding=$(bash cli-operations.sh operator funding-amount --env local --stream "$stream_id")
+    local per_member_funding
+    per_member_funding=$(bash cli-operations.sh operator funding-amount --env local --stream "$stream_id")
 
-    echo $((per_operator_funding * operator_count + wallet_fee_buffer))
+    echo $((per_member_funding * committee_member_count + wallet_fee_buffer))
 }
 
 initialize_mode_config() {
@@ -309,7 +317,7 @@ initialize_mode_config() {
     fi
 
     if [[ "$MODE" == "happy" || "$MODE" == "setup" ]]; then
-        MEMBER_UTXO_VALUE=$(derived_member_wallet_utxo_value "$STREAM_ID" "$NUM_OPERATORS")
+        MEMBER_UTXO_VALUE=$(derived_member_wallet_utxo_value "$STREAM_ID" "$COMMITTEE_MEMBER_COUNT")
     fi
 }
 

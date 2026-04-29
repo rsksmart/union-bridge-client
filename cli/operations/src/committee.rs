@@ -5,11 +5,11 @@ use std::time::Duration;
 use anyhow::{anyhow, bail, Context, Result};
 use clap::ValueEnum;
 use op_funding::derive_stream_funding_profile;
+use protocol_params::{committee_member_count, prover_count, slots_per_package};
 use reqwest::Client;
 use serde::Serialize;
 use tokio::time::sleep;
 
-use crate::constants::{operator_and_prover_counts, COMMITTEE_PACKET_SIZE};
 use crate::environments::Environment;
 use crate::utils::{confirm_operation, request_to_string};
 use crate::validate_1_10;
@@ -132,15 +132,13 @@ async fn post_apply(
     role: CommitteeRole,
     environment: &Environment,
 ) -> Result<()> {
-    let (operator_count, prover_count) = operator_and_prover_counts();
     let funding_profile = derive_stream_funding_profile(
         stream_id,
         matches!(environment, Environment::Local | Environment::Docker),
-        COMMITTEE_PACKET_SIZE,
-        operator_count,
-        prover_count,
-    )
-    .with_context(|| format!("invalid stream id {} (expected 0-4)", stream_id))?;
+        slots_per_package()?,
+        committee_member_count()?,
+        prover_count()?,
+    )?;
 
     let payload = ApplyStreamRequest {
         apply_to_stream: ApplyToStream {

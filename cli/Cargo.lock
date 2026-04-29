@@ -3018,6 +3018,7 @@ dependencies = [
  "clap",
  "key-manager",
  "op-funding",
+ "protocol-params",
  "reqwest",
  "rpassword",
  "serde",
@@ -3263,6 +3264,13 @@ dependencies = [
  "rusty-fork",
  "tempfile",
  "unarray",
+]
+
+[[package]]
+name = "protocol-params"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
 ]
 
 [[package]]
