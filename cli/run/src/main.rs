@@ -143,6 +143,7 @@ struct ManagedService {
 struct ManagedClient {
     client_id: String,
     services: Vec<ManagedService>,
+    readiness_ports: Vec<(String, u16)>,
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -237,19 +238,38 @@ async fn run_clients(config: RunConfig) -> Result<()> {
     let ids: Vec<u8> = config.client_id.map_or_else(|| vec![1, 2, 3, 4], |id| vec![id]);
     validate_local_keystores(&ids)?;
 
-    // launch clients and store in global state immediately
-    let mut launch_error = None;
+    let mut launch_specs = Vec::new();
     for id in ids {
         let envs = build_env_for_client(id, &env_map, config.bitvmx_mode)?;
         let client_id = format!("client-{}", id);
+        launch_specs.push((client_id, envs));
+    }
 
-        println!("============================================================================");
-        println!("Launching client {} with env {:?}...", client_id, envs);
-        println!("============================================================================");
+    // launch clients in parallel and store successful launches immediately
+    let mut launch_set = tokio::task::JoinSet::new();
+    for (client_id, envs) in launch_specs {
+        let config = config.clone();
+        let shutdown_tx = shutdown_tx.clone();
+        launch_set.spawn_blocking(move || -> Result<ManagedClient> {
+            println!(
+                "============================================================================"
+            );
+            println!("Launching client {} with env {:?}...", client_id, envs);
+            println!(
+                "============================================================================"
+            );
 
-        match launch_client_services(&config, envs, &client_id, &shutdown_tx) {
-            Ok(services) => {
-                let client = ManagedClient { client_id: client_id.to_string(), services };
+            let readiness_ports = readiness_ports_for_client(&envs);
+            launch_client_services(&config, envs, &client_id, &shutdown_tx).map(|services| {
+                ManagedClient { client_id: client_id.to_string(), services, readiness_ports }
+            })
+        });
+    }
+
+    let mut launch_error = None;
+    while let Some(join_result) = launch_set.join_next().await {
+        match join_result {
+            Ok(Ok(client)) => {
                 clients.push(client.clone());
 
                 // store in global state for panic handler
@@ -261,20 +281,31 @@ async fn run_clients(config: RunConfig) -> Result<()> {
                 })
                 .await;
             }
-            Err(e) => {
-                println!("Failed to launch all services for {client_id}");
-                launch_error = Some(e);
-                break;
+            Ok(Err(err)) => {
+                eprintln!("Client launch failed: {err:#}");
+                if launch_error.is_none() {
+                    launch_error = Some(err);
+                    let _ = shutdown_tx.send(());
+                }
+            }
+            Err(err) => {
+                eprintln!("Launch task failed: {err}");
+                if launch_error.is_none() {
+                    launch_error = Some(anyhow!("Launch task failed: {err}"));
+                    let _ = shutdown_tx.send(());
+                }
             }
         }
     }
 
-    // if launch failed, teardown and return error
     if let Some(err) = launch_error {
         eprintln!("Launch failed, tearing down already-started clients...");
         teardown_all(clients).await;
         return Err(err);
     }
+
+    wait_for_clients_ready(&clients)?;
+    println!("All Union Bridge clients are ready.");
 
     // Ctrl+C handler
     let ctrlc_tx = shutdown_tx.clone();
@@ -695,6 +726,60 @@ fn get_port_from_envs(envs: &[(String, String)], key: &str) -> Option<u16> {
     envs.iter().find(|(k, _)| k == key).and_then(|(_, v)| v.parse().ok())
 }
 
+fn readiness_ports_for_client(envs: &[(String, String)]) -> Vec<(String, u16)> {
+    [
+        ("block-indexer broker", "UB__BLOCK_INDEXER__NOTIFIER__PORT"),
+        ("log-indexer broker", "UB__LOG_INDEXER__NOTIFIER__PORT"),
+        ("coordinator user broker", "UB__COORDINATOR__USER__PORT"),
+        ("user-api broker", "UB__USER_API__NOTIFIER__PORT"),
+        ("user-api http", "UB__USER_API__HTTP__PORT"),
+    ]
+    .into_iter()
+    .filter_map(|(label, key)| get_port_from_envs(envs, key).map(|port| (label.to_string(), port)))
+    .collect()
+}
+
+fn wait_for_clients_ready(clients: &[ManagedClient]) -> Result<()> {
+    for client in clients {
+        for (label, port) in &client.readiness_ports {
+            wait_for_port(*port, Duration::from_secs(60))
+                .with_context(|| format!("{} {} not ready", client.client_id, label))?;
+        }
+    }
+
+    // Child services inherit stdout/stderr and may print logger startup lines shortly
+    // after their ports open. Keep the final ready sentinel behind that burst.
+    std::thread::sleep(Duration::from_secs(3));
+    Ok(())
+}
+
+fn cleanup_partial_services(client_id: &str, services: &[ManagedService]) {
+    if services.is_empty() {
+        return;
+    }
+
+    eprintln!("Cleaning up {} partially-started service(s) for {}...", services.len(), client_id);
+
+    for svc in services.iter().rev() {
+        let pid = Pid::from_raw(svc.pid as i32);
+        let _ = kill(pid, Signal::SIGTERM);
+    }
+
+    std::thread::sleep(Duration::from_millis(500));
+
+    for svc in services.iter().rev() {
+        if let Ok(mut guard) = svc.child.lock() {
+            if let Ok(None) = guard.try_wait() {
+                let pid = Pid::from_raw(svc.pid as i32);
+                let _ = kill(pid, Signal::SIGKILL);
+            }
+        } else {
+            let pid = Pid::from_raw(svc.pid as i32);
+            let _ = kill(pid, Signal::SIGKILL);
+        }
+    }
+}
+
 fn launch_client_services(
     config: &RunConfig,
     envs: Vec<(String, String)>,
@@ -718,13 +803,21 @@ fn launch_client_services(
 
             // wait for both indexer broker ports to be listening (up to 180 seconds)
             if let Some(port) = block_port {
-                wait_for_port(port, Duration::from_secs(180))
-                    .with_context(|| format!("block-indexer broker not ready for {}", client_id))?;
+                if let Err(err) = wait_for_port(port, Duration::from_secs(180))
+                    .with_context(|| format!("block-indexer broker not ready for {}", client_id))
+                {
+                    cleanup_partial_services(client_id, &services);
+                    return Err(err);
+                }
                 println!("  block-indexer broker ready on port {}", port);
             }
             if let Some(port) = log_port {
-                wait_for_port(port, Duration::from_secs(180))
-                    .with_context(|| format!("log-indexer broker not ready for {}", client_id))?;
+                if let Err(err) = wait_for_port(port, Duration::from_secs(180))
+                    .with_context(|| format!("log-indexer broker not ready for {}", client_id))
+                {
+                    cleanup_partial_services(client_id, &services);
+                    return Err(err);
+                }
                 println!("  log-indexer broker ready on port {}", port);
             }
 
@@ -739,10 +832,14 @@ fn launch_client_services(
             .stderr(Stdio::inherit())
             .process_group(0); // create new process group to avoid receiving parent's SIGINT
 
-        let child = cmd
-            .envs(envs.clone())
-            .spawn()
-            .with_context(|| format!("Failed to start {} for {}", svc.name(), client_id))?;
+        let child = match cmd.envs(envs.clone()).spawn() {
+            Ok(child) => child,
+            Err(err) => {
+                cleanup_partial_services(client_id, &services);
+                return Err(err)
+                    .with_context(|| format!("Failed to start {} for {}", svc.name(), client_id));
+            }
+        };
         let pid = child.id();
         let child = Arc::new(Mutex::new(child));
         let mgd_child = ManagedService { service: svc.name().to_string(), pid, child };
@@ -759,6 +856,7 @@ fn launch_client_services(
         if let Ok(Some(status)) = guard.try_wait() {
             println!("ERROR: {} exited immediately with status {}", name, status);
             let _ = shutdown_tx.send(());
+            cleanup_partial_services(client_id, &services);
             bail!("Failed to launch all services for {}", client_id);
         }
     }
