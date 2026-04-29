@@ -23,13 +23,13 @@ background mining.
 
 ```text
 # Start all Docker infra (blockchains + bitvmx) + mining
-./cli-infra.sh --start [--fresh] [--contracts-tag TAG]
+./cli-infra.sh --start [--fresh] [--contracts-tag TAG] [--pull-contracts]
 
 # Stop mining + all Docker infra
 ./cli-infra.sh --stop
 
 # Start blockchains + background mining
-./cli-infra.sh --start-blockchains [--fresh] [--contracts-tag TAG]
+./cli-infra.sh --start-blockchains [--fresh] [--contracts-tag TAG] [--pull-contracts]
 
 # Stop background mining + blockchains
 ./cli-infra.sh --stop-blockchains
@@ -60,12 +60,62 @@ Mining is coupled to the blockchain lifecycle in this wrapper:
 
 ## Contracts Version
 
-By default, `start-blockchains.sh` uses the contracts version from `Cargo.toml` and pulls the matching predeployed
+By default, `start-blockchains.sh` uses the contracts version from `Cargo.toml` and resolves the matching predeployed
 Anvil image from `PREDEPLOYED_ANVIL_IMAGE_BASE`. That image contains an Anvil state snapshot with the local contracts
 already deployed, so `cli-infra` does not run a contract deployment container during startup.
 
+For registry-style tags, the script uses the local Docker image when it already exists. If the image is missing locally,
+the script pulls it from GHCR. Pass `--pull-contracts` when you explicitly want to refresh the image from GHCR even if a
+local copy already exists.
+
 Override with `--contracts-tag local-build` when you want to build a predeployed Anvil image from a local contracts
 checkout instead of using the registry image. Contract changes require rebuilding this image.
+
+### Building A Predeployed Anvil Image
+
+The predeployed Anvil image is built from the contracts repository. During the
+image build, Docker starts a temporary Anvil instance, deploys the contracts,
+dumps the resulting state to `/opt/anvil/predeployed-state.json`, and packages
+that snapshot into the final image.
+
+Build the image from a sibling contracts checkout:
+
+```bash
+cd ../union-bridge-contracts
+
+docker buildx build \
+  --platform linux/amd64 \
+  -t ghcr.io/rsksmart/union-bridge-contracts-anvil:<tag> \
+  -f ../union-bridge-client/docker/local-infra/Dockerfile_predeployed_anvil \
+  .
+```
+
+Example:
+
+```bash
+docker buildx build \
+  --platform linux/amd64 \
+  -t ghcr.io/rsksmart/union-bridge-contracts-anvil:v0.4.1-alpha-10-4-2 \
+  -f ../union-bridge-client/docker/local-infra/Dockerfile_predeployed_anvil \
+  .
+```
+
+Validate the local image:
+
+```bash
+docker run --rm -p 8545:8545 \
+  ghcr.io/rsksmart/union-bridge-contracts-anvil:<tag>
+```
+
+In another terminal:
+
+```bash
+cast rpc eth_chainId --rpc-url http://127.0.0.1:8545
+```
+
+`./cli-infra.sh --start --fresh` can use the local image tag directly. If the
+selected image tag is not present locally, startup pulls it from GHCR and fails
+if the tag is not published. Use `--pull-contracts` to force a GHCR refresh.
 
 ## Scope
 
