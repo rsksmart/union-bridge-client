@@ -76,16 +76,40 @@ find_compose_container_id() {
     | head -n 1
 }
 
+# Resolve by explicit container name first (matches container_name in compose files, e.g.
+# docker/local-infra/docker-compose.bitvmx.yml -> bitvmx-client-1).
+docker_container_id_from_name() {
+  local name="$1"
+  docker inspect -f '{{.Id}}' "${name}" 2>/dev/null || true
+}
+
+# Args: label preferred_container_name project service
+# preferred_container_name may be empty to skip and use compose labels only.
 capture_container_logs() {
   local label="$1"
-  local project="$2"
-  local service="$3"
+  local preferred_name="${2:-}"
+  local project="$3"
+  local service="$4"
   local subject="Docker logs for ${label}"
-  local container_id
+  local container_id=""
 
-  container_id="$(find_compose_container_id "${project}" "${service}")"
+  if [[ -n "${preferred_name}" ]]; then
+    container_id="$(docker_container_id_from_name "${preferred_name}")"
+  fi
   if [[ -z "${container_id}" ]]; then
-    capture_missing "${label}" "No container found for project=${project} service=${service}" "${subject}"
+    container_id="$(find_compose_container_id "${project}" "${service}")"
+  fi
+  if [[ -z "${container_id}" ]]; then
+    local hint=""
+    if [[ -n "${preferred_name}" ]]; then
+      hint=" (tried name=${preferred_name}"
+    fi
+    if [[ -n "${hint}" ]]; then
+      hint="${hint}, compose project=${project} service=${service})"
+    else
+      hint=" (compose project=${project} service=${service})"
+    fi
+    capture_missing "${label}" "No container found${hint}" "${subject}"
     return
   fi
 
@@ -100,12 +124,36 @@ cleanup_dir() {
   rm -rf "${path}"
 }
 
+# Mirrors cli-run.sh: UB_LOG_DIR overrides; else logs/latest (timestamped run); else logs/.
+resolve_local_union_logs_dir() {
+  local logs_root="${PROJECT_ROOT}/logs"
+
+  if [[ -n "${UB_LOG_DIR:-}" ]]; then
+    if [[ "${UB_LOG_DIR}" == /* ]]; then
+      printf '%s\n' "${UB_LOG_DIR}"
+    else
+      printf '%s\n' "${PROJECT_ROOT}/${UB_LOG_DIR}"
+    fi
+    return
+  fi
+
+  if [[ -L "${logs_root}/latest" ]]; then
+    printf '%s\n' "${logs_root}/$(readlink "${logs_root}/latest")"
+    return
+  fi
+
+  printf '%s\n' "${logs_root}"
+}
+
 backup_local_coordinator_logs() {
-  local source_dir="${PROJECT_ROOT}/logs"
+  local source_dir
+  source_dir="$(resolve_local_union_logs_dir)"
   local copied_any=false
   local path
   local instance
   local target_path
+
+  echo "[${display_ts}] Local union logs source: ${source_dir}"
 
   if [[ ! -d "${source_dir}" ]]; then
     capture_missing "coordinator" "Missing local log directory: ${source_dir}" "local coordinator logs"
@@ -126,7 +174,7 @@ backup_local_coordinator_logs() {
   done
 
   if [[ "${copied_any}" != "true" ]]; then
-    capture_missing "coordinator" "No local coordinator logs found in ${source_dir}" "local coordinator logs"
+    capture_missing "coordinator" "No local coordinator-*.log files in ${source_dir}" "local coordinator logs"
   fi
 }
 
@@ -134,7 +182,7 @@ backup_local_mode() {
   backup_local_coordinator_logs
 
   for i in 1 2 3 4; do
-    capture_container_logs "bitvmx-client-${i}" "bitvmx" "bitvmx-client-${i}"
+    capture_container_logs "bitvmx-client-${i}" "bitvmx-client-${i}" "bitvmx" "bitvmx-client-${i}"
   done
 }
 
@@ -147,8 +195,8 @@ backup_docker_mode() {
       capture_missing "operator-${i}-env" "Missing operator directory: ${op_env_dir}"
     fi
 
-    capture_container_logs "coordinator-${i}" "op_${i}" "coordinator"
-    capture_container_logs "bitvmx-client-${i}" "op_${i}" "bitvmx-client"
+    capture_container_logs "coordinator-${i}" "coordinator-${i}" "op_${i}" "coordinator"
+    capture_container_logs "bitvmx-client-${i}" "bitvmx-client-${i}" "op_${i}" "bitvmx-client"
   done
 }
 

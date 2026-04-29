@@ -130,6 +130,7 @@ impl Service {
 
 const UNION_CLIENT_SERVICES: [Service; 4] =
     [Service::BlockIndexer, Service::LogIndexer, Service::UserApi, Service::Coordinator];
+const LOG_DIR_ENV_VAR: &str = "UB_LOG_DIR";
 
 #[derive(Debug, Clone)]
 struct ManagedService {
@@ -562,6 +563,10 @@ fn build_env_for_client(
         env_map.get(&format!("CLIENT_ID_{}", id)).cloned().unwrap_or_else(|| id.to_string());
     envs.push(("CLIENT_ID".into(), client_id));
 
+    if let Ok(log_dir) = std::env::var(LOG_DIR_ENV_VAR) {
+        envs.push((LOG_DIR_ENV_VAR.to_string(), log_dir));
+    }
+
     if bitvmx_mode == BitvmxMode::Repo {
         envs.push((
             "UB__FLOWS__COMMITTEE__DRP_PROGRAM_DEFINITION".to_string(),
@@ -865,6 +870,26 @@ mod tests {
 
         let _ = fs::remove_dir_all(base_storage_path);
         std::env::remove_var("BASE_STORAGE_PATH");
+    }
+
+    #[test]
+    fn test_build_env_for_client_includes_log_dir_when_set() {
+        let _guard = TEST_MUTEX.lock().expect("lock");
+        let base_storage_path = make_temp_dir();
+        let log_dir = base_storage_path.join("logs");
+        let log_dir = log_dir.display().to_string();
+
+        std::env::set_var("BASE_STORAGE_PATH", &base_storage_path);
+        std::env::set_var(LOG_DIR_ENV_VAR, &log_dir);
+
+        let envs =
+            build_env_for_client(1, &HashMap::new(), BitvmxMode::Docker).expect("build envs");
+
+        assert!(envs.contains(&(LOG_DIR_ENV_VAR.to_string(), log_dir)));
+
+        let _ = fs::remove_dir_all(base_storage_path);
+        std::env::remove_var("BASE_STORAGE_PATH");
+        std::env::remove_var(LOG_DIR_ENV_VAR);
     }
 }
 
