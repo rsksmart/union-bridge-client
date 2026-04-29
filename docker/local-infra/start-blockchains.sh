@@ -20,12 +20,13 @@ print_help() {
   echo "  --help                     Display this help message"
   echo "  --fresh                    Tear down local blockchains (and volumes). Can be used standalone or with 'up'"
   echo "  --contracts-tag TAG         Override contracts image tag (e.g. v0.2.0-alpha.1 or ${CONTRACTS_TAG_LOCAL_BUILD})"
+  echo "  --pull-contracts            Pull predeployed Anvil image from registry even if it exists locally"
   echo ""
   echo "Predeployed Anvil image:"
-  echo "  Default: derived from Cargo.toml (union-contracts tag) — pulls from PREDEPLOYED_ANVIL_IMAGE_BASE"
+  echo "  Default: derived from Cargo.toml (union-contracts tag) — uses local image if present, otherwise pulls from PREDEPLOYED_ANVIL_IMAGE_BASE"
   echo "  Override: use --contracts-tag flag"
   echo "    ${CONTRACTS_TAG_LOCAL_BUILD}  → build from CONTRACTS_CONTEXT_PATH (e.g. for contract development)"
-  echo "    <tag>       → use that registry tag (always pulls; if digest or tag changed, runs fresh)"
+  echo "    <tag>       → use that image tag locally, pulling only if missing or --pull-contracts is passed"
   echo ""
   echo "Common Docker Compose Arguments can be used, examples:"
   echo "  up                         Create and start containers"
@@ -39,6 +40,7 @@ print_help() {
   echo "  $0 --fresh up -d                    # Clean and start local blockchains"
   echo "  $0 --contracts-tag ${CONTRACTS_TAG_LOCAL_BUILD} up -d # Build predeployed Anvil from local contracts"
   echo "  $0 --contracts-tag v0.2.0-alpha.1 up -d   # Use specific registry tag"
+  echo "  $0 --contracts-tag v0.2.0-alpha.1 --pull-contracts up -d # Force pull specific registry tag"
   echo "  $0 down                             # Stop blockchains"
   echo "  $0 ps                               # Check status"
   echo ""
@@ -48,6 +50,7 @@ print_help() {
 
 FRESH=false
 CONTRACTS_TAG_ARG=""
+PULL_CONTRACTS=false
 
 # Parse args
 while [[ $# -gt 0 ]]; do
@@ -66,6 +69,10 @@ while [[ $# -gt 0 ]]; do
       fi
       CONTRACTS_TAG_ARG="$2"
       shift 2
+      ;;
+    --pull-contracts)
+      PULL_CONTRACTS=true
+      shift
       ;;
     *)
       DOCKER_COMPOSE_ARGS+=("$1")
@@ -158,6 +165,7 @@ else
   # Map git tag to image tag when they differ (e.g. v0.2.0-alpha -> v0.2.0-alpha.1)
   case "$CONTRACTS_IMAGE_TAG" in
     v0.2.0-alpha) CONTRACTS_IMAGE_TAG="v0.2.0-alpha.1" ;;
+    v0.4.1-alpha) CONTRACTS_IMAGE_TAG="v0.4.1-alpha-10-4-2" ;;
   esac
 fi
 export PREDEPLOYED_ANVIL_IMAGE_BASE
@@ -190,27 +198,39 @@ if [[ "${IS_UP_COMMAND}" == true && "${CONTRACTS_IMAGE_TAG}" == "${CONTRACTS_TAG
   DOCKER_COMPOSE_ARGS=("${NEW_ARGS[@]}")
 fi
 
-# When using a registry tag (not ${CONTRACTS_TAG_LOCAL_BUILD}): always pull, compare digest, set FRESH if changed
+# When using a registry tag (not ${CONTRACTS_TAG_LOCAL_BUILD}): use a local image if present.
+# Pull only if the image is missing locally or --pull-contracts was requested.
 if [[ "${IS_UP_COMMAND}" == true && "${CONTRACTS_IMAGE_TAG}" != "${CONTRACTS_TAG_LOCAL_BUILD}" ]]; then
   PREDEPLOYED_ANVIL_IMAGE="${PREDEPLOYED_ANVIL_IMAGE_BASE}:${CONTRACTS_IMAGE_TAG}"
   DIGEST_BEFORE=""
+  IMAGE_EXISTS=false
   if docker image inspect "$PREDEPLOYED_ANVIL_IMAGE" >/dev/null 2>&1; then
+    IMAGE_EXISTS=true
     DIGEST_BEFORE=$(docker image inspect --format '{{index .RepoDigests 0}}' "$PREDEPLOYED_ANVIL_IMAGE" 2>/dev/null || true)
   fi
-  echo "Pulling predeployed Anvil image '$PREDEPLOYED_ANVIL_IMAGE'..."
-  if ! docker pull --platform linux/amd64 "$PREDEPLOYED_ANVIL_IMAGE" ; then
-    echo "Error: Failed to pull predeployed Anvil image '$PREDEPLOYED_ANVIL_IMAGE'."
-    echo "  The image may not exist in the registry for this tag."
-    echo "  To build from source instead, use --contracts-tag ${CONTRACTS_TAG_LOCAL_BUILD}"
-    exit 1
-  fi
-  DIGEST_AFTER=$(docker image inspect --format '{{index .RepoDigests 0}}' "$PREDEPLOYED_ANVIL_IMAGE" 2>/dev/null || true)
-  if [[ -n "$DIGEST_BEFORE" && -n "$DIGEST_AFTER" && "$DIGEST_BEFORE" != "$DIGEST_AFTER" ]]; then
-    echo "Predeployed Anvil image digest changed; forcing fresh start (down --volumes before up)"
-    FRESH=true
-  elif [[ -z "$DIGEST_BEFORE" && -n "$DIGEST_AFTER" ]]; then
-    echo "Local image had no registry digest (likely built locally); forcing fresh start after pull"
-    FRESH=true
+
+  if [[ "${IMAGE_EXISTS}" == true && "${PULL_CONTRACTS}" != true ]]; then
+    echo "Using local predeployed Anvil image '$PREDEPLOYED_ANVIL_IMAGE' (pass --pull-contracts to refresh from registry)"
+  else
+    if [[ "${IMAGE_EXISTS}" == true ]]; then
+      echo "Refreshing predeployed Anvil image '$PREDEPLOYED_ANVIL_IMAGE' from registry..."
+    else
+      echo "Local predeployed Anvil image '$PREDEPLOYED_ANVIL_IMAGE' not found; pulling from registry..."
+    fi
+    if ! docker pull --platform linux/amd64 "$PREDEPLOYED_ANVIL_IMAGE" ; then
+      echo "Error: Failed to pull predeployed Anvil image '$PREDEPLOYED_ANVIL_IMAGE'."
+      echo "  The image may not exist in the registry for this tag."
+      echo "  Build it locally with this tag, pass --contracts-tag ${CONTRACTS_TAG_LOCAL_BUILD}, or publish it to the registry."
+      exit 1
+    fi
+    DIGEST_AFTER=$(docker image inspect --format '{{index .RepoDigests 0}}' "$PREDEPLOYED_ANVIL_IMAGE" 2>/dev/null || true)
+    if [[ -n "$DIGEST_BEFORE" && -n "$DIGEST_AFTER" && "$DIGEST_BEFORE" != "$DIGEST_AFTER" ]]; then
+      echo "Predeployed Anvil image digest changed; forcing fresh start (down --volumes before up)"
+      FRESH=true
+    elif [[ -z "$DIGEST_BEFORE" && -n "$DIGEST_AFTER" ]]; then
+      echo "Local image had no registry digest (likely built locally); forcing fresh start after pull"
+      FRESH=true
+    fi
   fi
 fi
 
@@ -224,7 +244,7 @@ if [[ "${IS_UP_COMMAND}" == true ]]; then
   fi
 fi
 
-echo "IS_UP_COMMAND: ${IS_UP_COMMAND} | FRESH: ${FRESH} | CONTRACTS_IMAGE_TAG: ${CONTRACTS_IMAGE_TAG}"
+echo "IS_UP_COMMAND: ${IS_UP_COMMAND} | FRESH: ${FRESH} | CONTRACTS_IMAGE_TAG: ${CONTRACTS_IMAGE_TAG} | PULL_CONTRACTS: ${PULL_CONTRACTS}"
 
 # If requested (or digest changed), clean local blockchains
 if [[ "${FRESH}" == true ]]; then

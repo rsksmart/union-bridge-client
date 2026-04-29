@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
 # wrapper script for local infrastructure management
-# usage: ./cli-infra.sh --start [--fresh] [--contracts-tag TAG]
+# usage: ./cli-infra.sh --start [--fresh] [--contracts-tag TAG] [--pull-contracts]
 #        ./cli-infra.sh --stop
-#        ./cli-infra.sh --start-blockchains [--fresh] [--contracts-tag TAG]
+#        ./cli-infra.sh --start-blockchains [--fresh] [--contracts-tag TAG] [--pull-contracts]
 #        ./cli-infra.sh --stop-blockchains
 #        ./cli-infra.sh --stop-mining
 #        ./cli-infra.sh --start-bitvmx [--fresh]
@@ -302,6 +302,10 @@ start_all() {
                 BLOCKCHAINS_OPTS+=(--contracts-tag "$2")
                 shift 2
                 ;;
+            --pull-contracts)
+                BLOCKCHAINS_OPTS+=(--pull-contracts)
+                shift
+                ;;
             *)
                 BLOCKCHAINS_OPTS+=("$1")
                 BITVMX_OPTS+=("$1")
@@ -345,9 +349,9 @@ case "${1:-}" in
         echo "Usage: $0 {--start|--stop|--start-blockchains|--stop-blockchains|--stop-mining|--start-bitvmx|--stop-bitvmx}"
         echo ""
         echo "Local Docker Infrastructure:"
-        echo "  --start [--fresh] [--contracts-tag TAG]              Start all blockchains + bitvmx + mining"
+        echo "  --start [--fresh] [--contracts-tag TAG] [--pull-contracts]              Start all blockchains + bitvmx + mining"
         echo "  --stop                                               Stop mining + bitvmx + blockchains"
-        echo "  --start-blockchains [--fresh] [--contracts-tag TAG]  Start blockchains + mining (anvil + bitcoin)"
+        echo "  --start-blockchains [--fresh] [--contracts-tag TAG] [--pull-contracts]  Start blockchains + mining (anvil + bitcoin)"
         echo "  --stop-blockchains                                   Stop mining + blockchains"
         echo "  --stop-mining                                        Stop background mining only; run this if mining gets stuck"
         echo "  --start-bitvmx [--fresh]                             Start bitvmx only"
@@ -356,6 +360,7 @@ case "${1:-}" in
         echo "Options:"
         echo "  --fresh                                              Clean/reset volumes before starting"
         echo "  --contracts-tag TAG                                  Predeployed Anvil/contracts tag (only for blockchains; e.g. local-build or v0.2.0-alpha.1)"
+        echo "  --pull-contracts                                     Pull predeployed Anvil image from registry even if it exists locally"
         exit 1
         ;;
 esac
