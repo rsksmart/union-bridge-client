@@ -249,7 +249,7 @@ echo "IS_UP_COMMAND: ${IS_UP_COMMAND} | FRESH: ${FRESH} | CONTRACTS_IMAGE_TAG: $
 # If requested (or digest changed), clean local blockchains
 if [[ "${FRESH}" == true ]]; then
   echo "Cleaning local blockchains stack (down -v)..."
-  cmd="docker compose -p blockchains --env-file \"$ENV_PATH\" -f \"$COMPOSE_FILE\" down --volumes || true"
+  cmd="docker compose -p blockchains --env-file \"$ENV_PATH\" -f \"$COMPOSE_FILE\" down --volumes --timeout 1 || true"
   echo "Running: $cmd"
   eval "$cmd"
 fi
@@ -284,13 +284,6 @@ if [[ "${IS_UP_COMMAND}" == true && "${FRESH}" == true ]]; then
   echo "Creating wallet 'mainwallet' in ${BITCOIND_CONTAINER}..."
   if ! docker exec "${BITCOIND_CONTAINER}" bitcoin-cli -regtest -rpcuser="${BITCOIND_USER}" -rpcpassword="${BITCOIND_PASSWORD}" createwallet mainwallet; then
     echo "Error: Failed to create wallet 'mainwallet'"
-    exit 1
-  fi
-
-  echo
-  echo "Restarting ${BITCOIND_CONTAINER} after wallet creation."
-  if ! docker restart "${BITCOIND_CONTAINER}" 1>/dev/null; then
-    echo "Error: Failed to restart ${BITCOIND_CONTAINER}"
     exit 1
   fi
 fi
