@@ -107,7 +107,30 @@ fn print_instructions(env: &Environment, addresses: &[String], amount: u64, fund
     }
 }
 
+/// Stale `ub-wallet --mode member` children (e.g. after a prior CLI timeout) can hold the RocksDB
+/// lock and block the next `send_to_address` indefinitely. The E2E framework does the same `pkill`
+/// before Node-spawned wallet calls; this path spawns the wallet from the `operations` binary, so
+/// we clear here too. Opt out with `UNION_BRIDGE_E2E_PKILL_UB_WALLET=0` (same env as
+/// `BitcoinWalletCliAdapter` in the e2e framework).
+#[cfg(unix)]
+fn kill_stale_member_ub_wallet_processes() {
+    if env::var("UNION_BRIDGE_E2E_PKILL_UB_WALLET")
+        .map(|v| v == "0")
+        .unwrap_or(false)
+    {
+        return;
+    }
+    let _ = Command::new("pkill")
+        .args(["-f", "ub-wallet.*--mode member"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+#[cfg(not(unix))]
+fn kill_stale_member_ub_wallet_processes() {}
 fn execute_wallet_command(addresses: &[String], amount: u64) -> Result<()> {
+    kill_stale_member_ub_wallet_processes();
     let wallet_script = "./cli-bitcoin-wallet.sh";
     let joined = addresses.join(",");
     let amount_str = amount.to_string();

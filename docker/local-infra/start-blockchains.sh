@@ -163,12 +163,13 @@ else
     echo "       Expected format: union-contracts = { ..., tag = \"<version>\", ... } on a single line." >&2
     exit 1
   fi
-  # Map git tag to image tag when they differ (e.g. v0.2.0-alpha -> v0.2.0-alpha.1)
-  case "$CONTRACTS_IMAGE_TAG" in
-    v0.2.0-alpha) CONTRACTS_IMAGE_TAG="v0.2.0-alpha.1" ;;
-    v0.4.1-alpha) CONTRACTS_IMAGE_TAG="v0.4.1-alpha-10-4-2" ;;
-  esac
 fi
+# Map git tag to Docker image tag when they differ (Cargo.toml / --contracts-tag may use git tag only).
+# e.g. registry publishes v0.4.1-alpha-10-4-2, not bare v0.4.1-alpha.
+case "$CONTRACTS_IMAGE_TAG" in
+  v0.2.0-alpha) CONTRACTS_IMAGE_TAG="v0.2.0-alpha.1" ;;
+  v0.4.1-alpha) CONTRACTS_IMAGE_TAG="v0.4.1-alpha-10-4-2" ;;
+esac
 export PREDEPLOYED_ANVIL_IMAGE_BASE
 export PREDEPLOYED_ANVIL_IMAGE_BASE
 export CONTRACTS_IMAGE_TAG
