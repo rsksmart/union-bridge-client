@@ -323,12 +323,12 @@ pub(crate) enum Steps {
     DepositP2PData,
     SetupTakeAggregatedKey,
     SetupDisputeAggregatedKey,
-    DepositAggregatedKey,
     SetupPairwiseKeys,
     SetupDisputeCore,
     RequestDisputeChannelVars,
     DisputeChannelSetup,
     FullPenalizationSetup,
+    DepositAggregatedKey,
     Done,
     Failed,
 }
@@ -1548,10 +1548,6 @@ where
                 debug!("CommitteeSetupFlow start setup dispute aggregated key");
                 self.setup_bitvmx_aggregated_dispute_pubkey()?;
             }
-            Steps::DepositAggregatedKey => {
-                debug!("CommitteeSetupFlow start deposit aggregated key");
-                self.deposit_aggregated_key()?;
-            }
             Steps::SetupPairwiseKeys => {
                 debug!("CommitteeSetupFlow start setup pairwise keys");
                 self.setup_pairwise_keys()?;
@@ -1575,6 +1571,10 @@ where
                 debug!("CommitteeSetupFlow waiting for FullPenalization setup completion");
                 let req_count = self.complete_full_penalization_setup()?;
                 trace!("Requested {req_count} FullPenalization Setup");
+            }
+            Steps::DepositAggregatedKey => {
+                debug!("CommitteeSetupFlow start deposit aggregated key");
+                self.deposit_aggregated_key()?;
             }
             Steps::Done => {
                 self.write_completion_marker()?;
@@ -1690,12 +1690,6 @@ where
             Steps::SetupDisputeAggregatedKey => {
                 debug!("CommitteeSetupFlow completing SetupDisputeAggregatedKey");
                 Self::close_agg_key_req(&mut self.ctx_mut().agg_dispute_key_req, data)?;
-                self.start_step(Steps::DepositAggregatedKey)?;
-            }
-            Steps::DepositAggregatedKey => {
-                debug!("CommitteeSetupFlow completing DepositAggregatedKey");
-                self.ctx_mut().committee_ready_req = Some(data.into_committee_ready()?);
-                self.validate_committee_ready()?;
                 self.start_step(Steps::SetupPairwiseKeys)?;
             }
             Steps::SetupPairwiseKeys => {
@@ -1764,8 +1758,14 @@ where
                     self.state.step = Steps::FullPenalizationSetup;
                 } else {
                     info!("FullPenalization setup completed");
-                    self.start_step(Steps::Done)?;
+                    self.start_step(Steps::DepositAggregatedKey)?;
                 }
+            }
+            Steps::DepositAggregatedKey => {
+                debug!("CommitteeSetupFlow completing DepositAggregatedKey");
+                self.ctx_mut().committee_ready_req = Some(data.into_committee_ready()?);
+                self.validate_committee_ready()?;
+                self.start_step(Steps::Done)?;
             }
             Steps::Done => {
                 debug!("CommitteeSetupFlow completing Done");
@@ -2439,7 +2439,7 @@ mod tests {
     use crate::coordinator::tests::MockRskContractsGatewayApi;
     use crate::flows::committee::dispute_channel_setup::DisputeChannelSetupRequest;
     use crate::flows::common::GlobalContext;
-    use crate::store::MockCoordinatorStoreApi;
+    use crate::store::{MockCoordinatorStoreApi, StoreKey};
     use crate::types::{EventWithBlock, MemberOfCommittee, Utxo as UserUtxo};
     use crate::user_requests::ApplyToStream;
 
@@ -2447,6 +2447,14 @@ mod tests {
         MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
     type TestFlow =
         SetupCommitteeFlow<MockRskContractsGatewayApi, MockBitVmxBroker, MockCoordinatorStoreApi>;
+    type FlowFixture = (TestFlow, Uuid, NewCommitteeReadyEvent);
+
+    struct CommitteeFixture {
+        committee_data: CommitteeData,
+        pending_event: NewCommitteePendingEvent,
+        ready_event: NewCommitteeReadyEvent,
+        my_address: CommonAddress,
+    }
 
     fn test_public_key(seed: u8) -> PublicKey {
         let mut bytes = [0u8; 33];
@@ -2463,9 +2471,16 @@ mod tests {
         })
     }
 
+    fn test_valid_public_key(seed: u8) -> PublicKey {
+        let secret =
+            bitcoin::secp256k1::SecretKey::from_slice(&[seed; 32]).expect("valid secret key");
+        let secp = bitcoin::secp256k1::Secp256k1::new();
+        PublicKey::new(bitcoin::secp256k1::PublicKey::from_secret_key(&secp, &secret))
+    }
+
     fn test_signed_pubkey(seed: u8, recovery_id: u8) -> SignedPublicKey {
         SignedPublicKey {
-            public_key: test_public_key(seed),
+            public_key: test_valid_public_key(seed),
             signature_r: [seed; 32],
             signature_s: [seed + 1; 32],
             recovery_id,
@@ -2526,6 +2541,35 @@ mod tests {
         }
     }
 
+    fn test_committee_with_members(members: &[(AlloyAddress, u8)]) -> Committee {
+        Committee {
+            aggregatedKey: Bytes::from(vec![7u8; 32]),
+            members: members
+                .iter()
+                .map(|(member_address, role)| CommitteeMember {
+                    memberAddress: *member_address,
+                    role: *role,
+                })
+                .collect(),
+            leaderAddress: members[0].0,
+            operatorTakeIndex: U256::from(0),
+            createdAt: U256::from(0),
+            missingData: 0,
+            missingCommunicationData: 0,
+            isPending: false,
+            streamId: 7,
+            fundingUTXOs: members
+                .iter()
+                .enumerate()
+                .map(|(idx, _)| UTXO {
+                    txid: FixedBytes::<32>::from([3 + to_u8(idx); 32]),
+                    outputIndex: to_u32(idx),
+                    amount: 21_000 + u64::from(to_u32(idx)),
+                })
+                .collect(),
+        }
+    }
+
     fn test_pending_committee_event(committee_id: u128) -> EventWithBlock<NewPendingCommittee> {
         let member_address: AlloyAddress = [1u8; 20].into();
         EventWithBlock {
@@ -2540,6 +2584,19 @@ mod tests {
         }
     }
 
+    fn test_pending_committee_event_with_committee(
+        committee_id: u128,
+        committee: Committee,
+    ) -> EventWithBlock<NewPendingCommittee> {
+        EventWithBlock {
+            inner: NewPendingCommittee { committeeId: committee_id, _committee: committee },
+            block_number: BlockNumber::from(100),
+            block_hash: BlockHash::from(H256::from_low_u64_be(101)),
+            removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(102)),
+        }
+    }
+
     fn test_ready_committee_event(committee_id: u128) -> EventWithBlock<NewCommittee> {
         let member_address: AlloyAddress = [2u8; 20].into();
         EventWithBlock {
@@ -2547,6 +2604,19 @@ mod tests {
                 committeeId: committee_id,
                 _committee: test_committee(member_address, 1),
             },
+            block_number: BlockNumber::from(200),
+            block_hash: BlockHash::from(H256::from_low_u64_be(201)),
+            removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(202)),
+        }
+    }
+
+    fn test_ready_committee_event_with_committee(
+        committee_id: u128,
+        committee: Committee,
+    ) -> EventWithBlock<NewCommittee> {
+        EventWithBlock {
+            inner: NewCommittee { committeeId: committee_id, _committee: committee },
             block_number: BlockNumber::from(200),
             block_hash: BlockHash::from(H256::from_low_u64_be(201)),
             removed: false,
@@ -2570,11 +2640,19 @@ mod tests {
     }
 
     fn test_member(index: usize, role: ParticipantRole) -> MemberOfCommittee {
+        test_member_with_address(index, role, CommonAddress::from(H160::from([to_u8(index); 20])))
+    }
+
+    fn test_member_with_address(
+        index: usize,
+        role: ParticipantRole,
+        address: CommonAddress,
+    ) -> MemberOfCommittee {
         MemberOfCommittee {
-            address: CommonAddress::from(H160::from([to_u8(index); 20])),
+            address,
             role,
-            take_key: test_public_key(to_u8(index * 2)),
-            dispute_key: test_public_key(to_u8(index * 2 + 1)),
+            take_key: test_valid_public_key(to_u8(index * 2 + 1)),
+            dispute_key: test_valid_public_key(to_u8(index * 2 + 2)),
             funding_utxo: test_partial_utxo(to_u32(index)),
             committee_idx: index,
         }
@@ -2605,6 +2683,106 @@ mod tests {
             String::new(),
             1,
             Rc::new(Signaling::new("/tmp", "disabled")),
+        )
+    }
+
+    fn two_member_committee_fixture() -> CommitteeFixture {
+        let committee_uuid = Uuid::new_v4();
+        let committee_id = committee_uuid.as_u128();
+        let my_address = CommonAddress::from(H160::from([7u8; 20]));
+        let partner_address = CommonAddress::from(H160::from([8u8; 20]));
+        let committee = test_committee_with_members(&[
+            (my_address.into(), u8::from(ParticipantRole::Prover)),
+            (partner_address.into(), u8::from(ParticipantRole::Verifier)),
+        ]);
+        let pending_event =
+            test_pending_committee_event_with_committee(committee_id, committee.clone());
+        let ready_event =
+            test_ready_committee_event_with_committee(committee_id, committee.clone());
+        let committee_data = CommitteeData {
+            committee_id: CommitteeId::from(committee_id),
+            committee,
+            members: vec![
+                test_member_with_address(0, ParticipantRole::Prover, my_address),
+                test_member_with_address(1, ParticipantRole::Verifier, partner_address),
+            ],
+        };
+
+        CommitteeFixture { committee_data, pending_event, ready_event, my_address }
+    }
+
+    fn create_flow_waiting_for_dispute_aggregated_key() -> FlowFixture {
+        create_flow_waiting_for_dispute_aggregated_key_with_expected_deposits(1)
+    }
+
+    fn create_flow_waiting_for_dispute_aggregated_key_with_expected_deposits(
+        expected_deposits: usize,
+    ) -> FlowFixture {
+        let fixture = two_member_committee_fixture();
+        let dispute_agg_req_id = Uuid::new_v4();
+        let aggregated_take_key = test_valid_public_key(11);
+
+        let mut contracts = MockRskContractsGatewayApi::new();
+        contracts.expect_my_address().return_const(fixture.my_address);
+        contracts.expect_deposit_aggregated_key().times(expected_deposits).returning(|_| {
+            Ok(DepositAggregatedKeyOutput { transaction_hash: "test_hash".to_string() })
+        });
+
+        let mut broker = MockBitVmxBroker::new();
+        broker.expect_send().times(1..).returning(|_| Ok(true));
+
+        let mut store = MockCoordinatorStoreApi::new();
+        store.expect_save_flow::<State>().times(1..).returning(|key, _| {
+            assert!(matches!(key, StoreKey::SetupCommitteeFlow(_)));
+            Ok(())
+        });
+
+        let global_context = GlobalContext::new();
+        global_context.my_keys().set_dispute_key(test_signed_pubkey(12, 27));
+
+        let ctx = FlowContext {
+            user_input: Some(test_apply_to_stream(55)),
+            send_funds_req: Some((Uuid::new_v4(), Some(test_txid(90)))),
+            agg_take_key_req: Some((Uuid::new_v4(), Some(aggregated_take_key))),
+            agg_dispute_key_req: Some((dispute_agg_req_id, None)),
+            committee_data: Some(fixture.committee_data),
+            committee_pending_ev: Some(fixture.pending_event),
+            communication_data_ready_ev: Some(vec![test_comms_address(1), test_comms_address(2)]),
+            ..Default::default()
+        };
+
+        let flow = SetupCommitteeFlow::from_saved_state(
+            Rc::new(contracts),
+            RuntimeSync::new().expect("runtime"),
+            Rc::new(broker),
+            global_context,
+            State { internal_id: Uuid::new_v4(), step: Steps::SetupDisputeAggregatedKey, ctx },
+            Network::Regtest,
+            Rc::new(store),
+            String::new(),
+            1,
+            Rc::new(Signaling::new("/tmp", "disabled")),
+        );
+
+        (flow, dispute_agg_req_id, fixture.ready_event)
+    }
+
+    fn dispute_core_variable_payloads() -> (String, String) {
+        let op_cosign_utxos = vec![Some(test_partial_utxo(40)), Some(test_partial_utxo(41))];
+        let wt_init_challenge_utxos = vec![
+            Some(WtInitChallengeUtxos {
+                wt_stopper: test_partial_utxo(42),
+                op_stopper: test_partial_utxo(43),
+            }),
+            Some(WtInitChallengeUtxos {
+                wt_stopper: test_partial_utxo(44),
+                op_stopper: test_partial_utxo(45),
+            }),
+        ];
+
+        (
+            serde_json::to_string(&op_cosign_utxos).expect("serialize op cosign utxos"),
+            serde_json::to_string(&wt_init_challenge_utxos).expect("serialize wt challenge utxos"),
         )
     }
 
@@ -2948,6 +3126,110 @@ mod tests {
         );
         assert!(setup_channel_req[0].1);
         assert!(!setup_channel_req[1].1);
+    }
+
+    #[test]
+    fn test_committee_setup_delays_deposit_until_full_penalization_is_complete() {
+        let (mut flow, dispute_agg_req_id, ready_event) =
+            create_flow_waiting_for_dispute_aggregated_key();
+
+        flow.complete_step(StepData::PublicKey(test_valid_public_key(13)))
+            .expect("dispute aggregated key should advance to pairwise setup");
+        assert_eq!(flow.current_step(), Steps::SetupPairwiseKeys);
+
+        let pairwise_req_id =
+            flow.state.ctx.pairwise_keys_req.first().expect("pairwise request should be created").0;
+        assert_ne!(pairwise_req_id, dispute_agg_req_id);
+
+        flow.complete_step(StepData::PairwiseAggregatedKey(
+            pairwise_req_id,
+            test_valid_public_key(14),
+        ))
+        .expect("pairwise setup should advance to dispute core");
+        assert_eq!(flow.current_step(), Steps::SetupDisputeCore);
+
+        let setup_core_req_ids: Vec<_> =
+            flow.state.ctx.setup_core_req.iter().map(|(id, _, _)| *id).collect();
+        assert_eq!(setup_core_req_ids.len(), 2);
+        for (idx, req_id) in setup_core_req_ids.into_iter().enumerate() {
+            flow.complete_step(StepData::SetupCompleted(req_id))
+                .expect("dispute core setup completion should be accepted");
+            let expected_step =
+                if idx == 0 { Steps::SetupDisputeCore } else { Steps::RequestDisputeChannelVars };
+            assert_eq!(flow.current_step(), expected_step);
+        }
+
+        let setup_channel_req_ids: Vec<_> =
+            flow.state.ctx.setup_channel_req.iter().map(|req| req.dispute_core_pid).collect();
+        assert_eq!(setup_channel_req_ids.len(), 2);
+        let (op_cosign_utxos, wt_init_challenge_utxos) = dispute_core_variable_payloads();
+        for (idx, req_id) in setup_channel_req_ids.into_iter().enumerate() {
+            flow.complete_step(StepData::DisputeCoreVariable(
+                req_id,
+                OP_COSIGN_UTXOS.to_string(),
+                op_cosign_utxos.clone(),
+            ))
+            .expect("OP_COSIGN_UTXOS should be accepted");
+            assert_eq!(flow.current_step(), Steps::RequestDisputeChannelVars);
+
+            flow.complete_step(StepData::DisputeCoreVariable(
+                req_id,
+                WT_INIT_CHALLENGE_UTXOS.to_string(),
+                wt_init_challenge_utxos.clone(),
+            ))
+            .expect("WT_INIT_CHALLENGE_UTXOS should be accepted");
+            let expected_step = if idx == 0 {
+                Steps::RequestDisputeChannelVars
+            } else {
+                Steps::DisputeChannelSetup
+            };
+            assert_eq!(flow.current_step(), expected_step);
+        }
+
+        let dispute_channel_req_id = flow
+            .state
+            .ctx
+            .setup_channel_setup_req
+            .first()
+            .expect("dispute channel setup request should be created")
+            .0;
+        flow.complete_step(StepData::SetupCompleted(dispute_channel_req_id))
+            .expect("dispute channel completion should advance to full penalization");
+        assert_eq!(flow.current_step(), Steps::FullPenalizationSetup);
+
+        let full_penalization_req_id = flow
+            .state
+            .ctx
+            .setup_full_penalization_req
+            .first()
+            .expect("full penalization setup request should be created")
+            .0;
+        flow.complete_step(StepData::SetupCompleted(full_penalization_req_id))
+            .expect("full penalization completion should activate committee on-chain");
+        assert_eq!(flow.current_step(), Steps::DepositAggregatedKey);
+        assert!(flow.state.ctx.committee_ready_req.is_none());
+
+        flow.complete_step(StepData::ReadyCommittee(ready_event))
+            .expect("committee ready event should finish the flow after activation");
+        assert_eq!(flow.current_step(), Steps::Done);
+    }
+
+    #[test]
+    fn test_new_committee_ready_before_deposit_aggregated_key_does_not_advance() {
+        let (mut flow, _dispute_agg_req_id, ready_event) =
+            create_flow_waiting_for_dispute_aggregated_key_with_expected_deposits(0);
+
+        flow.complete_step(StepData::PublicKey(test_valid_public_key(13)))
+            .expect("dispute aggregated key should advance to pairwise setup");
+        assert_eq!(flow.current_step(), Steps::SetupPairwiseKeys);
+
+        let err = flow
+            .complete_step(StepData::ReadyCommittee(ready_event))
+            .expect_err("ready event should not be accepted before DepositAggregatedKey");
+
+        assert!(err.to_string().contains("Expected PairwiseAggregatedKey data"));
+        assert_eq!(flow.current_step(), Steps::SetupPairwiseKeys);
+        assert!(flow.state.ctx.committee_ready_req.is_none());
     }
 
     #[test]
