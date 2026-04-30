@@ -673,9 +673,9 @@ impl Wallet {
         'select: loop {
             let (selected_indices, selected_utxos, total_input) = self.select_utxos(required)?;
 
-            let mut include_change =
-                total_input.saturating_sub(total_output_amount) >= P2WPKH_DUST_LIMIT_SATS;
             let mut change_value = total_input.saturating_sub(total_output_amount);
+            let mut include_change = change_value >= P2WPKH_DUST_LIMIT_SATS;
+            let mut assumed_fee = 0u64;
             let result;
 
             'build: loop {
@@ -713,18 +713,16 @@ impl Wallet {
                     continue 'select;
                 }
 
-                let new_change_value = total_input - total_output_amount - fee;
-                let should_include_change = new_change_value >= P2WPKH_DUST_LIMIT_SATS;
+                if fee > assumed_fee {
+                    assumed_fee = fee;
+                    let new_change_value = total_input - total_output_amount - assumed_fee;
+                    let should_include_change = new_change_value >= P2WPKH_DUST_LIMIT_SATS;
 
-                if should_include_change != include_change {
-                    include_change = should_include_change;
-                    change_value = new_change_value;
-                    continue 'build;
-                }
-
-                if include_change && new_change_value != change_value {
-                    change_value = new_change_value;
-                    continue 'build;
+                    if should_include_change != include_change || new_change_value != change_value {
+                        include_change = should_include_change;
+                        change_value = new_change_value;
+                        continue 'build;
+                    }
                 }
 
                 if !include_change {
@@ -1084,6 +1082,35 @@ mod tests {
             Some(imported_address.to_string())
         );
         assert!(wallet.imported_addresses().contains(&generated.address.to_string()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn pegin_fee_calculation_converges_when_signature_size_changes() -> Result<()> {
+        use bitcoin::hashes::Hash;
+
+        let temp = tempdir()?;
+        let root = temp.path().join("utxo-db");
+        let mut wallet = Wallet::new(root, crate::cli::WalletMode::User)?;
+
+        let secret = secp256k1::SecretKey::from_slice(&[1u8; 32]).expect("secret");
+        let private_key = PrivateKey::new(secret, Network::Regtest);
+        wallet.import_private_key(&private_key.to_wif())?;
+
+        let input_txid = Txid::from_byte_array([2u8; 32]);
+        wallet.register_utxo(OutPoint::new(input_txid, 0), 111_080)?;
+
+        let created = wallet.create_pegin_transaction(
+            100_000,
+            0,
+            "bcrt1ptqgpe5gq742yth0kssd25n4stdhuuppgf2n8ujjc58mz5cln682sltyyny".to_string(),
+            "0xf6460069f83619ba7ed86de9f8b8924ec6838f12".to_string(),
+            "0x51208afb30329ba6e4d425fadfce9aa235c893c9f3a73f3b2bb898df84cf7358e6af".to_string(),
+        )?;
+
+        assert!(created.fee_sat >= created.transaction.vsize() as u64 * wallet.sats_per_byte());
+        assert_eq!(created.spent_utxos.len(), 1);
 
         Ok(())
     }
