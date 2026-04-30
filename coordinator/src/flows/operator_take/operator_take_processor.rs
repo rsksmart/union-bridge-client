@@ -1473,4 +1473,57 @@ mod tests {
     fn proof_txid() -> bitcoin::Txid {
         test_spv_proof().tx.compute_txid()
     }
+
+    #[test]
+    fn cleanup_terminal_flows_removes_advance_funds_flow_and_retry_state() {
+        let committee_id = Uuid::new_v4();
+        let slot_index = 4;
+        let flow_id =
+            AdvanceFundsFlowProcessor::<MockRskContractsGatewayApi, MockBitVmxBroker>::get_advance_funds_pid(
+                committee_id,
+                slot_index,
+            )
+            .expect("flow id");
+        let trigger_data = test_trigger_data(committee_id, slot_index);
+
+        let flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            flow_id,
+            trigger_data,
+            Steps::Failed,
+        );
+
+        let mut processor = AdvanceFundsFlowProcessor::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+        );
+        processor.flows.insert(flow_id, flow);
+        processor.register_advance_funds_retry_scheduler.schedule(flow_id, 1);
+        processor.register_reimbursement_kickoff_retry_scheduler.schedule(flow_id, 1);
+        processor.register_operator_take_retry_scheduler.schedule(flow_id, 1);
+        processor.unconfirmed_register_advance_funds.insert(flow_id, 1);
+        processor.unconfirmed_register_reimbursement_kickoff.insert(flow_id, 1);
+        processor.unconfirmed_register_operator_take.insert(flow_id, 1);
+        processor.request_pegout_tx_hashes.insert(
+            (CommitteeId::from(committee_id.as_u128()), slot_index as u64),
+            "0xrequest".to_string(),
+        );
+
+        processor.cleanup_terminal_flows();
+
+        assert!(!processor.flows.contains_key(&flow_id));
+        assert!(!processor.register_advance_funds_retry_scheduler.is_scheduled(&flow_id));
+        assert!(!processor.register_reimbursement_kickoff_retry_scheduler.is_scheduled(&flow_id));
+        assert!(!processor.register_operator_take_retry_scheduler.is_scheduled(&flow_id));
+        assert!(!processor.unconfirmed_register_advance_funds.contains_key(&flow_id));
+        assert!(!processor.unconfirmed_register_reimbursement_kickoff.contains_key(&flow_id));
+        assert!(!processor.unconfirmed_register_operator_take.contains_key(&flow_id));
+        assert!(
+            !processor
+                .request_pegout_tx_hashes
+                .contains_key(&(CommitteeId::from(committee_id.as_u128()), slot_index as u64))
+        );
+    }
 }

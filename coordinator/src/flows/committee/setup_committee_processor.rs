@@ -10,8 +10,8 @@ use std::rc::Rc;
 
 use anyhow::{Context, Result};
 use common::msg_broker::bitvmx_types::{
-    IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, UnionSettings, VariableTypes,
-    GLOBAL_SETTINGS_UUID, OP_COSIGN_UTXOS, WT_INIT_CHALLENGE_UTXOS,
+    GLOBAL_SETTINGS_UUID, IncomingBitVMXApiMessages, OP_COSIGN_UTXOS, OutgoingBitVMXApiMessages,
+    UnionSettings, VariableTypes, WT_INIT_CHALLENGE_UTXOS,
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::types::{BlockNumber, CommitteeId, RskBlockAndUncles, StreamId};
@@ -26,7 +26,7 @@ use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
 use crate::event_processor::EventProcessor;
 use crate::flows::common::GlobalContext;
 use crate::flows::errors::{FailableFlow, FlowError};
-use crate::store::{cleanup_flows_matching, restore_flows, CoordinatorStoreApi, StorePrefix};
+use crate::store::{CoordinatorStoreApi, StorePrefix, cleanup_flows_matching, restore_flows};
 use crate::types::{
     AllCommunicationDataReadyEvent, EventStatus, NewCommitteePendingEvent, NewCommitteeReadyEvent,
     RskPegManagerEvents, UserRequests,
@@ -502,8 +502,8 @@ mod tests {
 
     use alloy_primitives::{Address as AlloyAddress, Bytes, U256};
     use common::msg_broker::bitvmx_types::{
-        CommsAddress, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, ParticipantRole,
-        UnionSettings, VariableTypes, GLOBAL_SETTINGS_UUID, OP_COSIGN_UTXOS,
+        CommsAddress, GLOBAL_SETTINGS_UUID, IncomingBitVMXApiMessages, OP_COSIGN_UTXOS,
+        OutgoingBitVMXApiMessages, ParticipantRole, UnionSettings, VariableTypes,
     };
     use common::msg_broker::broker::MockBrokerClientApi;
     use common::runtime_sync::RuntimeSync;
@@ -786,9 +786,11 @@ mod tests {
     #[test]
     fn test_process_new_bitvmx_event_pong_is_ignored() {
         let mut processor = empty_processor();
-        assert!(processor
-            .process_new_bitvmx_event(&OutgoingBitVMXApiMessages::Pong(Uuid::new_v4()))
-            .is_ok());
+        assert!(
+            processor
+                .process_new_bitvmx_event(&OutgoingBitVMXApiMessages::Pong(Uuid::new_v4()))
+                .is_ok()
+        );
     }
 
     #[test]

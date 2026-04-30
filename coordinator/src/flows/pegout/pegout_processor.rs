@@ -993,6 +993,7 @@ mod tests {
             let broker = Rc::new(broker);
             let mut store = MockCoordinatorStoreApi::new();
             store.expect_save_flow::<State>().returning(|_, _| Ok(()));
+            store.expect_delete_flow().returning(|_| Ok(()));
             let store = Rc::new(store);
             let rt_sync = RuntimeSync::new().unwrap();
 
@@ -1231,15 +1232,28 @@ mod tests {
     }
 
     #[test]
-    fn done_flow_ignores_late_pegout_registered() {
+    fn cleanup_terminal_flows_removes_pegout_flow_and_side_state() {
         let mut harness = TestHarness::new();
         let flow_id = Uuid::new_v4();
         harness.processor.pegout_flows.insert(flow_id, harness.create_flow_at_done(flow_id));
-        let event = fake_pegout_registered_event(test_txid([3u8; 32]));
+        harness
+            .processor
+            .signature_flows
+            .insert(flow_id, harness.create_completed_sig_flow(flow_id));
+        harness.processor.tx_status_scheduler.schedule(flow_id, 1);
+        harness.processor.advance_funds_timeout_scheduler.schedule(flow_id, 100, 600);
+        harness.processor.register_pegout_retry_scheduler.schedule(flow_id, 1);
+        harness.processor.flows_pending_timeout.insert(flow_id);
+        harness.processor.unconfirmed_register_pegout.insert(flow_id, 1);
 
-        let result = harness.processor.handle_pegout_registered(&event);
+        harness.processor.cleanup_terminal_flows();
 
-        assert!(result.is_ok(), "expected late PegoutRegistered to be ignored");
-        assert_eq!(harness.processor.pegout_flows[&flow_id].current_step(), Steps::Done);
+        assert!(!harness.processor.pegout_flows.contains_key(&flow_id));
+        assert!(!harness.processor.signature_flows.contains_key(&flow_id));
+        assert!(!harness.processor.tx_status_scheduler.is_scheduled(&flow_id));
+        assert!(!harness.processor.advance_funds_timeout_scheduler.is_scheduled(&flow_id));
+        assert!(!harness.processor.register_pegout_retry_scheduler.is_scheduled(&flow_id));
+        assert!(!harness.processor.flows_pending_timeout.contains(&flow_id));
+        assert!(!harness.processor.unconfirmed_register_pegout.contains_key(&flow_id));
     }
 }

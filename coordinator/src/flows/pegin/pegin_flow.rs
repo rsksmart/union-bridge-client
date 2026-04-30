@@ -1,13 +1,13 @@
 use std::rc::Rc;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::secp256k1::Parity::Even;
 use bitcoin::secp256k1::XOnlyPublicKey;
 use bitcoin::{PublicKey, Txid};
 use common::msg_broker::bitvmx_types::{
-    BtcTxSPVProof, CommsAddress, IncomingBitVMXApiMessages, ParticipantRole, PeginAcceptedMessage,
-    PubKeyHash, TransactionStatus, VariableTypes, ACCEPT_PEGIN_TX, OPERATOR_TAKE_TX,
-    OPERATOR_WON_TX,
+    ACCEPT_PEGIN_TX, BtcTxSPVProof, CommsAddress, IncomingBitVMXApiMessages, OPERATOR_TAKE_TX,
+    OPERATOR_WON_TX, ParticipantRole, PeginAcceptedMessage, PubKeyHash, TransactionStatus,
+    VariableTypes,
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
@@ -23,8 +23,8 @@ use transaction_dispatcher::types::{
 use union_contracts::bindings::pegin_manager::PeginManager::{PeginAccepted, PeginRequested};
 use uuid::Uuid;
 
-use crate::flows::common::native_bridge_verifier::{invoke_contract_safe, NativeBridgeVerifier};
-use crate::flows::common::{build_communication_data, Signaling, COMM_KEY_INDEX};
+use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
+use crate::flows::common::{COMM_KEY_INDEX, Signaling, build_communication_data};
 use crate::flows::pegin::utils::{get_accept_pegin_pid, get_temp_pegin_pid};
 use crate::store::{CoordinatorStoreApi, StoreKey};
 
@@ -1012,9 +1012,9 @@ fn format_step(step: Steps) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use alloy_primitives::{Uint, U256};
-    use bitcoin::hashes::Hash;
+    use alloy_primitives::{U256, Uint};
     use bitcoin::Txid;
+    use bitcoin::hashes::Hash;
     use common::msg_broker::bitvmx_types::{
         IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PeginAcceptedMessage,
     };
@@ -1022,8 +1022,8 @@ mod tests {
     use common::runtime_sync::RuntimeSync;
     use common::types::Address as CommonAddress;
     use mockall::predicate::*;
-    use musig2::secp::MaybeScalar;
     use musig2::PubNonce;
+    use musig2::secp::MaybeScalar;
     use primitive_types::H160;
     use transaction_dispatcher::types::GetCommitteeOutput;
     use union_contracts::bindings::committee_registry::CommitteeRegistry::Committee;

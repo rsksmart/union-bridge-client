@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
+use bitcoin::PublicKey;
 use bitcoin::key::Parity::Even;
 use bitcoin::secp256k1::XOnlyPublicKey;
-use bitcoin::PublicKey;
 use common::msg_broker::bitvmx_types::{
     AdvanceFundsRegistered, AdvanceFundsRequest, BtcTxSPVProof, CommsAddress, FundsAdvanceSPV,
     IncomingBitVMXApiMessages, VariableTypes,
@@ -18,8 +18,8 @@ use transaction_dispatcher::types::{RegisterAdvanceFundsInput, RequestPeginInput
 use union_contracts::bindings::pegout_manager::PegoutManager::PegoutRegistered;
 use uuid::Uuid;
 
-use crate::flows::common::native_bridge_verifier::{invoke_contract_safe, NativeBridgeVerifier};
 use crate::flows::common::Signaling;
+use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
 use crate::types::OperatorTakeTriggeredEvent;
 
 pub const PROGRAM_TYPE_ADVANCE_FUNDS: &str = "advance_funds";

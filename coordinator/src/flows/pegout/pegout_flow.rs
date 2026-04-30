@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use anyhow::{anyhow, bail, ensure, Context, Result};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use bitcoin::{PublicKey, Txid};
 use common::msg_broker::bitvmx_types::{
     BtcTxSPVProof, CommsAddress, IncomingBitVMXApiMessages, PegOutAccepted, PegOutRequest,
@@ -21,8 +21,8 @@ use transaction_dispatcher::types::{
 use union_contracts::bindings::pegout_manager::PegoutManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
 
-use crate::flows::common::native_bridge_verifier::{invoke_contract_safe, NativeBridgeVerifier};
-use crate::flows::common::{build_communication_data, Signaling, COMM_KEY_INDEX};
+use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
+use crate::flows::common::{COMM_KEY_INDEX, Signaling, build_communication_data};
 use crate::store::{CoordinatorStoreApi, StoreKey};
 use crate::types::PegoutRegisteredEvent;
 
@@ -709,8 +709,8 @@ mod tests {
     use common::runtime_sync::RuntimeSync;
     use common::types::{BlockHash, BlockNumber, TxHash, TxIdParser};
     use mockall::predicate::function;
-    use musig2::secp::MaybeScalar;
     use musig2::PubNonce;
+    use musig2::secp::MaybeScalar;
     use primitive_types::H256;
     use union_contracts::bindings::pegout_manager::PegoutManager::{
         BitcoinSignatureData, BtcTransaction, StreamPosition,

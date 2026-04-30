@@ -834,9 +834,8 @@ where
                 let state = flow.get_state();
                 let mut flow_ids = vec![*map_flow_id, flow.flow_id()];
 
-                for flow_id in [state.ctx.temp_flow_id, state.ctx.official_flow_id]
-                    .into_iter()
-                    .flatten()
+                for flow_id in
+                    [state.ctx.temp_flow_id, state.ctx.official_flow_id].into_iter().flatten()
                 {
                     if !flow_ids.contains(&flow_id) {
                         flow_ids.push(flow_id);
@@ -1138,5 +1137,182 @@ where
         self.pegin_request_tracker.clear();
         self.pending_pegin_requested.clear();
         self.signature_flows.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use alloy_primitives::{FixedBytes, I256};
+    use bitcoin::Transaction;
+    use bitcoin::absolute::LockTime;
+    use bitcoin::transaction::Version;
+    use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+    use common::msg_broker::broker::MockBrokerClientApi;
+    use primitive_types::H256;
+    use union_contracts::bindings::pegin_manager::PeginManager::{
+        RequestPeginTempInfo, StreamPosition,
+    };
+
+    use super::*;
+    use crate::coordinator::tests::MockRskContractsGatewayApi;
+    use crate::flows::pegin::pegin_flow::FlowContext;
+    use crate::store::MockCoordinatorStoreApi;
+
+    type MockBitVmxBroker =
+        MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
+
+    type TestProcessor = PeginFlowProcessor<
+        MockRskContractsGatewayApi,
+        MockBitVmxBroker,
+        BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<MockRskContractsGatewayApi>>,
+        BtcSignatureSubFlowFactory<MockRskContractsGatewayApi>,
+        MockCoordinatorStoreApi,
+    >;
+
+    fn test_spv_proof() -> BtcTxSPVProof {
+        BtcTxSPVProof {
+            block_hash: "11".repeat(32),
+            tx: Transaction {
+                version: Version(2),
+                lock_time: LockTime::ZERO,
+                input: vec![],
+                output: vec![],
+            },
+            merkle_branch_path: "0".to_string(),
+            merkle_branch_hashes: vec![],
+        }
+    }
+
+    fn test_pegin_requested_event(tx_id: Txid) -> PeginRequestedEvent {
+        PeginRequestedEvent {
+            inner: PeginRequested {
+                committeeId: 1,
+                requestPeginTxid: TxIdParser::txid_to_fb_32(tx_id),
+                acceptPeginTxid: FixedBytes::<32>::ZERO,
+                streamPosition: StreamPosition {
+                    streamId: 0,
+                    packetNumber: 0,
+                    slotId: 0,
+                    pegStatus: 0,
+                },
+                requestPeginInfo: RequestPeginTempInfo {
+                    rskDestinationAddress: alloy_primitives::Address::ZERO,
+                    btcReimbursementPubKey: FixedBytes::<32>::ZERO,
+                    acceptPeginSignatureHash: FixedBytes::<32>::ZERO,
+                    btcBlockNumber: I256::ZERO,
+                    userReimbursementTxid: FixedBytes::<32>::ZERO,
+                    rejectPeginTxid: FixedBytes::<32>::ZERO,
+                },
+                acceptPeginSignatureMessage: alloy_primitives::Bytes::new(),
+            },
+            block_number: BlockNumber::from(1),
+            block_hash: common::types::BlockHash::from(H256::from_low_u64_be(2)),
+            removed: false,
+            tx_hash: common::types::TxHash::from(H256::from_low_u64_be(3)),
+        }
+    }
+
+    fn test_processor(store: Rc<MockCoordinatorStoreApi>) -> TestProcessor {
+        let contracts = Rc::new(MockRskContractsGatewayApi::new());
+        let broker = Rc::new(MockBitVmxBroker::new());
+        let rt_sync = RuntimeSync::new().expect("runtime");
+        let factory = BtcSignatureSubFlowFactory::new(contracts.clone(), rt_sync.clone(), 1);
+
+        PeginFlowProcessor {
+            contracts_gateway: contracts,
+            rt_sync,
+            bitvmx_broker: broker,
+            btc_sig_subflow_factory: factory,
+            pegin_flows: HashMap::new(),
+            signature_flows: HashMap::new(),
+            global_context: GlobalContext::new(),
+            blockchain_view: BlockchainView::new(),
+            events_confirming: HashMap::new(),
+            tx_status_scheduler: TickScheduler::new(),
+            pegin_request_tracker: HashSet::new(),
+            pending_pegin_requested: HashMap::new(),
+            unconfirmed_pegin_requests: HashMap::new(),
+            pegin_retry_scheduler: TickScheduler::new(),
+            unconfirmed_accept_pegin: HashMap::new(),
+            accept_pegin_retry_scheduler: TickScheduler::new(),
+            store,
+            signaling: Rc::new(Signaling::new("/tmp", "disabled")),
+            native_bridge_verifier: NativeBridgeVerifier::Dummy,
+            required_confirmations: 1,
+            btc_confirmations: 1,
+            btc_status_retry_blocks: 1,
+        }
+    }
+
+    #[test]
+    fn cleanup_terminal_flows_removes_pegin_flow_and_request_side_state() {
+        let mut store = MockCoordinatorStoreApi::new();
+        store.expect_delete_flow().returning(|_| Ok(()));
+        let store = Rc::new(store);
+        let mut processor = test_processor(store.clone());
+
+        let spv_proof = test_spv_proof();
+        let request_tx_id = spv_proof.tx.compute_txid();
+        let temp_flow_id = get_temp_pegin_pid(request_tx_id);
+        let official_flow_id = Uuid::new_v4();
+
+        let state = State {
+            flow_id: official_flow_id,
+            ctx: FlowContext {
+                flow_id: official_flow_id,
+                step: Steps::Failed,
+                temp_flow_id: Some(temp_flow_id),
+                official_flow_id: Some(official_flow_id),
+                request_pegin_btc_tx_id: Some(request_tx_id),
+                request_pegin_btc_tx_status: None,
+                request_pegin_spv_proof: None,
+                pegin_requested: None,
+                my_p2p_address: None,
+                committee_output: None,
+                bitvmx_pegin_accepted: None,
+                operator_take_txid: None,
+                operator_won_txid: None,
+                accept_pegin_spv_proof: None,
+                accept_pegin_tx_status: None,
+                pegin_accepted: None,
+                op_role: None,
+            },
+        };
+
+        let flow = PeginFlow::from_saved_state(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            RuntimeSync::new().expect("runtime"),
+            Rc::new(MockBitVmxBroker::new()),
+            state,
+            store,
+            Rc::new(Signaling::new("/tmp", "disabled")),
+            NativeBridgeVerifier::Dummy,
+        );
+
+        processor.pegin_flows.insert(temp_flow_id, flow);
+        processor.tx_status_scheduler.schedule(official_flow_id, 1);
+        processor.accept_pegin_retry_scheduler.schedule(official_flow_id, 1);
+        processor.unconfirmed_accept_pegin.insert(official_flow_id, 1);
+        processor.pegin_request_tracker.insert(request_tx_id);
+        processor
+            .pending_pegin_requested
+            .insert(request_tx_id, test_pegin_requested_event(request_tx_id));
+        processor
+            .unconfirmed_pegin_requests
+            .insert(spv_proof.block_hash.clone(), (spv_proof.clone(), 1));
+        processor.pegin_retry_scheduler.schedule(spv_proof.block_hash.clone(), 1);
+
+        processor.cleanup_terminal_flows();
+
+        assert!(!processor.pegin_flows.contains_key(&temp_flow_id));
+        assert!(!processor.tx_status_scheduler.is_scheduled(&official_flow_id));
+        assert!(!processor.accept_pegin_retry_scheduler.is_scheduled(&official_flow_id));
+        assert!(!processor.unconfirmed_accept_pegin.contains_key(&official_flow_id));
+        assert!(!processor.pegin_request_tracker.contains(&request_tx_id));
+        assert!(!processor.pending_pegin_requested.contains_key(&request_tx_id));
+        assert!(!processor.unconfirmed_pegin_requests.contains_key(&spv_proof.block_hash));
+        assert!(!processor.pegin_retry_scheduler.is_scheduled(&spv_proof.block_hash));
     }
 }
