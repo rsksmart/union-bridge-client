@@ -26,7 +26,7 @@ use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
 use crate::event_processor::EventProcessor;
 use crate::flows::common::GlobalContext;
 use crate::flows::errors::{FailableFlow, FlowError};
-use crate::store::{CoordinatorStoreApi, StorePrefix, cleanup_completed_flows, restore_flows};
+use crate::store::{CoordinatorStoreApi, StorePrefix, cleanup_flows_matching, restore_flows};
 use crate::types::{
     AllCommunicationDataReadyEvent, EventStatus, NewCommitteePendingEvent, NewCommitteeReadyEvent,
     RskPegManagerEvents, UserRequests,
@@ -97,6 +97,15 @@ where
         ))?;
 
         Ok(())
+    }
+
+    fn cleanup_terminal_flows(&mut self) {
+        cleanup_flows_matching(
+            self.store.as_ref(),
+            StorePrefix::SetupCommitteeFlow,
+            &mut self.flows,
+            SetupCommitteeFlow::is_done,
+        );
     }
 }
 
@@ -303,6 +312,8 @@ where
     S: CoordinatorStoreApi + 'static,
 {
     fn process_user_request(&mut self, req: &UserRequests) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         info!("Processing user request: {req:?}");
         if let UserRequests::ApplyToStream(input) = req {
             let internal_id = Uuid::new_v4();
@@ -316,6 +327,8 @@ where
     }
 
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         trace!("Processing new bitvmx event: {event:?}");
 
         match event {
@@ -398,6 +411,8 @@ where
     }
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         debug!("Processing new rsk event: {event:?}");
         if self.required_confirmations == 0 {
             self.process_confirmed_rsk_event(event);
@@ -447,6 +462,8 @@ where
     }
 
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         if self.events_confirming.is_empty() {
             trace!("No events left to confirm, skipping block");
             return Ok(());
@@ -469,13 +486,7 @@ where
             }
         }
 
-        // blocks allow periodic cleanup of completed flows, we can improve it with a cleanup task if needed
-        cleanup_completed_flows(
-            self.store.as_ref(),
-            StorePrefix::SetupCommitteeFlow,
-            &mut self.flows,
-            SetupCommitteeFlow::is_done,
-        );
+        self.cleanup_terminal_flows();
         Ok(())
     }
 

@@ -620,10 +620,6 @@ where
         Ok(())
     }
 
-    pub fn is_done(&self) -> bool {
-        self.state.step == Steps::Done
-    }
-
     pub fn is_terminal(&self) -> bool {
         matches!(self.state.step, Steps::Done | Steps::Failed)
     }

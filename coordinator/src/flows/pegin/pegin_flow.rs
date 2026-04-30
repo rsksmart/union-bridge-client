@@ -951,11 +951,6 @@ where
         self.state.ctx.bitvmx_pegin_accepted.as_ref().map(|accepted| accepted.accept_pegin_txid)
     }
 
-    /// Check if the flow is completed
-    pub fn is_done(&self) -> bool {
-        self.state.ctx.step == Steps::Done
-    }
-
     pub fn is_terminal(&self) -> bool {
         matches!(self.state.ctx.step, Steps::Done | Steps::Failed)
     }

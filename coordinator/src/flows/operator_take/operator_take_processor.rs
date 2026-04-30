@@ -315,6 +315,8 @@ where
         self.unconfirmed_register_reimbursement_kickoff.remove(&flow_id);
         self.unconfirmed_register_operator_take.remove(&flow_id);
 
+        self.cleanup_terminal_flows();
+
         Ok(())
     }
 
@@ -337,13 +339,6 @@ where
 
         let committee_uuid = Uuid::from_u128(*committee_id);
         let flow_id = Self::get_advance_funds_pid(committee_uuid, trigger_data.slot_index)?;
-
-        if let Some(existing_flow) = self.flows.get(&flow_id)
-            && existing_flow.is_terminal()
-        {
-            // The flow is already Done or Failed; ignore stale events.
-            return Ok(());
-        }
 
         if self.flows.contains_key(&flow_id) {
             debug!(
@@ -381,10 +376,6 @@ where
             let trigger = flow.trigger_data();
             *trigger.committee_id == event_committee_id && trigger.slot_id == event_slot_id
         }) {
-            if flow.is_terminal() {
-                // The flow is already Done or Failed; ignore stale events.
-                return Ok(());
-            }
             flow.complete_step(StepData::OperatorTakeRegistered(pegout_registered))?;
         } else {
             trace!(
@@ -471,12 +462,12 @@ where
         Ok(AdvanceFundsRegistered { committee_id, slot_index, txid, pegout_id, operator_pubkey })
     }
 
-    fn cleanup_completed_flows(&mut self) {
-        let completed: Vec<_> =
-            self.flows.iter().filter(|(_, flow)| flow.is_done()).map(|(k, _)| *k).collect();
+    fn cleanup_terminal_flows(&mut self) {
+        let terminal: Vec<_> =
+            self.flows.iter().filter(|(_, flow)| flow.is_terminal()).map(|(k, _)| *k).collect();
 
-        for flow_id in completed {
-            debug!("Removing completed advance funds flow {flow_id}");
+        for flow_id in terminal {
+            debug!("Removing terminal advance funds flow {flow_id}");
             self.flows.remove(&flow_id);
         }
     }
@@ -518,7 +509,7 @@ where
             }
         }
 
-        self.cleanup_completed_flows();
+        self.cleanup_terminal_flows();
         Ok(())
     }
 
@@ -577,7 +568,7 @@ where
             }
         }
 
-        self.cleanup_completed_flows();
+        self.cleanup_terminal_flows();
         Ok(())
     }
 
@@ -827,6 +818,8 @@ where
     BC: common::msg_broker::broker::BitVmxBrokerClientApi,
 {
     fn process_user_request(&mut self, req: &UserRequests) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         // Advance-funds flows have no other user-driven entry points; we only act
         // on the admin "fail flow" lever.
         if let UserRequests::Admin(AdminRequest::FailFlow { kind, flow_id, reason }) = req
@@ -838,6 +831,8 @@ where
     }
 
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         match event {
             OutgoingBitVMXApiMessages::SetupCompleted(program_id) => {
                 debug!(
@@ -910,6 +905,8 @@ where
     }
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         if self.required_confirmations == 0 {
             return self.process_confirmed_rsk_event(event);
         }
@@ -997,6 +994,8 @@ where
     }
 
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         self.process_block_confirmations(block)?;
         self.handle_register_advance_funds_retry_tick();
         self.handle_register_reimbursement_kickoff_retry_tick();

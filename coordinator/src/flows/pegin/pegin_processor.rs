@@ -28,7 +28,7 @@ use crate::flows::common::{GlobalContext, Signaling};
 use crate::flows::pegin::pegin_flow::{PeginFlow, State, StepData, Steps};
 use crate::flows::pegin::utils::get_temp_pegin_pid;
 use crate::store::{
-    CoordinatorStoreApi, StoreKey, StorePrefix, cleanup_completed_flows, restore_flows,
+    CoordinatorStoreApi, StoreKey, StorePrefix, cleanup_flows_matching, restore_flows,
 };
 use crate::types::{
     AdminRequest, AllOperatorTakeTxidsAddedEvent, EventStatus, FlowKind, PeginAcceptedEvent,
@@ -184,11 +184,6 @@ where
 
         // Find the existing flow that should have been created from PeginTransactionFound
         if let Some(existing_flow) = self.pegin_flows.get_mut(&temp_flow_id) {
-            if existing_flow.is_terminal() {
-                // The flow is already Done or Failed; ignore stale events.
-                return Ok(());
-            }
-
             info!(
                 "Found existing pegin flow {temp_flow_id} for Bitcoin tx: {btc_tx_id}, completing PeginRequested step"
             );
@@ -235,10 +230,6 @@ where
         });
 
         if let Some(flow) = flow_opt {
-            if flow.is_terminal() {
-                // The flow is already Done or Failed; ignore stale events.
-                return Ok(());
-            }
             let step_data = StepData::PeginAccepted(pa.inner.clone());
             flow.complete_step(&step_data)?;
         } else {
@@ -291,12 +282,7 @@ where
             }
         }
 
-        cleanup_completed_flows(
-            self.store.as_ref(),
-            StorePrefix::PeginFlow,
-            &mut self.pegin_flows,
-            PeginFlow::is_done,
-        );
+        self.cleanup_terminal_flows();
         Ok(())
     }
 
@@ -316,10 +302,6 @@ where
         });
 
         if let Some(flow) = flow_opt {
-            if flow.is_terminal() {
-                // The flow is already Done or Failed; ignore stale events.
-                return Ok(());
-            }
             let flow_id = flow.flow_id();
 
             // Start the BTC signature flow if not already started
@@ -448,10 +430,6 @@ where
 
         let TransactionStatus { tx_id, confirmations, .. } = tx_status;
         let flow_id = flow.flow_id();
-        if flow.is_terminal() {
-            // The flow is already Done or Failed; ignore stale status updates.
-            return Ok(());
-        }
         let expected_txid = flow
             .get_accept_pegin_txid()
             .ok_or_else(|| anyhow!("Expected accept pegin tx_id not found"))?;
@@ -574,6 +552,8 @@ where
         } else {
             warn!("Admin requested fail for unknown pegin flow {flow_id}: {reason}");
         }
+
+        self.cleanup_terminal_flows();
 
         Ok(())
     }
@@ -729,13 +709,7 @@ where
             }
         }
 
-        // blocks allow periodic cleanup of completed flows, we can improve it with a cleanup task if needed
-        cleanup_completed_flows(
-            self.store.as_ref(),
-            StorePrefix::PeginFlow,
-            &mut self.pegin_flows,
-            PeginFlow::is_done,
-        );
+        self.cleanup_terminal_flows();
 
         Ok(())
     }
@@ -841,10 +815,6 @@ where
 
         if let Some(flow) = flow_opt {
             info!("Handling accept pegin SPV proof: flow_id={}, tx_id={}", flow.flow_id(), tx_id);
-            if flow.is_terminal() {
-                // The flow is already Done or Failed; ignore stale SPV proofs.
-                return Ok(());
-            }
             let flow_id = flow.flow_id();
             let step_data = StepData::AcceptPeginSpvProof(spv_proof);
             if let Err(err) = flow.complete_step(&step_data) {
@@ -872,6 +842,15 @@ where
     fn has_flow_waiting_for_accept_pegin_spv(&self, tx_id: &Txid) -> bool {
         self.pegin_flows.values().any(|flow| flow.get_accept_pegin_txid() == Some(*tx_id))
     }
+
+    fn cleanup_terminal_flows(&mut self) {
+        cleanup_flows_matching(
+            self.store.as_ref(),
+            StorePrefix::PeginFlow,
+            &mut self.pegin_flows,
+            PeginFlow::is_terminal,
+        );
+    }
 }
 
 impl<CG, BC, S> EventProcessor
@@ -888,6 +867,8 @@ where
     S: CoordinatorStoreApi + 'static,
 {
     fn process_user_request(&mut self, req: &UserRequests) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         // Pegin flows are created from RSK / BTC events, not user requests, except for
         // the admin "fail flow" lever — handled here so cleanup runs alongside this
         // processor's in-memory state.
@@ -901,6 +882,8 @@ where
 
     #[allow(clippy::too_many_lines)]
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         trace!("Processing BitVMX event: {event:?}");
 
         match event {
@@ -968,10 +951,6 @@ where
                     .pegin_flows
                     .get_mut(flow_id)
                     .ok_or_else(|| anyhow!("Flow not found for flow_id: {flow_id}"))?;
-                if flow.is_terminal() {
-                    // The flow is already Done or Failed; ignore stale BitVMX variables.
-                    return Ok(());
-                }
 
                 if flow.current_step() != Steps::PreparePeginSetup {
                     return Err(anyhow!(
@@ -1044,6 +1023,8 @@ where
     }
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         match event {
             RskPegManagerEvents::AllNoncesReady(data)
             | RskPegManagerEvents::AllSignaturesReady(data) => {
@@ -1102,6 +1083,8 @@ where
     }
 
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         self.process_unhandled_confirmed_sig_flow_events(block)?;
         self.handle_transaction_status_tick()?;
         self.handle_pegin_retry_tick()?;
