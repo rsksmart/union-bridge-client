@@ -83,10 +83,6 @@ sequenceDiagram
     UC->>BV: SetupKey(dispute_agg_id, comms, committee_dispute_keys, no_leader)
     BV-->>UC: AggregatedPubkey → PublicKey (aggregated dispute)
 
-    Note over UC,RC: DepositAggregatedKey
-    UC->>RC: deposit_aggregated_key(...)
-    RC-->>UC: NewCommittee / NewCommitteeReady (confirmed) → complete_step(ReadyCommittee)
-
     Note over UC,BV: SetupPairwiseKeys (each prover↔prover pair in the committee)
     UC->>BV: SetupKey(pair_pid, pairwise_comms, participant_keys=None, no_leader)
     BV-->>UC: AggregatedPubkey → PairwiseAggregatedKey (one per pair)
@@ -115,6 +111,15 @@ sequenceDiagram
         UC->>BV: Setup(drp_id, "drp", [operator, watchtower], no_leader)
         BV-->>UC: SetupCompleted(drp_id)
     end
+
+    Note over UC,BV: FullPenalizationSetup
+    UC->>BV: SetVar(full_penalization_pid, full_penalization_data, FullPenalizationData JSON)
+    UC->>BV: Setup(full_penalization_pid, "full_penalization", p2p_addresses, no_leader)
+    BV-->>UC: SetupCompleted(full_penalization_pid)
+
+    Note over UC,RC: DepositAggregatedKey
+    UC->>RC: deposit_aggregated_key(...)
+    RC-->>UC: NewCommittee / NewCommitteeReady (confirmed) → complete_step(ReadyCommittee)
 
     Note over UC: Done (or Done early if not selected on PendingCommittee)
 ```
@@ -300,5 +305,4 @@ sequenceDiagram
         Note over UC: flow completes here (no advance_funds SetVar/Setup)
     end
 ```
-
 
