@@ -46,6 +46,11 @@ where
     events_confirming: HashMap<String, ConfirmableEventWithData>,
     store: Rc<S>,
     required_confirmations: u32,
+    /// `NewCommitteePending` can confirm while this operator's flow is still finishing key/funding
+    /// steps before `ApplyToStream`. Those events were dropped (no flow in `ApplyToStream` yet),
+    /// which stranded the last applicant. We stash by stream id and deliver after `continue_flow`
+    /// once a flow reaches `ApplyToStream` (see `flush_buffered_ncp_after_continue_flow`).
+    buffered_ncp_by_stream: HashMap<u64, NewCommitteePendingEvent>,
 }
 
 impl<CG, BC, FactoryBSF, S> SetupCommitteeProcessor<CG, BC, FactoryBSF, S>
@@ -75,6 +80,7 @@ where
             blockchain_view: BlockchainView::new(),
             store: Rc::clone(store),
             required_confirmations,
+            buffered_ncp_by_stream: HashMap::new(),
         };
 
         let flow_factory =
@@ -110,6 +116,7 @@ where
     fn dispatch_to_flow(&mut self, req_id: &Uuid, step_data: StepData) {
         if let Some(flow) = self.get_flow_for_bitvmx_response(req_id) {
             Self::continue_flow(flow, step_data);
+            self.flush_buffered_ncp_after_continue_flow();
         } else {
             debug!("No flow found for BitVMX event with id {req_id}");
         }
@@ -122,8 +129,41 @@ where
             .find(|flow| flow.is_waiting_for_dispute_core_variable(program_id))
         {
             Self::continue_flow(flow, step_data);
+            self.flush_buffered_ncp_after_continue_flow();
         } else {
             debug!("No flow in RequestDisputeChannelVars step for DisputeCore pid {program_id}");
+        }
+    }
+
+    /// Delivers any `NewCommitteePending` that confirmed before this operator reached `ApplyToStream`.
+    fn flush_buffered_ncp_after_continue_flow(&mut self) {
+        const MAX_ITERS: usize = 64;
+        for _ in 0..MAX_ITERS {
+            let mut target: Option<(Uuid, u64)> = None;
+            for (flow_id, flow) in &self.flows {
+                if flow.current_step() != Steps::ApplyToStream {
+                    continue;
+                }
+                let Some(sid) = flow.applied_stream_id_key() else {
+                    continue;
+                };
+                if self.buffered_ncp_by_stream.contains_key(&sid) {
+                    target = Some((*flow_id, sid));
+                    break;
+                }
+            }
+            let Some((flow_id, sid_key)) = target else {
+                break;
+            };
+            let Some(ncp) = self.buffered_ncp_by_stream.remove(&sid_key) else {
+                break;
+            };
+            if let Some(flow) = self.flows.get_mut(&flow_id) {
+                Self::continue_flow(flow, StepData::PendingCommittee(ncp));
+            } else {
+                self.buffered_ncp_by_stream.insert(sid_key, ncp);
+                break;
+            }
         }
     }
 
@@ -256,9 +296,19 @@ where
         match flow_data {
             Some((flow, step_data)) => {
                 Self::continue_flow(flow, step_data);
+                self.flush_buffered_ncp_after_continue_flow();
             }
             None => {
-                warn!("Received {event:?} but no matching flow found");
+                if let RskPegManagerEvents::NewCommitteePending(ncp) = event {
+                    let stream_key = ncp.inner._committee.streamId;
+                    info!(
+                        "NewCommitteePending confirmed for stream {stream_key} before a matching flow reached ApplyToStream; buffering until then"
+                    );
+                    self.buffered_ncp_by_stream.insert(stream_key, ncp.clone());
+                    self.flush_buffered_ncp_after_continue_flow();
+                } else {
+                    warn!("Received {event:?} but no matching flow found");
+                }
             }
         }
     }
@@ -311,6 +361,7 @@ where
             Self::continue_flow(&mut flow, StepData::UserRequest(input.clone()));
 
             self.flows.insert(internal_id, flow);
+            self.flush_buffered_ncp_after_continue_flow();
         }
         Ok(())
     }
@@ -327,6 +378,7 @@ where
                         flow.internal_id()
                     );
                     Self::continue_flow(flow, StepData::CommInfo(comm_info.clone()));
+                    self.flush_buffered_ncp_after_continue_flow();
                 } else {
                     trace!("Received unmatched BitVMX CommInfo for req_id {req_id}");
                 }
@@ -342,6 +394,7 @@ where
                         StepData::PublicKey(*pubkey)
                     };
                     Self::continue_flow(flow, step_data);
+                    self.flush_buffered_ncp_after_continue_flow();
                 } else {
                     debug!("No flow found for AggregatedPubkey with id {req_id}");
                 }
@@ -613,6 +666,7 @@ mod tests {
             events_confirming: HashMap::new(),
             store: Rc::new(MockCoordinatorStoreApi::new()),
             required_confirmations: 1,
+            buffered_ncp_by_stream: HashMap::new(),
         }
     }
 

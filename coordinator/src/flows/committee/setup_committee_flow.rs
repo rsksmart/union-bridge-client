@@ -600,6 +600,11 @@ where
         self.state.ctx.get_stream_id().is_ok_and(|id| id == *stream_id)
     }
 
+    /// Raw stream id for this flow when user input is present (`ApplyToStream` context).
+    pub(crate) fn applied_stream_id_key(&self) -> Option<u64> {
+        self.state.ctx.get_stream_id().ok().map(StreamId::as_u64)
+    }
+
     pub(crate) fn is_for_committee(&self, committee_id: &CommitteeId) -> bool {
         self.state
             .ctx

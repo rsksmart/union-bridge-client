@@ -1047,6 +1047,11 @@ pub struct StreamId(u64);
 
 // contracts store streamId as u64, but only accept u8 on StreamDenomination struct
 impl StreamId {
+    #[must_use]
+    pub const fn as_u64(self) -> u64 {
+        self.0
+    }
+
     /// # Errors
     ///
     /// Returns an error if the value cannot be converted to u8.
