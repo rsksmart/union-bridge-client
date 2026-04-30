@@ -1,0 +1,61 @@
+FROM --platform=linux/amd64 ghcr.io/foundry-rs/foundry:v1.5.1 AS builder
+
+USER root
+ENV NODE_VERSION=22.14.0
+ENV NVM_DIR=/root/.nvm
+RUN apt-get update && apt-get install -y bash curl \
+    && curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.2/install.sh | bash \
+    && . "$NVM_DIR/nvm.sh" \
+    && nvm install "$NODE_VERSION" \
+    && npm install -g @openzeppelin/upgrades-core@1.44.0 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PATH=$NVM_DIR/versions/node/v$NODE_VERSION/bin:$PATH
+
+WORKDIR /app
+COPY . .
+
+RUN mkdir out && chmod -R 777 out
+RUN forge install
+
+ARG CHAIN_ID=31337
+ARG MNEMONIC="test test test test test test test test test test test junk"
+ARG DEPLOYER_INDEX=0
+
+ENV NETWORK=local
+ENV RPC=ws://127.0.0.1:8545
+ENV CHAIN_ID=${CHAIN_ID}
+ENV MNEMONIC=${MNEMONIC}
+ENV DEPLOYER_INDEX=${DEPLOYER_INDEX}
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN set -e; \
+    mkdir -p /opt/anvil; \
+    anvil \
+        --host 127.0.0.1 \
+        --port 8545 \
+        --chain-id "${CHAIN_ID}" \
+        --mnemonic "${MNEMONIC}" \
+        --dump-state /opt/anvil/predeployed-state.json \
+        > /tmp/anvil.log 2>&1 & \
+    anvil_pid=$!; \
+    trap 'kill -INT "$anvil_pid" 2>/dev/null || true' EXIT; \
+    for _ in {1..60}; do \
+        cast rpc eth_chainId --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1 && break; \
+        sleep 1; \
+    done; \
+    cast rpc eth_chainId --rpc-url http://127.0.0.1:8545 >/dev/null; \
+    bash shell/script/deploy/deploy-common.sh false; \
+    kill -INT "$anvil_pid"; \
+    wait "$anvil_pid" || true; \
+    trap - EXIT; \
+    test -s /opt/anvil/predeployed-state.json
+
+FROM --platform=linux/amd64 ghcr.io/foundry-rs/foundry:v1.5.1
+
+COPY --from=builder /opt/anvil/predeployed-state.json /opt/anvil/predeployed-state.json
+
+EXPOSE 8545
+ENTRYPOINT ["anvil"]
+CMD ["--host", "0.0.0.0", "--port", "8545", "--load-state", "/opt/anvil/predeployed-state.json"]

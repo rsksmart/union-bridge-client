@@ -69,7 +69,10 @@ use std::net::TcpStream;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 use std::time::{Duration, Instant};
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System};
 use tokio::runtime::Runtime;
@@ -143,6 +146,7 @@ struct ManagedService {
 struct ManagedClient {
     client_id: String,
     services: Vec<ManagedService>,
+    readiness_ports: Vec<(String, u16)>,
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -237,19 +241,49 @@ async fn run_clients(config: RunConfig) -> Result<()> {
     let ids: Vec<u8> = config.client_id.map_or_else(|| vec![1, 2, 3, 4], |id| vec![id]);
     validate_local_keystores(&ids)?;
 
-    // launch clients and store in global state immediately
-    let mut launch_error = None;
+    let mut launch_specs = Vec::new();
     for id in ids {
         let envs = build_env_for_client(id, &env_map, config.bitvmx_mode)?;
         let client_id = format!("client-{}", id);
+        launch_specs.push((client_id, envs));
+    }
 
-        println!("============================================================================");
-        println!("Launching client {} with env {:?}...", client_id, envs);
-        println!("============================================================================");
+    // launch clients in parallel and store successful launches immediately
+    let mut launch_set = tokio::task::JoinSet::new();
+    let launch_cancelled = Arc::new(AtomicBool::new(false));
+    for (client_id, envs) in launch_specs {
+        let config = config.clone();
+        let shutdown_tx = shutdown_tx.clone();
+        let launch_cancelled = launch_cancelled.clone();
+        launch_set.spawn_blocking(move || -> Result<ManagedClient> {
+            println!(
+                "============================================================================"
+            );
+            println!("Launching client {} with env {:?}...", client_id, envs);
+            println!(
+                "============================================================================"
+            );
 
-        match launch_client_services(&config, envs, &client_id, &shutdown_tx) {
-            Ok(services) => {
-                let client = ManagedClient { client_id: client_id.to_string(), services };
+            let readiness_ports = readiness_ports_for_client(&envs);
+            launch_client_services(&config, envs, &client_id, &shutdown_tx, &launch_cancelled).map(
+                |services| ManagedClient {
+                    client_id: client_id.to_string(),
+                    services,
+                    readiness_ports,
+                },
+            )
+        });
+    }
+
+    let mut launch_error = None;
+    while let Some(join_result) = launch_set.join_next().await {
+        match join_result {
+            Ok(Ok(client)) => {
+                if launch_error.is_some() {
+                    teardown_all(vec![client]).await;
+                    continue;
+                }
+
                 clients.push(client.clone());
 
                 // store in global state for panic handler
@@ -261,20 +295,39 @@ async fn run_clients(config: RunConfig) -> Result<()> {
                 })
                 .await;
             }
-            Err(e) => {
-                println!("Failed to launch all services for {client_id}");
-                launch_error = Some(e);
-                break;
+            Ok(Err(err)) => {
+                eprintln!("Client launch failed: {err:#}");
+                if launch_error.is_none() {
+                    launch_error = Some(err);
+                    launch_cancelled.store(true, Ordering::SeqCst);
+                    launch_set.abort_all();
+                    let _ = shutdown_tx.send(());
+                }
+            }
+            Err(err) => {
+                eprintln!("Launch task failed: {err}");
+                if launch_error.is_none() {
+                    launch_error = Some(anyhow!("Launch task failed: {err}"));
+                    launch_cancelled.store(true, Ordering::SeqCst);
+                    launch_set.abort_all();
+                    let _ = shutdown_tx.send(());
+                }
             }
         }
     }
 
-    // if launch failed, teardown and return error
     if let Some(err) = launch_error {
         eprintln!("Launch failed, tearing down already-started clients...");
         teardown_all(clients).await;
         return Err(err);
     }
+
+    if let Err(err) = wait_for_clients_ready(&clients) {
+        eprintln!("Readiness check failed, tearing down already-started clients...");
+        teardown_all(clients).await;
+        return Err(err);
+    }
+    println!("All Union Bridge clients are ready.");
 
     // Ctrl+C handler
     let ctrlc_tx = shutdown_tx.clone();
@@ -690,9 +743,82 @@ fn wait_for_port(port: u16, timeout: Duration) -> Result<()> {
     bail!("Port {} did not become available within {:?}", port, timeout)
 }
 
+/// wait for a port to be listening, exiting early if launch cancellation is requested
+fn wait_for_port_or_cancel(
+    port: u16,
+    timeout: Duration,
+    launch_cancelled: &AtomicBool,
+) -> Result<()> {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if launch_cancelled.load(Ordering::SeqCst) {
+            bail!("Launch cancelled while waiting for port {}", port);
+        }
+        if is_port_listening(port) {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    bail!("Port {} did not become available within {:?}", port, timeout)
+}
+
 /// extract port number from environment variables
 fn get_port_from_envs(envs: &[(String, String)], key: &str) -> Option<u16> {
     envs.iter().find(|(k, _)| k == key).and_then(|(_, v)| v.parse().ok())
+}
+
+fn readiness_ports_for_client(envs: &[(String, String)]) -> Vec<(String, u16)> {
+    [
+        ("block-indexer broker", "UB__BLOCK_INDEXER__NOTIFIER__PORT"),
+        ("log-indexer broker", "UB__LOG_INDEXER__NOTIFIER__PORT"),
+        ("coordinator user broker", "UB__COORDINATOR__USER__PORT"),
+        ("user-api broker", "UB__USER_API__NOTIFIER__PORT"),
+        ("user-api http", "UB__USER_API__HTTP__PORT"),
+    ]
+    .into_iter()
+    .filter_map(|(label, key)| get_port_from_envs(envs, key).map(|port| (label.to_string(), port)))
+    .collect()
+}
+
+fn wait_for_clients_ready(clients: &[ManagedClient]) -> Result<()> {
+    for client in clients {
+        for (label, port) in &client.readiness_ports {
+            wait_for_port(*port, Duration::from_secs(60))
+                .with_context(|| format!("{} {} not ready", client.client_id, label))?;
+        }
+    }
+
+    // Child services inherit stdout/stderr and may print logger startup lines shortly
+    // after their ports open. Keep the final ready sentinel behind that burst.
+    std::thread::sleep(Duration::from_secs(3));
+    Ok(())
+}
+
+fn cleanup_partial_services(client_id: &str, services: &[ManagedService]) {
+    if services.is_empty() {
+        return;
+    }
+
+    eprintln!("Cleaning up {} partially-started service(s) for {}...", services.len(), client_id);
+
+    for svc in services.iter().rev() {
+        let pid = Pid::from_raw(svc.pid as i32);
+        let _ = kill(pid, Signal::SIGTERM);
+    }
+
+    std::thread::sleep(Duration::from_millis(500));
+
+    for svc in services.iter().rev() {
+        if let Ok(mut guard) = svc.child.lock() {
+            if let Ok(None) = guard.try_wait() {
+                let pid = Pid::from_raw(svc.pid as i32);
+                let _ = kill(pid, Signal::SIGKILL);
+            }
+        } else {
+            let pid = Pid::from_raw(svc.pid as i32);
+            let _ = kill(pid, Signal::SIGKILL);
+        }
+    }
 }
 
 fn launch_client_services(
@@ -700,10 +826,16 @@ fn launch_client_services(
     envs: Vec<(String, String)>,
     client_id: &str,
     shutdown_tx: &broadcast::Sender<()>,
+    launch_cancelled: &AtomicBool,
 ) -> Result<Vec<ManagedService>> {
     let mut services: Vec<ManagedService> = Vec::new();
 
     for svc in UNION_CLIENT_SERVICES {
+        if launch_cancelled.load(Ordering::SeqCst) {
+            cleanup_partial_services(client_id, &services);
+            bail!("Launch cancelled before starting {} for {}", svc.name(), client_id);
+        }
+
         println!("Launching {} for {}", svc.name(), client_id);
 
         // coordinator depends on indexers being ready, wait for their broker ports
@@ -718,13 +850,25 @@ fn launch_client_services(
 
             // wait for both indexer broker ports to be listening (up to 180 seconds)
             if let Some(port) = block_port {
-                wait_for_port(port, Duration::from_secs(180))
-                    .with_context(|| format!("block-indexer broker not ready for {}", client_id))?;
+                if let Err(err) =
+                    wait_for_port_or_cancel(port, Duration::from_secs(180), launch_cancelled)
+                        .with_context(|| {
+                            format!("block-indexer broker not ready for {}", client_id)
+                        })
+                {
+                    cleanup_partial_services(client_id, &services);
+                    return Err(err);
+                }
                 println!("  block-indexer broker ready on port {}", port);
             }
             if let Some(port) = log_port {
-                wait_for_port(port, Duration::from_secs(180))
-                    .with_context(|| format!("log-indexer broker not ready for {}", client_id))?;
+                if let Err(err) =
+                    wait_for_port_or_cancel(port, Duration::from_secs(180), launch_cancelled)
+                        .with_context(|| format!("log-indexer broker not ready for {}", client_id))
+                {
+                    cleanup_partial_services(client_id, &services);
+                    return Err(err);
+                }
                 println!("  log-indexer broker ready on port {}", port);
             }
 
@@ -739,10 +883,14 @@ fn launch_client_services(
             .stderr(Stdio::inherit())
             .process_group(0); // create new process group to avoid receiving parent's SIGINT
 
-        let child = cmd
-            .envs(envs.clone())
-            .spawn()
-            .with_context(|| format!("Failed to start {} for {}", svc.name(), client_id))?;
+        let child = match cmd.envs(envs.clone()).spawn() {
+            Ok(child) => child,
+            Err(err) => {
+                cleanup_partial_services(client_id, &services);
+                return Err(err)
+                    .with_context(|| format!("Failed to start {} for {}", svc.name(), client_id));
+            }
+        };
         let pid = child.id();
         let child = Arc::new(Mutex::new(child));
         let mgd_child = ManagedService { service: svc.name().to_string(), pid, child };
@@ -752,6 +900,11 @@ fn launch_client_services(
     // Quick small delay to see if any exited immediately
     std::thread::sleep(Duration::from_secs(2));
 
+    if launch_cancelled.load(Ordering::SeqCst) {
+        cleanup_partial_services(client_id, &services);
+        bail!("Launch cancelled after starting services for {}", client_id);
+    }
+
     // Verify none exited immediately
     for ms in services.iter() {
         let name = format!("{}:{}", client_id, ms.service);
@@ -759,6 +912,7 @@ fn launch_client_services(
         if let Ok(Some(status)) = guard.try_wait() {
             println!("ERROR: {} exited immediately with status {}", name, status);
             let _ = shutdown_tx.send(());
+            cleanup_partial_services(client_id, &services);
             bail!("Failed to launch all services for {}", client_id);
         }
     }

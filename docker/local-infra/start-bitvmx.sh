@@ -126,11 +126,46 @@ wait_for_container_health() {
 }
 
 wait_for_bitvmx_clients() {
-  local op_num
+  local timeout_secs="${1:-90}"
+  local elapsed=0
+  local op_num status
+  local pending=(1 2 3 4)
+  local next_pending=()
 
-  for op_num in 1 2 3 4; do
-    wait_for_container_health "bitvmx-client-${op_num}"
+  echo "Waiting for BitVMX client healthchecks..."
+  while [[ "${elapsed}" -lt "${timeout_secs}" && "${#pending[@]}" -gt 0 ]]; do
+    next_pending=()
+    for op_num in "${pending[@]}"; do
+      status=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "bitvmx-client-${op_num}" 2>/dev/null || true)
+      case "${status}" in
+        healthy)
+          echo "bitvmx-client-${op_num} is healthy."
+          ;;
+        unhealthy|exited|dead)
+          echo "Error: bitvmx-client-${op_num} entered state '${status}'."
+          docker logs --tail 40 "bitvmx-client-${op_num}" || true
+          return 1
+          ;;
+        *)
+          next_pending+=("${op_num}")
+          ;;
+      esac
+    done
+
+    pending=("${next_pending[@]}")
+    if [[ "${#pending[@]}" -eq 0 ]]; then
+      return 0
+    fi
+
+    sleep 1
+    elapsed=$((elapsed + 1))
   done
+
+  echo "Error: BitVMX clients did not become healthy within ${timeout_secs}s."
+  for op_num in "${pending[@]}"; do
+    docker logs --tail 40 "bitvmx-client-${op_num}" || true
+  done
+  return 1
 }
 
 # Check if we're using the 'up' command
@@ -145,7 +180,7 @@ done
 # If --fresh, clean first
 if [[ "${FRESH}" == true ]]; then
   echo "Cleaning BitVMX stack (down --volumes)..."
-  docker compose -p bitvmx --env-file "$ENV_FILE" -f "$COMPOSE_FILE" down --volumes 2>/dev/null || true
+  docker compose -p bitvmx --env-file "$ENV_FILE" -f "$COMPOSE_FILE" down --volumes --timeout 1 2>/dev/null || true
 fi
 
 # Ensure network exists for up command

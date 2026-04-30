@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# This script manages the local blockchain stack defined in docker-compose.blockchains.yaml
-# It intentionally focuses ONLY on the blockchains stack (bitcoind, anvil, deploy-contracts).
+# This script manages the local blockchain stack defined in docker-compose.blockchains.yaml.
+# It intentionally focuses ONLY on the blockchains stack (bitcoind and predeployed anvil).
 
 DOCKER_COMPOSE_ARGS=()
 
@@ -10,7 +10,6 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.blockchains.yaml"
 ENV_PATH="${SCRIPT_DIR}/.env.local"
 
-CONTRACTS_IMAGE_BASE="ghcr.io/rsksmart/union-bridge-contracts"
 CONTRACTS_TAG_LOCAL_BUILD="local-build"
 
 # Display help message
@@ -21,12 +20,13 @@ print_help() {
   echo "  --help                     Display this help message"
   echo "  --fresh                    Tear down local blockchains (and volumes). Can be used standalone or with 'up'"
   echo "  --contracts-tag TAG         Override contracts image tag (e.g. v0.2.0-alpha.1 or ${CONTRACTS_TAG_LOCAL_BUILD})"
+  echo "  --pull-contracts            Pull predeployed Anvil image from registry even if it exists locally"
   echo ""
-  echo "Contracts image:"
-  echo "  Default: derived from Cargo.toml (union-contracts tag) — pulls from ${CONTRACTS_IMAGE_BASE}"
+  echo "Predeployed Anvil image:"
+  echo "  Default: derived from Cargo.toml (union-contracts tag) — uses local image if present, otherwise pulls from PREDEPLOYED_ANVIL_IMAGE_BASE"
   echo "  Override: use --contracts-tag flag"
-  echo "    ${CONTRACTS_TAG_LOCAL_BUILD}  → build from CONTRACTS_CONTEXT_PATH (e.g. for contract development); use --fresh for clean deploy when contracts change"
-  echo "    <tag>       → use that registry tag (always pulls; if digest or tag changed, runs fresh)"
+  echo "    ${CONTRACTS_TAG_LOCAL_BUILD}  → build from CONTRACTS_CONTEXT_PATH (e.g. for contract development)"
+  echo "    <tag>       → use that image tag locally, pulling only if missing or --pull-contracts is passed"
   echo ""
   echo "Common Docker Compose Arguments can be used, examples:"
   echo "  up                         Create and start containers"
@@ -38,8 +38,9 @@ print_help() {
   echo "Examples:"
   echo "  $0 up -d                            # Start (uses contracts version from Cargo.toml)"
   echo "  $0 --fresh up -d                    # Clean and start local blockchains"
-  echo "  $0 --contracts-tag ${CONTRACTS_TAG_LOCAL_BUILD} up -d # Build deploy-contracts from local path"
+  echo "  $0 --contracts-tag ${CONTRACTS_TAG_LOCAL_BUILD} up -d # Build predeployed Anvil from local contracts"
   echo "  $0 --contracts-tag v0.2.0-alpha.1 up -d   # Use specific registry tag"
+  echo "  $0 --contracts-tag v0.2.0-alpha.1 --pull-contracts up -d # Force pull specific registry tag"
   echo "  $0 down                             # Stop blockchains"
   echo "  $0 ps                               # Check status"
   echo ""
@@ -49,6 +50,7 @@ print_help() {
 
 FRESH=false
 CONTRACTS_TAG_ARG=""
+PULL_CONTRACTS=false
 
 # Parse args
 while [[ $# -gt 0 ]]; do
@@ -67,6 +69,10 @@ while [[ $# -gt 0 ]]; do
       fi
       CONTRACTS_TAG_ARG="$2"
       shift 2
+      ;;
+    --pull-contracts)
+      PULL_CONTRACTS=true
+      shift
       ;;
     *)
       DOCKER_COMPOSE_ARGS+=("$1")
@@ -120,6 +126,24 @@ wait_for_bitcoind_wallet() {
   return 1
 }
 
+wait_for_anvil_rpc() {
+  local timeout_secs="${1:-60}"
+  local elapsed=0
+
+  echo "Waiting for ${ANVIL_CONTAINER} RPC..."
+  while [[ "${elapsed}" -lt "${timeout_secs}" ]]; do
+    if docker exec "${ANVIL_CONTAINER}" cast rpc eth_chainId --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1; then
+      echo "${ANVIL_CONTAINER} RPC is ready."
+      return 0
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+
+  echo "Error: ${ANVIL_CONTAINER} RPC was not ready after ${timeout_secs}s."
+  return 1
+}
+
 # Resolve CONTRACTS_IMAGE_TAG: --contracts-tag > Cargo.toml (no env var override)
 PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 CARGO_TOML="${PROJECT_ROOT}/Cargo.toml"
@@ -141,9 +165,10 @@ else
   # Map git tag to image tag when they differ (e.g. v0.2.0-alpha -> v0.2.0-alpha.1)
   case "$CONTRACTS_IMAGE_TAG" in
     v0.2.0-alpha) CONTRACTS_IMAGE_TAG="v0.2.0-alpha.1" ;;
+    v0.4.1-alpha) CONTRACTS_IMAGE_TAG="v0.4.1-alpha-10-4-2" ;;
   esac
 fi
-export CONTRACTS_IMAGE_BASE
+export PREDEPLOYED_ANVIL_IMAGE_BASE
 export CONTRACTS_IMAGE_TAG
 
 # Disallow user-provided --build (script injects it when using ${CONTRACTS_TAG_LOCAL_BUILD})
@@ -173,57 +198,73 @@ if [[ "${IS_UP_COMMAND}" == true && "${CONTRACTS_IMAGE_TAG}" == "${CONTRACTS_TAG
   DOCKER_COMPOSE_ARGS=("${NEW_ARGS[@]}")
 fi
 
-# When using a registry tag (not ${CONTRACTS_TAG_LOCAL_BUILD}): always pull, compare digest, set FRESH if changed
+# When using a registry tag (not ${CONTRACTS_TAG_LOCAL_BUILD}): use a local image if present.
+# Pull only if the image is missing locally or --pull-contracts was requested.
 if [[ "${IS_UP_COMMAND}" == true && "${CONTRACTS_IMAGE_TAG}" != "${CONTRACTS_TAG_LOCAL_BUILD}" ]]; then
-  CONTRACTS_IMAGE="${CONTRACTS_IMAGE_BASE}:${CONTRACTS_IMAGE_TAG}"
+  PREDEPLOYED_ANVIL_IMAGE="${PREDEPLOYED_ANVIL_IMAGE_BASE}:${CONTRACTS_IMAGE_TAG}"
   DIGEST_BEFORE=""
-  if docker image inspect "$CONTRACTS_IMAGE" >/dev/null 2>&1; then
-    DIGEST_BEFORE=$(docker image inspect --format '{{index .RepoDigests 0}}' "$CONTRACTS_IMAGE" 2>/dev/null || true)
+  IMAGE_EXISTS=false
+  if docker image inspect "$PREDEPLOYED_ANVIL_IMAGE" >/dev/null 2>&1; then
+    IMAGE_EXISTS=true
+    DIGEST_BEFORE=$(docker image inspect --format '{{index .RepoDigests 0}}' "$PREDEPLOYED_ANVIL_IMAGE" 2>/dev/null || true)
   fi
-  echo "Pulling contracts image '$CONTRACTS_IMAGE'..."
-  if ! docker pull --platform linux/amd64 "$CONTRACTS_IMAGE" ; then
-    echo "Error: Failed to pull contracts image '$CONTRACTS_IMAGE'."
-    echo "  The image may not exist in the registry for this tag."
-    echo "  To build from source instead, use --contracts-tag ${CONTRACTS_TAG_LOCAL_BUILD}"
-    exit 1
-  fi
-  DIGEST_AFTER=$(docker image inspect --format '{{index .RepoDigests 0}}' "$CONTRACTS_IMAGE" 2>/dev/null || true)
-  if [[ -n "$DIGEST_BEFORE" && -n "$DIGEST_AFTER" && "$DIGEST_BEFORE" != "$DIGEST_AFTER" ]]; then
-    echo "Contracts image digest changed; forcing fresh deploy (down --volumes before up)"
-    FRESH=true
-  elif [[ -z "$DIGEST_BEFORE" && -n "$DIGEST_AFTER" ]]; then
-    echo "Local image had no registry digest (likely built locally); forcing fresh deploy after pull"
-    FRESH=true
+
+  if [[ "${IMAGE_EXISTS}" == true && "${PULL_CONTRACTS}" != true ]]; then
+    echo "Using local predeployed Anvil image '$PREDEPLOYED_ANVIL_IMAGE' (pass --pull-contracts to refresh from registry)"
+  else
+    if [[ "${IMAGE_EXISTS}" == true ]]; then
+      echo "Refreshing predeployed Anvil image '$PREDEPLOYED_ANVIL_IMAGE' from registry..."
+    else
+      echo "Local predeployed Anvil image '$PREDEPLOYED_ANVIL_IMAGE' not found; pulling from registry..."
+    fi
+    if ! docker pull --platform linux/amd64 "$PREDEPLOYED_ANVIL_IMAGE" ; then
+      echo "Error: Failed to pull predeployed Anvil image '$PREDEPLOYED_ANVIL_IMAGE'."
+      echo "  The image may not exist in the registry for this tag."
+      echo "  Build it locally with this tag, pass --contracts-tag ${CONTRACTS_TAG_LOCAL_BUILD}, or publish it to the registry."
+      exit 1
+    fi
+    DIGEST_AFTER=$(docker image inspect --format '{{index .RepoDigests 0}}' "$PREDEPLOYED_ANVIL_IMAGE" 2>/dev/null || true)
+    if [[ -n "$DIGEST_BEFORE" && -n "$DIGEST_AFTER" && "$DIGEST_BEFORE" != "$DIGEST_AFTER" ]]; then
+      echo "Predeployed Anvil image digest changed; forcing fresh start (down --volumes before up)"
+      FRESH=true
+    elif [[ -z "$DIGEST_BEFORE" && -n "$DIGEST_AFTER" ]]; then
+      echo "Local image had no registry digest (likely built locally); forcing fresh start after pull"
+      FRESH=true
+    fi
   fi
 fi
 
-# When switching contracts tag: force fresh deploy so new contracts deploy to clean chain
+# When switching contracts tag: force fresh start so Anvil loads the matching chain state
 if [[ "${IS_UP_COMMAND}" == true ]]; then
-  CURRENT_IMAGE=$(docker inspect deploy-contracts --format '{{.Config.Image}}' 2>/dev/null || true)
-  EXPECTED_IMAGE="${CONTRACTS_IMAGE_BASE}:${CONTRACTS_IMAGE_TAG}"
+  CURRENT_IMAGE=$(docker inspect anvil --format '{{.Config.Image}}' 2>/dev/null || true)
+  EXPECTED_IMAGE="${PREDEPLOYED_ANVIL_IMAGE_BASE}:${CONTRACTS_IMAGE_TAG}"
   if [[ -n "$CURRENT_IMAGE" && "$CURRENT_IMAGE" != "$EXPECTED_IMAGE" ]]; then
-    echo "Contracts tag changed ($CURRENT_IMAGE -> $EXPECTED_IMAGE); forcing fresh deploy"
+    echo "Contracts tag changed ($CURRENT_IMAGE -> $EXPECTED_IMAGE); forcing fresh start"
     FRESH=true
   fi
 fi
 
-echo "IS_UP_COMMAND: ${IS_UP_COMMAND} | FRESH: ${FRESH} | CONTRACTS_IMAGE_TAG: ${CONTRACTS_IMAGE_TAG}"
+echo "IS_UP_COMMAND: ${IS_UP_COMMAND} | FRESH: ${FRESH} | CONTRACTS_IMAGE_TAG: ${CONTRACTS_IMAGE_TAG} | PULL_CONTRACTS: ${PULL_CONTRACTS}"
 
 # If requested (or digest changed), clean local blockchains
 if [[ "${FRESH}" == true ]]; then
   echo "Cleaning local blockchains stack (down -v)..."
-  cmd="docker compose -p blockchains --env-file \"$ENV_PATH\" -f \"$COMPOSE_FILE\" down --volumes || true"
+  cmd="docker compose -p blockchains --env-file \"$ENV_PATH\" -f \"$COMPOSE_FILE\" down --volumes --timeout 1 || true"
   echo "Running: $cmd"
   eval "$cmd"
 fi
 
 BITCOIND_CONTAINER="bitcoind"
-RUNNING_COUNT=$(docker compose -p blockchains --env-file "$ENV_PATH" -f "$COMPOSE_FILE" --profile local ps --status running -q ${BITCOIND_CONTAINER} anvil | wc -l | tr -d ' ')
+ANVIL_CONTAINER="anvil"
+RUNNING_COUNT=$(docker compose -p blockchains --env-file "$ENV_PATH" -f "$COMPOSE_FILE" --profile local ps --status running -q "${BITCOIND_CONTAINER}" "${ANVIL_CONTAINER}" | wc -l | tr -d ' ')
 
 echo "Detected $RUNNING_COUNT running containers in the local blockchains stack."
 
 if [[ "${IS_UP_COMMAND}" == true && "${RUNNING_COUNT}" -ge 2 ]]; then
-  echo "Local blockchains stack already running; skipping 'up'. Run 'down' to start again" && exit 0
+  echo "Local blockchains stack already running; skipping 'up'. Run 'down' to start again"
+  wait_for_bitcoind_rpc
+  wait_for_anvil_rpc
+  exit 0
 fi
 
 # Finally, run the requested docker compose command
@@ -232,57 +273,17 @@ if ! docker compose -p blockchains --env-file "$ENV_PATH" -f "$COMPOSE_FILE" --p
   exit 1
 fi
 
-# Wait for deploy-contracts to finish and verify success
-if [[ "${IS_UP_COMMAND}" == true ]]; then
-  echo "Waiting for contract deployment to complete..."
-  DEPLOY_CONTAINER="deploy-contracts"
-  DEPLOY_TIMEOUT=120
-  DEPLOY_ELAPSED=0
-  DEPLOY_INTERVAL=5
-
-  while [[ $DEPLOY_ELAPSED -lt $DEPLOY_TIMEOUT ]]; do
-    DEPLOY_STATUS=$(docker inspect -f '{{.State.Status}}' "$DEPLOY_CONTAINER" 2>/dev/null || echo "not_found")
-    if [[ "$DEPLOY_STATUS" == "exited" ]]; then
-      DEPLOY_EXIT_CODE=$(docker inspect -f '{{.State.ExitCode}}' "$DEPLOY_CONTAINER" 2>/dev/null)
-      if [[ "$DEPLOY_EXIT_CODE" -eq 0 ]]; then
-        echo "Contract deployment completed successfully."
-      else
-        echo "Error: Contract deployment failed with exit code $DEPLOY_EXIT_CODE"
-        echo "Last 20 lines from deploy-contracts:"
-        docker logs --tail 20 "$DEPLOY_CONTAINER"
-        exit 1
-      fi
-      break
-    fi
-    sleep "$DEPLOY_INTERVAL"
-    DEPLOY_ELAPSED=$((DEPLOY_ELAPSED + DEPLOY_INTERVAL))
-    echo "  Still deploying... (${DEPLOY_ELAPSED}s)"
-  done
-
-  if [[ $DEPLOY_ELAPSED -ge $DEPLOY_TIMEOUT ]]; then
-    echo "Error: Contract deployment timed out after ${DEPLOY_TIMEOUT}s"
-    docker logs --tail 20 "$DEPLOY_CONTAINER"
-    exit 1
-  fi
-fi
-
 if [[ "${IS_UP_COMMAND}" == true ]]; then
   wait_for_bitcoind_rpc
+  wait_for_anvil_rpc
 fi
 
-# If using 'up' command after a fresh teardown, create the Bitcoin wallet and deploy contracts
+# If using 'up' command after a fresh teardown, create the Bitcoin wallet.
 if [[ "${IS_UP_COMMAND}" == true && "${FRESH}" == true ]]; then
   # Create wallet
   echo "Creating wallet 'mainwallet' in ${BITCOIND_CONTAINER}..."
   if ! docker exec "${BITCOIND_CONTAINER}" bitcoin-cli -regtest -rpcuser="${BITCOIND_USER}" -rpcpassword="${BITCOIND_PASSWORD}" createwallet mainwallet; then
     echo "Error: Failed to create wallet 'mainwallet'"
-    exit 1
-  fi
-
-  echo
-  echo "Restarting ${BITCOIND_CONTAINER} after wallet creation."
-  if ! docker restart "${BITCOIND_CONTAINER}" 1>/dev/null; then
-    echo "Error: Failed to restart ${BITCOIND_CONTAINER}"
     exit 1
   fi
 fi

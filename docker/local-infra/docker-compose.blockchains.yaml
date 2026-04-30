@@ -1,4 +1,4 @@
-# This file is used to start the bitcoind client, anvil client, and deploy the smart contracts
+# This file is used to start the bitcoind client and predeployed Anvil chain.
 name: blockchains
 services:
   # Starts the bitcoind client
@@ -25,8 +25,15 @@ services:
 
   # Starts the anvil client
   anvil:
-    image: ghcr.io/foundry-rs/foundry:v1.5.1
+    image: ${PREDEPLOYED_ANVIL_IMAGE_BASE}:${CONTRACTS_IMAGE_TAG:-local-build}
     platform: linux/amd64
+    build:
+      context: ${CONTRACTS_CONTEXT_PATH}
+      dockerfile: ${PREDEPLOYED_ANVIL_DOCKERFILE}
+      args:
+        CHAIN_ID: ${CHAIN_ID}
+        MNEMONIC: ${MNEMONIC}
+        DEPLOYER_INDEX: ${DEPLOYER_INDEX}
     container_name: anvil
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -35,29 +42,7 @@ services:
     working_dir: /anvil
     ports:
       - "8545:8545"
-    command: anvil
+    command: ["--host", "0.0.0.0", "--port", "8545", "--load-state", "/opt/anvil/predeployed-state.json"]
     healthcheck:
       test: ["CMD", "cast", "balance", "-e", "0x8e24bfC030303965E04151bf7c24114082E75AD2"]
       start_period: 1s
-
-  # Deploy smart contracts
-  deploy-contracts:
-    image: ${CONTRACTS_IMAGE_BASE}:${CONTRACTS_IMAGE_TAG:-local-build}
-    platform: linux/amd64
-    build:
-      context: ${CONTRACTS_CONTEXT_PATH}
-      dockerfile: ${CONTRACTS_DOCKERFILE}
-    container_name: deploy-contracts
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    environment:
-      - NETWORK=local
-      - RPC=${ANVIL_URL}
-      - CHAIN_ID=31337
-      - MNEMONIC=${MNEMONIC}
-      - DEPLOYER_INDEX=${DEPLOYER_INDEX}
-    # Single string so ENTRYPOINT /bin/sh -c gets one argument. Pass false to disable verification (local anvil).
-    command: ["bash shell/script/deploy/deploy-common.sh false"]
-    depends_on:
-      anvil:
-        condition: service_healthy
