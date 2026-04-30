@@ -308,13 +308,6 @@ where
             warn!("Admin requested fail for unknown advance-funds flow {flow_id}: {reason}");
         }
 
-        self.register_advance_funds_retry_scheduler.cancel(&flow_id);
-        self.register_reimbursement_kickoff_retry_scheduler.cancel(&flow_id);
-        self.register_operator_take_retry_scheduler.cancel(&flow_id);
-        self.unconfirmed_register_advance_funds.remove(&flow_id);
-        self.unconfirmed_register_reimbursement_kickoff.remove(&flow_id);
-        self.unconfirmed_register_operator_take.remove(&flow_id);
-
         self.cleanup_terminal_flows();
 
         Ok(())
@@ -462,11 +455,41 @@ where
         Ok(AdvanceFundsRegistered { committee_id, slot_index, txid, pegout_id, operator_pubkey })
     }
 
-    fn cleanup_terminal_flows(&mut self) {
-        let terminal: Vec<_> =
-            self.flows.iter().filter(|(_, flow)| flow.is_terminal()).map(|(k, _)| *k).collect();
+    fn cleanup_terminal_flow_state(&mut self) {
+        let terminal: Vec<_> = self
+            .flows
+            .iter()
+            .filter(|(_, flow)| flow.is_terminal())
+            .map(|(flow_id, flow)| {
+                let trigger = flow.trigger_data();
+                (*flow_id, trigger.committee_id.clone(), trigger.slot_id)
+            })
+            .collect();
 
-        for flow_id in terminal {
+        for (flow_id, committee_id, slot_id) in terminal {
+            self.register_advance_funds_retry_scheduler.cancel(&flow_id);
+            self.register_reimbursement_kickoff_retry_scheduler.cancel(&flow_id);
+            self.register_operator_take_retry_scheduler.cancel(&flow_id);
+            self.unconfirmed_register_advance_funds.remove(&flow_id);
+            self.unconfirmed_register_reimbursement_kickoff.remove(&flow_id);
+            self.unconfirmed_register_operator_take.remove(&flow_id);
+            self.request_pegout_tx_hashes.remove(&(committee_id, slot_id));
+        }
+    }
+
+    fn cleanup_terminal_flows(&mut self) {
+        self.cleanup_terminal_flow_state();
+
+        // Advance-funds flows are not persisted just yet, so this processor removes
+        // terminal flows from memory directly instead of using cleanup_flows_matching.
+        let terminal_flow_ids: Vec<_> = self
+            .flows
+            .iter()
+            .filter(|(_, flow)| flow.is_terminal())
+            .map(|(flow_id, _)| *flow_id)
+            .collect();
+
+        for flow_id in terminal_flow_ids {
             debug!("Removing terminal advance funds flow {flow_id}");
             self.flows.remove(&flow_id);
         }

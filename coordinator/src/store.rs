@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::hash::BuildHasher;
 
-use anyhow::{Result, ensure};
+use anyhow::{ensure, Result};
 use common::msg_broker::bitvmx_types::{ParticipantRole, SignedPublicKey};
 use common::types::CommitteeId;
 use log::{debug, error, info};

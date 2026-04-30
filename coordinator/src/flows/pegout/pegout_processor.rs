@@ -581,13 +581,6 @@ where
             warn!("Admin requested fail for unknown pegout flow {flow_id}: {reason}");
         }
 
-        self.signature_flows.remove(&flow_id);
-        self.tx_status_scheduler.cancel(&flow_id);
-        self.advance_funds_timeout_scheduler.cancel(&flow_id);
-        self.register_pegout_retry_scheduler.cancel(&flow_id);
-        self.flows_pending_timeout.remove(&flow_id);
-        self.unconfirmed_register_pegout.remove(&flow_id);
-
         self.cleanup_terminal_flows();
 
         Ok(())
@@ -642,7 +635,26 @@ where
         }
     }
 
+    fn cleanup_terminal_flow_state(&mut self) {
+        let terminal_flow_ids: Vec<_> = self
+            .pegout_flows
+            .iter()
+            .filter(|(_, flow)| flow.is_terminal())
+            .flat_map(|(map_flow_id, flow)| [*map_flow_id, flow.flow_id()])
+            .collect();
+
+        for flow_id in terminal_flow_ids {
+            self.signature_flows.remove(&flow_id);
+            self.tx_status_scheduler.cancel(&flow_id);
+            self.advance_funds_timeout_scheduler.cancel(&flow_id);
+            self.register_pegout_retry_scheduler.cancel(&flow_id);
+            self.flows_pending_timeout.remove(&flow_id);
+            self.unconfirmed_register_pegout.remove(&flow_id);
+        }
+    }
+
     fn cleanup_terminal_flows(&mut self) {
+        self.cleanup_terminal_flow_state();
         cleanup_flows_matching(
             self.store.as_ref(),
             StorePrefix::PegoutFlow,

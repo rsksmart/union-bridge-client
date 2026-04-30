@@ -521,30 +521,12 @@ where
     fn fail_flow(&mut self, flow_id: Uuid, reason: &str) -> Result<()> {
         let flow_ids_to_fail = self.linked_pegin_flow_ids(flow_id);
 
-        // Capture the BTC tx id (used as the key for `pegin_retry_scheduler`) before
-        // any later cleanup drops the in-memory flow.
-        let btc_tx_id_keys: Vec<String> = flow_ids_to_fail
-            .iter()
-            .filter_map(|id| self.pegin_flows.get(id))
-            .filter_map(|flow| flow.get_state().ctx.request_pegin_btc_tx_id)
-            .map(|txid| txid.to_string())
-            .collect();
-
         let mut marked = false;
         for id in &flow_ids_to_fail {
             if let Some(flow) = self.pegin_flows.get_mut(id) {
                 flow.mark_failed(reason)?;
                 marked = true;
             }
-            self.signature_flows.remove(id);
-            self.tx_status_scheduler.cancel(id);
-            self.accept_pegin_retry_scheduler.cancel(id);
-            self.unconfirmed_accept_pegin.remove(id);
-        }
-
-        for key in btc_tx_id_keys {
-            self.pegin_retry_scheduler.cancel(&key);
-            self.unconfirmed_pegin_requests.remove(&key);
         }
 
         if marked {
@@ -843,7 +825,57 @@ where
         self.pegin_flows.values().any(|flow| flow.get_accept_pegin_txid() == Some(*tx_id))
     }
 
+    fn cleanup_terminal_flow_state(&mut self) {
+        let terminal_flows: Vec<_> = self
+            .pegin_flows
+            .iter()
+            .filter(|(_, flow)| flow.is_terminal())
+            .map(|(map_flow_id, flow)| {
+                let state = flow.get_state();
+                let mut flow_ids = vec![*map_flow_id, flow.flow_id()];
+
+                for flow_id in [state.ctx.temp_flow_id, state.ctx.official_flow_id]
+                    .into_iter()
+                    .flatten()
+                {
+                    if !flow_ids.contains(&flow_id) {
+                        flow_ids.push(flow_id);
+                    }
+                }
+
+                (flow_ids, state.ctx.request_pegin_btc_tx_id)
+            })
+            .collect();
+
+        for (flow_ids, request_pegin_btc_tx_id) in terminal_flows {
+            for flow_id in flow_ids {
+                self.signature_flows.remove(&flow_id);
+                self.tx_status_scheduler.cancel(&flow_id);
+                self.accept_pegin_retry_scheduler.cancel(&flow_id);
+                self.unconfirmed_accept_pegin.remove(&flow_id);
+            }
+
+            if let Some(tx_id) = request_pegin_btc_tx_id {
+                self.pegin_request_tracker.remove(&tx_id);
+                self.pending_pegin_requested.remove(&tx_id);
+
+                let retry_keys: Vec<_> = self
+                    .unconfirmed_pegin_requests
+                    .iter()
+                    .filter(|(_, (spv_proof, _))| spv_proof.tx.compute_txid() == tx_id)
+                    .map(|(key, _)| key.clone())
+                    .collect();
+
+                for key in retry_keys {
+                    self.pegin_retry_scheduler.cancel(&key);
+                    self.unconfirmed_pegin_requests.remove(&key);
+                }
+            }
+        }
+    }
+
     fn cleanup_terminal_flows(&mut self) {
+        self.cleanup_terminal_flow_state();
         cleanup_flows_matching(
             self.store.as_ref(),
             StorePrefix::PeginFlow,
