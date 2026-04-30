@@ -104,7 +104,7 @@ where
             self.store.as_ref(),
             StorePrefix::SetupCommitteeFlow,
             &mut self.flows,
-            SetupCommitteeFlow::is_done,
+            SetupCommitteeFlow::is_terminal,
         );
     }
 }

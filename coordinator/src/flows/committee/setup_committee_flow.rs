@@ -479,7 +479,7 @@ where
         &mut self.state.ctx
     }
 
-    pub fn is_done(&self) -> bool {
+    pub fn is_terminal(&self) -> bool {
         self.state.step == Steps::Done || self.state.step == Steps::Failed
     }
 
