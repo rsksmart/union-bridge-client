@@ -298,14 +298,14 @@ where
                 info!(
                     "Waiting for AcceptPegin Bitcoin confirmations for flow_id: {} and tx_id: {:?}",
                     self.state.flow_id,
-                    self.get_accept_pegin_txid()
+                    self.get_accept_pegin_txid_from_bitvmx_var()
                 );
             }
             Steps::RequestAcceptPeginSpvProof => {
                 info!(
                     "Requesting SPV proof for flow_id: {} and tx_id: {:?}",
                     self.state.flow_id,
-                    self.get_accept_pegin_txid()
+                    self.get_accept_pegin_txid_from_bitvmx_var()
                 );
                 self.request_spv_proof()?;
             }
@@ -834,7 +834,7 @@ where
 
     pub fn request_transaction_status(&self) -> Result<()> {
         let tx_id = self
-            .get_accept_pegin_txid()
+            .get_accept_pegin_txid_from_bitvmx_var()
             .ok_or_else(|| anyhow!("Expected accept pegin tx_id not found"))?;
         info!(
             "Requesting transaction status for flow_id: {} and tx_id: {:?}",
@@ -846,7 +846,7 @@ where
 
     pub fn request_spv_proof(&self) -> Result<()> {
         let tx_id = self
-            .get_accept_pegin_txid()
+            .get_accept_pegin_txid_from_bitvmx_var()
             .ok_or_else(|| anyhow!("Expected accept pegin tx_id not found"))?;
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetSPVProof(tx_id))?;
         Ok(())
@@ -949,7 +949,7 @@ where
         );
         trace!("Transaction status data: {tx_status:?}");
         let expected_tx_id = self
-            .get_accept_pegin_txid()
+            .get_accept_pegin_txid_from_bitvmx_var()
             .ok_or_else(|| anyhow!("Expected accept pegin txid not found"))?;
         if tx_status.tx_id != expected_tx_id {
             bail!(
@@ -962,7 +962,7 @@ where
         Ok(Steps::RequestAcceptPeginSpvProof)
     }
 
-    pub fn get_accept_pegin_txid(&self) -> Option<Txid> {
+    pub fn get_accept_pegin_txid_from_bitvmx_var(&self) -> Option<Txid> {
         self.state.ctx.bitvmx_pegin_accepted.as_ref().map(|accepted| accepted.accept_pegin_txid)
     }
 

@@ -2,6 +2,7 @@ use std::any::type_name_of_val;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+use alloy_primitives::FixedBytes;
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::Txid;
 use common::msg_broker::bitvmx_types::{
@@ -71,6 +72,7 @@ where
     tx_status_scheduler: TickScheduler<Uuid>,
     pegin_request_tracker: HashSet<Txid>,
     pending_pegin_requested: HashMap<Txid, PeginRequestedEvent>,
+    pending_all_operator_take_txids_added: HashMap<Txid, AllOperatorTakeTxidsAddedEvent>,
     // For retry logic when native bridge lacks confirmations
     unconfirmed_pegin_requests: HashMap<String, (BtcTxSPVProof, i16)>,
     pegin_retry_scheduler: TickScheduler<String>,
@@ -135,6 +137,7 @@ where
             tx_status_scheduler: TickScheduler::new(),
             pegin_request_tracker: HashSet::new(),
             pending_pegin_requested: HashMap::new(),
+            pending_all_operator_take_txids_added: HashMap::new(),
             unconfirmed_pegin_requests: HashMap::new(),
             pegin_retry_scheduler: TickScheduler::new(),
             unconfirmed_accept_pegin: HashMap::new(),
@@ -225,7 +228,7 @@ where
 
         // Find the flow corresponding to this pegin acceptance using accept_pegin_tx_hash
         let flow_opt = self.pegin_flows.values_mut().find(|flow| {
-            flow.get_accept_pegin_txid().map(TxIdParser::txid_to_fb_32)
+            flow.get_accept_pegin_txid_from_bitvmx_var().map(TxIdParser::txid_to_fb_32)
                 == Some(pa.inner.acceptPeginTxid)
         });
 
@@ -290,18 +293,19 @@ where
         &mut self,
         event: &AllOperatorTakeTxidsAddedEvent,
     ) -> Result<()> {
+        let event_accept_pegin_txid = TxIdParser::fb_32_to_txid(event.inner.acceptPeginTxid);
+
         debug!(
             "Processing AllOperatorTakeTxidsAdded: acceptPeginTxid={}",
             event.inner.acceptPeginTxid
         );
 
         // Find the flow by accept_pegin_tx_hash
-        let flow_opt = self.pegin_flows.values_mut().find(|flow| {
-            flow.get_accept_pegin_txid().map(TxIdParser::txid_to_fb_32)
-                == Some(event.inner.acceptPeginTxid)
+        let flow_with_bitvmx_accept_pegin = self.pegin_flows.values_mut().find(|flow| {
+            flow.get_accept_pegin_txid_from_bitvmx_var() == Some(event_accept_pegin_txid)
         });
 
-        if let Some(flow) = flow_opt {
+        if let Some(flow) = flow_with_bitvmx_accept_pegin {
             let flow_id = flow.flow_id();
 
             // Start the BTC signature flow if not already started
@@ -316,10 +320,8 @@ where
 
                 // Note: v0.2.0 contracts - initSignatures is called with acceptPeginTxid (the transaction ID),
                 // not the signatureHash. So we must use acceptPeginTxid for addMemberNonce.
-                let accept_pegin_txid = flow
-                    .get_accept_pegin_txid()
-                    .ok_or_else(|| anyhow!("acceptPeginTxid not found for flow_id: {flow_id}"))?;
-                let hash_to_sign = Hash256::from(TxIdParser::txid_to_fb_32(accept_pegin_txid));
+                let hash_to_sign =
+                    Hash256::from(TxIdParser::txid_to_fb_32(event_accept_pegin_txid));
                 let register_input = RegisterSignaturesBitVmxData {
                     hash_to_sign,
                     nonce: pegin_accepted.accept_pegin_nonce.clone(),
@@ -335,14 +337,32 @@ where
                 let step_data = StepData::AllOperatorTakeTxidsAdded;
                 flow.complete_step(&step_data)?;
             }
+        } else if self.has_flow_for_accept_pegin_txid(event.inner.acceptPeginTxid) {
+            warn!(
+                "Buffering AllOperatorTakeTxidsAdded for acceptPeginTxid={:?} until BitVMX pegin_accepted arrives",
+                event.inner.acceptPeginTxid
+            );
+            self.pending_all_operator_take_txids_added
+                .insert(event_accept_pegin_txid, event.clone());
         } else {
-            debug!(
+            warn!(
                 "Received AllOperatorTakeTxidsAdded: unknown_acceptPeginTxid={:?}",
                 event.inner.acceptPeginTxid
             );
         }
 
         Ok(())
+    }
+
+    fn has_flow_for_accept_pegin_txid(&self, accept_pegin_txid: FixedBytes<32>) -> bool {
+        self.pegin_flows.values().any(|flow| {
+            flow.get_state()
+                .ctx
+                .pegin_requested
+                .as_ref()
+                .map(|pegin_requested| pegin_requested.acceptPeginTxid)
+                == Some(accept_pegin_txid)
+        })
     }
 
     /// Build event info for `PeginRequested` events
@@ -431,7 +451,7 @@ where
         let TransactionStatus { tx_id, confirmations, .. } = tx_status;
         let flow_id = flow.flow_id();
         let expected_txid = flow
-            .get_accept_pegin_txid()
+            .get_accept_pegin_txid_from_bitvmx_var()
             .ok_or_else(|| anyhow!("Expected accept pegin tx_id not found"))?;
 
         if expected_txid != tx_id {
@@ -655,6 +675,22 @@ where
         Ok(())
     }
 
+    fn replay_pending_all_operator_take_txids_added(
+        &mut self,
+        accept_pegin_txid: &Txid,
+    ) -> Result<()> {
+        if let Some(event) = self.pending_all_operator_take_txids_added.remove(accept_pegin_txid) {
+            info!(
+                "Replaying buffered AllOperatorTakeTxidsAdded for accept pegin tx: {accept_pegin_txid}"
+            );
+            self.process_confirmed_rsk_event(&RskPegManagerEvents::AllOperatorTakeTxidsAdded(
+                event,
+            ))?;
+        }
+
+        Ok(())
+    }
+
     fn stop_confirming_event(&mut self, id: &str) -> Option<ConfirmableEventWithData> {
         let mut event = self.events_confirming.remove(id)?;
         if let Err(e) = event.stop_confirming() {
@@ -792,8 +828,10 @@ where
         spv_proof: BtcTxSPVProof,
     ) -> Result<()> {
         // Find state by matching accept_pegin_txid from bitvmx_pegin_accepted
-        let flow_opt =
-            self.pegin_flows.values_mut().find(|flow| flow.get_accept_pegin_txid() == Some(*tx_id));
+        let flow_opt = self
+            .pegin_flows
+            .values_mut()
+            .find(|flow| flow.get_accept_pegin_txid_from_bitvmx_var() == Some(*tx_id));
 
         if let Some(flow) = flow_opt {
             info!("Handling accept pegin SPV proof: flow_id={}, tx_id={}", flow.flow_id(), tx_id);
@@ -822,7 +860,9 @@ where
     }
 
     fn has_flow_waiting_for_accept_pegin_spv(&self, tx_id: &Txid) -> bool {
-        self.pegin_flows.values().any(|flow| flow.get_accept_pegin_txid() == Some(*tx_id))
+        self.pegin_flows
+            .values()
+            .any(|flow| flow.get_accept_pegin_txid_from_bitvmx_var() == Some(*tx_id))
     }
 
     fn cleanup_terminal_flow_state(&mut self) {
@@ -978,22 +1018,29 @@ where
                 info!("Received PeginAccepted variable from BitVMX for flow_id: {flow_id}");
                 debug!("PeginAccepted data: {data}");
                 let pegin_accepted: PeginAcceptedMessage = serde_json::from_str(data)?;
-                let flow = self
-                    .pegin_flows
-                    .get_mut(flow_id)
-                    .ok_or_else(|| anyhow!("Flow not found for flow_id: {flow_id}"))?;
+                let accept_pegin_txid = {
+                    let flow = self
+                        .pegin_flows
+                        .get_mut(flow_id)
+                        .ok_or_else(|| anyhow!("Flow not found for flow_id: {flow_id}"))?;
 
-                if flow.current_step() != Steps::PreparePeginSetup {
-                    return Err(anyhow!(
-                        "Mismatch current step for flow {} expected {:?} having {:?}",
-                        flow_id,
-                        Steps::PreparePeginSetup,
-                        flow.current_step()
-                    ));
+                    if flow.current_step() != Steps::PreparePeginSetup {
+                        return Err(anyhow!(
+                            "Mismatch current step for flow {} expected {:?} having {:?}",
+                            flow_id,
+                            Steps::PreparePeginSetup,
+                            flow.current_step()
+                        ));
+                    }
+
+                    let step_data = StepData::BitvmxPeginAccepted(pegin_accepted);
+                    flow.complete_step(&step_data)?;
+                    flow.get_accept_pegin_txid_from_bitvmx_var()
+                };
+
+                if let Some(accept_pegin_txid) = accept_pegin_txid {
+                    self.replay_pending_all_operator_take_txids_added(&accept_pegin_txid)?;
                 }
-
-                let step_data = StepData::BitvmxPeginAccepted(pegin_accepted);
-                flow.complete_step(&step_data)?;
             }
             OutgoingBitVMXApiMessages::TransactionInfo(flow_id, tx_name, transaction) => {
                 let txid = transaction.compute_txid();
@@ -1136,6 +1183,7 @@ where
         self.unconfirmed_accept_pegin.clear();
         self.pegin_request_tracker.clear();
         self.pending_pegin_requested.clear();
+        self.pending_all_operator_take_txids_added.clear();
         self.signature_flows.clear();
     }
 }
