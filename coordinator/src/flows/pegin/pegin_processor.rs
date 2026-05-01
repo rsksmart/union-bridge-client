@@ -70,6 +70,14 @@ where
     tx_status_scheduler: TickScheduler<Uuid>,
     pegin_request_tracker: HashSet<Txid>,
     pending_pegin_requested: HashMap<Txid, PeginRequestedEvent>,
+    /// `AllOperatorTakeTxidsAdded` can confirm on-chain before this operator's `BitVMX`
+    /// has delivered `pegin_accepted`. In that window `get_accept_pegin_txid()` still
+    /// returns `None`, so the flow lookup fails and the event would be dropped —
+    /// the operator then never submits its `addMemberNonce` and `AllNoncesReady`
+    /// never fires. We stash the confirmed event by `acceptPeginTxid` and replay it
+    /// once the matching flow receives `BitvmxPeginAccepted` (see
+    /// `flush_pending_aottah_for_accept_txid`).
+    pending_all_operator_take_txids: HashMap<Txid, AllOperatorTakeTxidsAddedEvent>,
     // For retry logic when native bridge lacks confirmations
     unconfirmed_pegin_requests: HashMap<String, (BtcTxSPVProof, i16)>,
     pegin_retry_scheduler: TickScheduler<String>,
@@ -134,6 +142,7 @@ where
             tx_status_scheduler: TickScheduler::new(),
             pegin_request_tracker: HashSet::new(),
             pending_pegin_requested: HashMap::new(),
+            pending_all_operator_take_txids: HashMap::new(),
             unconfirmed_pegin_requests: HashMap::new(),
             pegin_retry_scheduler: TickScheduler::new(),
             unconfirmed_accept_pegin: HashMap::new(),
@@ -340,12 +349,33 @@ where
                 flow.complete_step(&step_data)?;
             }
         } else {
-            debug!(
-                "Received AllOperatorTakeTxidsAdded: unknown_acceptPeginTxid={:?}",
+            // Race: on-chain confirmation beat this operator's BitVMX `pegin_accepted`.
+            // Buffer by `acceptPeginTxid` and flush in `flush_pending_aottah_for_accept_txid`
+            // once the matching flow transitions past `PreparePeginSetup`.
+            let accept_pegin_txid = TxIdParser::fb_32_to_txid(event.inner.acceptPeginTxid);
+            warn!(
+                "Buffering AllOperatorTakeTxidsAdded: acceptPeginTxid={} has no matching pegin flow yet (waiting for BitVMX pegin_accepted)",
                 event.inner.acceptPeginTxid
             );
+            self.pending_all_operator_take_txids.insert(accept_pegin_txid, event.clone());
         }
 
+        Ok(())
+    }
+
+    /// Replay a buffered `AllOperatorTakeTxidsAdded` event now that the flow for
+    /// `accept_pegin_txid` has received its `BitVMX` `pegin_accepted` message.
+    ///
+    /// Must be called after the flow's `BitvmxPeginAccepted` step completes, so
+    /// `get_accept_pegin_txid()` returns `Some(..)` and the lookup in
+    /// `handle_all_operator_take_tx_hashes_added` succeeds.
+    fn flush_pending_aottah_for_accept_txid(&mut self, accept_pegin_txid: &Txid) -> Result<()> {
+        if let Some(event) = self.pending_all_operator_take_txids.remove(accept_pegin_txid) {
+            info!(
+                "Replaying buffered AllOperatorTakeTxidsAdded for acceptPeginTxid: {accept_pegin_txid}"
+            );
+            self.handle_all_operator_take_tx_hashes_added(&event)?;
+        }
         Ok(())
     }
 
@@ -875,6 +905,7 @@ where
                 info!("Received PeginAccepted variable from BitVMX for flow_id: {flow_id}");
                 debug!("PeginAccepted data: {data}");
                 let pegin_accepted: PeginAcceptedMessage = serde_json::from_str(data)?;
+                let accept_pegin_txid = pegin_accepted.accept_pegin_txid;
                 let flow = self
                     .pegin_flows
                     .get_mut(flow_id)
@@ -891,6 +922,10 @@ where
 
                 let step_data = StepData::BitvmxPeginAccepted(pegin_accepted);
                 flow.complete_step(&step_data)?;
+
+                // Flow now has `bitvmx_pegin_accepted` populated; any
+                // `AllOperatorTakeTxidsAdded` that confirmed earlier can be delivered.
+                self.flush_pending_aottah_for_accept_txid(&accept_pegin_txid)?;
             }
             OutgoingBitVMXApiMessages::TransactionInfo(flow_id, tx_name, transaction) => {
                 let txid = transaction.compute_txid();
@@ -1029,6 +1064,7 @@ where
         self.unconfirmed_accept_pegin.clear();
         self.pegin_request_tracker.clear();
         self.pending_pegin_requested.clear();
+        self.pending_all_operator_take_txids.clear();
         self.signature_flows.clear();
     }
 }
