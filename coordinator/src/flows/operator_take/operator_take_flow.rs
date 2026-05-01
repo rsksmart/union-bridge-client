@@ -414,7 +414,11 @@ where
                 Ok(Steps::RegisterOperatorTake)
             }
             (
-                Steps::WaitForPegoutRegistered | Steps::RegisterOperatorTake,
+                Steps::WaitForPegoutRegistered
+                | Steps::WaitForReimbursementKickoffSpv
+                | Steps::RegisterReimbursementKickoff
+                | Steps::WaitForOperatorTakeSpv
+                | Steps::RegisterOperatorTake,
                 StepData::OperatorTakeRegistered(pegout_registered),
             ) => {
                 debug!(
@@ -689,6 +693,7 @@ mod tests {
     use mockall::predicate::function;
     use primitive_types::{H160, H256};
     use transaction_dispatcher::types::RegisterReimbursementKickoffInput;
+    use union_contracts::bindings::pegout_manager::PegoutManager::StreamPosition;
     use uuid::Uuid;
 
     use super::*;
@@ -728,6 +733,16 @@ mod tests {
             },
             merkle_branch_path: "0".to_string(),
             merkle_branch_hashes: vec![],
+        }
+    }
+
+    fn test_pegout_registered() -> PegoutRegistered {
+        PegoutRegistered {
+            blockHash: FixedBytes::from([1u8; 32]),
+            txid: FixedBytes::from([2u8; 32]),
+            acceptPeginTxid: FixedBytes::from([3u8; 32]),
+            committeeId: 1,
+            streamInfo: StreamPosition { streamId: 0, packetNumber: 0, slotId: 0, pegStatus: 0 },
         }
     }
 
@@ -804,5 +819,60 @@ mod tests {
             .expect("buffered reimbursement kickoff SPV should be consumed");
 
         assert_eq!(flow.current_step(), Steps::RegisterReimbursementKickoff);
+    }
+
+    #[test]
+    fn operator_take_registered_fast_forwards_from_terminal_intermediate_steps() {
+        let terminal_intermediate_steps = [
+            Steps::WaitForPegoutRegistered,
+            Steps::WaitForReimbursementKickoffSpv,
+            Steps::RegisterReimbursementKickoff,
+            Steps::WaitForOperatorTakeSpv,
+            Steps::RegisterOperatorTake,
+        ];
+
+        for step in terminal_intermediate_steps {
+            let committee_id = Uuid::new_v4();
+            let flow_id = Uuid::new_v4();
+            let trigger_data = test_trigger_data(committee_id, 0);
+
+            let mut contracts = MockRskContractsGatewayApi::new();
+            contracts.expect_my_address().return_const(Address::from(H160::from_low_u64_be(33)));
+
+            let broker = MockBitVmxBroker::new();
+            let mut flow = AdvanceFundsFlow::new_for_test(
+                Rc::new(contracts),
+                Rc::new(broker),
+                flow_id,
+                trigger_data,
+                step,
+            );
+
+            flow.complete_step(StepData::OperatorTakeRegistered(test_pegout_registered()))
+                .expect("confirmed operator take registration should fast-forward");
+
+            assert_eq!(flow.current_step(), Steps::Done, "failed from {step:?}");
+        }
+    }
+
+    #[test]
+    fn operator_take_registered_is_rejected_before_terminal_intermediate_steps() {
+        let committee_id = Uuid::new_v4();
+        let flow_id = Uuid::new_v4();
+        let trigger_data = test_trigger_data(committee_id, 0);
+        let contracts = MockRskContractsGatewayApi::new();
+        let broker = MockBitVmxBroker::new();
+        let mut flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(contracts),
+            Rc::new(broker),
+            flow_id,
+            trigger_data,
+            Steps::WaitForAdvanceFundsRegistered,
+        );
+
+        let result = flow.complete_step(StepData::OperatorTakeRegistered(test_pegout_registered()));
+
+        assert!(result.is_err());
+        assert_eq!(flow.current_step(), Steps::WaitForAdvanceFundsRegistered);
     }
 }
