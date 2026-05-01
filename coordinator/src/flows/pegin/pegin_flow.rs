@@ -421,14 +421,35 @@ where
                 info!("Retrying accept pegin for flow_id: {}", self.state.flow_id);
                 Ok(Steps::AcceptPegin)
             }
-            (Steps::AcceptPegin, StepData::PeginAccepted(pegin_accepted)) => {
-                info!("PeginFlow Done: {}", self.state.flow_id);
-                trace!("PeginAccepted data: {pegin_accepted:?}");
-                self.state.ctx.pegin_accepted = Some(pegin_accepted.clone());
-                Ok(Steps::Done)
-            }
+            (
+                Steps::DispatchTransaction
+                | Steps::ConfirmAcceptPeginTransaction
+                | Steps::RequestAcceptPeginSpvProof
+                | Steps::AcceptPegin,
+                StepData::PeginAccepted(pegin_accepted),
+            ) => self.complete_with_confirmed_pegin_acceptance(pegin_accepted),
             _ => Err(anyhow!("Invalid state transition: {current_step:?} with data {data:?}")),
         }
+    }
+
+    fn complete_with_confirmed_pegin_acceptance(
+        &mut self,
+        pegin_accepted: &PeginAccepted,
+    ) -> Result<Steps> {
+        let expected_txid = self
+            .get_accept_pegin_txid_from_bitvmx_var()
+            .ok_or_else(|| anyhow!("Expected accept pegin txid not found"))?;
+        let accepted_txid = TxIdParser::fb_32_to_txid(pegin_accepted.acceptPeginTxid);
+
+        if accepted_txid != expected_txid {
+            bail!("PeginAccepted txid mismatch: got {accepted_txid:?}, expected {expected_txid:?}");
+        }
+
+        info!("PeginFlow Done: {}", self.state.flow_id);
+        trace!("PeginAccepted data: {pegin_accepted:?}");
+        self.state.ctx.pegin_accepted = Some(pegin_accepted.clone());
+
+        Ok(Steps::Done)
     }
 
     fn prepare_pegin_setup(&mut self) -> Result<()> {
@@ -1030,7 +1051,7 @@ fn format_step(step: Steps) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use alloy_primitives::{U256, Uint};
+    use alloy_primitives::{Address as AlloyAddress, Bytes, FixedBytes, U256, Uint};
     use bitcoin::Txid;
     use bitcoin::hashes::Hash;
     use common::msg_broker::bitvmx_types::{
@@ -1045,6 +1066,7 @@ mod tests {
     use primitive_types::H160;
     use transaction_dispatcher::types::GetCommitteeOutput;
     use union_contracts::bindings::committee_registry::CommitteeRegistry::Committee;
+    use union_contracts::bindings::pegin_manager::PeginManager::StreamPosition;
     use uuid::Uuid;
 
     use super::*;
@@ -1084,6 +1106,25 @@ mod tests {
             operator_take_sighash: Some(vec![1u8; 32]),
             operator_won_sighash: Some(vec![2u8; 32]),
             committee_id: Uuid::new_v4(),
+        }
+    }
+
+    fn default_pegin_accepted_event(accept_pegin_txid: Txid) -> PeginAccepted {
+        PeginAccepted {
+            blockHash: FixedBytes::<32>::from([0u8; 32]),
+            acceptPeginTxid: TxIdParser::txid_to_fb_32(accept_pegin_txid),
+            requestPeginTxid: FixedBytes::<32>::from([1u8; 32]),
+            vout: 0,
+            streamPosition: StreamPosition {
+                streamId: 0,
+                packetNumber: 0,
+                slotId: 0,
+                pegStatus: 1,
+            },
+            speedUpPubKey: FixedBytes::<32>::from([2u8; 32]),
+            rskDestinationAddress: AlloyAddress::from([3u8; 20]),
+            rbtcAmount: U256::from(1),
+            utxoScriptPubKey: Bytes::from(vec![4u8]),
         }
     }
 
@@ -1529,6 +1570,56 @@ mod tests {
         let result = flow.start_step(Steps::WaitAllOperatorTakeTxidsAdded);
         assert!(result.is_ok());
         assert_eq!(flow.current_step(), Steps::WaitAllOperatorTakeTxidsAdded);
+    }
+
+    #[test]
+    fn test_pegin_accepted_completes_from_post_signature_steps() {
+        let my_address = test_address([1u8; 20]);
+        let accept_pegin_txid = test_txid([9u8; 32]);
+
+        for step in [
+            Steps::DispatchTransaction,
+            Steps::ConfirmAcceptPeginTransaction,
+            Steps::RequestAcceptPeginSpvProof,
+            Steps::AcceptPegin,
+        ] {
+            let flow_id = Uuid::new_v4();
+            let mut ctx =
+                create_default_flow_context(flow_id, step, Some(ParticipantRole::Verifier));
+            ctx.bitvmx_pegin_accepted = Some(default_pegin_accepted_message(accept_pegin_txid));
+
+            let mut mock_contracts = crate::coordinator::tests::MockRskContractsGatewayApi::new();
+            mock_contracts.expect_my_address().returning(move || my_address);
+            let mock_contracts = std::rc::Rc::new(mock_contracts);
+
+            let mut mock_broker =
+                MockBrokerClientApi::<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>::new();
+            mock_broker.expect_send().times(1).returning(|_| Ok(true));
+            let mock_broker = std::rc::Rc::new(mock_broker);
+
+            let mut mock_store = MockCoordinatorStoreApi::new();
+            mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
+            let mock_store = std::rc::Rc::new(mock_store);
+
+            let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
+            let state = State { flow_id: ctx.flow_id, ctx };
+            let mut flow = PeginFlow::from_saved_state(
+                mock_contracts,
+                rt_sync,
+                mock_broker,
+                state,
+                mock_store,
+                std::rc::Rc::new(crate::flows::common::Signaling::new("/tmp", "disabled")),
+                NativeBridgeVerifier::Dummy,
+            );
+
+            let pegin_accepted = default_pegin_accepted_event(accept_pegin_txid);
+            let result = flow.complete_step(&StepData::PeginAccepted(pegin_accepted.clone()));
+
+            assert!(result.is_ok());
+            assert_eq!(flow.current_step(), Steps::Done);
+            assert_eq!(flow.get_state().ctx.pegin_accepted, Some(pegin_accepted));
+        }
     }
 
     #[test]

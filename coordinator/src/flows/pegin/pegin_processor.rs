@@ -73,6 +73,7 @@ where
     pegin_request_tracker: HashSet<Txid>,
     pending_pegin_requested: HashMap<Txid, PeginRequestedEvent>,
     pending_all_operator_take_txids_added: HashMap<Txid, AllOperatorTakeTxidsAddedEvent>,
+    pending_pegin_accepted: HashMap<Txid, PeginAcceptedEvent>,
     // For retry logic when native bridge lacks confirmations
     unconfirmed_pegin_requests: HashMap<String, (BtcTxSPVProof, i16)>,
     pegin_retry_scheduler: TickScheduler<String>,
@@ -138,6 +139,7 @@ where
             pegin_request_tracker: HashSet::new(),
             pending_pegin_requested: HashMap::new(),
             pending_all_operator_take_txids_added: HashMap::new(),
+            pending_pegin_accepted: HashMap::new(),
             unconfirmed_pegin_requests: HashMap::new(),
             pegin_retry_scheduler: TickScheduler::new(),
             unconfirmed_accept_pegin: HashMap::new(),
@@ -225,14 +227,36 @@ where
     /// Handle confirmed `PeginAccepted` event
     fn handle_pegin_accepted(&mut self, pa: &PeginAcceptedEvent) -> Result<()> {
         info!("Processing confirmed PeginAccepted event: {pa:?}");
+        let event_accept_pegin_txid = TxIdParser::fb_32_to_txid(pa.inner.acceptPeginTxid);
 
         // Find the flow corresponding to this pegin acceptance using accept_pegin_tx_hash
         let flow_opt = self.pegin_flows.values_mut().find(|flow| {
-            flow.get_accept_pegin_txid_from_bitvmx_var().map(TxIdParser::txid_to_fb_32)
-                == Some(pa.inner.acceptPeginTxid)
+            flow.get_accept_pegin_txid_from_bitvmx_var() == Some(event_accept_pegin_txid)
         });
 
         if let Some(flow) = flow_opt {
+            let flow_id = flow.flow_id();
+            let current_step = flow.current_step();
+
+            if current_step == Steps::Done {
+                debug!("PeginAccepted already processed for flow_id={flow_id}");
+                return Ok(());
+            }
+
+            if !matches!(
+                current_step,
+                Steps::ConfirmAcceptPeginTransaction
+                    | Steps::RequestAcceptPeginSpvProof
+                    | Steps::AcceptPegin
+            ) {
+                warn!(
+                    "Buffering PeginAccepted for acceptPeginTxid={:?} until flow_id={} reaches the accept pegin finalization checkpoint. current_step={:?}",
+                    pa.inner.acceptPeginTxid, flow_id, current_step
+                );
+                self.pending_pegin_accepted.insert(event_accept_pegin_txid, pa.clone());
+                return Ok(());
+            }
+
             let step_data = StepData::PeginAccepted(pa.inner.clone());
             flow.complete_step(&step_data)?;
         } else {
@@ -415,23 +439,44 @@ where
             // Always remove the signature flow when it's done
             self.signature_flows.remove(flow_id);
 
-            if let Some(flow) = self.pegin_flows.get_mut(flow_id) {
-                // Only complete the step if the flow is still waiting for signatures
-                if flow.current_step() != Steps::DispatchTransaction {
-                    warn!(
-                        "Signature flow completed for flow_id: {flow_id} but flow is at step {:?}, expected {:?}. Skipping dispatch step.",
-                        flow.current_step(),
-                        Steps::DispatchTransaction
-                    );
-                    continue;
-                }
-
-                let step_data = StepData::DispatchAcceptPeginTransaction;
-                flow.complete_step(&step_data)?;
-            } else {
+            let Some(flow) = self.pegin_flows.get(flow_id) else {
                 warn!(
                     "Signature flow done for unknown pegin flow_id: {flow_id}. Skipping dispatch step"
                 );
+                continue;
+            };
+
+            // Only complete the step if the flow is still waiting for signatures
+            if flow.current_step() != Steps::DispatchTransaction {
+                warn!(
+                    "Signature flow completed for flow_id: {flow_id} but flow is at step {:?}, expected {:?}. Skipping dispatch step.",
+                    flow.current_step(),
+                    Steps::DispatchTransaction
+                );
+                continue;
+            }
+
+            let pending_pegin_accepted =
+                flow.get_accept_pegin_txid_from_bitvmx_var().and_then(|accept_pegin_txid| {
+                    self.pending_pegin_accepted.remove(&accept_pegin_txid)
+                });
+
+            let Some(flow) = self.pegin_flows.get_mut(flow_id) else {
+                warn!(
+                    "Signature flow done for unknown pegin flow_id: {flow_id}. Skipping dispatch step"
+                );
+                continue;
+            };
+
+            if let Some(event) = pending_pegin_accepted {
+                info!(
+                    "Completing flow_id={flow_id} with buffered PeginAccepted after accept pegin signatures completed"
+                );
+                let step_data = StepData::PeginAccepted(event.inner.clone());
+                flow.complete_step(&step_data)?;
+            } else {
+                let step_data = StepData::DispatchAcceptPeginTransaction;
+                flow.complete_step(&step_data)?;
             }
         }
 
@@ -1184,6 +1229,7 @@ where
         self.pegin_request_tracker.clear();
         self.pending_pegin_requested.clear();
         self.pending_all_operator_take_txids_added.clear();
+        self.pending_pegin_accepted.clear();
         self.signature_flows.clear();
     }
 }
