@@ -276,10 +276,37 @@ run_compose_stack() {
   printf "%q " "${compose_cmd[@]}"
   echo "'"
 
+  local compose_exit=0
   if [[ -n "${UC_TAG:-}" ]]; then
-    UC_TAG="${UC_TAG}" "${compose_cmd[@]}"
+    UC_TAG="${UC_TAG}" "${compose_cmd[@]}" || compose_exit=$?
   else
-    "${compose_cmd[@]}"
+    "${compose_cmd[@]}" || compose_exit=$?
+  fi
+
+  # One retry: "address already in use" on published ports is a known flake when bringing
+  # up several operator stacks in sequence (e.g. GitHub Actions after a fresh down).
+  if [[ "${compose_exit}" -ne 0 && "${IS_STARTUP_COMMAND}" == true ]]; then
+    echo "[WARN] docker compose failed for ${project_name} (exit ${compose_exit}); retrying once after teardown and brief wait..." >&2
+    if [[ -n "${UC_TAG:-}" ]]; then
+      UC_TAG="${UC_TAG}" docker compose -p "${project_name}" -f docker-compose.yml -f "${compose_override}" \
+        --env-file "${ENV_FILE}" --env-file "${compose_env_file_path}" --env-file "${runtime_env_file_path}" \
+        down --volumes || true
+    else
+      docker compose -p "${project_name}" -f docker-compose.yml -f "${compose_override}" \
+        --env-file "${ENV_FILE}" --env-file "${compose_env_file_path}" --env-file "${runtime_env_file_path}" \
+        down --volumes || true
+    fi
+    sleep 5
+    compose_exit=0
+    if [[ -n "${UC_TAG:-}" ]]; then
+      UC_TAG="${UC_TAG}" "${compose_cmd[@]}" || compose_exit=$?
+    else
+      "${compose_cmd[@]}" || compose_exit=$?
+    fi
+  fi
+
+  if [[ "${compose_exit}" -ne 0 ]]; then
+    exit "${compose_exit}"
   fi
 }
 
@@ -304,6 +331,9 @@ if [[ "${FRESH}" == true ]]; then
     fi
     docker compose -p "${project_name}" -f docker-compose.yml -f "$(compose_override_file)" --env-file "${ENV_FILE}" --env-file "${operator_compose_env_file}" --env-file "${operator_runtime_env_file}" down --volumes
   done
+  # CI / fast restarts: host port bindings can linger briefly after down (TIME_WAIT / proxy).
+  echo "Waiting for host port bindings to release after teardown..."
+  sleep 3
 fi
 
 if [[ "${IS_STARTUP_COMMAND}" == true ]] && uses_shared_bitvmx_network; then
