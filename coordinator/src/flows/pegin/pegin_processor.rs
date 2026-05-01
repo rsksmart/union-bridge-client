@@ -245,7 +245,7 @@ where
 
             if !matches!(
                 current_step,
-                Steps::DispatchTransaction
+                Steps::DispatchTransactionCheckpoint
                     | Steps::ConfirmAcceptPeginTransaction
                     | Steps::RequestAcceptPeginSpvProof
                     | Steps::AcceptPegin
@@ -288,7 +288,7 @@ where
                 let should_buffer = self
                     .pegin_flows
                     .get(&temp_flow_id)
-                    .is_none_or(|flow| flow.current_step() != Steps::PeginRequested);
+                    .is_none_or(|flow| flow.current_step() != Steps::PeginRequestedCheckpoint);
 
                 if should_buffer {
                     info!(
@@ -448,11 +448,11 @@ where
             };
 
             // Only complete the step if the flow is still waiting for signatures
-            if flow.current_step() != Steps::WaitAcceptPeginSignaturesReady {
+            if flow.current_step() != Steps::WaitAcceptPeginSignaturesReadyCheckpoint {
                 warn!(
                     "Signature flow completed for flow_id: {flow_id} but flow is at step {:?}, expected {:?}. Skipping dispatch step.",
                     flow.current_step(),
-                    Steps::WaitAcceptPeginSignaturesReady
+                    Steps::WaitAcceptPeginSignaturesReadyCheckpoint
                 );
                 continue;
             }

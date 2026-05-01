@@ -320,8 +320,10 @@ pub(crate) enum Steps {
     SignMyCommKey,
     FundMyBitVmxAccount,
     ApplyToStream,
-    DepositP2PData,
-    SetupTakeAggregatedKey,
+    // All-operators checkpoint: every selected committee member has deposited P2P data.
+    DepositP2PDataCheckpoint,
+    // All-operators checkpoint: every selected committee member has completed take-key setup.
+    SetupTakeAggregatedKeyCheckpoint,
     SetupDisputeAggregatedKey,
     SetupPairwiseKeys,
     SetupDisputeCore,
@@ -329,6 +331,8 @@ pub(crate) enum Steps {
     DisputeChannelSetup,
     FullPenalizationSetup,
     DepositAggregatedKey,
+    // All-operators checkpoint: NewCommitteeReady was confirmed after every selected member
+    // deposited matching aggregated key data.
     Done,
     Failed,
 }
@@ -1548,11 +1552,11 @@ where
                 debug!("CommitteeSetupFlow start apply to stream");
                 self.apply_to_stream()?;
             }
-            Steps::DepositP2PData => {
+            Steps::DepositP2PDataCheckpoint => {
                 debug!("CommitteeSetupFlow start deposit P2PData");
                 self.deposit_communication_data()?;
             }
-            Steps::SetupTakeAggregatedKey => {
+            Steps::SetupTakeAggregatedKeyCheckpoint => {
                 debug!("CommitteeSetupFlow start setup taking aggregated key");
                 self.setup_bitvmx_aggregated_take_pubkey()?;
             }
@@ -1682,19 +1686,19 @@ where
                 if im_selected {
                     self.update_my_committees(pending_committee, &committee_id)?;
                     self.build_committee_data()?;
-                    self.start_step(Steps::DepositP2PData)?;
+                    self.start_step(Steps::DepositP2PDataCheckpoint)?;
                 } else {
                     debug!("Not selected for committee {committee_id}");
                     self.start_step(Steps::Done)?;
                 }
             }
-            Steps::DepositP2PData => {
+            Steps::DepositP2PDataCheckpoint => {
                 debug!("CommitteeSetupFlow completing DepositP2PData");
                 data.into_all_comm_data_ready()?;
                 self.close_communication_data_step()?;
-                self.start_step(Steps::SetupTakeAggregatedKey)?;
+                self.start_step(Steps::SetupTakeAggregatedKeyCheckpoint)?;
             }
-            Steps::SetupTakeAggregatedKey => {
+            Steps::SetupTakeAggregatedKeyCheckpoint => {
                 debug!("CommitteeSetupFlow completing SetupTakeAggregatedKey");
                 Self::close_agg_key_req(&mut self.ctx_mut().agg_take_key_req, data)?;
                 self.start_step(Steps::SetupDisputeAggregatedKey)?;

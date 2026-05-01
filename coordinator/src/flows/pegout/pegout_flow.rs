@@ -34,17 +34,20 @@ const PEGOUT_COMPLETED_VAR_NAME: &str = "PEG_OUT_COMPLETED";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Steps {
     #[default]
-    PegoutRequested,
+    // Global checkpoint: a confirmed RSK PegoutRequested event establishes the shared user request.
+    PegoutRequestedCheckpoint,
     GetCommInfo,
     PrepareUserTakeSetup,
     // The signature flow is executed while waiting in this step (outside the flow).
     WaitUserTakeSignaturesReady,
-    // Dispatch user take transaction.
-    DispatchTransaction,
+    // All-operators checkpoint: every required user-take signature is ready.
+    DispatchTransactionCheckpoint,
     TriggerOperatorTake, // Triggered when timeout expires without signature completion
     ConfirmUserTakeTransaction,
     RequestUserTakeSpvProof,
     RegisterPegout,
+    // Winner/global checkpoint: a confirmed RSK PegoutRegistered event establishes the shared
+    // registerPegout result. Operators may try or skip that exact side effect, then converge here.
     Done,
     Failed,
 }
@@ -53,7 +56,7 @@ impl Steps {
     fn allows_fast_forward_to_pegout_registered(self) -> bool {
         matches!(
             self,
-            Steps::DispatchTransaction
+            Steps::DispatchTransactionCheckpoint
                 | Steps::ConfirmUserTakeTransaction
                 | Steps::RequestUserTakeSpvProof
                 | Steps::RegisterPegout
@@ -135,7 +138,7 @@ where
             bitvmx_broker,
             state: State {
                 flow_id: internal_id,
-                step: Steps::PegoutRequested,
+                step: Steps::PegoutRequestedCheckpoint,
                 ctx: FlowContext {
                     pegout_requested: pegout_requested.inner.clone(),
                     request_pegout_tx_hash: pegout_requested.tx_hash.to_string(),
@@ -186,7 +189,7 @@ where
         );
 
         match next_step {
-            Steps::PegoutRequested => {
+            Steps::PegoutRequestedCheckpoint => {
                 unreachable!("Init step should not be reached in start_step");
             }
             Steps::GetCommInfo => {
@@ -202,7 +205,7 @@ where
                     self.state.flow_id
                 );
             }
-            Steps::DispatchTransaction => {
+            Steps::DispatchTransactionCheckpoint => {
                 self.dispatch_transaction()?;
                 self.complete_step(&StepData::UserTakeTransactionDispatched)?;
             }
@@ -285,7 +288,7 @@ where
 
     fn process_step_data(&mut self, current_step: Steps, data: &StepData) -> Result<Steps> {
         match (current_step, data) {
-            (Steps::PegoutRequested, StepData::PegoutRequested) => Ok(Steps::GetCommInfo),
+            (Steps::PegoutRequestedCheckpoint, StepData::PegoutRequested) => Ok(Steps::GetCommInfo),
             (Steps::GetCommInfo, StepData::CommInfo(comm_info)) => {
                 self.state.ctx.my_p2p_address = Some(comm_info.clone());
                 Ok(Steps::PrepareUserTakeSetup)
@@ -295,9 +298,9 @@ where
                 Ok(Steps::WaitUserTakeSignaturesReady)
             }
             (Steps::WaitUserTakeSignaturesReady, StepData::UserTakeSignaturesReady) => {
-                Ok(Steps::DispatchTransaction)
+                Ok(Steps::DispatchTransactionCheckpoint)
             }
-            (Steps::DispatchTransaction, StepData::UserTakeTransactionDispatched) => {
+            (Steps::DispatchTransactionCheckpoint, StepData::UserTakeTransactionDispatched) => {
                 Ok(Steps::ConfirmUserTakeTransaction)
             }
             (Steps::WaitUserTakeSignaturesReady, StepData::TriggerOperatorTakeTimeout) => {
@@ -702,11 +705,11 @@ where
 /// Helper function to format step names
 fn format_step(step: Steps) -> &'static str {
     match step {
-        Steps::PegoutRequested => "PegoutRequested",
+        Steps::PegoutRequestedCheckpoint => "PegoutRequestedCheckpoint",
         Steps::GetCommInfo => "GetCommInfo",
         Steps::PrepareUserTakeSetup => "PrepareUserTakeSetup",
         Steps::WaitUserTakeSignaturesReady => "WaitUserTakeSignaturesReady",
-        Steps::DispatchTransaction => "DispatchTransaction",
+        Steps::DispatchTransactionCheckpoint => "DispatchTransactionCheckpoint",
         Steps::TriggerOperatorTake => "TriggerOperatorTake",
         Steps::ConfirmUserTakeTransaction => "ValidateTransactionStatus",
         Steps::RequestUserTakeSpvProof => "RequestSpvProof",
@@ -967,7 +970,7 @@ mod tests {
     #[test]
     fn confirmed_pegout_registered_terminalizes_from_dispatch_transaction() {
         let tempdir = TempDir::new();
-        let mut flow = build_flow(Steps::DispatchTransaction, &tempdir, true, true);
+        let mut flow = build_flow(Steps::DispatchTransactionCheckpoint, &tempdir, true, true);
         let event = fake_pegout_registered_event(test_txid([3u8; 32]));
 
         flow.complete_step(&StepData::PegoutRegistered(event.clone())).expect("flow completes");

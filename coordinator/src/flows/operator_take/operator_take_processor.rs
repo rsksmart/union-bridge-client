@@ -795,7 +795,7 @@ where
             .clone()
             .ok_or_else(|| anyhow!("OperatorTake SPV notification missing spv_proof data"))?;
 
-        let needs_retry = if flow.current_step() == Steps::WaitForOperatorTakeSpv {
+        let needs_retry = if flow.current_step() == Steps::WaitForOperatorTakeSpvCheckpoint {
             match flow.complete_step(StepData::OperatorTakeSPV(spv_proof)) {
                 Ok(()) => false,
                 Err(err) if is_missing_native_bridge_confirmations(&err) => true,
@@ -1437,7 +1437,7 @@ mod tests {
             .expect("selected operator should advance after reimbursement kickoff confirmation");
 
         let flow = processor.flows.get(&flow_id).expect("flow should still exist");
-        assert_eq!(flow.current_step(), Steps::WaitForOperatorTakeSpv);
+        assert_eq!(flow.current_step(), Steps::WaitForOperatorTakeSpvCheckpoint);
     }
 
     #[test]
