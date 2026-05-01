@@ -210,11 +210,23 @@ fn execute_wallet_command(addresses: &[String], amount: u64) -> Result<()> {
     cmd.arg("member").arg("send_to_address").arg(&joined).arg(&amount_str);
     cmd.stdin(Stdio::null()).stdout(Stdio::inherit()).stderr(Stdio::inherit());
 
-    let status = cmd.status().context("failed to execute cli-bitcoin-wallet.sh")?;
+    println!("Running: {} member send_to_address {} {}", wallet_script, joined, amount);
 
-    if !status.success() {
-        bail!("wallet command failed with status {}", status);
+    let output = cmd.output().context("failed to execute cli-bitcoin-wallet.sh")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        bail!(
+            "wallet command failed with status {}:\nstdout: {}\nstderr: {}",
+            output.status,
+            stdout.trim(),
+            stderr.trim()
+        );
     }
+    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    println!("{}", stdout);
 
     Ok(())
 }

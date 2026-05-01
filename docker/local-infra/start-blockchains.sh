@@ -39,7 +39,6 @@ print_help() {
   echo "  $0 up -d                            # Start (uses contracts version from Cargo.toml)"
   echo "  $0 --fresh up -d                    # Clean and start local blockchains"
   echo "  $0 --contracts-tag ${CONTRACTS_TAG_LOCAL_BUILD} up -d # Build predeployed Anvil from local contracts"
-  echo "  $0 --contracts-tag ${CONTRACTS_TAG_LOCAL_BUILD} up -d # Build predeployed Anvil from local contracts"
   echo "  $0 --contracts-tag v0.2.0-alpha.1 up -d   # Use specific registry tag"
   echo "  $0 --contracts-tag v0.2.0-alpha.1 --pull-contracts up -d # Force pull specific registry tag"
   echo "  $0 down                             # Stop blockchains"
@@ -163,14 +162,12 @@ else
     echo "       Expected format: union-contracts = { ..., tag = \"<version>\", ... } on a single line." >&2
     exit 1
   fi
+  # Map git tag to image tag when they differ (e.g. v0.2.0-alpha -> v0.2.0-alpha.1)
+  case "$CONTRACTS_IMAGE_TAG" in
+    v0.2.0-alpha) CONTRACTS_IMAGE_TAG="v0.2.0-alpha.1" ;;
+    v0.4.1-alpha) CONTRACTS_IMAGE_TAG="v0.4.1-alpha-10-4-2" ;;
+  esac
 fi
-# Map git tag to Docker image tag when they differ (Cargo.toml / --contracts-tag may use git tag only).
-# e.g. registry publishes v0.4.1-alpha-10-4-2, not bare v0.4.1-alpha.
-case "$CONTRACTS_IMAGE_TAG" in
-  v0.2.0-alpha) CONTRACTS_IMAGE_TAG="v0.2.0-alpha.1" ;;
-  v0.4.1-alpha) CONTRACTS_IMAGE_TAG="v0.4.1-alpha-10-4-2" ;;
-esac
-export PREDEPLOYED_ANVIL_IMAGE_BASE
 export PREDEPLOYED_ANVIL_IMAGE_BASE
 export CONTRACTS_IMAGE_TAG
 
@@ -205,7 +202,6 @@ fi
 # Pull only if the image is missing locally or --pull-contracts was requested.
 if [[ "${IS_UP_COMMAND}" == true && "${CONTRACTS_IMAGE_TAG}" != "${CONTRACTS_TAG_LOCAL_BUILD}" ]]; then
   PREDEPLOYED_ANVIL_IMAGE="${PREDEPLOYED_ANVIL_IMAGE_BASE}:${CONTRACTS_IMAGE_TAG}"
-  PREDEPLOYED_ANVIL_IMAGE="${PREDEPLOYED_ANVIL_IMAGE_BASE}:${CONTRACTS_IMAGE_TAG}"
   DIGEST_BEFORE=""
   IMAGE_EXISTS=false
   if docker image inspect "$PREDEPLOYED_ANVIL_IMAGE" >/dev/null 2>&1; then
@@ -239,14 +235,10 @@ if [[ "${IS_UP_COMMAND}" == true && "${CONTRACTS_IMAGE_TAG}" != "${CONTRACTS_TAG
 fi
 
 # When switching contracts tag: force fresh start so Anvil loads the matching chain state
-# When switching contracts tag: force fresh start so Anvil loads the matching chain state
 if [[ "${IS_UP_COMMAND}" == true ]]; then
   CURRENT_IMAGE=$(docker inspect anvil --format '{{.Config.Image}}' 2>/dev/null || true)
   EXPECTED_IMAGE="${PREDEPLOYED_ANVIL_IMAGE_BASE}:${CONTRACTS_IMAGE_TAG}"
-  CURRENT_IMAGE=$(docker inspect anvil --format '{{.Config.Image}}' 2>/dev/null || true)
-  EXPECTED_IMAGE="${PREDEPLOYED_ANVIL_IMAGE_BASE}:${CONTRACTS_IMAGE_TAG}"
   if [[ -n "$CURRENT_IMAGE" && "$CURRENT_IMAGE" != "$EXPECTED_IMAGE" ]]; then
-    echo "Contracts tag changed ($CURRENT_IMAGE -> $EXPECTED_IMAGE); forcing fresh start"
     echo "Contracts tag changed ($CURRENT_IMAGE -> $EXPECTED_IMAGE); forcing fresh start"
     FRESH=true
   fi
@@ -286,7 +278,6 @@ if [[ "${IS_UP_COMMAND}" == true ]]; then
   wait_for_anvil_rpc
 fi
 
-# If using 'up' command after a fresh teardown, create the Bitcoin wallet.
 # If using 'up' command after a fresh teardown, create the Bitcoin wallet.
 if [[ "${IS_UP_COMMAND}" == true && "${FRESH}" == true ]]; then
   # Create wallet

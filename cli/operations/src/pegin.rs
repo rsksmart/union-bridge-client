@@ -148,11 +148,21 @@ fn execute_wallet_command(
     io::stdout().flush().ok();
     cmd.stdin(Stdio::null()).stdout(Stdio::inherit()).stderr(Stdio::inherit());
 
-    let status = cmd.status().context("failed to execute cli-bitcoin-wallet.sh")?;
+    let output = cmd.output().context("failed to execute cli-bitcoin-wallet.sh")?;
 
-    if !status.success() {
-        bail!("wallet command failed with status {}", status);
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        bail!(
+            "wallet command failed with status {}:\nstdout: {}\nstderr: {}",
+            output.status,
+            stdout.trim(),
+            stderr.trim()
+        );
     }
+    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    println!("{}", stdout);
 
     Ok(())
 }
