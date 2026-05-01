@@ -1,7 +1,10 @@
 use std::env;
 use std::fs;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::thread::sleep;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Context, Result};
 use bitcoin::address::Address as BitcoinAddress;
@@ -108,10 +111,12 @@ fn print_instructions(env: &Environment, addresses: &[String], amount: u64, fund
 }
 
 /// Stale `ub-wallet --mode member` children (e.g. after a prior CLI timeout) can hold the RocksDB
-/// lock and block the next `send_to_address` indefinitely. The E2E framework does the same `pkill`
-/// before Node-spawned wallet calls; this path spawns the wallet from the `operations` binary, so
-/// we clear here too. Opt out with `UNION_BRIDGE_E2E_PKILL_UB_WALLET=0` (same env as
-/// `BitcoinWalletCliAdapter` in the e2e framework).
+/// lock and block the next `send_to_address` indefinitely. The E2E framework does the same
+/// SIGTERM → poll → SIGKILL sequence before Node-spawned wallet calls; this path spawns the
+/// wallet from the `operations` binary, so we clear here too. A bare `pkill` is not enough:
+/// `SIGTERM` doesn't reap a process wedged in a syscall, and the new wallet then starts up while
+/// the lock is still held — exactly the silent hang we keep observing. Opt out with
+/// `UNION_BRIDGE_E2E_PKILL_UB_WALLET=0` (same env as `BitcoinWalletCliAdapter` in the e2e framework).
 #[cfg(unix)]
 fn kill_stale_member_ub_wallet_processes() {
     if env::var("UNION_BRIDGE_E2E_PKILL_UB_WALLET")
@@ -120,42 +125,96 @@ fn kill_stale_member_ub_wallet_processes() {
     {
         return;
     }
-    let _ = Command::new("pkill")
-        .args(["-f", "ub-wallet.*--mode member"])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
+
+    const PATTERN: &str = "ub-wallet.*--mode member";
+
+    if !is_member_ub_wallet_running(PATTERN) {
+        return;
+    }
+
+    eprintln!("[wallet-cleanup] stale `ub-wallet --mode member` detected; sending SIGTERM");
+    let _ = run_pkill(PATTERN, false);
+    if wait_until_no_member_ub_wallet(PATTERN, Duration::from_secs(5)) {
+        eprintln!("[wallet-cleanup] stale wallet exited after SIGTERM");
+        return;
+    }
+
+    eprintln!("[wallet-cleanup] still alive after 5s; escalating to SIGKILL");
+    let _ = run_pkill(PATTERN, true);
+    if wait_until_no_member_ub_wallet(PATTERN, Duration::from_secs(2)) {
+        eprintln!("[wallet-cleanup] stale wallet exited after SIGKILL");
+        return;
+    }
+
+    eprintln!(
+        "[wallet-cleanup] WARNING: `ub-wallet --mode member` survived SIGKILL; the next wallet command will likely block on the regtest member RocksDB lock"
+    );
 }
 #[cfg(not(unix))]
 fn kill_stale_member_ub_wallet_processes() {}
+
+#[cfg(unix)]
+fn is_member_ub_wallet_running(pattern: &str) -> bool {
+    Command::new("pgrep")
+        .args(["-f", pattern])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+#[cfg(unix)]
+fn wait_until_no_member_ub_wallet(pattern: &str, max_wait: Duration) -> bool {
+    let deadline = Instant::now() + max_wait;
+    loop {
+        if !is_member_ub_wallet_running(pattern) {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        sleep(Duration::from_millis(200));
+    }
+}
+
+#[cfg(unix)]
+fn run_pkill(pattern: &str, force: bool) -> bool {
+    let mut cmd = Command::new("pkill");
+    if force {
+        cmd.arg("-9");
+    }
+    cmd.args(["-f", pattern])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok()
+}
+
 fn execute_wallet_command(addresses: &[String], amount: u64) -> Result<()> {
     kill_stale_member_ub_wallet_processes();
     let wallet_script = "./cli-bitcoin-wallet.sh";
     let joined = addresses.join(",");
     let amount_str = amount.to_string();
 
-    // just send to addresses - utxo mining and block mining handled externally
+    println!("Running: {} member send_to_address {} {}", wallet_script, joined, amount);
+    // Stream child stdio so that, when the wallet hangs, the captured CI log shows exactly which
+    // step it reached (e.g. "Opening UTXO database…" vs "broadcasted tx 1 -> …"). The previous
+    // `cmd.output()` only flushed buffered output after the child exited, leaving us blind on
+    // hangs and forcing the framework to fail with no actionable signal.
+    io::stdout().flush().ok();
+
     let mut cmd = Command::new(wallet_script);
     cmd.arg("member").arg("send_to_address").arg(&joined).arg(&amount_str);
+    cmd.stdin(Stdio::null()).stdout(Stdio::inherit()).stderr(Stdio::inherit());
 
-    println!("Running: {} member send_to_address {} {}", wallet_script, joined, amount);
+    let status = cmd.status().context("failed to execute cli-bitcoin-wallet.sh")?;
 
-    let output = cmd.output().context("failed to execute cli-bitcoin-wallet.sh")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        bail!(
-            "wallet command failed with status {}:\nstdout: {}\nstderr: {}",
-            output.status,
-            stdout.trim(),
-            stderr.trim()
-        );
+    if !status.success() {
+        bail!("wallet command failed with status {}", status);
     }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    println!("{}", stdout);
 
     Ok(())
 }

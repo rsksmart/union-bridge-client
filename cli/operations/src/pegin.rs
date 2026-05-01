@@ -1,4 +1,5 @@
-use std::process::Command;
+use std::io::{self, Write};
+use std::process::{Command, Stdio};
 
 use anyhow::{anyhow, bail, Context, Result};
 use reqwest::Client;
@@ -141,22 +142,17 @@ fn execute_wallet_command(
         rsk_address,
         enabler_script_pubkey
     );
+    // Stream child stdio so a hang in `ub-wallet --mode user create_pegin_tx` shows in the parent
+    // log exactly which step it reached. Buffered `cmd.output()` only surfaces the wallet's
+    // progress after the child exits, which is useless when it never does.
+    io::stdout().flush().ok();
+    cmd.stdin(Stdio::null()).stdout(Stdio::inherit()).stderr(Stdio::inherit());
 
-    let output = cmd.output().context("failed to execute cli-bitcoin-wallet.sh")?;
+    let status = cmd.status().context("failed to execute cli-bitcoin-wallet.sh")?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        bail!(
-            "wallet command failed with status {}:\nstdout: {}\nstderr: {}",
-            output.status,
-            stdout.trim(),
-            stderr.trim()
-        );
+    if !status.success() {
+        bail!("wallet command failed with status {}", status);
     }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    println!("{}", stdout);
 
     Ok(())
 }
