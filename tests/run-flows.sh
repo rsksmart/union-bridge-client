@@ -24,6 +24,8 @@ VALUE=""
 USER_UTXO_VALUE=""
 MEMBER_UTXO_VALUE=""
 RSK_ADDRESS=""
+EXPECTED_PEGIN_STARTED_AT_EPOCH=""
+EXPECTED_PEGOUT_STARTED_AT_EPOCH=""
 COMMITTEE_REGISTRY_ADDRESS="0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82"
 FORCE_ADVANCE_FILE="/tmp/FORCE_ADVANCE"
 FORCE_ADVANCE_TARGET_OPERATOR_ID=""
@@ -248,6 +250,37 @@ validate_script_env() {
     fi
 }
 
+running_docker_operator_coordinators() {
+    if ! command -v docker &> /dev/null; then
+        return 0
+    fi
+
+    local op_id
+    for op_id in $(seq 1 10); do
+        docker ps --format '{{.Names}}' \
+            --filter "label=com.docker.compose.project=op_${op_id}" \
+            --filter "label=com.docker.compose.service=coordinator" \
+            2>/dev/null
+    done
+}
+
+ensure_selected_env_matches_running_mode() {
+    if [[ "$SCRIPT_ENV" != "local" ]]; then
+        return 0
+    fi
+
+    local running_coordinators=""
+    running_coordinators=$(running_docker_operator_coordinators | tr '\n' ' ' | sed 's/[[:space:]]*$//')
+    if [[ -z "$running_coordinators" ]]; then
+        return 0
+    fi
+
+    echo "Error: --env local cannot be used while Docker operator coordinators are running." >&2
+    echo "Detected coordinator container(s): $running_coordinators" >&2
+    echo "Use --env docker for docker/operator/start-operators.sh, or stop the Docker operators before running --env local." >&2
+    return 1
+}
+
 load_num_operators() {
     if [[ -n "$OPS_FROM_FLAG" ]]; then
         NUM_OPERATORS="$OPS_FROM_FLAG"
@@ -423,57 +456,47 @@ wait_for_condition() {
     return 1
 }
 
-docker_bitvmx_container_healthy() {
-    local container_name="$1"
+docker_container_healthy() {
+    local container_ref="$1"
     local status
 
-    if ! status=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "${container_name}" 2>/dev/null); then
+    if ! status=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "${container_ref}" 2>/dev/null); then
         return 1
     fi
 
     [[ "${status}" == "healthy" ]]
 }
 
-wait_for_docker_bitvmx_health() {
+wait_for_docker_coordinator_health() {
     local op_id
 
     for op_id in $(seq 1 "$NUM_OPERATORS"); do
-        if ! wait_for_condition "bitvmx-client-${op_id} health" 90 docker_bitvmx_container_healthy "bitvmx-client-${op_id}"; then
+        local container_id=""
+        container_id=$(docker_coordinator_container_id "$op_id")
+        if [[ -z "$container_id" ]]; then
+            echo "Error: failed to find Docker coordinator container for operator ${op_id}" >&2
+            return 1
+        fi
+
+        if ! wait_for_condition "coordinator-${op_id} health" 90 docker_container_healthy "$container_id"; then
             return 1
         fi
     done
 }
 
-all_user_api_endpoints_ready() {
-    local op_id
-
-    for op_id in $(seq 1 "$NUM_OPERATORS"); do
-        local endpoint=""
-        endpoint=$(user_api_endpoint_for_operator "$op_id")
-        if ! fetch_member_rsk_address_from_user_api "$endpoint" > /dev/null; then
-            return 1
-        fi
-    done
+local_coordinator_process_count() {
+    ps -eo command= 2>/dev/null \
+        | awk '/[\/ ]coordinator --config local/ && !/awk/ { count++ } END { print count + 0 }'
 }
 
-report_unready_user_api_endpoints() {
-    local missing=()
-    local op_id
+local_coordinators_running() {
+    local count
+    count=$(local_coordinator_process_count)
+    [[ "$count" -ge "$NUM_OPERATORS" ]]
+}
 
-    for op_id in $(seq 1 "$NUM_OPERATORS"); do
-        local endpoint=""
-        endpoint=$(user_api_endpoint_for_operator "$op_id")
-        if ! fetch_member_rsk_address_from_user_api "$endpoint" > /dev/null; then
-            missing+=("${op_id} (${endpoint})")
-        fi
-    done
-
-    if [[ "${#missing[@]}" -eq 0 ]]; then
-        return 0
-    fi
-
-    printf 'Error: user-api not ready for operator(s): %s\n' "${missing[*]}" >&2
-    return 1
+wait_for_local_coordinator_health() {
+    wait_for_condition "all ${NUM_OPERATORS} local coordinator processes" 30 local_coordinators_running
 }
 
 wait_for_test_prereqs() {
@@ -494,18 +517,14 @@ wait_for_test_prereqs() {
         return 1
     fi
 
-    if ! wait_for_condition "all ${NUM_OPERATORS} user-api endpoints" 60 all_user_api_endpoints_ready; then
-        if ! report_unready_user_api_endpoints; then
-            :
-        fi
-        return 1
-    fi
-
     if [[ "$SCRIPT_ENV" == "docker" ]]; then
-        if ! wait_for_docker_bitvmx_health; then
-            echo "Error: Docker BitVMX clients are not healthy" >&2
+        if ! wait_for_docker_coordinator_health; then
+            echo "Error: Docker coordinators are not healthy" >&2
             return 1
         fi
+    elif ! wait_for_local_coordinator_health; then
+        echo "Error: Local coordinators are not running" >&2
+        return 1
     fi
 }
 
@@ -658,12 +677,18 @@ completion_marker_matches_kind() {
                 > /dev/null
             ;;
         pegin)
+            local started_at_epoch="${EXPECTED_PEGIN_STARTED_AT_EPOCH:-0}"
             completion_marker_payload_json "$ref" | jq -e --arg pegin_txid "$EXPECTED_PEGIN_TXID" \
-                '.payload.request_pegin_btc_tx_id == $pegin_txid' > /dev/null
+                --argjson started_at_epoch "$started_at_epoch" \
+                '.payload.request_pegin_btc_tx_id == $pegin_txid and (.completed_at | fromdateiso8601) >= $started_at_epoch' \
+                > /dev/null
             ;;
         pegout|advance-funds)
+            local started_at_epoch="${EXPECTED_PEGOUT_STARTED_AT_EPOCH:-0}"
             completion_marker_payload_json "$ref" | jq -e --arg request_tx_hash "$EXPECTED_REQUEST_PEGOUT_TX_HASH" \
-                '.payload.request_pegout_tx_hash == $request_tx_hash' > /dev/null
+                --argjson started_at_epoch "$started_at_epoch" \
+                '.payload.request_pegout_tx_hash == $request_tx_hash and (.completed_at | fromdateiso8601) >= $started_at_epoch' \
+                > /dev/null
             ;;
         *)
             echo "Error: unsupported marker kind '$kind'" >&2
@@ -1520,6 +1545,7 @@ run_pegin_phase() {
     fi
     local pegin_start_time
     pegin_start_time=$(date +%s)
+    EXPECTED_PEGIN_STARTED_AT_EPOCH="$pegin_start_time"
 
     log "Preparing user wallet for pegin..."
     if ! prepare_user_wallet_for_pegin; then
@@ -1576,6 +1602,7 @@ run_pegout_phase() {
     fi
     local pegout_start_time
     pegout_start_time=$(date +%s)
+    EXPECTED_PEGOUT_STARTED_AT_EPOCH="$pegout_start_time"
     RSK_ADDRESS=$(resolve_user_rsk_address) || return 1
     local user_btc_balance_before_sat
     user_btc_balance_before_sat=$(user_btc_balance_sat)
@@ -1635,6 +1662,7 @@ run_operator_take_phase() {
     step "Operator Take"
     local operator_take_start_time
     operator_take_start_time=$(date +%s)
+    EXPECTED_PEGOUT_STARTED_AT_EPOCH="$operator_take_start_time"
     RSK_ADDRESS=$(resolve_user_rsk_address) || return 1
     local user_btc_balance_before_sat
     user_btc_balance_before_sat=$(user_btc_balance_sat)
@@ -1739,6 +1767,7 @@ main() {
     initialize_script_env_default
     parse_args "$@" || return 1
     validate_script_env || return 1
+    ensure_selected_env_matches_running_mode || return 1
 
     cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
