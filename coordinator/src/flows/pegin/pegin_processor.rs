@@ -245,7 +245,8 @@ where
 
             if !matches!(
                 current_step,
-                Steps::ConfirmAcceptPeginTransaction
+                Steps::DispatchTransaction
+                    | Steps::ConfirmAcceptPeginTransaction
                     | Steps::RequestAcceptPeginSpvProof
                     | Steps::AcceptPegin
             ) {
@@ -447,11 +448,11 @@ where
             };
 
             // Only complete the step if the flow is still waiting for signatures
-            if flow.current_step() != Steps::DispatchTransaction {
+            if flow.current_step() != Steps::WaitAcceptPeginSignaturesReady {
                 warn!(
                     "Signature flow completed for flow_id: {flow_id} but flow is at step {:?}, expected {:?}. Skipping dispatch step.",
                     flow.current_step(),
-                    Steps::DispatchTransaction
+                    Steps::WaitAcceptPeginSignaturesReady
                 );
                 continue;
             }
@@ -475,7 +476,7 @@ where
                 let step_data = StepData::PeginAccepted(event.inner.clone());
                 flow.complete_step(&step_data)?;
             } else {
-                let step_data = StepData::DispatchAcceptPeginTransaction;
+                let step_data = StepData::AcceptPeginSignaturesReady;
                 flow.complete_step(&step_data)?;
             }
         }

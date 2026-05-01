@@ -54,7 +54,9 @@ pub enum Steps {
     AddOperatorTakeHash,
     // Wait until every operator take tx hash has been registered on Rootstock
     WaitAllOperatorTakeTxidsAdded,
-    // Signature flow is executed between these steps (outside the flow)
+    // Signature flow is executed while waiting in this step (outside the flow)
+    WaitAcceptPeginSignaturesReady,
+    // Dispatch accept pegin transaction
     DispatchTransaction,
     // Confirm accept pegin transaction
     ConfirmAcceptPeginTransaction,
@@ -88,8 +90,10 @@ pub enum StepData {
     OperatorTakeHashAdded,
     // All operator take tx hashes added
     AllOperatorTakeTxidsAdded,
-    // Dispatch accept pegin transaction
-    DispatchAcceptPeginTransaction,
+    // Accept pegin signatures are ready
+    AcceptPeginSignaturesReady,
+    // Accept pegin transaction has been dispatched
+    AcceptPeginTransactionDispatched,
     // Accept pegin transaction confirmed
     AcceptPeginTransactionConfirmed(TransactionStatus),
     // SPV proof for accept pegin
@@ -285,14 +289,17 @@ where
             Steps::WaitAllOperatorTakeTxidsAdded => {
                 info!("Waiting for AllOperatorTakeTxidsAdded for flow_id: {}", self.state.flow_id);
             }
-            Steps::DispatchTransaction => {
+            Steps::WaitAcceptPeginSignaturesReady => {
                 info!(
                     "Waiting for signatures to be ready to dispatch transaction for flow_id: {}",
                     self.state.flow_id
                 );
             }
-            Steps::ConfirmAcceptPeginTransaction => {
+            Steps::DispatchTransaction => {
                 self.dispatch_transaction()?;
+                self.complete_step(&StepData::AcceptPeginTransactionDispatched)?;
+            }
+            Steps::ConfirmAcceptPeginTransaction => {
                 // Transaction status will be polled via TickScheduler in the processor
                 // to ensure the transaction has time to be broadcast before querying
                 info!(
@@ -402,9 +409,12 @@ where
             }
             (Steps::AddOperatorTakeHash, StepData::AllOperatorTakeTxidsAdded)
             | (Steps::WaitAllOperatorTakeTxidsAdded, StepData::AllOperatorTakeTxidsAdded) => {
+                Ok(Steps::WaitAcceptPeginSignaturesReady)
+            }
+            (Steps::WaitAcceptPeginSignaturesReady, StepData::AcceptPeginSignaturesReady) => {
                 Ok(Steps::DispatchTransaction)
             }
-            (Steps::DispatchTransaction, StepData::DispatchAcceptPeginTransaction) => {
+            (Steps::DispatchTransaction, StepData::AcceptPeginTransactionDispatched) => {
                 Ok(Steps::ConfirmAcceptPeginTransaction)
             }
             (
@@ -1040,6 +1050,7 @@ fn format_step(step: Steps) -> &'static str {
         Steps::RequestOperatorWonTransactionInfo => "RequestOperatorWonTransactionInfo",
         Steps::AddOperatorTakeHash => "AddOperatorTakeHash",
         Steps::WaitAllOperatorTakeTxidsAdded => "WaitAllOperatorTakeTxidsAdded",
+        Steps::WaitAcceptPeginSignaturesReady => "WaitAcceptPeginSignaturesReady",
         Steps::DispatchTransaction => "DispatchTransaction",
         Steps::ConfirmAcceptPeginTransaction => "ConfirmAcceptPeginTransaction",
         Steps::RequestAcceptPeginSpvProof => "RequestAcceptPeginSpvProof",
@@ -1570,6 +1581,59 @@ mod tests {
         let result = flow.start_step(Steps::WaitAllOperatorTakeTxidsAdded);
         assert!(result.is_ok());
         assert_eq!(flow.current_step(), Steps::WaitAllOperatorTakeTxidsAdded);
+    }
+
+    #[test]
+    fn test_accept_pegin_signatures_ready_dispatches_transaction() {
+        let my_address = test_address([1u8; 20]);
+        let flow_id = Uuid::new_v4();
+        let accept_pegin_txid = test_txid([8u8; 32]);
+        let mut ctx = create_default_flow_context(
+            flow_id,
+            Steps::WaitAcceptPeginSignaturesReady,
+            Some(ParticipantRole::Verifier),
+        );
+        ctx.bitvmx_pegin_accepted = Some(default_pegin_accepted_message(accept_pegin_txid));
+
+        let mut mock_contracts = crate::coordinator::tests::MockRskContractsGatewayApi::new();
+        mock_contracts.expect_my_address().returning(move || my_address);
+        let mock_contracts = std::rc::Rc::new(mock_contracts);
+
+        let mut mock_broker =
+            MockBrokerClientApi::<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>::new();
+        mock_broker
+            .expect_send()
+            .withf(move |msg| {
+                matches!(
+                    msg,
+                    IncomingBitVMXApiMessages::DispatchTransactionName(id, name)
+                        if *id == flow_id && name == "ACCEPT_PEGIN_TX"
+                )
+            })
+            .times(1)
+            .returning(|_| Ok(true));
+        let mock_broker = std::rc::Rc::new(mock_broker);
+
+        let mut mock_store = MockCoordinatorStoreApi::new();
+        mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
+        let mock_store = std::rc::Rc::new(mock_store);
+
+        let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
+        let state = State { flow_id: ctx.flow_id, ctx };
+        let mut flow = PeginFlow::from_saved_state(
+            mock_contracts,
+            rt_sync,
+            mock_broker,
+            state,
+            mock_store,
+            std::rc::Rc::new(crate::flows::common::Signaling::new("/tmp", "disabled")),
+            NativeBridgeVerifier::Dummy,
+        );
+
+        let result = flow.complete_step(&StepData::AcceptPeginSignaturesReady);
+
+        assert!(result.is_ok());
+        assert_eq!(flow.current_step(), Steps::ConfirmAcceptPeginTransaction);
     }
 
     #[test]

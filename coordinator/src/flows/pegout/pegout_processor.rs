@@ -339,16 +339,16 @@ where
 
             if let Some(flow) = self.pegout_flows.get_mut(flow_id) {
                 // Only complete the step if the flow is still waiting for signatures
-                if flow.current_step() != Steps::DispatchTransaction {
+                if flow.current_step() != Steps::WaitUserTakeSignaturesReady {
                     warn!(
                         "Signature flow completed for flow_id: {flow_id} but flow is at step {:?}, expected {:?}. Skipping dispatch step.",
                         flow.current_step(),
-                        Steps::DispatchTransaction
+                        Steps::WaitUserTakeSignaturesReady
                     );
                     continue;
                 }
 
-                flow.complete_step(&StepData::DispatchTransaction)?;
+                flow.complete_step(&StepData::UserTakeSignaturesReady)?;
 
                 // Cancel advance funds timeout since signatures completed successfully
                 if self.advance_funds_timeout_scheduler.is_scheduled(flow_id) {
@@ -494,7 +494,7 @@ where
         for flow_id in pending_flows {
             if let Some(flow) = self.pegout_flows.get(&flow_id) {
                 // Only schedule if flow is still waiting for signatures (not yet dispatched)
-                if flow.current_step() == Steps::DispatchTransaction {
+                if flow.current_step() == Steps::WaitUserTakeSignaturesReady {
                     self.advance_funds_timeout_scheduler.schedule(
                         flow_id,
                         current_timestamp,
@@ -532,7 +532,7 @@ where
     }
 
     /// Trigger operator take for a flow when timeout expires
-    /// This completes the `DispatchTransaction` step with `TriggerOperatorTakeTimeout` data
+    /// This completes the `WaitUserTakeSignaturesReady` step with `TriggerOperatorTakeTimeout` data
     fn trigger_operator_take_for_flow(&mut self, flow_id: Uuid) -> Result<()> {
         let flow = self
             .pegout_flows
@@ -540,18 +540,18 @@ where
             .ok_or_else(|| anyhow!("Flow not found for flow_id: {flow_id}"))?;
 
         // Verify flow is still in the expected state
-        if flow.current_step() != Steps::DispatchTransaction {
+        if flow.current_step() != Steps::WaitUserTakeSignaturesReady {
             warn!(
                 "Cannot trigger operator take for flow_id: {} - flow is at step {:?}, expected {:?}",
                 flow_id,
                 flow.current_step(),
-                Steps::DispatchTransaction
+                Steps::WaitUserTakeSignaturesReady
             );
             return Ok(());
         }
 
         info!(
-            "Timeout expired for flow_id: {flow_id}, completing DispatchTransaction step with TriggerOperatorTakeTimeout",
+            "Timeout expired for flow_id: {flow_id}, completing WaitUserTakeSignaturesReady step with TriggerOperatorTakeTimeout",
         );
 
         // Remove the signature flow since we're bypassing it via timeout
@@ -559,7 +559,7 @@ where
             debug!("Removed signature flow for flow_id: {flow_id} due to timeout");
         }
 
-        // Complete the DispatchTransaction step with timeout data
+        // Complete the WaitUserTakeSignaturesReady step with timeout data
         // This will transition to TriggerOperatorTake step, which will call trigger_operator_take
         flow.complete_step(&StepData::TriggerOperatorTakeTimeout)?;
 
@@ -1145,16 +1145,17 @@ mod tests {
 
     /// Regression test for the bug where a signature flow completing after
     /// the advance-funds timeout caused "Invalid state transition: Done with
-    /// data `DispatchTransaction`".
+    /// data `UserTakeSignaturesReady`".
     ///
     /// Timeline of the bug:
-    ///   1. Pegout flow reaches `DispatchTransaction` (waiting for BTC signatures)
+    ///   1. Pegout flow reaches `WaitUserTakeSignaturesReady`
+    ///      (waiting for BTC signatures)
     ///   2. Timeout fires -> flow moves to `TriggerOperatorTake` -> Done
     ///   3. Signature flow completes (5/5 confirmations)
-    ///   4. Processor tries `flow.complete_step(DispatchTransaction)` on a Done flow -> crash
+    ///   4. Processor tries `flow.complete_step(UserTakeSignaturesReady)` on a Done flow -> crash
     ///
     /// The fix (9b681821) adds a guard: skip the `complete_step` call if the
-    /// flow is no longer at `DispatchTransaction`.
+    /// flow is no longer at `WaitUserTakeSignaturesReady`.
     #[test]
     fn test_signature_completion_after_timeout_does_not_crash() {
         let mut harness = TestHarness::new();
