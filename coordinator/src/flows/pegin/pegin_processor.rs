@@ -331,8 +331,8 @@ where
 
                 self.signature_flows.insert(flow_id, btc_sig_subflow);
 
-                // Complete the step to move to the next state
-                let step_data = StepData::OperatorTakeHashAdded;
+                // Complete the wait step to move to the next state
+                let step_data = StepData::AllOperatorTakeTxidsAdded;
                 flow.complete_step(&step_data)?;
             }
         } else {

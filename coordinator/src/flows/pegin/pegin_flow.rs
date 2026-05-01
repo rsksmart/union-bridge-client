@@ -52,6 +52,8 @@ pub enum Steps {
     RequestOperatorWonTransactionInfo,
     // Add operator take tx hash to contracts after BitVMX accepts
     AddOperatorTakeHash,
+    // Wait until every operator take tx hash has been registered on Rootstock
+    WaitAllOperatorTakeTxidsAdded,
     // Signature flow is executed between these steps (outside the flow)
     DispatchTransaction,
     // Confirm accept pegin transaction
@@ -82,8 +84,10 @@ pub enum StepData {
     BitvmxPeginAccepted(PeginAcceptedMessage),
     // Named transaction information returned by BitVMX
     TransactionInfo { tx_name: String, txid: Txid },
-    // Operator take hash added
+    // Local operator take tx hash submitted
     OperatorTakeHashAdded,
+    // All operator take tx hashes added
+    AllOperatorTakeTxidsAdded,
     // Dispatch accept pegin transaction
     DispatchAcceptPeginTransaction,
     // Accept pegin transaction confirmed
@@ -276,6 +280,10 @@ where
             }
             Steps::AddOperatorTakeHash => {
                 self.add_operator_take_hash()?;
+                self.complete_step(&StepData::OperatorTakeHashAdded)?;
+            }
+            Steps::WaitAllOperatorTakeTxidsAdded => {
+                info!("Waiting for AllOperatorTakeTxidsAdded for flow_id: {}", self.state.flow_id);
             }
             Steps::DispatchTransaction => {
                 info!(
@@ -322,8 +330,11 @@ where
             }
         }
 
-        // Persist state after successful step completion
-        self.persist_state()?;
+        // Persist state after successful step completion. Some entry actions complete
+        // another step synchronously and persist that newer state.
+        if self.state.ctx.step == next_step {
+            self.persist_state()?;
+        }
 
         Ok(())
     }
@@ -375,7 +386,7 @@ where
                 if self.try_get_op_role()? == ParticipantRole::Prover {
                     Ok(Steps::RequestOperatorTakeTransactionInfo)
                 } else {
-                    Ok(Steps::AddOperatorTakeHash)
+                    Ok(Steps::WaitAllOperatorTakeTxidsAdded)
                 }
             }
             (
@@ -387,6 +398,10 @@ where
                 StepData::TransactionInfo { tx_name, txid },
             ) => self.handle_operator_won_transaction_info(tx_name, *txid),
             (Steps::AddOperatorTakeHash, StepData::OperatorTakeHashAdded) => {
+                Ok(Steps::WaitAllOperatorTakeTxidsAdded)
+            }
+            (Steps::AddOperatorTakeHash, StepData::AllOperatorTakeTxidsAdded)
+            | (Steps::WaitAllOperatorTakeTxidsAdded, StepData::AllOperatorTakeTxidsAdded) => {
                 Ok(Steps::DispatchTransaction)
             }
             (Steps::DispatchTransaction, StepData::DispatchAcceptPeginTransaction) => {
@@ -1003,6 +1018,7 @@ fn format_step(step: Steps) -> &'static str {
         Steps::RequestOperatorTakeTransactionInfo => "RequestOperatorTakeTransactionInfo",
         Steps::RequestOperatorWonTransactionInfo => "RequestOperatorWonTransactionInfo",
         Steps::AddOperatorTakeHash => "AddOperatorTakeHash",
+        Steps::WaitAllOperatorTakeTxidsAdded => "WaitAllOperatorTakeTxidsAdded",
         Steps::DispatchTransaction => "DispatchTransaction",
         Steps::ConfirmAcceptPeginTransaction => "ConfirmAcceptPeginTransaction",
         Steps::RequestAcceptPeginSpvProof => "RequestAcceptPeginSpvProof",
@@ -1432,7 +1448,7 @@ mod tests {
             txid,
         });
         assert!(result.is_ok());
-        assert_eq!(flow.current_step(), Steps::AddOperatorTakeHash);
+        assert_eq!(flow.current_step(), Steps::WaitAllOperatorTakeTxidsAdded);
         assert_eq!(flow.get_state().ctx.operator_won_txid, Some(txid));
     }
 
@@ -1475,20 +1491,44 @@ mod tests {
             default_pegin_accepted_message(btc_tx_id),
         ));
         assert!(result.is_ok());
-        assert_eq!(flow.current_step(), Steps::AddOperatorTakeHash);
+        assert_eq!(flow.current_step(), Steps::WaitAllOperatorTakeTxidsAdded);
     }
 
     #[test]
-    fn test_add_operator_take_hash_verifier_skips() {
+    fn test_wait_all_operator_take_txids_added_has_no_entry_action() {
         let my_address = test_address([1u8; 20]);
-        let (flow, _) = create_test_flow_with_role(
-            my_address,
-            Steps::AddOperatorTakeHash,
+        let flow_id = Uuid::new_v4();
+        let ctx = create_default_flow_context(
+            flow_id,
+            Steps::WaitAllOperatorTakeTxidsAdded,
             Some(ParticipantRole::Verifier),
         );
 
-        let result = flow.add_operator_take_hash();
+        let mut mock_contracts = crate::coordinator::tests::MockRskContractsGatewayApi::new();
+        mock_contracts.expect_my_address().returning(move || my_address);
+        let mock_contracts = std::rc::Rc::new(mock_contracts);
+        let mock_broker = std::rc::Rc::new(MockBrokerClientApi::<
+            IncomingBitVMXApiMessages,
+            OutgoingBitVMXApiMessages,
+        >::new());
+        let mut mock_store = MockCoordinatorStoreApi::new();
+        mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
+        let mock_store = std::rc::Rc::new(mock_store);
+        let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
+        let state = State { flow_id: ctx.flow_id, ctx };
+        let mut flow = PeginFlow::from_saved_state(
+            mock_contracts,
+            rt_sync,
+            mock_broker,
+            state,
+            mock_store,
+            std::rc::Rc::new(crate::flows::common::Signaling::new("/tmp", "disabled")),
+            NativeBridgeVerifier::Dummy,
+        );
+
+        let result = flow.start_step(Steps::WaitAllOperatorTakeTxidsAdded);
         assert!(result.is_ok());
+        assert_eq!(flow.current_step(), Steps::WaitAllOperatorTakeTxidsAdded);
     }
 
     #[test]
