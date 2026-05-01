@@ -69,6 +69,18 @@ pub enum Steps {
     Failed,
 }
 
+impl Steps {
+    fn allows_fast_forward_to_pegin_accepted(self) -> bool {
+        matches!(
+            self,
+            Steps::DispatchTransaction
+                | Steps::ConfirmAcceptPeginTransaction
+                | Steps::RequestAcceptPeginSpvProof
+                | Steps::AcceptPegin
+        )
+    }
+}
+
 /// Data passed between steps in the pegin flow
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum StepData {
@@ -407,8 +419,7 @@ where
             (Steps::AddOperatorTakeHash, StepData::OperatorTakeHashAdded) => {
                 Ok(Steps::WaitAllOperatorTakeTxidsAdded)
             }
-            (Steps::AddOperatorTakeHash, StepData::AllOperatorTakeTxidsAdded)
-            | (Steps::WaitAllOperatorTakeTxidsAdded, StepData::AllOperatorTakeTxidsAdded) => {
+            (Steps::WaitAllOperatorTakeTxidsAdded, StepData::AllOperatorTakeTxidsAdded) => {
                 Ok(Steps::WaitAcceptPeginSignaturesReady)
             }
             (Steps::WaitAcceptPeginSignaturesReady, StepData::AcceptPeginSignaturesReady) => {
@@ -431,13 +442,11 @@ where
                 info!("Retrying accept pegin for flow_id: {}", self.state.flow_id);
                 Ok(Steps::AcceptPegin)
             }
-            (
-                Steps::DispatchTransaction
-                | Steps::ConfirmAcceptPeginTransaction
-                | Steps::RequestAcceptPeginSpvProof
-                | Steps::AcceptPegin,
-                StepData::PeginAccepted(pegin_accepted),
-            ) => self.complete_with_confirmed_pegin_acceptance(pegin_accepted),
+            (step, StepData::PeginAccepted(pegin_accepted))
+                if step.allows_fast_forward_to_pegin_accepted() =>
+            {
+                self.complete_with_confirmed_pegin_acceptance(pegin_accepted)
+            }
             _ => Err(anyhow!("Invalid state transition: {current_step:?} with data {data:?}")),
         }
     }

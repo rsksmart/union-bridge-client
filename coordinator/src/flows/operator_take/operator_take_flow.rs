@@ -44,6 +44,19 @@ pub enum Steps {
     Failed,
 }
 
+impl Steps {
+    fn allows_fast_forward_to_operator_take_registered(self) -> bool {
+        matches!(
+            self,
+            Steps::WaitForPegoutRegistered
+                | Steps::WaitForReimbursementKickoffSpv
+                | Steps::RegisterReimbursementKickoff
+                | Steps::WaitForOperatorTakeSpv
+                | Steps::RegisterOperatorTake
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum StepData {
     OperatorTakeTriggered,
@@ -413,14 +426,9 @@ where
                 info!("Retrying register operator take for flow_id: {}", self.state.flow_id);
                 Ok(Steps::RegisterOperatorTake)
             }
-            (
-                Steps::WaitForPegoutRegistered
-                | Steps::WaitForReimbursementKickoffSpv
-                | Steps::RegisterReimbursementKickoff
-                | Steps::WaitForOperatorTakeSpv
-                | Steps::RegisterOperatorTake,
-                StepData::OperatorTakeRegistered(pegout_registered),
-            ) => {
+            (step, StepData::OperatorTakeRegistered(pegout_registered))
+                if step.allows_fast_forward_to_operator_take_registered() =>
+            {
                 debug!(
                     "Operator take registered for flow {}: {:?}",
                     self.state.flow_id, pegout_registered

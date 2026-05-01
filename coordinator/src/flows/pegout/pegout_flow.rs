@@ -49,6 +49,18 @@ pub enum Steps {
     Failed,
 }
 
+impl Steps {
+    fn allows_fast_forward_to_pegout_registered(self) -> bool {
+        matches!(
+            self,
+            Steps::DispatchTransaction
+                | Steps::ConfirmUserTakeTransaction
+                | Steps::RequestUserTakeSpvProof
+                | Steps::RegisterPegout
+        )
+    }
+}
+
 /// Data passed between steps in the pegout flow
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum StepData {
@@ -332,13 +344,11 @@ where
                 info!("Retrying register pegout for flow_id: {}", self.state.flow_id);
                 Ok(Steps::RegisterPegout)
             }
-            (
-                Steps::DispatchTransaction
-                | Steps::ConfirmUserTakeTransaction
-                | Steps::RequestUserTakeSpvProof
-                | Steps::RegisterPegout,
-                StepData::PegoutRegistered(pegout_registered),
-            ) => self.complete_with_confirmed_pegout_registration(pegout_registered),
+            (step, StepData::PegoutRegistered(pegout_registered))
+                if step.allows_fast_forward_to_pegout_registered() =>
+            {
+                self.complete_with_confirmed_pegout_registration(pegout_registered)
+            }
             _ => Err(anyhow::anyhow!(
                 "Invalid state transition: {current_step:?} with data {data:?}"
             )),
@@ -692,7 +702,7 @@ where
 /// Helper function to format step names
 fn format_step(step: Steps) -> &'static str {
     match step {
-        Steps::PegoutRequested => "Init",
+        Steps::PegoutRequested => "PegoutRequested",
         Steps::GetCommInfo => "GetCommInfo",
         Steps::PrepareUserTakeSetup => "PrepareUserTakeSetup",
         Steps::WaitUserTakeSignaturesReady => "WaitUserTakeSignaturesReady",
