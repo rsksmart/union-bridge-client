@@ -309,11 +309,7 @@ fn report_lists_mutated_keys_per_prefix() {
         committee_key,
         &json!({"internal_id": committee_key, "step": "Init", "ctx": {"pairwise_keys": {}}}),
     );
-    write_raw(
-        &storage,
-        pegout_key,
-        &json!({"flow_id": pegout_key, "step": "Done", "ctx": {}}),
-    );
+    write_raw(&storage, pegout_key, &json!({"flow_id": pegout_key, "step": "Done", "ctx": {}}));
     write_raw(
         &storage,
         pegin_key,

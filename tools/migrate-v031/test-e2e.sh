@@ -1,4 +1,25 @@
 #!/usr/bin/env bash
+# Re-exec under bash 4+ if invoked through the macOS system bash 3.2.57,
+# which trips on `set -u` + empty arrays in cli-infra's start-bitvmx.sh.
+# Also prepend Homebrew's bin to PATH so every nested `#!/usr/bin/env bash`
+# script inherits the modern bash.
+if (( ${BASH_VERSINFO[0]:-0} < 4 )); then
+    for candidate in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+        if [[ -x "${candidate}" ]]; then
+            export PATH="$(dirname "${candidate}"):${PATH}"
+            exec "${candidate}" "${BASH_SOURCE[0]}" "$@"
+        fi
+    done
+    echo "Error: this script needs bash 4+; install with 'brew install bash' and retry." >&2
+    exit 1
+fi
+for candidate in /opt/homebrew/bin /usr/local/bin; do
+    if [[ -x "${candidate}/bash" ]]; then
+        export PATH="${candidate}:${PATH}"
+        break
+    fi
+done
+
 # tools/migrate-v031/test-e2e.sh
 #
 # Reproducible local E2E for the v0.3.1 → v0.4.x DB migration.
