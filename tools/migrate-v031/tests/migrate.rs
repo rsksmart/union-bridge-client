@@ -10,8 +10,8 @@
 use std::io::Write;
 
 use migrate_v031::{
-    check_config_no_legacy_bridge, migrate_committee, migrate_pegin, migrate_pegout, run,
-    verify_v04x_schema,
+    RunOptions, check_config_no_legacy_bridge, migrate_committee, migrate_pegin, migrate_pegout,
+    run, run_with_options, verify_v04x_schema,
 };
 use serde_json::{Value, json};
 use storage_backend::storage::{KeyValueStore, Storage};
@@ -274,4 +274,61 @@ fn check_config_fails_for_legacy_bridge() {
     let msg = format!("{err}");
     assert!(msg.contains("Legacy [bridge.*]"), "error must mention legacy section: {msg}");
     assert!(msg.contains("docs/v031-to-v04x-migration"), "error must point at the doc: {msg}");
+}
+
+#[test]
+fn dry_run_does_not_write_back() {
+    let (_dir, storage) = make_storage();
+    let key = "setup_committee_flows/00000000-0000-0000-0000-00000000000e";
+    let row = json!({
+        "internal_id": "00000000-0000-0000-0000-00000000000e",
+        "step": "Init",
+        "ctx": { "pairwise_keys": {} },
+    });
+    write_raw(&storage, key, &row);
+
+    let report = run_with_options(&storage, RunOptions { dry_run: true }).expect("dry run");
+    assert!(report.dry_run);
+    assert_eq!(report.committee_mutated.len(), 1);
+    assert_eq!(report.committee_mutated[0], key);
+
+    // The on-disk row must be unchanged.
+    let after = read_raw(&storage, key);
+    assert_eq!(after, row);
+}
+
+#[test]
+fn report_lists_mutated_keys_per_prefix() {
+    let (_dir, storage) = make_storage();
+    let committee_key = "setup_committee_flows/00000000-0000-0000-0000-00000000000f";
+    let pegout_key = "pegout_flows/00000000-0000-0000-0000-000000000010";
+    let pegin_key = "pegin_flows/00000000-0000-0000-0000-000000000011";
+
+    write_raw(
+        &storage,
+        committee_key,
+        &json!({"internal_id": committee_key, "step": "Init", "ctx": {"pairwise_keys": {}}}),
+    );
+    write_raw(
+        &storage,
+        pegout_key,
+        &json!({"flow_id": pegout_key, "step": "Done", "ctx": {}}),
+    );
+    write_raw(
+        &storage,
+        pegin_key,
+        &json!({
+            "flow_id": pegin_key,
+            "ctx": {"step": "AddOperatorTakeHash", "bitvmx_pegin_accepted": {
+                "operator_take_txid": "1111111111111111111111111111111111111111111111111111111111111111",
+                "operator_won_txid": "2222222222222222222222222222222222222222222222222222222222222222"
+            }},
+        }),
+    );
+
+    let report = run_with_options(&storage, RunOptions::default()).expect("run");
+    assert_eq!(report.total(), 3);
+    assert_eq!(report.committee_mutated, vec![committee_key.to_string()]);
+    assert_eq!(report.pegout_mutated, vec![pegout_key.to_string()]);
+    assert_eq!(report.pegin_mutated, vec![pegin_key.to_string()]);
 }

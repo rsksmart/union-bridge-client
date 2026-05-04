@@ -85,18 +85,26 @@ The legacy `[bridge.*]` section can be removed entirely once the new sections ar
 
    ```
    INFO  Config at <path> has no legacy [bridge.*] section
-   INFO  v0.3.1 → v0.4.x migration: N rows mutated
+   INFO   v0.3.1 → v0.4.x migration: N rows mutated (committee=A, pegout=B, pegin=C)
    INFO  Post-migration schema verification passed
    ```
 
    Or if the DB is already at v0.4.x shape (rerun, partial run, or a fresh DB):
 
    ```
-   INFO  Nothing to migrate; DB already at v0.4.x shape
+   INFO   Nothing to migrate; DB already at v0.4.x shape
    INFO  Post-migration schema verification passed
    ```
 
    The `--config` flag is optional; omit it if the operator config has already been renamed and you only need to migrate the DB. Without it the tool only mutates the DB and runs the schema verification.
+
+   Other flags:
+
+   - `--dry-run`: log every row that would be mutated without writing back. Use this for previewing against the production DB without copying it.
+   - `--report <json-path>`: write a machine-readable JSON report listing every key mutated under each prefix, useful for post-mortem auditing.
+   - `--verify-only`: skip migration and only run the schema probe; non-zero exit if any row is still at the v0.3.1 schema.
+
+   If the tool exits with `it appears to be locked by another process`, the coordinator is still running. Stop it (`docker compose down` or kill the cargo process) and rerun.
 
 4. *(Optional)* Dry-run against a copy. There is no `--dry-run` flag; the recommended preview is to run the tool plus `v0.4.x` against a copy of the operator directory.
 

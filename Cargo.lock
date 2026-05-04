@@ -4370,6 +4370,7 @@ dependencies = [
  "env_logger",
  "log",
  "rust-bitvmx-storage-backend",
+ "serde",
  "serde_json",
  "tempfile",
  "toml 0.8.23",

@@ -15,58 +15,146 @@
 //! `verify_v04x_schema` (probes the DB after migration to confirm every
 //! prefix has the v0.4.x-required fields).
 //!
+//! `RunOptions` and `MigrationReport` are exposed for callers (the binary,
+//! tests) that need a dry-run mode or a per-row mutation list.
+//!
 //! TODO(v0.5.x): delete this crate from the workspace once all operators
 //! are on v0.4.x or later. See `docs/v031-to-v04x-migration.md`.
 
 use std::fs;
 use std::path::Path;
 
-use anyhow::{Context, Result, bail};
-use log::warn;
+use anyhow::{Context, Result, anyhow, bail};
+use log::{info, warn};
+use serde::Serialize;
 use serde_json::{Value, json};
 use storage_backend::storage::{KeyValueStore, Storage};
+use storage_backend::storage_config::StorageConfig;
 
-/// Apply every migration step. Returns the total number of mutated rows.
+/// Knobs for `run_with_options`. Defaults: do mutate the DB.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct RunOptions {
+    /// When `true`, log what would be mutated but do not write back.
+    pub dry_run: bool,
+}
+
+/// Per-prefix list of keys whose row was (or would be) mutated.
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct MigrationReport {
+    pub dry_run: bool,
+    pub committee_mutated: Vec<String>,
+    pub pegout_mutated: Vec<String>,
+    pub pegin_mutated: Vec<String>,
+}
+
+impl MigrationReport {
+    #[must_use]
+    pub fn total(&self) -> usize {
+        self.committee_mutated.len() + self.pegout_mutated.len() + self.pegin_mutated.len()
+    }
+}
+
+/// Open the coordinator DB at `path`, returning a friendly error if the
+/// underlying `RocksDB` rejects the open because the directory is locked
+/// by another process (typically a running coordinator).
+///
+/// # Errors
+///
+/// Returns an error if the storage cannot be opened, including the
+/// translated message when the lock is held by another process.
+pub fn open_storage(path: &str) -> Result<Storage> {
+    Storage::open(&StorageConfig::new(path.to_string(), None)).map_err(|e| {
+        let msg = e.to_string();
+        if msg.to_lowercase().contains("lock") {
+            anyhow!(
+                "Could not open coordinator DB at {path}: it appears to be locked by another process (most likely a running coordinator). Stop the coordinator first (e.g. `docker compose down`) and retry.",
+            )
+        } else {
+            anyhow::Error::from(e).context(format!("opening coordinator DB at {path}"))
+        }
+    })
+}
+
+/// Apply every migration step under `opts`. Returns a structured report.
 ///
 /// # Errors
 ///
 /// Returns an error if reading from or writing to the underlying storage
 /// fails, or if a row contains malformed JSON.
+pub fn run_with_options(storage: &Storage, opts: RunOptions) -> Result<MigrationReport> {
+    let mut report = MigrationReport { dry_run: opts.dry_run, ..MigrationReport::default() };
+    migrate_committee_inner(storage, opts, &mut report.committee_mutated)?;
+    migrate_pegout_inner(storage, opts, &mut report.pegout_mutated)?;
+    migrate_pegin_inner(storage, opts, &mut report.pegin_mutated)?;
+    Ok(report)
+}
+
+/// Backwards-compatible entry: applies every migration step with default
+/// options and returns the total number of mutated rows.
+///
+/// # Errors
+///
+/// See `run_with_options`.
 pub fn run(storage: &Storage) -> Result<usize> {
-    let mut total = 0;
-    total += migrate_committee(storage)?;
-    total += migrate_pegout(storage)?;
-    total += migrate_pegin(storage)?;
-    Ok(total)
+    Ok(run_with_options(storage, RunOptions::default())?.total())
 }
 
 /// Inject `setup_full_penalization_req: []` into legacy `setup_committee_flows/*` rows.
 ///
 /// # Errors
 ///
-/// Returns an error if reading from or writing to the underlying storage
-/// fails, or if a row contains malformed JSON.
+/// See `run_with_options`.
 pub fn migrate_committee(storage: &Storage) -> Result<usize> {
-    let mut n = 0;
-    for (key, raw) in storage.partial_compare("setup_committee_flows/")? {
-        let mut v: Value = serde_json::from_str(&raw)?;
-        if v["ctx"].get("setup_full_penalization_req").is_none() {
-            v["ctx"]["setup_full_penalization_req"] = json!([]);
-            storage.set(&key, &v, None)?;
-            n += 1;
-        }
-    }
-    Ok(n)
+    let mut mutated = Vec::new();
+    migrate_committee_inner(storage, RunOptions::default(), &mut mutated)?;
+    Ok(mutated.len())
 }
 
 /// Inject `request_pegout_tx_hash: ""` into legacy `pegout_flows/*` rows; warn for in-flight rows.
 ///
 /// # Errors
 ///
-/// Returns an error if reading from or writing to the underlying storage
-/// fails, or if a row contains malformed JSON.
+/// See `run_with_options`.
 pub fn migrate_pegout(storage: &Storage) -> Result<usize> {
-    let mut n = 0;
+    let mut mutated = Vec::new();
+    migrate_pegout_inner(storage, RunOptions::default(), &mut mutated)?;
+    Ok(mutated.len())
+}
+
+/// Lift legacy `bitvmx_pegin_accepted.{operator_take_txid, operator_won_txid}` into the new
+/// top-level ctx fields. Read-only access on the lift source avoids accidentally promoting a
+/// `null` `bitvmx_pegin_accepted` into an object.
+///
+/// # Errors
+///
+/// See `run_with_options`.
+pub fn migrate_pegin(storage: &Storage) -> Result<usize> {
+    let mut mutated = Vec::new();
+    migrate_pegin_inner(storage, RunOptions::default(), &mut mutated)?;
+    Ok(mutated.len())
+}
+
+fn migrate_committee_inner(
+    storage: &Storage,
+    opts: RunOptions,
+    mutated: &mut Vec<String>,
+) -> Result<()> {
+    for (key, raw) in storage.partial_compare("setup_committee_flows/")? {
+        let mut v: Value = serde_json::from_str(&raw)?;
+        if v["ctx"].get("setup_full_penalization_req").is_none() {
+            v["ctx"]["setup_full_penalization_req"] = json!([]);
+            commit_or_log(storage, &key, &v, opts, "setup_full_penalization_req=[]")?;
+            mutated.push(key);
+        }
+    }
+    Ok(())
+}
+
+fn migrate_pegout_inner(
+    storage: &Storage,
+    opts: RunOptions,
+    mutated: &mut Vec<String>,
+) -> Result<()> {
     for (key, raw) in storage.partial_compare("pegout_flows/")? {
         let mut v: Value = serde_json::from_str(&raw)?;
         if v["ctx"].get("request_pegout_tx_hash").is_none() {
@@ -77,23 +165,18 @@ pub fn migrate_pegout(storage: &Storage) -> Result<usize> {
                     "Migrating in-flight pegout {key} (step={step}) with empty request_pegout_tx_hash; flow may emit an incomplete completion marker",
                 );
             }
-            storage.set(&key, &v, None)?;
-            n += 1;
+            commit_or_log(storage, &key, &v, opts, "request_pegout_tx_hash=\"\"")?;
+            mutated.push(key);
         }
     }
-    Ok(n)
+    Ok(())
 }
 
-/// Lift legacy `bitvmx_pegin_accepted.{operator_take_txid, operator_won_txid}` into the new
-/// top-level ctx fields. Read-only access on the lift source avoids accidentally promoting a
-/// `null` `bitvmx_pegin_accepted` into an object.
-///
-/// # Errors
-///
-/// Returns an error if reading from or writing to the underlying storage
-/// fails, or if a row contains malformed JSON.
-pub fn migrate_pegin(storage: &Storage) -> Result<usize> {
-    let mut n = 0;
+fn migrate_pegin_inner(
+    storage: &Storage,
+    opts: RunOptions,
+    mutated: &mut Vec<String>,
+) -> Result<()> {
     for (key, raw) in storage.partial_compare("pegin_flows/")? {
         let mut v: Value = serde_json::from_str(&raw)?;
         let mut changed = false;
@@ -109,11 +192,26 @@ pub fn migrate_pegin(storage: &Storage) -> Result<usize> {
             }
         }
         if changed {
-            storage.set(&key, &v, None)?;
-            n += 1;
+            commit_or_log(storage, &key, &v, opts, "lift operator txids")?;
+            mutated.push(key);
         }
     }
-    Ok(n)
+    Ok(())
+}
+
+fn commit_or_log(
+    storage: &Storage,
+    key: &str,
+    value: &Value,
+    opts: RunOptions,
+    summary: &str,
+) -> Result<()> {
+    if opts.dry_run {
+        info!("[dry-run] would mutate {key}: {summary}");
+    } else {
+        storage.set(key, value, None)?;
+    }
+    Ok(())
 }
 
 /// Refuse to proceed if the operator's TOML config still has the legacy
@@ -156,7 +254,7 @@ pub fn verify_v04x_schema(storage: &Storage) -> Result<()> {
             let v: Value = serde_json::from_str(&raw)?;
             if v["ctx"].get(field).is_none() {
                 bail!(
-                    "DB row {key} is at v0.3.1 schema (missing ctx.{field}) after migration; this is a bug in migrate-v031, please report it.",
+                    "DB row {key} is at v0.3.1 schema (missing ctx.{field}); the DB has not been migrated yet. Run migrate-v031 against this DB first."
                 );
             }
         }
