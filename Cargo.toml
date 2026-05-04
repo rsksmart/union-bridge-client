@@ -11,6 +11,7 @@ members = [
     "log-indexer",
     "op-funding",
     "protocol-params",
+    "tools/migrate-v031",
     "transaction-dispatcher",
     "user-api",
 ]

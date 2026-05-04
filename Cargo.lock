@@ -4362,6 +4362,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "migrate-v031"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "env_logger",
+ "log",
+ "rust-bitvmx-storage-backend",
+ "serde_json",
+ "tempfile",
+ "toml 0.8.23",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
