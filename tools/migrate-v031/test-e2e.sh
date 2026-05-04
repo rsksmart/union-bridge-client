@@ -193,25 +193,30 @@ step_setup_operator() {
 }
 
 step_run_v031_and_populate() {
-    log "Building and running v0.3.1 from ${E2E_V031_WORKTREE} ..."
-    pushd "${E2E_V031_WORKTREE}" >/dev/null
-    cargo build --release -p coordinator
+    # cli-run.sh waits for the indexer ports for only 60s, but a cold cargo
+    # build of block-indexer alone takes longer. Pre-build the whole
+    # workspace in dev profile (matching the `cargo run` mode cli-run.sh
+    # uses) so cli-run.sh's launches start fast enough.
+    log "Pre-building v0.3.1 workspace from ${E2E_V031_WORKTREE} ..."
+    (cd "${E2E_V031_WORKTREE}" && cargo build --workspace)
+
+    log "Launching v0.3.1 services (cli-run.sh --id ${E2E_OP_ID}) ..."
     "${E2E_V031_WORKTREE}/cli-run.sh" --id "${E2E_OP_ID}" &
     local v031_pid=$!
-    popd >/dev/null
 
-    log "Waiting 15s for v0.3.1 coordinator to come up ..."
-    sleep 15
+    log "Waiting 30s for v0.3.1 services to come up ..."
+    sleep 30
 
-    log "Populating state via tests/run-flows.sh (setup + committee + pegin + pegout)"
-    bash "${E2E_V031_WORKTREE}/tests/run-flows.sh" --env local --ops "${E2E_OP_ID}" --setup
-    bash "${E2E_V031_WORKTREE}/tests/run-flows.sh" --env local --ops "${E2E_OP_ID}" --committee
-    bash "${E2E_V031_WORKTREE}/tests/run-flows.sh" --env local --ops "${E2E_OP_ID}" --pegin
-    bash "${E2E_V031_WORKTREE}/tests/run-flows.sh" --env local --ops "${E2E_OP_ID}" --pegout
+    # v0.3.1 ships tests/run-happy-path.sh (single-shot full flow). v0.4.x
+    # uses the granular tests/run-flows.sh later, but for the population
+    # phase we just need realistic on-disk state, so the happy path is fine.
+    log "Populating state via tests/run-happy-path.sh ..."
+    bash "${E2E_V031_WORKTREE}/tests/run-happy-path.sh" --env local --ops "${E2E_OP_ID}"
 
     log "Stopping v0.3.1 coordinator ..."
     "${E2E_V031_WORKTREE}/cli-run.sh" --kill || true
     wait "${v031_pid}" 2>/dev/null || true
+    sleep 5
 }
 
 step_snapshot() {
@@ -233,6 +238,9 @@ step_run_migrator() {
 }
 
 step_run_v04x_and_verify() {
+    log "Pre-building v0.4.x workspace from ${REPO_ROOT} ..."
+    (cd "${REPO_ROOT}" && cargo build --workspace)
+
     log "Running v0.4.x coordinator from ${REPO_ROOT} (current branch) ..."
     "${REPO_ROOT}/cli-run.sh" --id "${E2E_OP_ID}" &
     local v04x_pid=$!
