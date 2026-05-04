@@ -479,7 +479,7 @@ where
         &mut self.state.ctx
     }
 
-    pub fn is_done(&self) -> bool {
+    pub fn is_terminal(&self) -> bool {
         self.state.step == Steps::Done || self.state.step == Steps::Failed
     }
 
@@ -606,6 +606,14 @@ where
             .committee_pending_ev
             .as_ref()
             .is_some_and(|ev| ev.inner.committeeId == **committee_id)
+    }
+
+    pub(crate) fn mark_failed(&mut self, reason: &str) -> Result<()> {
+        // Temporary operational escape hatch for pre-mainnet recovery. Remove this
+        // manual fail path before mainnet instead of treating it as regular API.
+        info!("Admin marking setup committee flow {} as failed: {reason}", self.state.internal_id);
+        self.state.step = Steps::Failed;
+        self.persist_state()
     }
 
     pub(crate) fn is_waiting_for_dispute_core_variable(&self, program_id: &Uuid) -> bool {
@@ -1448,8 +1456,12 @@ where
     S: CoordinatorStoreApi,
 {
     fn fail(&mut self) {
-        error!("Marking flow {} as failed and cleaning up", self.state.internal_id);
-        self.state.step = Steps::Failed;
+        if let Err(err) = self.mark_failed("flow error") {
+            error!(
+                "Failed to persist failed setup committee flow {}: {err}",
+                self.state.internal_id
+            );
+        }
     }
 }
 

@@ -112,12 +112,15 @@ async fn main() -> Result<()> {
             .context("user_api.coordinator.client_id must fit in u8")?,
     );
 
+    let admin_token = config.user_api_config.admin_token.clone();
+
     let server = Server::new(
         listener,
         broker_drop_guard.clone_arc().context("failed to clone broker server handle")?,
         shutdown_flag.clone(),
         coordinator_client_id,
         user_contracts_gateway,
+        admin_token,
     )
     .await;
 

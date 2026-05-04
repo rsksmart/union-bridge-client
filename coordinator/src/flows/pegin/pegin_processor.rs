@@ -28,11 +28,12 @@ use crate::flows::common::{GlobalContext, Signaling};
 use crate::flows::pegin::pegin_flow::{PeginFlow, State, StepData, Steps};
 use crate::flows::pegin::utils::get_temp_pegin_pid;
 use crate::store::{
-    CoordinatorStoreApi, StoreKey, StorePrefix, cleanup_completed_flows, restore_flows,
+    CoordinatorStoreApi, StoreKey, StorePrefix, cleanup_flows_matching, restore_flows,
 };
 use crate::types::{
-    AllOperatorTakeTxidsAddedEvent, EventStatus, PeginAcceptedEvent, PeginRequestedEvent,
-    RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler, UserRequests,
+    AdminRequest, AllOperatorTakeTxidsAddedEvent, EventStatus, FlowKind, PeginAcceptedEvent,
+    PeginRequestedEvent, RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler,
+    UserRequests,
 };
 
 const PEGIN_ACCEPTED_INPUT_MSG: &str = "pegin_accepted";
@@ -281,12 +282,7 @@ where
             }
         }
 
-        cleanup_completed_flows(
-            self.store.as_ref(),
-            StorePrefix::PeginFlow,
-            &mut self.pegin_flows,
-            PeginFlow::is_done,
-        );
+        self.cleanup_terminal_flows();
         Ok(())
     }
 
@@ -499,6 +495,51 @@ where
         Ok(())
     }
 
+    /// Resolve the temp and official ids that can point to the same pegin flow.
+    /// If the relationship is not in memory, fall back to the supplied id.
+    fn linked_pegin_flow_ids(&self, flow_id: Uuid) -> Vec<Uuid> {
+        let mut ids = vec![flow_id];
+        let flow = self.pegin_flows.get(&flow_id).or_else(|| {
+            self.pegin_flows.values().find(|flow| {
+                let ctx = &flow.get_state().ctx;
+                ctx.temp_flow_id == Some(flow_id) || ctx.official_flow_id == Some(flow_id)
+            })
+        });
+
+        if let Some(flow) = flow {
+            let ctx = &flow.get_state().ctx;
+            for id in [ctx.temp_flow_id, ctx.official_flow_id].into_iter().flatten() {
+                if !ids.contains(&id) {
+                    ids.push(id);
+                }
+            }
+        }
+        ids
+    }
+
+    /// Mark a pegin flow as failed and stop pending local work for it.
+    fn fail_flow(&mut self, flow_id: Uuid, reason: &str) -> Result<()> {
+        let flow_ids_to_fail = self.linked_pegin_flow_ids(flow_id);
+
+        let mut marked = false;
+        for id in &flow_ids_to_fail {
+            if let Some(flow) = self.pegin_flows.get_mut(id) {
+                flow.mark_failed(reason)?;
+                marked = true;
+            }
+        }
+
+        if marked {
+            warn!("Admin marked pegin flow {flow_id} as failed: {reason}");
+        } else {
+            warn!("Admin requested fail for unknown pegin flow {flow_id}: {reason}");
+        }
+
+        self.cleanup_terminal_flows();
+
+        Ok(())
+    }
+
     fn schedule_request_pegin_retry(
         &mut self,
         spv_proof: BtcTxSPVProof,
@@ -650,13 +691,7 @@ where
             }
         }
 
-        // blocks allow periodic cleanup of completed flows, we can improve it with a cleanup task if needed
-        cleanup_completed_flows(
-            self.store.as_ref(),
-            StorePrefix::PeginFlow,
-            &mut self.pegin_flows,
-            PeginFlow::is_done,
-        );
+        self.cleanup_terminal_flows();
 
         Ok(())
     }
@@ -676,7 +711,6 @@ where
         }
 
         // Create a new pegin flow from Bitcoin transaction
-
         let mut flow = PeginFlow::new(
             Rc::clone(&self.contracts_gateway),
             self.rt_sync.clone(),
@@ -790,6 +824,64 @@ where
     fn has_flow_waiting_for_accept_pegin_spv(&self, tx_id: &Txid) -> bool {
         self.pegin_flows.values().any(|flow| flow.get_accept_pegin_txid() == Some(*tx_id))
     }
+
+    fn cleanup_terminal_flow_state(&mut self) {
+        let terminal_flows: Vec<_> = self
+            .pegin_flows
+            .iter()
+            .filter(|(_, flow)| flow.is_terminal())
+            .map(|(map_flow_id, flow)| {
+                let state = flow.get_state();
+                let mut flow_ids = vec![*map_flow_id, flow.flow_id()];
+
+                for flow_id in
+                    [state.ctx.temp_flow_id, state.ctx.official_flow_id].into_iter().flatten()
+                {
+                    if !flow_ids.contains(&flow_id) {
+                        flow_ids.push(flow_id);
+                    }
+                }
+
+                (flow_ids, state.ctx.request_pegin_btc_tx_id)
+            })
+            .collect();
+
+        for (flow_ids, request_pegin_btc_tx_id) in terminal_flows {
+            for flow_id in flow_ids {
+                self.signature_flows.remove(&flow_id);
+                self.tx_status_scheduler.cancel(&flow_id);
+                self.accept_pegin_retry_scheduler.cancel(&flow_id);
+                self.unconfirmed_accept_pegin.remove(&flow_id);
+            }
+
+            if let Some(tx_id) = request_pegin_btc_tx_id {
+                self.pegin_request_tracker.remove(&tx_id);
+                self.pending_pegin_requested.remove(&tx_id);
+
+                let retry_keys: Vec<_> = self
+                    .unconfirmed_pegin_requests
+                    .iter()
+                    .filter(|(_, (spv_proof, _))| spv_proof.tx.compute_txid() == tx_id)
+                    .map(|(key, _)| key.clone())
+                    .collect();
+
+                for key in retry_keys {
+                    self.pegin_retry_scheduler.cancel(&key);
+                    self.unconfirmed_pegin_requests.remove(&key);
+                }
+            }
+        }
+    }
+
+    fn cleanup_terminal_flows(&mut self) {
+        self.cleanup_terminal_flow_state();
+        cleanup_flows_matching(
+            self.store.as_ref(),
+            StorePrefix::PeginFlow,
+            &mut self.pegin_flows,
+            PeginFlow::is_terminal,
+        );
+    }
 }
 
 impl<CG, BC, S> EventProcessor
@@ -805,13 +897,24 @@ where
     BC: BitVmxBrokerClientApi,
     S: CoordinatorStoreApi + 'static,
 {
-    fn process_user_request(&mut self, _req: &UserRequests) -> Result<()> {
-        // Pegin flows are created from RSK events, not from user requests
+    fn process_user_request(&mut self, req: &UserRequests) -> Result<()> {
+        self.cleanup_terminal_flows();
+
+        // Pegin flows are created from RSK / BTC events, not user requests, except for
+        // the admin "fail flow" lever — handled here so cleanup runs alongside this
+        // processor's in-memory state.
+        if let UserRequests::Admin(AdminRequest::FailFlow { kind, flow_id, reason }) = req
+            && *kind == FlowKind::Pegin
+        {
+            self.fail_flow(*flow_id, reason)?;
+        }
         Ok(())
     }
 
     #[allow(clippy::too_many_lines)]
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         trace!("Processing BitVMX event: {event:?}");
 
         match event {
@@ -951,6 +1054,8 @@ where
     }
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         match event {
             RskPegManagerEvents::AllNoncesReady(data)
             | RskPegManagerEvents::AllSignaturesReady(data) => {
@@ -1009,6 +1114,8 @@ where
     }
 
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         self.process_unhandled_confirmed_sig_flow_events(block)?;
         self.handle_transaction_status_tick()?;
         self.handle_pegin_retry_tick()?;
@@ -1030,5 +1137,182 @@ where
         self.pegin_request_tracker.clear();
         self.pending_pegin_requested.clear();
         self.signature_flows.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use alloy_primitives::{FixedBytes, I256};
+    use bitcoin::Transaction;
+    use bitcoin::absolute::LockTime;
+    use bitcoin::transaction::Version;
+    use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+    use common::msg_broker::broker::MockBrokerClientApi;
+    use primitive_types::H256;
+    use union_contracts::bindings::pegin_manager::PeginManager::{
+        RequestPeginTempInfo, StreamPosition,
+    };
+
+    use super::*;
+    use crate::coordinator::tests::MockRskContractsGatewayApi;
+    use crate::flows::pegin::pegin_flow::FlowContext;
+    use crate::store::MockCoordinatorStoreApi;
+
+    type MockBitVmxBroker =
+        MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
+
+    type TestProcessor = PeginFlowProcessor<
+        MockRskContractsGatewayApi,
+        MockBitVmxBroker,
+        BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<MockRskContractsGatewayApi>>,
+        BtcSignatureSubFlowFactory<MockRskContractsGatewayApi>,
+        MockCoordinatorStoreApi,
+    >;
+
+    fn test_spv_proof() -> BtcTxSPVProof {
+        BtcTxSPVProof {
+            block_hash: "11".repeat(32),
+            tx: Transaction {
+                version: Version(2),
+                lock_time: LockTime::ZERO,
+                input: vec![],
+                output: vec![],
+            },
+            merkle_branch_path: "0".to_string(),
+            merkle_branch_hashes: vec![],
+        }
+    }
+
+    fn test_pegin_requested_event(tx_id: Txid) -> PeginRequestedEvent {
+        PeginRequestedEvent {
+            inner: PeginRequested {
+                committeeId: 1,
+                requestPeginTxid: TxIdParser::txid_to_fb_32(tx_id),
+                acceptPeginTxid: FixedBytes::<32>::ZERO,
+                streamPosition: StreamPosition {
+                    streamId: 0,
+                    packetNumber: 0,
+                    slotId: 0,
+                    pegStatus: 0,
+                },
+                requestPeginInfo: RequestPeginTempInfo {
+                    rskDestinationAddress: alloy_primitives::Address::ZERO,
+                    btcReimbursementPubKey: FixedBytes::<32>::ZERO,
+                    acceptPeginSignatureHash: FixedBytes::<32>::ZERO,
+                    btcBlockNumber: I256::ZERO,
+                    userReimbursementTxid: FixedBytes::<32>::ZERO,
+                    rejectPeginTxid: FixedBytes::<32>::ZERO,
+                },
+                acceptPeginSignatureMessage: alloy_primitives::Bytes::new(),
+            },
+            block_number: BlockNumber::from(1),
+            block_hash: common::types::BlockHash::from(H256::from_low_u64_be(2)),
+            removed: false,
+            tx_hash: common::types::TxHash::from(H256::from_low_u64_be(3)),
+        }
+    }
+
+    fn test_processor(store: Rc<MockCoordinatorStoreApi>) -> TestProcessor {
+        let contracts = Rc::new(MockRskContractsGatewayApi::new());
+        let broker = Rc::new(MockBitVmxBroker::new());
+        let rt_sync = RuntimeSync::new().expect("runtime");
+        let factory = BtcSignatureSubFlowFactory::new(contracts.clone(), rt_sync.clone(), 1);
+
+        PeginFlowProcessor {
+            contracts_gateway: contracts,
+            rt_sync,
+            bitvmx_broker: broker,
+            btc_sig_subflow_factory: factory,
+            pegin_flows: HashMap::new(),
+            signature_flows: HashMap::new(),
+            global_context: GlobalContext::new(),
+            blockchain_view: BlockchainView::new(),
+            events_confirming: HashMap::new(),
+            tx_status_scheduler: TickScheduler::new(),
+            pegin_request_tracker: HashSet::new(),
+            pending_pegin_requested: HashMap::new(),
+            unconfirmed_pegin_requests: HashMap::new(),
+            pegin_retry_scheduler: TickScheduler::new(),
+            unconfirmed_accept_pegin: HashMap::new(),
+            accept_pegin_retry_scheduler: TickScheduler::new(),
+            store,
+            signaling: Rc::new(Signaling::new("/tmp", "disabled")),
+            native_bridge_verifier: NativeBridgeVerifier::Dummy,
+            required_confirmations: 1,
+            btc_confirmations: 1,
+            btc_status_retry_blocks: 1,
+        }
+    }
+
+    #[test]
+    fn cleanup_terminal_flows_removes_pegin_flow_and_request_side_state() {
+        let mut store = MockCoordinatorStoreApi::new();
+        store.expect_delete_flow().returning(|_| Ok(()));
+        let store = Rc::new(store);
+        let mut processor = test_processor(store.clone());
+
+        let spv_proof = test_spv_proof();
+        let request_tx_id = spv_proof.tx.compute_txid();
+        let temp_flow_id = get_temp_pegin_pid(request_tx_id);
+        let official_flow_id = Uuid::new_v4();
+
+        let state = State {
+            flow_id: official_flow_id,
+            ctx: FlowContext {
+                flow_id: official_flow_id,
+                step: Steps::Failed,
+                temp_flow_id: Some(temp_flow_id),
+                official_flow_id: Some(official_flow_id),
+                request_pegin_btc_tx_id: Some(request_tx_id),
+                request_pegin_btc_tx_status: None,
+                request_pegin_spv_proof: None,
+                pegin_requested: None,
+                my_p2p_address: None,
+                committee_output: None,
+                bitvmx_pegin_accepted: None,
+                operator_take_txid: None,
+                operator_won_txid: None,
+                accept_pegin_spv_proof: None,
+                accept_pegin_tx_status: None,
+                pegin_accepted: None,
+                op_role: None,
+            },
+        };
+
+        let flow = PeginFlow::from_saved_state(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            RuntimeSync::new().expect("runtime"),
+            Rc::new(MockBitVmxBroker::new()),
+            state,
+            store,
+            Rc::new(Signaling::new("/tmp", "disabled")),
+            NativeBridgeVerifier::Dummy,
+        );
+
+        processor.pegin_flows.insert(temp_flow_id, flow);
+        processor.tx_status_scheduler.schedule(official_flow_id, 1);
+        processor.accept_pegin_retry_scheduler.schedule(official_flow_id, 1);
+        processor.unconfirmed_accept_pegin.insert(official_flow_id, 1);
+        processor.pegin_request_tracker.insert(request_tx_id);
+        processor
+            .pending_pegin_requested
+            .insert(request_tx_id, test_pegin_requested_event(request_tx_id));
+        processor
+            .unconfirmed_pegin_requests
+            .insert(spv_proof.block_hash.clone(), (spv_proof.clone(), 1));
+        processor.pegin_retry_scheduler.schedule(spv_proof.block_hash.clone(), 1);
+
+        processor.cleanup_terminal_flows();
+
+        assert!(!processor.pegin_flows.contains_key(&temp_flow_id));
+        assert!(!processor.tx_status_scheduler.is_scheduled(&official_flow_id));
+        assert!(!processor.accept_pegin_retry_scheduler.is_scheduled(&official_flow_id));
+        assert!(!processor.unconfirmed_accept_pegin.contains_key(&official_flow_id));
+        assert!(!processor.pegin_request_tracker.contains(&request_tx_id));
+        assert!(!processor.pending_pegin_requested.contains_key(&request_tx_id));
+        assert!(!processor.unconfirmed_pegin_requests.contains_key(&spv_proof.block_hash));
+        assert!(!processor.pegin_retry_scheduler.is_scheduled(&spv_proof.block_hash));
     }
 }

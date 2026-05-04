@@ -62,6 +62,7 @@ pub enum Steps {
     AcceptPegin,
     // Final state
     Done,
+    Failed,
 }
 
 /// Data passed between steps in the pegin flow
@@ -315,6 +316,9 @@ where
                 self.send_pegin_accepted_to_bitvmx()?;
                 self.write_completion_marker()?;
                 info!("PeginFlow Done: {}", self.state.flow_id);
+            }
+            Steps::Failed => {
+                info!("PeginFlow Failed: {}", self.state.flow_id);
             }
         }
 
@@ -947,9 +951,15 @@ where
         self.state.ctx.bitvmx_pegin_accepted.as_ref().map(|accepted| accepted.accept_pegin_txid)
     }
 
-    /// Check if the flow is completed
-    pub fn is_done(&self) -> bool {
-        self.state.ctx.step == Steps::Done
+    pub fn is_terminal(&self) -> bool {
+        matches!(self.state.ctx.step, Steps::Done | Steps::Failed)
+    }
+
+    pub fn mark_failed(&mut self, reason: &str) -> Result<()> {
+        // Temporary operational escape hatch for pre-mainnet recovery. Remove this
+        // manual fail path before mainnet instead of treating it as regular API.
+        info!("Admin marking pegin flow {} as failed: {reason}", self.state.flow_id);
+        self.start_step(Steps::Failed)
     }
 
     /// Get the internal ID of the flow
@@ -998,6 +1008,7 @@ fn format_step(step: Steps) -> &'static str {
         Steps::RequestAcceptPeginSpvProof => "RequestAcceptPeginSpvProof",
         Steps::AcceptPegin => "AcceptPegin",
         Steps::Done => "Done",
+        Steps::Failed => "Failed",
     }
 }
 

@@ -26,10 +26,10 @@ use crate::flows::btc_signature::btc_signature_subflow::{
 use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
 use crate::flows::common::{GlobalContext, Signaling};
 use crate::flows::pegout::pegout_flow::{PegoutFlow, State, StepData, Steps};
-use crate::store::{CoordinatorStoreApi, StorePrefix, cleanup_completed_flows, restore_flows};
+use crate::store::{CoordinatorStoreApi, StorePrefix, cleanup_flows_matching, restore_flows};
 use crate::types::{
-    EventStatus, RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler,
-    TimeBasedScheduler, UserRequests,
+    AdminRequest, EventStatus, FlowKind, RegisterSignaturesBitVmxData, RskPegManagerEvents,
+    TickScheduler, TimeBasedScheduler, UserRequests,
 };
 
 fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
@@ -262,17 +262,7 @@ where
             // Keep correlation strict: PegoutRegistered is matched only by user_take_txid.
             // We intentionally do not broaden matching by committee or slot, because the
             // PegoutAccepted checkpoint gives the flow the shared txid needed for safe
-            // convergence on the confirmed terminal event. Once a matched flow is already
-            // Done, a later duplicate PegoutRegistered must be ignored.
-            if flow.current_step() == Steps::Done {
-                debug!(
-                    "Ignoring PegoutRegistered for completed flow {} with user_take_txid {}",
-                    flow.flow_id(),
-                    pegout_registered_txid
-                );
-                return Ok(());
-            }
-
+            // convergence on the confirmed terminal event.
             flow.complete_step(&StepData::PegoutRegistered(pr.clone()))?;
         } else {
             warn!("No matching pegout flow found for PegoutRegistered event: {pr:?}");
@@ -304,12 +294,7 @@ where
             }
         }
 
-        cleanup_completed_flows(
-            self.store.as_ref(),
-            StorePrefix::PegoutFlow,
-            &mut self.pegout_flows,
-            PegoutFlow::is_done,
-        );
+        self.cleanup_terminal_flows();
         Ok(())
     }
 
@@ -493,13 +478,7 @@ where
             }
         }
 
-        // blocks allow periodic cleanup of completed flows, we can improve it with a cleanup task if needed
-        cleanup_completed_flows(
-            self.store.as_ref(),
-            StorePrefix::PegoutFlow,
-            &mut self.pegout_flows,
-            PegoutFlow::is_done,
-        );
+        self.cleanup_terminal_flows();
 
         Ok(())
     }
@@ -593,6 +572,20 @@ where
         Ok(())
     }
 
+    /// Mark a pegout flow as failed and stop pending local work for it.
+    fn fail_flow(&mut self, flow_id: Uuid, reason: &str) -> Result<()> {
+        if let Some(flow) = self.pegout_flows.get_mut(&flow_id) {
+            flow.mark_failed(reason)?;
+            warn!("Admin marked pegout flow {flow_id} as failed: {reason}");
+        } else {
+            warn!("Admin requested fail for unknown pegout flow {flow_id}: {reason}");
+        }
+
+        self.cleanup_terminal_flows();
+
+        Ok(())
+    }
+
     fn schedule_register_pegout_retry(&mut self, flow_id: Uuid, attempt: i16, reason: &str) {
         info!("{reason} for flow {flow_id} (attempt {attempt})");
         self.unconfirmed_register_pegout.insert(flow_id, attempt);
@@ -641,6 +634,34 @@ where
             );
         }
     }
+
+    fn cleanup_terminal_flow_state(&mut self) {
+        let terminal_flow_ids: Vec<_> = self
+            .pegout_flows
+            .iter()
+            .filter(|(_, flow)| flow.is_terminal())
+            .flat_map(|(map_flow_id, flow)| [*map_flow_id, flow.flow_id()])
+            .collect();
+
+        for flow_id in terminal_flow_ids {
+            self.signature_flows.remove(&flow_id);
+            self.tx_status_scheduler.cancel(&flow_id);
+            self.advance_funds_timeout_scheduler.cancel(&flow_id);
+            self.register_pegout_retry_scheduler.cancel(&flow_id);
+            self.flows_pending_timeout.remove(&flow_id);
+            self.unconfirmed_register_pegout.remove(&flow_id);
+        }
+    }
+
+    fn cleanup_terminal_flows(&mut self) {
+        self.cleanup_terminal_flow_state();
+        cleanup_flows_matching(
+            self.store.as_ref(),
+            StorePrefix::PegoutFlow,
+            &mut self.pegout_flows,
+            PegoutFlow::is_terminal,
+        );
+    }
 }
 
 impl<CG, BC, S> EventProcessor
@@ -656,13 +677,24 @@ where
     BC: BitVmxBrokerClientApi,
     S: CoordinatorStoreApi,
 {
-    fn process_user_request(&mut self, _req: &UserRequests) -> Result<()> {
-        // Pegout flows are created from RSK events, not from user requests
+    fn process_user_request(&mut self, req: &UserRequests) -> Result<()> {
+        self.cleanup_terminal_flows();
+
+        // Pegout flows are created from RSK events, not user requests, except for the
+        // admin "fail flow" lever — handled here so the cleanup runs in this processor's
+        // single-threaded context alongside its in-memory state.
+        if let UserRequests::Admin(AdminRequest::FailFlow { kind, flow_id, reason }) = req
+            && *kind == FlowKind::Pegout
+        {
+            self.fail_flow(*flow_id, reason)?;
+        }
         Ok(())
     }
 
     #[allow(clippy::too_many_lines)]
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         trace!("Processing BitVMX event: {event:?}");
 
         match event {
@@ -808,6 +840,8 @@ where
     }
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         match event {
             RskPegManagerEvents::AllNoncesReady(data)
             | RskPegManagerEvents::AllSignaturesReady(data) => {
@@ -863,6 +897,8 @@ where
     }
 
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         // Schedule pending timeouts for flows that received pegout_accepted
         self.schedule_pending_timeouts(block);
 
@@ -957,6 +993,7 @@ mod tests {
             let broker = Rc::new(broker);
             let mut store = MockCoordinatorStoreApi::new();
             store.expect_save_flow::<State>().returning(|_, _| Ok(()));
+            store.expect_delete_flow().returning(|_| Ok(()));
             let store = Rc::new(store);
             let rt_sync = RuntimeSync::new().unwrap();
 
@@ -1195,15 +1232,28 @@ mod tests {
     }
 
     #[test]
-    fn done_flow_ignores_late_pegout_registered() {
+    fn cleanup_terminal_flows_removes_pegout_flow_and_side_state() {
         let mut harness = TestHarness::new();
         let flow_id = Uuid::new_v4();
         harness.processor.pegout_flows.insert(flow_id, harness.create_flow_at_done(flow_id));
-        let event = fake_pegout_registered_event(test_txid([3u8; 32]));
+        harness
+            .processor
+            .signature_flows
+            .insert(flow_id, harness.create_completed_sig_flow(flow_id));
+        harness.processor.tx_status_scheduler.schedule(flow_id, 1);
+        harness.processor.advance_funds_timeout_scheduler.schedule(flow_id, 100, 600);
+        harness.processor.register_pegout_retry_scheduler.schedule(flow_id, 1);
+        harness.processor.flows_pending_timeout.insert(flow_id);
+        harness.processor.unconfirmed_register_pegout.insert(flow_id, 1);
 
-        let result = harness.processor.handle_pegout_registered(&event);
+        harness.processor.cleanup_terminal_flows();
 
-        assert!(result.is_ok(), "expected late PegoutRegistered to be ignored");
-        assert_eq!(harness.processor.pegout_flows[&flow_id].current_step(), Steps::Done);
+        assert!(!harness.processor.pegout_flows.contains_key(&flow_id));
+        assert!(!harness.processor.signature_flows.contains_key(&flow_id));
+        assert!(!harness.processor.tx_status_scheduler.is_scheduled(&flow_id));
+        assert!(!harness.processor.advance_funds_timeout_scheduler.is_scheduled(&flow_id));
+        assert!(!harness.processor.register_pegout_retry_scheduler.is_scheduled(&flow_id));
+        assert!(!harness.processor.flows_pending_timeout.contains(&flow_id));
+        assert!(!harness.processor.unconfirmed_register_pegout.contains_key(&flow_id));
     }
 }

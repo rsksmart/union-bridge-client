@@ -22,8 +22,8 @@ use crate::flows::operator_take::operator_take_flow::{
     AdvanceFundsFlow, OperatorTakeTriggerData, StepData, Steps,
 };
 use crate::types::{
-    EventStatus, OperatorTakeTriggeredEvent, PegoutRegisteredEvent, RskPegManagerEvents,
-    TickScheduler,
+    AdminRequest, EventStatus, FlowKind, OperatorTakeTriggeredEvent, PegoutRegisteredEvent,
+    RskPegManagerEvents, TickScheduler, UserRequests,
 };
 
 fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
@@ -299,6 +299,20 @@ where
         Ok(Uuid::from_bytes(uuid_bytes))
     }
 
+    /// Tear down an advance-funds flow declared dead by an admin operator.
+    fn fail_flow(&mut self, flow_id: Uuid, reason: &str) -> Result<()> {
+        if let Some(flow) = self.flows.get_mut(&flow_id) {
+            flow.mark_failed(reason)?;
+            warn!("Admin marked advance-funds flow {flow_id} as failed: {reason}");
+        } else {
+            warn!("Admin requested fail for unknown advance-funds flow {flow_id}: {reason}");
+        }
+
+        self.cleanup_terminal_flows();
+
+        Ok(())
+    }
+
     fn create_flow_for_operator_take_triggered(
         &mut self,
         event: &OperatorTakeTriggeredEvent,
@@ -441,12 +455,42 @@ where
         Ok(AdvanceFundsRegistered { committee_id, slot_index, txid, pegout_id, operator_pubkey })
     }
 
-    fn cleanup_completed_flows(&mut self) {
-        let completed: Vec<_> =
-            self.flows.iter().filter(|(_, flow)| flow.is_done()).map(|(k, _)| *k).collect();
+    fn cleanup_terminal_flow_state(&mut self) {
+        let terminal: Vec<_> = self
+            .flows
+            .iter()
+            .filter(|(_, flow)| flow.is_terminal())
+            .map(|(flow_id, flow)| {
+                let trigger = flow.trigger_data();
+                (*flow_id, trigger.committee_id.clone(), trigger.slot_id)
+            })
+            .collect();
 
-        for flow_id in completed {
-            debug!("Removing completed advance funds flow {flow_id}");
+        for (flow_id, committee_id, slot_id) in terminal {
+            self.register_advance_funds_retry_scheduler.cancel(&flow_id);
+            self.register_reimbursement_kickoff_retry_scheduler.cancel(&flow_id);
+            self.register_operator_take_retry_scheduler.cancel(&flow_id);
+            self.unconfirmed_register_advance_funds.remove(&flow_id);
+            self.unconfirmed_register_reimbursement_kickoff.remove(&flow_id);
+            self.unconfirmed_register_operator_take.remove(&flow_id);
+            self.request_pegout_tx_hashes.remove(&(committee_id, slot_id));
+        }
+    }
+
+    fn cleanup_terminal_flows(&mut self) {
+        self.cleanup_terminal_flow_state();
+
+        // Advance-funds flows are not persisted just yet, so this processor removes
+        // terminal flows from memory directly instead of using cleanup_flows_matching.
+        let terminal_flow_ids: Vec<_> = self
+            .flows
+            .iter()
+            .filter(|(_, flow)| flow.is_terminal())
+            .map(|(flow_id, _)| *flow_id)
+            .collect();
+
+        for flow_id in terminal_flow_ids {
+            debug!("Removing terminal advance funds flow {flow_id}");
             self.flows.remove(&flow_id);
         }
     }
@@ -488,7 +532,7 @@ where
             }
         }
 
-        self.cleanup_completed_flows();
+        self.cleanup_terminal_flows();
         Ok(())
     }
 
@@ -547,7 +591,7 @@ where
             }
         }
 
-        self.cleanup_completed_flows();
+        self.cleanup_terminal_flows();
         Ok(())
     }
 
@@ -796,7 +840,22 @@ where
     CG: RskContractsGatewayApi,
     BC: common::msg_broker::broker::BitVmxBrokerClientApi,
 {
+    fn process_user_request(&mut self, req: &UserRequests) -> Result<()> {
+        self.cleanup_terminal_flows();
+
+        // Advance-funds flows have no other user-driven entry points; we only act
+        // on the admin "fail flow" lever.
+        if let UserRequests::Admin(AdminRequest::FailFlow { kind, flow_id, reason }) = req
+            && *kind == FlowKind::AdvanceFunds
+        {
+            self.fail_flow(*flow_id, reason)?;
+        }
+        Ok(())
+    }
+
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         match event {
             OutgoingBitVMXApiMessages::SetupCompleted(program_id) => {
                 debug!(
@@ -869,6 +928,8 @@ where
     }
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         if self.required_confirmations == 0 {
             return self.process_confirmed_rsk_event(event);
         }
@@ -956,6 +1017,8 @@ where
     }
 
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         self.process_block_confirmations(block)?;
         self.handle_register_advance_funds_retry_tick();
         self.handle_register_reimbursement_kickoff_retry_tick();
@@ -1038,10 +1101,11 @@ mod tests {
     fn buffers_reimbursement_kickoff_spv_while_waiting_for_advance_funds_confirmation() {
         let committee_id = Uuid::new_v4();
         let slot_index = 3;
-        let flow_id = AdvanceFundsFlowProcessor::<MockRskContractsGatewayApi, MockBitVmxBroker>::get_advance_funds_pid(
-            committee_id,
-            slot_index,
-        )
+        let flow_id =
+            AdvanceFundsFlowProcessor::<MockRskContractsGatewayApi, MockBitVmxBroker>::get_advance_funds_pid(
+                committee_id,
+                slot_index,
+            )
             .expect("flow id");
         let trigger_data = test_trigger_data(committee_id, slot_index);
 
@@ -1408,5 +1472,58 @@ mod tests {
 
     fn proof_txid() -> bitcoin::Txid {
         test_spv_proof().tx.compute_txid()
+    }
+
+    #[test]
+    fn cleanup_terminal_flows_removes_advance_funds_flow_and_retry_state() {
+        let committee_id = Uuid::new_v4();
+        let slot_index = 4;
+        let flow_id =
+            AdvanceFundsFlowProcessor::<MockRskContractsGatewayApi, MockBitVmxBroker>::get_advance_funds_pid(
+                committee_id,
+                slot_index,
+            )
+            .expect("flow id");
+        let trigger_data = test_trigger_data(committee_id, slot_index);
+
+        let flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            flow_id,
+            trigger_data,
+            Steps::Failed,
+        );
+
+        let mut processor = AdvanceFundsFlowProcessor::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+        );
+        processor.flows.insert(flow_id, flow);
+        processor.register_advance_funds_retry_scheduler.schedule(flow_id, 1);
+        processor.register_reimbursement_kickoff_retry_scheduler.schedule(flow_id, 1);
+        processor.register_operator_take_retry_scheduler.schedule(flow_id, 1);
+        processor.unconfirmed_register_advance_funds.insert(flow_id, 1);
+        processor.unconfirmed_register_reimbursement_kickoff.insert(flow_id, 1);
+        processor.unconfirmed_register_operator_take.insert(flow_id, 1);
+        processor.request_pegout_tx_hashes.insert(
+            (CommitteeId::from(committee_id.as_u128()), slot_index as u64),
+            "0xrequest".to_string(),
+        );
+
+        processor.cleanup_terminal_flows();
+
+        assert!(!processor.flows.contains_key(&flow_id));
+        assert!(!processor.register_advance_funds_retry_scheduler.is_scheduled(&flow_id));
+        assert!(!processor.register_reimbursement_kickoff_retry_scheduler.is_scheduled(&flow_id));
+        assert!(!processor.register_operator_take_retry_scheduler.is_scheduled(&flow_id));
+        assert!(!processor.unconfirmed_register_advance_funds.contains_key(&flow_id));
+        assert!(!processor.unconfirmed_register_reimbursement_kickoff.contains_key(&flow_id));
+        assert!(!processor.unconfirmed_register_operator_take.contains_key(&flow_id));
+        assert!(
+            !processor
+                .request_pegout_tx_hashes
+                .contains_key(&(CommitteeId::from(committee_id.as_u128()), slot_index as u64))
+        );
     }
 }

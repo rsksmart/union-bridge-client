@@ -65,6 +65,26 @@ pub enum RskPegManagerEvents {
 pub enum UserRequests {
     FundingInfo(Uuid),
     ApplyToStream(ApplyToStream),
+    Admin(AdminRequest),
+}
+
+/// Admin-issued requests carried over the same `UserRequests` channel. Gated by the
+/// user-api admin endpoint and never reachable from regular user traffic.
+#[derive(Debug, Deserialize)]
+pub enum AdminRequest {
+    /// Mark a flow as failed using the flow's regular state machine.
+    FailFlow { kind: FlowKind, flow_id: Uuid, reason: String },
+}
+
+/// Discriminator for the family of flows admin operations target. Serialized as
+/// kebab-case ("pegin", "pegout", "advance-funds", "committee-setup") on the wire.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "kebab-case")]
+pub enum FlowKind {
+    Pegin,
+    Pegout,
+    AdvanceFunds,
+    CommitteeSetup,
 }
 
 pub type PeginRequestedEvent = EventWithBlock<PeginRequested>;
@@ -1303,6 +1323,42 @@ mod tests {
                 // IgnoredEvent no longer carries data - it's just a marker that the event was ignored
             }
             _ => panic!("Expected IgnoredEvent for MemberInfoDeposited"),
+        }
+    }
+
+    #[test]
+    fn flow_kind_kebab_case_round_trip() {
+        // Wire form must stay kebab-case so the user-api handler and the coordinator
+        // agree on `"advance-funds"` (not `"AdvanceFunds"`).
+        for (kind, expected) in [
+            (FlowKind::Pegin, "\"pegin\""),
+            (FlowKind::Pegout, "\"pegout\""),
+            (FlowKind::AdvanceFunds, "\"advance-funds\""),
+            (FlowKind::CommitteeSetup, "\"committee-setup\""),
+        ] {
+            let encoded = serde_json::to_string(&kind).expect("serialize FlowKind");
+            assert_eq!(encoded, expected, "unexpected wire form for {kind:?}");
+            let decoded: FlowKind = serde_json::from_str(&encoded).expect("deserialize FlowKind");
+            assert_eq!(decoded, kind);
+        }
+    }
+
+    #[test]
+    fn admin_fail_flow_request_deserializes_from_user_api_payload() {
+        // Pin the exact JSON shape `user-api::admin_fail_flow` emits so the two ends
+        // can't drift: any rename here must be paired with a server.rs change.
+        let id = Uuid::new_v4();
+        let payload = format!(
+            r#"{{"Admin":{{"FailFlow":{{"kind":"advance-funds","flow_id":"{id}","reason":"manual"}}}}}}"#,
+        );
+        let parsed: UserRequests = serde_json::from_str(&payload).expect("deserialize");
+        match parsed {
+            UserRequests::Admin(AdminRequest::FailFlow { kind, flow_id, reason }) => {
+                assert_eq!(kind, FlowKind::AdvanceFunds);
+                assert_eq!(flow_id, id);
+                assert_eq!(reason, "manual");
+            }
+            other => panic!("expected Admin(FailFlow), got {other:?}"),
         }
     }
 }
