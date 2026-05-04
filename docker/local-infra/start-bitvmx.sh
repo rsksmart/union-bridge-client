@@ -126,7 +126,7 @@ wait_for_container_health() {
 }
 
 wait_for_bitvmx_clients() {
-  local timeout_secs="${1:-90}"
+  local timeout_secs=90
   local elapsed=0
   local op_num status
   local pending=(1 2 3 4)
