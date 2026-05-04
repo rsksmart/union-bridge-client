@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 MODE="${1:-}"
 BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
+STOP_DATABASE_CONTAINERS_CONFIRMED=false
+STOP_DATABASE_CONTAINERS_DENIED=false
 
 usage() {
   echo "Usage: $0 <local|docker>"
@@ -30,9 +32,6 @@ dir_ts="$(date +%Y%m%d%H%M%S)"
 backup_root="${HOME}/tmp/union_bridge_logs_backup"
 log_dir="${backup_root}/${MODE}/${dir_ts}"
 
-mkdir -p "${backup_root}" "${log_dir}"
-echo "[${display_ts}] Created log directory: ${log_dir}"
-
 print_capture_result() {
   local subject="$1"
   local rc="$2"
@@ -44,9 +43,43 @@ print_capture_result() {
   fi
 }
 
+confirm_stop_database_containers() {
+  local answer=""
+
+  if [[ "${STOP_DATABASE_CONTAINERS_CONFIRMED}" == "true" ]]; then
+    return 0
+  fi
+  if [[ "${STOP_DATABASE_CONTAINERS_DENIED}" == "true" ]]; then
+    return 1
+  fi
+
+  if [[ ! -t 0 ]]; then
+    echo "[${display_ts}] Cannot back up databases without confirmation to stop containers."
+    STOP_DATABASE_CONTAINERS_DENIED=true
+    return 1
+  fi
+
+  echo ""
+  echo "BitVMX database backup requires stopping BitVMX containers."
+  echo "Containers will be stopped with docker stop, volumes will be kept, and containers will remain stopped after backup."
+  read -r -p "Continue? [y/N] " answer
+  if [[ "${answer}" =~ ^[Yy]$ ]]; then
+    STOP_DATABASE_CONTAINERS_CONFIRMED=true
+    return 0
+  fi
+
+  STOP_DATABASE_CONTAINERS_DENIED=true
+  return 1
+}
+
+confirm_stop_database_containers
+
 strip_ansi() {
   perl -pe 's/\e\[[0-?]*[ -\/]*[@-~]//g'
 }
+
+mkdir -p "${backup_root}" "${log_dir}"
+echo "[${display_ts}] Created log directory: ${log_dir}"
 
 capture_command() {
   local label="$1"
@@ -126,12 +159,79 @@ capture_container_logs() {
   capture_command "${label}" "${subject}" docker logs "${container_id}"
 }
 
-cleanup_dir() {
-  local path="$1"
+backup_bitvmx_container_database() {
+  local label="$1"
+  local preferred_name="${2:-}"
+  local project="$3"
+  local service="$4"
+  local subject="BitVMX database for ${label}"
+  local destination_file="${log_dir}/${label}-database.tar.gz"
+  local stderr_file="${destination_file}.stderr"
+  local container_id=""
+  local container_image
+  local was_running
+  local rc
 
-  [[ -n "${path}" ]] || return 0
-  [[ -d "${path}" ]] || return 0
-  rm -rf "${path}"
+  if ! confirm_stop_database_containers; then
+    capture_missing "${label}-database" "Skipped database backup because container stop was not confirmed." "${subject}"
+    return
+  fi
+
+  if [[ -n "${preferred_name}" ]]; then
+    container_id="$(docker_container_id_from_name "${preferred_name}")"
+  fi
+  if [[ -z "${container_id}" ]]; then
+    container_id="$(find_compose_container_id "${project}" "${service}")"
+  fi
+  if [[ -z "${container_id}" ]]; then
+    local hint=""
+    if [[ -n "${preferred_name}" ]]; then
+      hint=" (tried name=${preferred_name}"
+    fi
+    if [[ -n "${hint}" ]]; then
+      hint="${hint}, compose project=${project} service=${service})"
+    else
+      hint=" (compose project=${project} service=${service})"
+    fi
+    capture_missing "${label}-database" "No container found${hint}" "${subject}"
+    return
+  fi
+
+  was_running="$(docker inspect -f '{{.State.Running}}' "${container_id}" 2> "${stderr_file}")"
+  rc=$?
+  if [[ "${rc}" -ne 0 ]]; then
+    print_capture_result "${subject}" "${rc}"
+    return
+  fi
+
+  container_image="$(docker inspect -f '{{.Config.Image}}' "${container_id}" 2> "${stderr_file}")"
+  rc=$?
+  if [[ "${rc}" -ne 0 ]]; then
+    print_capture_result "${subject}" "${rc}"
+    return
+  fi
+
+  if [[ "${was_running}" == "true" ]]; then
+    docker stop "${container_id}" > /dev/null 2> "${stderr_file}"
+    rc=$?
+    if [[ "${rc}" -ne 0 ]]; then
+      print_capture_result "${subject}" "${rc}"
+      return
+    fi
+  fi
+
+  docker run --rm \
+    --volumes-from "${container_id}" \
+    --entrypoint tar \
+    "${container_image}" \
+    -C /tmp -czf - . > "${destination_file}" 2> "${stderr_file}"
+  rc=$?
+
+  if [[ "${rc}" -eq 0 && ! -s "${stderr_file}" ]]; then
+    rm -f "${stderr_file}"
+  fi
+
+  print_capture_result "${subject}" "${rc}"
 }
 
 # Mirrors cli-run.sh: UB_LOG_DIR overrides; else logs/latest (timestamped run); else logs/.
@@ -193,6 +293,7 @@ backup_local_mode() {
 
   for i in 1 2 3 4; do
     capture_container_logs "bitvmx-client-${i}" "bitvmx-client-${i}" "bitvmx" "bitvmx-client-${i}"
+    backup_bitvmx_container_database "bitvmx-client-${i}" "bitvmx-client-${i}" "bitvmx" "bitvmx-client-${i}"
   done
 }
 
@@ -207,6 +308,7 @@ backup_docker_mode() {
 
     capture_container_logs "coordinator-${i}" "coordinator-${i}" "op_${i}" "coordinator"
     capture_container_logs "bitvmx-client-${i}" "bitvmx-client-${i}" "op_${i}" "bitvmx-client"
+    backup_bitvmx_container_database "bitvmx-client-${i}" "bitvmx-client-${i}" "op_${i}" "bitvmx-client"
   done
 }
 
