@@ -422,10 +422,10 @@ where
             (Steps::AddOperatorTakeHash, StepData::OperatorTakeHashAdded) => {
                 Ok(Steps::WaitAllOperatorTakeTxidsAdded)
             }
-            (Steps::AddOperatorTakeHash, StepData::AllOperatorTakeTxidsAdded)
-            | (Steps::WaitAllOperatorTakeTxidsAdded, StepData::AllOperatorTakeTxidsAdded) => {
-                Ok(Steps::WaitAcceptPeginSignaturesReadyCheckpoint)
-            }
+            (
+                Steps::AddOperatorTakeHash | Steps::WaitAllOperatorTakeTxidsAdded,
+                StepData::AllOperatorTakeTxidsAdded,
+            ) => Ok(Steps::WaitAcceptPeginSignaturesReadyCheckpoint),
             (
                 Steps::WaitAcceptPeginSignaturesReadyCheckpoint,
                 StepData::AcceptPeginSignaturesReady,
