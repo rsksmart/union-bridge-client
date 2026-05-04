@@ -2,7 +2,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use axum::extract::Request;
 use axum::http::{HeaderMap, StatusCode};
+use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
@@ -22,10 +24,6 @@ use transaction_dispatcher::types::{PeginAddressInput, RequestPegoutInput};
 use uuid::Uuid;
 
 use crate::errors::ApiError;
-
-/// Bearer token gating admin endpoints. None/empty disables them (handler returns 401).
-#[derive(Clone)]
-pub(crate) struct AdminToken(pub Option<String>);
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RequestPeginInput {
@@ -214,14 +212,20 @@ impl Server {
                 .layer(Extension(funding_broker.clone())),
         );
 
-        // Admin endpoints. The handler returns 401 when no token is configured, so the
-        // endpoint is always mounted but inert until an operator sets `admin_token`.
+        // Admin endpoints. Auth is route middleware so unauthenticated requests are
+        // rejected before handler extractors read or parse the body.
+        let admin_token_for_middleware = admin_token.clone();
         app = app.nest(
             "/admin",
             Router::new()
                 .route("/fail-flow", post(Self::admin_fail_flow))
-                .layer(Extension(funding_broker))
-                .layer(Extension(AdminToken(admin_token))),
+                .layer(middleware::from_fn(move |request: Request, next: Next| {
+                    let admin_token = admin_token_for_middleware.clone();
+                    async move {
+                        Self::verify_admin_request(admin_token.as_deref(), request, next).await
+                    }
+                }))
+                .layer(Extension(funding_broker)),
         );
 
         app = app.layer(TimeoutLayer::with_status_code(
@@ -260,13 +264,8 @@ impl Server {
 
     async fn admin_fail_flow(
         Extension(broker): Extension<Arc<FundingSyncBroker>>,
-        Extension(admin): Extension<AdminToken>,
-        headers: HeaderMap,
         Json(body): Json<FailFlowReq>,
     ) -> Response {
-        if let Err(err) = verify_admin_auth(admin.0.as_deref(), &headers) {
-            return err.into_response();
-        }
         let payload = match build_fail_flow_payload(&body) {
             Ok(payload) => payload,
             Err(err) => return err.into_response(),
@@ -284,6 +283,17 @@ impl Server {
             Ok(()) => (StatusCode::ACCEPTED, Json(json!({ "result": "accepted" }))).into_response(),
             Err(err) => err.into_response(),
         }
+    }
+
+    async fn verify_admin_request(
+        admin_token: Option<&str>,
+        request: Request,
+        next: Next,
+    ) -> Response {
+        if let Err(err) = verify_admin_auth(admin_token, request.headers()) {
+            return err.into_response();
+        }
+        next.run(request).await
     }
 
     async fn apply_stream(
