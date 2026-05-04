@@ -1,24 +1,38 @@
 #!/usr/bin/env bash
 # Re-exec under bash 4+ if invoked through the macOS system bash 3.2.57,
 # which trips on `set -u` + empty arrays in cli-infra's start-bitvmx.sh.
-# Also prepend Homebrew's bin to PATH so every nested `#!/usr/bin/env bash`
-# script inherits the modern bash.
-if (( ${BASH_VERSINFO[0]:-0} < 4 )); then
+#
+# We must NOT prepend the whole Homebrew bin to PATH, because that would
+# shadow `python3` (Homebrew's 3.14 lacks mnemonic, while the framework
+# 3.13 has it) and other binaries that the operator tooling depends on.
+# Instead, shim only `bash` via a tempdir of one symlink, prepended to
+# PATH.
+
+shim_bash() {
+    local bash_bin
     for candidate in /opt/homebrew/bin/bash /usr/local/bin/bash; do
         if [[ -x "${candidate}" ]]; then
-            export PATH="$(dirname "${candidate}"):${PATH}"
-            exec "${candidate}" "${BASH_SOURCE[0]}" "$@"
+            bash_bin="${candidate}"
+            break
         fi
     done
-    echo "Error: this script needs bash 4+; install with 'brew install bash' and retry." >&2
-    exit 1
-fi
-for candidate in /opt/homebrew/bin /usr/local/bin; do
-    if [[ -x "${candidate}/bash" ]]; then
-        export PATH="${candidate}:${PATH}"
-        break
+    if [[ -z "${bash_bin:-}" ]]; then
+        echo "Error: this script needs bash 4+; install with 'brew install bash' and retry." >&2
+        exit 1
     fi
-done
+    local shim
+    shim="$(mktemp -d -t e2e-bash-shim-XXXXXX)"
+    ln -s "${bash_bin}" "${shim}/bash"
+    export PATH="${shim}:${PATH}"
+    export _E2E_BASH_SHIM_DIR="${shim}"
+    if (( ${BASH_VERSINFO[0]:-0} < 4 )); then
+        exec "${bash_bin}" "${BASH_SOURCE[0]}" "$@"
+    fi
+}
+if [[ -z "${_E2E_BASH_SHIM_DIR:-}" ]]; then
+    shim_bash "$@"
+fi
+trap '[[ -n "${_E2E_BASH_SHIM_DIR:-}" ]] && rm -rf "${_E2E_BASH_SHIM_DIR}"' EXIT
 
 # tools/migrate-v031/test-e2e.sh
 #
@@ -113,7 +127,7 @@ require_env() {
 
 cmd_check() {
     log "Checking required commands..."
-    for c in cargo docker tar git; do
+    for c in cargo docker tar git python3; do
         command -v "$c" >/dev/null || fail "missing command: $c"
     done
 
@@ -131,7 +145,26 @@ cmd_check() {
     git rev-parse --verify "${E2E_V031_REF}^{commit}" >/dev/null 2>&1 \
         || fail "git ref '${E2E_V031_REF}' is not reachable; fetch tags first (git fetch --tags origin)"
 
+    ensure_python_mnemonic
+
     log "All prereqs OK."
+}
+
+# cli-setup-operators.sh requires `python3 -c "import mnemonic"` to succeed.
+# Different shells may see different python3 binaries; ensure the one bash
+# sees here has the module available, auto-installing into its user site
+# packages if necessary.
+ensure_python_mnemonic() {
+    log "Checking python3 + mnemonic ($(command -v python3))..."
+    if python3 -c "import mnemonic" >/dev/null 2>&1; then
+        return
+    fi
+    warn "python3 -c \"import mnemonic\" failed for $(command -v python3); attempting auto-install..."
+    python3 -m pip install --user --quiet mnemonic \
+        || fail "could not install python3 'mnemonic' module. Install manually with 'python3 -m pip install --user mnemonic' and retry."
+    python3 -c "import mnemonic" >/dev/null 2>&1 \
+        || fail "python3 still cannot import mnemonic after install. Check that $(command -v python3) and 'pip' belong to the same Python."
+    log "mnemonic is now importable."
 }
 
 # ---- worktrees -------------------------------------------------------------
