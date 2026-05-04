@@ -38,10 +38,10 @@ pub enum Steps {
     PegoutRequestedCheckpoint,
     GetCommInfo,
     PrepareUserTakeSetup,
-    // The signature flow is executed while waiting in this step (outside the flow).
+    // Wait for the user-take signature flow.
     WaitUserTakeSignaturesReady,
-    // All-operators checkpoint: every required user-take signature is ready.
-    DispatchTransactionCheckpoint,
+    // All-signatures checkpoint: dispatch the fully signed user-take Bitcoin transaction.
+    DispatchUserTakeTransactionCheckpoint,
     TriggerOperatorTake, // Triggered when timeout expires without signature completion
     ConfirmUserTakeTransaction,
     RequestUserTakeSpvProof,
@@ -56,7 +56,7 @@ impl Steps {
     fn allows_fast_forward_to_pegout_registered(self) -> bool {
         matches!(
             self,
-            Steps::DispatchTransactionCheckpoint
+            Steps::DispatchUserTakeTransactionCheckpoint
                 | Steps::ConfirmUserTakeTransaction
                 | Steps::RequestUserTakeSpvProof
                 | Steps::RegisterPegout
@@ -205,7 +205,7 @@ where
                     self.state.flow_id
                 );
             }
-            Steps::DispatchTransactionCheckpoint => {
+            Steps::DispatchUserTakeTransactionCheckpoint => {
                 self.dispatch_transaction()?;
                 self.complete_step(&StepData::UserTakeTransactionDispatched)?;
             }
@@ -298,11 +298,12 @@ where
                 Ok(Steps::WaitUserTakeSignaturesReady)
             }
             (Steps::WaitUserTakeSignaturesReady, StepData::UserTakeSignaturesReady) => {
-                Ok(Steps::DispatchTransactionCheckpoint)
+                Ok(Steps::DispatchUserTakeTransactionCheckpoint)
             }
-            (Steps::DispatchTransactionCheckpoint, StepData::UserTakeTransactionDispatched) => {
-                Ok(Steps::ConfirmUserTakeTransaction)
-            }
+            (
+                Steps::DispatchUserTakeTransactionCheckpoint,
+                StepData::UserTakeTransactionDispatched,
+            ) => Ok(Steps::ConfirmUserTakeTransaction),
             (Steps::WaitUserTakeSignaturesReady, StepData::TriggerOperatorTakeTimeout) => {
                 // Timeout expired, transition to TriggerOperatorTake step
                 info!(
@@ -709,7 +710,7 @@ fn format_step(step: Steps) -> &'static str {
         Steps::GetCommInfo => "GetCommInfo",
         Steps::PrepareUserTakeSetup => "PrepareUserTakeSetup",
         Steps::WaitUserTakeSignaturesReady => "WaitUserTakeSignaturesReady",
-        Steps::DispatchTransactionCheckpoint => "DispatchTransactionCheckpoint",
+        Steps::DispatchUserTakeTransactionCheckpoint => "DispatchUserTakeTransactionCheckpoint",
         Steps::TriggerOperatorTake => "TriggerOperatorTake",
         Steps::ConfirmUserTakeTransaction => "ValidateTransactionStatus",
         Steps::RequestUserTakeSpvProof => "RequestSpvProof",
@@ -970,7 +971,8 @@ mod tests {
     #[test]
     fn confirmed_pegout_registered_terminalizes_from_dispatch_transaction() {
         let tempdir = TempDir::new();
-        let mut flow = build_flow(Steps::DispatchTransactionCheckpoint, &tempdir, true, true);
+        let mut flow =
+            build_flow(Steps::DispatchUserTakeTransactionCheckpoint, &tempdir, true, true);
         let event = fake_pegout_registered_event(test_txid([3u8; 32]));
 
         flow.complete_step(&StepData::PegoutRegistered(event.clone())).expect("flow completes");

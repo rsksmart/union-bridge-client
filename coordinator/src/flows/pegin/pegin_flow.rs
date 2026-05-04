@@ -55,11 +55,10 @@ pub enum Steps {
     AddOperatorTakeHash,
     // Wait until every operator take tx hash has been registered on Rootstock
     WaitAllOperatorTakeTxidsAdded,
-    // All-operators checkpoint: every prover/operator take txid has been registered.
-    // The signature flow is executed while waiting in this step (outside the flow).
-    WaitAcceptPeginSignaturesReadyCheckpoint,
-    // All-operators checkpoint: every required accept-pegin signature is ready.
-    DispatchTransactionCheckpoint,
+    // Wait for the accept-pegin signature flow after every prover/operator take txid is registered.
+    WaitAcceptPeginSignaturesReady,
+    // All-signatures checkpoint: dispatch the fully signed accept-pegin Bitcoin transaction.
+    DispatchAcceptPeginTransactionCheckpoint,
     // Confirm accept pegin transaction
     ConfirmAcceptPeginTransaction,
     // Request SPV proof for the accept pegin (to call acceptPegin)
@@ -73,10 +72,10 @@ pub enum Steps {
 }
 
 impl Steps {
-    fn allows_fast_forward_to_pegin_accepted(self) -> bool {
+    pub(crate) fn allows_fast_forward_to_pegin_accepted(self) -> bool {
         matches!(
             self,
-            Steps::DispatchTransactionCheckpoint
+            Steps::DispatchAcceptPeginTransactionCheckpoint
                 | Steps::ConfirmAcceptPeginTransaction
                 | Steps::RequestAcceptPeginSpvProof
                 | Steps::AcceptPegin
@@ -304,13 +303,13 @@ where
             Steps::WaitAllOperatorTakeTxidsAdded => {
                 info!("Waiting for AllOperatorTakeTxidsAdded for flow_id: {}", self.state.flow_id);
             }
-            Steps::WaitAcceptPeginSignaturesReadyCheckpoint => {
+            Steps::WaitAcceptPeginSignaturesReady => {
                 info!(
                     "Waiting for signatures to be ready to dispatch transaction for flow_id: {}",
                     self.state.flow_id
                 );
             }
-            Steps::DispatchTransactionCheckpoint => {
+            Steps::DispatchAcceptPeginTransactionCheckpoint => {
                 self.dispatch_transaction()?;
                 self.complete_step(&StepData::AcceptPeginTransactionDispatched)?;
             }
@@ -422,17 +421,16 @@ where
             (Steps::AddOperatorTakeHash, StepData::OperatorTakeHashAdded) => {
                 Ok(Steps::WaitAllOperatorTakeTxidsAdded)
             }
-            (
-                Steps::AddOperatorTakeHash | Steps::WaitAllOperatorTakeTxidsAdded,
-                StepData::AllOperatorTakeTxidsAdded,
-            ) => Ok(Steps::WaitAcceptPeginSignaturesReadyCheckpoint),
-            (
-                Steps::WaitAcceptPeginSignaturesReadyCheckpoint,
-                StepData::AcceptPeginSignaturesReady,
-            ) => Ok(Steps::DispatchTransactionCheckpoint),
-            (Steps::DispatchTransactionCheckpoint, StepData::AcceptPeginTransactionDispatched) => {
-                Ok(Steps::ConfirmAcceptPeginTransaction)
+            (Steps::WaitAllOperatorTakeTxidsAdded, StepData::AllOperatorTakeTxidsAdded) => {
+                Ok(Steps::WaitAcceptPeginSignaturesReady)
             }
+            (Steps::WaitAcceptPeginSignaturesReady, StepData::AcceptPeginSignaturesReady) => {
+                Ok(Steps::DispatchAcceptPeginTransactionCheckpoint)
+            }
+            (
+                Steps::DispatchAcceptPeginTransactionCheckpoint,
+                StepData::AcceptPeginTransactionDispatched,
+            ) => Ok(Steps::ConfirmAcceptPeginTransaction),
             (
                 Steps::ConfirmAcceptPeginTransaction,
                 StepData::AcceptPeginTransactionConfirmed(tx_status),
@@ -1064,10 +1062,10 @@ fn format_step(step: Steps) -> &'static str {
         Steps::RequestOperatorWonTransactionInfo => "RequestOperatorWonTransactionInfo",
         Steps::AddOperatorTakeHash => "AddOperatorTakeHash",
         Steps::WaitAllOperatorTakeTxidsAdded => "WaitAllOperatorTakeTxidsAdded",
-        Steps::WaitAcceptPeginSignaturesReadyCheckpoint => {
-            "WaitAcceptPeginSignaturesReadyCheckpoint"
+        Steps::WaitAcceptPeginSignaturesReady => "WaitAcceptPeginSignaturesReady",
+        Steps::DispatchAcceptPeginTransactionCheckpoint => {
+            "DispatchAcceptPeginTransactionCheckpoint"
         }
-        Steps::DispatchTransactionCheckpoint => "DispatchTransactionCheckpoint",
         Steps::ConfirmAcceptPeginTransaction => "ConfirmAcceptPeginTransaction",
         Steps::RequestAcceptPeginSpvProof => "RequestAcceptPeginSpvProof",
         Steps::AcceptPegin => "AcceptPegin",
@@ -1606,7 +1604,7 @@ mod tests {
         let accept_pegin_txid = test_txid([8u8; 32]);
         let mut ctx = create_default_flow_context(
             flow_id,
-            Steps::WaitAcceptPeginSignaturesReadyCheckpoint,
+            Steps::WaitAcceptPeginSignaturesReady,
             Some(ParticipantRole::Verifier),
         );
         ctx.bitvmx_pegin_accepted = Some(default_pegin_accepted_message(accept_pegin_txid));
@@ -1658,7 +1656,7 @@ mod tests {
         let accept_pegin_txid = test_txid([9u8; 32]);
 
         for step in [
-            Steps::DispatchTransactionCheckpoint,
+            Steps::DispatchAcceptPeginTransactionCheckpoint,
             Steps::ConfirmAcceptPeginTransaction,
             Steps::RequestAcceptPeginSpvProof,
             Steps::AcceptPegin,
