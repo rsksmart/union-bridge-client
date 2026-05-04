@@ -40,10 +40,11 @@ pub enum Steps {
     PeginTransactionFound,
     // Request SPV proof for the pegin request (to call requestPegin)
     RequestPeginSpvProof,
-    // After RSK PeginRequested event confirmed (contains actual event data)
-    PeginRequested,
-    // Get communication info from BitVMX
-    GetCommInfo,
+    // Wait for the confirmed RSK PeginRequested event after submitting requestPegin.
+    WaitPeginRequested,
+    // Authoritative checkpoint: entered after confirmed PeginRequested establishes
+    // the canonical requestPegin result.
+    GetCommInfoAuthoritativeCheckpoint,
     // Send pegin request to BitVMX and setup
     PreparePeginSetup,
     // Request BitVMX operator take transaction info for prover members
@@ -52,17 +53,35 @@ pub enum Steps {
     RequestOperatorWonTransactionInfo,
     // Add operator take tx hash to contracts after BitVMX accepts
     AddOperatorTakeHash,
-    // Signature flow is executed between these steps (outside the flow)
-    DispatchTransaction,
+    // Wait until every operator take tx hash has been registered on Rootstock
+    WaitAllOperatorTakeTxidsAdded,
+    // All-converge checkpoint: entered after AllOperatorTakeTxidsAdded proves every
+    // required operator take txid was registered. Wait for the accept-pegin signing subflow.
+    WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint,
+    // All-converge checkpoint: entered after the accept-pegin signing subflow completes.
+    // Dispatch the fully signed accept-pegin Bitcoin transaction.
+    DispatchAcceptPeginTransactionAllConvergeCheckpoint,
     // Confirm accept pegin transaction
     ConfirmAcceptPeginTransaction,
     // Request SPV proof for the accept pegin (to call acceptPegin)
     RequestAcceptPeginSpvProof,
     // Accept the pegin on RSK
     AcceptPegin,
-    // Final state
+    // Terminal state after confirmed RSK PeginAccepted establishes the acceptPegin result.
     Done,
     Failed,
+}
+
+impl Steps {
+    pub(crate) fn allows_fast_forward_to_pegin_accepted(self) -> bool {
+        matches!(
+            self,
+            Steps::DispatchAcceptPeginTransactionAllConvergeCheckpoint
+                | Steps::ConfirmAcceptPeginTransaction
+                | Steps::RequestAcceptPeginSpvProof
+                | Steps::AcceptPegin
+        )
+    }
 }
 
 /// Data passed between steps in the pegin flow
@@ -82,10 +101,14 @@ pub enum StepData {
     BitvmxPeginAccepted(PeginAcceptedMessage),
     // Named transaction information returned by BitVMX
     TransactionInfo { tx_name: String, txid: Txid },
-    // Operator take hash added
+    // Local operator take tx hash submitted
     OperatorTakeHashAdded,
-    // Dispatch accept pegin transaction
-    DispatchAcceptPeginTransaction,
+    // All operator take tx hashes added
+    AllOperatorTakeTxidsAdded,
+    // Accept pegin signatures are ready
+    AcceptPeginSignaturesReady,
+    // Accept pegin transaction has been dispatched
+    AcceptPeginTransactionDispatched,
     // Accept pegin transaction confirmed
     AcceptPeginTransactionConfirmed(TransactionStatus),
     // SPV proof for accept pegin
@@ -249,11 +272,10 @@ where
                 info!("Requesting SPV proof for pegin request for flow_id: {}", self.state.flow_id);
                 self.request_pegin_spv_proof()?;
             }
-            Steps::PeginRequested => {
-                // This step will be reached after PeginRequested event is confirmed
-                info!("PeginRequested event confirmed for flow_id: {}", self.state.flow_id);
+            Steps::WaitPeginRequested => {
+                info!("Waiting for PeginRequested event for flow_id: {}", self.state.flow_id);
             }
-            Steps::GetCommInfo => {
+            Steps::GetCommInfoAuthoritativeCheckpoint => {
                 self.migrate_to_official_flow_id()?;
                 self.request_bitvmx_comm_info()?;
             }
@@ -276,28 +298,35 @@ where
             }
             Steps::AddOperatorTakeHash => {
                 self.add_operator_take_hash()?;
+                self.complete_step(&StepData::OperatorTakeHashAdded)?;
             }
-            Steps::DispatchTransaction => {
+            Steps::WaitAllOperatorTakeTxidsAdded => {
+                info!("Waiting for AllOperatorTakeTxidsAdded for flow_id: {}", self.state.flow_id);
+            }
+            Steps::WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint => {
                 info!(
                     "Waiting for signatures to be ready to dispatch transaction for flow_id: {}",
                     self.state.flow_id
                 );
             }
-            Steps::ConfirmAcceptPeginTransaction => {
+            Steps::DispatchAcceptPeginTransactionAllConvergeCheckpoint => {
                 self.dispatch_transaction()?;
+                self.complete_step(&StepData::AcceptPeginTransactionDispatched)?;
+            }
+            Steps::ConfirmAcceptPeginTransaction => {
                 // Transaction status will be polled via TickScheduler in the processor
                 // to ensure the transaction has time to be broadcast before querying
                 info!(
                     "Waiting for AcceptPegin Bitcoin confirmations for flow_id: {} and tx_id: {:?}",
                     self.state.flow_id,
-                    self.get_accept_pegin_txid()
+                    self.get_accept_pegin_txid_from_bitvmx_var()
                 );
             }
             Steps::RequestAcceptPeginSpvProof => {
                 info!(
                     "Requesting SPV proof for flow_id: {} and tx_id: {:?}",
                     self.state.flow_id,
-                    self.get_accept_pegin_txid()
+                    self.get_accept_pegin_txid_from_bitvmx_var()
                 );
                 self.request_spv_proof()?;
             }
@@ -322,8 +351,11 @@ where
             }
         }
 
-        // Persist state after successful step completion
-        self.persist_state()?;
+        // Persist state after successful step completion. Some entry actions complete
+        // another step synchronously and persist that newer state.
+        if self.state.ctx.step == next_step {
+            self.persist_state()?;
+        }
 
         Ok(())
     }
@@ -357,16 +389,16 @@ where
             (Steps::RequestPeginSpvProof, StepData::RequestPeginSpvProof(spv_proof)) => {
                 self.state.ctx.request_pegin_spv_proof = Some(spv_proof.clone());
                 self.request_pegin(spv_proof)?;
-                Ok(Steps::PeginRequested)
+                Ok(Steps::WaitPeginRequested)
             }
             (Steps::RequestPeginSpvProof, StepData::RetryRequestPegin) => {
                 self.retry_request_pegin_step()
             }
-            (Steps::PeginRequested, StepData::PeginRequested(pegin_requested)) => {
+            (Steps::WaitPeginRequested, StepData::PeginRequested(pegin_requested)) => {
                 self.state.ctx.pegin_requested = Some(pegin_requested.clone());
-                Ok(Steps::GetCommInfo)
+                Ok(Steps::GetCommInfoAuthoritativeCheckpoint)
             }
-            (Steps::GetCommInfo, StepData::CommInfo(comm_info)) => {
+            (Steps::GetCommInfoAuthoritativeCheckpoint, StepData::CommInfo(comm_info)) => {
                 self.state.ctx.my_p2p_address = Some(comm_info.clone());
                 Ok(Steps::PreparePeginSetup)
             }
@@ -375,7 +407,7 @@ where
                 if self.try_get_op_role()? == ParticipantRole::Prover {
                     Ok(Steps::RequestOperatorTakeTransactionInfo)
                 } else {
-                    Ok(Steps::AddOperatorTakeHash)
+                    Ok(Steps::WaitAllOperatorTakeTxidsAdded)
                 }
             }
             (
@@ -387,11 +419,19 @@ where
                 StepData::TransactionInfo { tx_name, txid },
             ) => self.handle_operator_won_transaction_info(tx_name, *txid),
             (Steps::AddOperatorTakeHash, StepData::OperatorTakeHashAdded) => {
-                Ok(Steps::DispatchTransaction)
+                Ok(Steps::WaitAllOperatorTakeTxidsAdded)
             }
-            (Steps::DispatchTransaction, StepData::DispatchAcceptPeginTransaction) => {
-                Ok(Steps::ConfirmAcceptPeginTransaction)
+            (Steps::WaitAllOperatorTakeTxidsAdded, StepData::AllOperatorTakeTxidsAdded) => {
+                Ok(Steps::WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint)
             }
+            (
+                Steps::WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint,
+                StepData::AcceptPeginSignaturesReady,
+            ) => Ok(Steps::DispatchAcceptPeginTransactionAllConvergeCheckpoint),
+            (
+                Steps::DispatchAcceptPeginTransactionAllConvergeCheckpoint,
+                StepData::AcceptPeginTransactionDispatched,
+            ) => Ok(Steps::ConfirmAcceptPeginTransaction),
             (
                 Steps::ConfirmAcceptPeginTransaction,
                 StepData::AcceptPeginTransactionConfirmed(tx_status),
@@ -406,14 +446,33 @@ where
                 info!("Retrying accept pegin for flow_id: {}", self.state.flow_id);
                 Ok(Steps::AcceptPegin)
             }
-            (Steps::AcceptPegin, StepData::PeginAccepted(pegin_accepted)) => {
-                info!("PeginFlow Done: {}", self.state.flow_id);
-                trace!("PeginAccepted data: {pegin_accepted:?}");
-                self.state.ctx.pegin_accepted = Some(pegin_accepted.clone());
-                Ok(Steps::Done)
+            (step, StepData::PeginAccepted(pegin_accepted))
+                if step.allows_fast_forward_to_pegin_accepted() =>
+            {
+                self.complete_with_confirmed_pegin_acceptance(pegin_accepted)
             }
             _ => Err(anyhow!("Invalid state transition: {current_step:?} with data {data:?}")),
         }
+    }
+
+    fn complete_with_confirmed_pegin_acceptance(
+        &mut self,
+        pegin_accepted: &PeginAccepted,
+    ) -> Result<Steps> {
+        let expected_txid = self
+            .get_accept_pegin_txid_from_bitvmx_var()
+            .ok_or_else(|| anyhow!("Expected accept pegin txid not found"))?;
+        let accepted_txid = TxIdParser::fb_32_to_txid(pegin_accepted.acceptPeginTxid);
+
+        if accepted_txid != expected_txid {
+            bail!("PeginAccepted txid mismatch: got {accepted_txid:?}, expected {expected_txid:?}");
+        }
+
+        info!("PeginFlow Done: {}", self.state.flow_id);
+        trace!("PeginAccepted data: {pegin_accepted:?}");
+        self.state.ctx.pegin_accepted = Some(pegin_accepted.clone());
+
+        Ok(Steps::Done)
     }
 
     fn prepare_pegin_setup(&mut self) -> Result<()> {
@@ -819,7 +878,7 @@ where
 
     pub fn request_transaction_status(&self) -> Result<()> {
         let tx_id = self
-            .get_accept_pegin_txid()
+            .get_accept_pegin_txid_from_bitvmx_var()
             .ok_or_else(|| anyhow!("Expected accept pegin tx_id not found"))?;
         info!(
             "Requesting transaction status for flow_id: {} and tx_id: {:?}",
@@ -831,7 +890,7 @@ where
 
     pub fn request_spv_proof(&self) -> Result<()> {
         let tx_id = self
-            .get_accept_pegin_txid()
+            .get_accept_pegin_txid_from_bitvmx_var()
             .ok_or_else(|| anyhow!("Expected accept pegin tx_id not found"))?;
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetSPVProof(tx_id))?;
         Ok(())
@@ -890,7 +949,7 @@ where
             anyhow!("SPV proof not available for pegin request - flow_id {}", self.state.flow_id)
         })?;
         self.request_pegin(spv_proof)?;
-        Ok(Steps::PeginRequested)
+        Ok(Steps::WaitPeginRequested)
     }
 
     fn handle_operator_take_transaction_info(
@@ -934,7 +993,7 @@ where
         );
         trace!("Transaction status data: {tx_status:?}");
         let expected_tx_id = self
-            .get_accept_pegin_txid()
+            .get_accept_pegin_txid_from_bitvmx_var()
             .ok_or_else(|| anyhow!("Expected accept pegin txid not found"))?;
         if tx_status.tx_id != expected_tx_id {
             bail!(
@@ -947,7 +1006,7 @@ where
         Ok(Steps::RequestAcceptPeginSpvProof)
     }
 
-    pub fn get_accept_pegin_txid(&self) -> Option<Txid> {
+    pub fn get_accept_pegin_txid_from_bitvmx_var(&self) -> Option<Txid> {
         self.state.ctx.bitvmx_pegin_accepted.as_ref().map(|accepted| accepted.accept_pegin_txid)
     }
 
@@ -997,13 +1056,19 @@ fn format_step(step: Steps) -> &'static str {
     match step {
         Steps::PeginTransactionFound => "PeginTransactionFound",
         Steps::RequestPeginSpvProof => "RequestPeginSpvProof",
-        Steps::PeginRequested => "PeginRequested",
-        Steps::GetCommInfo => "GetCommInfo",
+        Steps::WaitPeginRequested => "WaitPeginRequested",
+        Steps::GetCommInfoAuthoritativeCheckpoint => "GetCommInfoAuthoritativeCheckpoint",
         Steps::PreparePeginSetup => "PreparePeginSetup",
         Steps::RequestOperatorTakeTransactionInfo => "RequestOperatorTakeTransactionInfo",
         Steps::RequestOperatorWonTransactionInfo => "RequestOperatorWonTransactionInfo",
         Steps::AddOperatorTakeHash => "AddOperatorTakeHash",
-        Steps::DispatchTransaction => "DispatchTransaction",
+        Steps::WaitAllOperatorTakeTxidsAdded => "WaitAllOperatorTakeTxidsAdded",
+        Steps::WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint => {
+            "WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint"
+        }
+        Steps::DispatchAcceptPeginTransactionAllConvergeCheckpoint => {
+            "DispatchAcceptPeginTransactionAllConvergeCheckpoint"
+        }
         Steps::ConfirmAcceptPeginTransaction => "ConfirmAcceptPeginTransaction",
         Steps::RequestAcceptPeginSpvProof => "RequestAcceptPeginSpvProof",
         Steps::AcceptPegin => "AcceptPegin",
@@ -1014,7 +1079,7 @@ fn format_step(step: Steps) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use alloy_primitives::{U256, Uint};
+    use alloy_primitives::{Address as AlloyAddress, Bytes, FixedBytes, U256, Uint};
     use bitcoin::Txid;
     use bitcoin::hashes::Hash;
     use common::msg_broker::bitvmx_types::{
@@ -1029,6 +1094,7 @@ mod tests {
     use primitive_types::H160;
     use transaction_dispatcher::types::GetCommitteeOutput;
     use union_contracts::bindings::committee_registry::CommitteeRegistry::Committee;
+    use union_contracts::bindings::pegin_manager::PeginManager::StreamPosition;
     use uuid::Uuid;
 
     use super::*;
@@ -1068,6 +1134,25 @@ mod tests {
             operator_take_sighash: Some(vec![1u8; 32]),
             operator_won_sighash: Some(vec![2u8; 32]),
             committee_id: Uuid::new_v4(),
+        }
+    }
+
+    fn default_pegin_accepted_event(accept_pegin_txid: Txid) -> PeginAccepted {
+        PeginAccepted {
+            blockHash: FixedBytes::<32>::from([0u8; 32]),
+            acceptPeginTxid: TxIdParser::txid_to_fb_32(accept_pegin_txid),
+            requestPeginTxid: FixedBytes::<32>::from([1u8; 32]),
+            vout: 0,
+            streamPosition: StreamPosition {
+                streamId: 0,
+                packetNumber: 0,
+                slotId: 0,
+                pegStatus: 1,
+            },
+            speedUpPubKey: FixedBytes::<32>::from([2u8; 32]),
+            rskDestinationAddress: AlloyAddress::from([3u8; 20]),
+            rbtcAmount: U256::from(1),
+            utxoScriptPubKey: Bytes::from(vec![4u8]),
         }
     }
 
@@ -1432,7 +1517,7 @@ mod tests {
             txid,
         });
         assert!(result.is_ok());
-        assert_eq!(flow.current_step(), Steps::AddOperatorTakeHash);
+        assert_eq!(flow.current_step(), Steps::WaitAllOperatorTakeTxidsAdded);
         assert_eq!(flow.get_state().ctx.operator_won_txid, Some(txid));
     }
 
@@ -1475,20 +1560,147 @@ mod tests {
             default_pegin_accepted_message(btc_tx_id),
         ));
         assert!(result.is_ok());
-        assert_eq!(flow.current_step(), Steps::AddOperatorTakeHash);
+        assert_eq!(flow.current_step(), Steps::WaitAllOperatorTakeTxidsAdded);
     }
 
     #[test]
-    fn test_add_operator_take_hash_verifier_skips() {
+    fn test_wait_all_operator_take_txids_added_has_no_entry_action() {
         let my_address = test_address([1u8; 20]);
-        let (flow, _) = create_test_flow_with_role(
-            my_address,
-            Steps::AddOperatorTakeHash,
+        let flow_id = Uuid::new_v4();
+        let ctx = create_default_flow_context(
+            flow_id,
+            Steps::WaitAllOperatorTakeTxidsAdded,
             Some(ParticipantRole::Verifier),
         );
 
-        let result = flow.add_operator_take_hash();
+        let mut mock_contracts = crate::coordinator::tests::MockRskContractsGatewayApi::new();
+        mock_contracts.expect_my_address().returning(move || my_address);
+        let mock_contracts = std::rc::Rc::new(mock_contracts);
+        let mock_broker = std::rc::Rc::new(MockBrokerClientApi::<
+            IncomingBitVMXApiMessages,
+            OutgoingBitVMXApiMessages,
+        >::new());
+        let mut mock_store = MockCoordinatorStoreApi::new();
+        mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
+        let mock_store = std::rc::Rc::new(mock_store);
+        let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
+        let state = State { flow_id: ctx.flow_id, ctx };
+        let mut flow = PeginFlow::from_saved_state(
+            mock_contracts,
+            rt_sync,
+            mock_broker,
+            state,
+            mock_store,
+            std::rc::Rc::new(crate::flows::common::Signaling::new("/tmp", "disabled")),
+            NativeBridgeVerifier::Dummy,
+        );
+
+        let result = flow.start_step(Steps::WaitAllOperatorTakeTxidsAdded);
         assert!(result.is_ok());
+        assert_eq!(flow.current_step(), Steps::WaitAllOperatorTakeTxidsAdded);
+    }
+
+    #[test]
+    fn test_accept_pegin_signatures_ready_dispatches_transaction() {
+        let my_address = test_address([1u8; 20]);
+        let flow_id = Uuid::new_v4();
+        let accept_pegin_txid = test_txid([8u8; 32]);
+        let mut ctx = create_default_flow_context(
+            flow_id,
+            Steps::WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint,
+            Some(ParticipantRole::Verifier),
+        );
+        ctx.bitvmx_pegin_accepted = Some(default_pegin_accepted_message(accept_pegin_txid));
+
+        let mut mock_contracts = crate::coordinator::tests::MockRskContractsGatewayApi::new();
+        mock_contracts.expect_my_address().returning(move || my_address);
+        let mock_contracts = std::rc::Rc::new(mock_contracts);
+
+        let mut mock_broker =
+            MockBrokerClientApi::<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>::new();
+        mock_broker
+            .expect_send()
+            .withf(move |msg| {
+                matches!(
+                    msg,
+                    IncomingBitVMXApiMessages::DispatchTransactionName(id, name)
+                        if *id == flow_id && name == "ACCEPT_PEGIN_TX"
+                )
+            })
+            .times(1)
+            .returning(|_| Ok(true));
+        let mock_broker = std::rc::Rc::new(mock_broker);
+
+        let mut mock_store = MockCoordinatorStoreApi::new();
+        mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
+        let mock_store = std::rc::Rc::new(mock_store);
+
+        let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
+        let state = State { flow_id: ctx.flow_id, ctx };
+        let mut flow = PeginFlow::from_saved_state(
+            mock_contracts,
+            rt_sync,
+            mock_broker,
+            state,
+            mock_store,
+            std::rc::Rc::new(crate::flows::common::Signaling::new("/tmp", "disabled")),
+            NativeBridgeVerifier::Dummy,
+        );
+
+        let result = flow.complete_step(&StepData::AcceptPeginSignaturesReady);
+
+        assert!(result.is_ok());
+        assert_eq!(flow.current_step(), Steps::ConfirmAcceptPeginTransaction);
+    }
+
+    #[test]
+    fn test_pegin_accepted_completes_from_post_signature_steps() {
+        let my_address = test_address([1u8; 20]);
+        let accept_pegin_txid = test_txid([9u8; 32]);
+
+        for step in [
+            Steps::DispatchAcceptPeginTransactionAllConvergeCheckpoint,
+            Steps::ConfirmAcceptPeginTransaction,
+            Steps::RequestAcceptPeginSpvProof,
+            Steps::AcceptPegin,
+        ] {
+            let flow_id = Uuid::new_v4();
+            let mut ctx =
+                create_default_flow_context(flow_id, step, Some(ParticipantRole::Verifier));
+            ctx.bitvmx_pegin_accepted = Some(default_pegin_accepted_message(accept_pegin_txid));
+
+            let mut mock_contracts = crate::coordinator::tests::MockRskContractsGatewayApi::new();
+            mock_contracts.expect_my_address().returning(move || my_address);
+            let mock_contracts = std::rc::Rc::new(mock_contracts);
+
+            let mut mock_broker =
+                MockBrokerClientApi::<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>::new();
+            mock_broker.expect_send().times(1).returning(|_| Ok(true));
+            let mock_broker = std::rc::Rc::new(mock_broker);
+
+            let mut mock_store = MockCoordinatorStoreApi::new();
+            mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
+            let mock_store = std::rc::Rc::new(mock_store);
+
+            let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
+            let state = State { flow_id: ctx.flow_id, ctx };
+            let mut flow = PeginFlow::from_saved_state(
+                mock_contracts,
+                rt_sync,
+                mock_broker,
+                state,
+                mock_store,
+                std::rc::Rc::new(crate::flows::common::Signaling::new("/tmp", "disabled")),
+                NativeBridgeVerifier::Dummy,
+            );
+
+            let pegin_accepted = default_pegin_accepted_event(accept_pegin_txid);
+            let result = flow.complete_step(&StepData::PeginAccepted(pegin_accepted.clone()));
+
+            assert!(result.is_ok());
+            assert_eq!(flow.current_step(), Steps::Done);
+            assert_eq!(flow.get_state().ctx.pegin_accepted, Some(pegin_accepted));
+        }
     }
 
     #[test]

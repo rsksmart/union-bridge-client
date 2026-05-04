@@ -259,8 +259,10 @@ where
             }
             RskPegManagerEvents::AllCommunicationDataReady(acdr) => {
                 let committee_id: CommitteeId = acdr.inner._committeeId.into();
-                let found_flow =
-                    self.get_flow_for_committee_pending(&committee_id, Steps::DepositP2PData);
+                let found_flow = self.get_flow_for_committee_pending(
+                    &committee_id,
+                    Steps::DepositP2PDataAuthoritativeCheckpoint,
+                );
                 found_flow.map(|f| (f, StepData::ReadyCommunicationData(acdr.clone())))
             }
             RskPegManagerEvents::NewCommitteeReady(ncr) => {

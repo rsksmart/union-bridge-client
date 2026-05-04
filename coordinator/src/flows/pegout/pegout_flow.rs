@@ -34,17 +34,36 @@ const PEGOUT_COMPLETED_VAR_NAME: &str = "PEG_OUT_COMPLETED";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Steps {
     #[default]
-    PegoutRequested,
-    GetCommInfo,
+    // Wait for the confirmed RSK PegoutRequested event.
+    WaitPegoutRequested,
+    // Authoritative checkpoint: entered after confirmed PegoutRequested establishes
+    // the canonical user request.
+    GetCommInfoAuthoritativeCheckpoint,
     PrepareUserTakeSetup,
-    //The signature flow is being executed Between these two steps and outside the flow.
-    DispatchTransaction,
+    // Wait for the user-take signature flow.
+    WaitUserTakeSignaturesReady,
+    // All-converge checkpoint: entered after the user-take signing subflow completes.
+    // Dispatch the fully signed user-take Bitcoin transaction.
+    DispatchUserTakeTransactionAllConvergeCheckpoint,
     TriggerOperatorTake, // Triggered when timeout expires without signature completion
     ConfirmUserTakeTransaction,
     RequestUserTakeSpvProof,
     RegisterPegout,
+    // Terminal state after confirmed RSK PegoutRegistered establishes the registerPegout result.
     Done,
     Failed,
+}
+
+impl Steps {
+    fn allows_fast_forward_to_pegout_registered(self) -> bool {
+        matches!(
+            self,
+            Steps::DispatchUserTakeTransactionAllConvergeCheckpoint
+                | Steps::ConfirmUserTakeTransaction
+                | Steps::RequestUserTakeSpvProof
+                | Steps::RegisterPegout
+        )
+    }
 }
 
 /// Data passed between steps in the pegout flow
@@ -53,7 +72,8 @@ pub enum StepData {
     PegoutRequested,
     CommInfo(CommsAddress),
     PegoutAccepted(PegOutAccepted),
-    DispatchTransaction,
+    UserTakeSignaturesReady,
+    UserTakeTransactionDispatched,
     TriggerOperatorTakeTimeout, // Timeout expired, trigger operator take
     TransactionConfirmed(TransactionStatus),
     SpvProof(BtcTxSPVProof),
@@ -120,7 +140,7 @@ where
             bitvmx_broker,
             state: State {
                 flow_id: internal_id,
-                step: Steps::PegoutRequested,
+                step: Steps::WaitPegoutRequested,
                 ctx: FlowContext {
                     pegout_requested: pegout_requested.inner.clone(),
                     request_pegout_tx_hash: pegout_requested.tx_hash.to_string(),
@@ -171,22 +191,25 @@ where
         );
 
         match next_step {
-            Steps::PegoutRequested => {
+            Steps::WaitPegoutRequested => {
                 unreachable!("Init step should not be reached in start_step");
             }
-            Steps::GetCommInfo => {
+            Steps::GetCommInfoAuthoritativeCheckpoint => {
                 self.request_bitvmx_comm_info()?;
             }
             //This step will prepare the user take setup by sending the setVar and setup to bitvmx in a single step to make bitvmx complete the pegout setup step.
             Steps::PrepareUserTakeSetup => {
                 self.communicate_pegout_requested_to_bitvmx()?;
             }
-            //In the middle of these steps the signature flow is being executed outside the flow.
-            Steps::DispatchTransaction => {
+            Steps::WaitUserTakeSignaturesReady => {
                 info!(
                     "Waiting for signatures to be ready to dispatch transaction for flow_id: {}",
                     self.state.flow_id
                 );
+            }
+            Steps::DispatchUserTakeTransactionAllConvergeCheckpoint => {
+                self.dispatch_transaction()?;
+                self.complete_step(&StepData::UserTakeTransactionDispatched)?;
             }
             Steps::TriggerOperatorTake => {
                 info!(
@@ -267,20 +290,25 @@ where
 
     fn process_step_data(&mut self, current_step: Steps, data: &StepData) -> Result<Steps> {
         match (current_step, data) {
-            (Steps::PegoutRequested, StepData::PegoutRequested) => Ok(Steps::GetCommInfo),
-            (Steps::GetCommInfo, StepData::CommInfo(comm_info)) => {
+            (Steps::WaitPegoutRequested, StepData::PegoutRequested) => {
+                Ok(Steps::GetCommInfoAuthoritativeCheckpoint)
+            }
+            (Steps::GetCommInfoAuthoritativeCheckpoint, StepData::CommInfo(comm_info)) => {
                 self.state.ctx.my_p2p_address = Some(comm_info.clone());
                 Ok(Steps::PrepareUserTakeSetup)
             }
             (Steps::PrepareUserTakeSetup, StepData::PegoutAccepted(accepted)) => {
                 self.state.ctx.peg_out_accepted = Some(accepted.clone());
-                Ok(Steps::DispatchTransaction)
+                Ok(Steps::WaitUserTakeSignaturesReady)
             }
-            (Steps::DispatchTransaction, StepData::DispatchTransaction) => {
-                self.dispatch_transaction()?;
-                Ok(Steps::ConfirmUserTakeTransaction)
+            (Steps::WaitUserTakeSignaturesReady, StepData::UserTakeSignaturesReady) => {
+                Ok(Steps::DispatchUserTakeTransactionAllConvergeCheckpoint)
             }
-            (Steps::DispatchTransaction, StepData::TriggerOperatorTakeTimeout) => {
+            (
+                Steps::DispatchUserTakeTransactionAllConvergeCheckpoint,
+                StepData::UserTakeTransactionDispatched,
+            ) => Ok(Steps::ConfirmUserTakeTransaction),
+            (Steps::WaitUserTakeSignaturesReady, StepData::TriggerOperatorTakeTimeout) => {
                 // Timeout expired, transition to TriggerOperatorTake step
                 info!(
                     "Timeout expired for flow_id: {}, transitioning to TriggerOperatorTake",
@@ -324,12 +352,11 @@ where
                 info!("Retrying register pegout for flow_id: {}", self.state.flow_id);
                 Ok(Steps::RegisterPegout)
             }
-            (
-                Steps::ConfirmUserTakeTransaction
-                | Steps::RequestUserTakeSpvProof
-                | Steps::RegisterPegout,
-                StepData::PegoutRegistered(pegout_registered),
-            ) => self.complete_with_confirmed_pegout_registration(pegout_registered),
+            (step, StepData::PegoutRegistered(pegout_registered))
+                if step.allows_fast_forward_to_pegout_registered() =>
+            {
+                self.complete_with_confirmed_pegout_registration(pegout_registered)
+            }
             _ => Err(anyhow::anyhow!(
                 "Invalid state transition: {current_step:?} with data {data:?}"
             )),
@@ -683,10 +710,13 @@ where
 /// Helper function to format step names
 fn format_step(step: Steps) -> &'static str {
     match step {
-        Steps::PegoutRequested => "Init",
-        Steps::GetCommInfo => "GetCommInfo",
+        Steps::WaitPegoutRequested => "WaitPegoutRequested",
+        Steps::GetCommInfoAuthoritativeCheckpoint => "GetCommInfoAuthoritativeCheckpoint",
         Steps::PrepareUserTakeSetup => "PrepareUserTakeSetup",
-        Steps::DispatchTransaction => "DispatchTransaction",
+        Steps::WaitUserTakeSignaturesReady => "WaitUserTakeSignaturesReady",
+        Steps::DispatchUserTakeTransactionAllConvergeCheckpoint => {
+            "DispatchUserTakeTransactionAllConvergeCheckpoint"
+        }
         Steps::TriggerOperatorTake => "TriggerOperatorTake",
         Steps::ConfirmUserTakeTransaction => "ValidateTransactionStatus",
         Steps::RequestUserTakeSpvProof => "RequestSpvProof",
@@ -945,15 +975,88 @@ mod tests {
     }
 
     #[test]
+    fn confirmed_pegout_registered_terminalizes_from_dispatch_transaction() {
+        let tempdir = TempDir::new();
+        let mut flow = build_flow(
+            Steps::DispatchUserTakeTransactionAllConvergeCheckpoint,
+            &tempdir,
+            true,
+            true,
+        );
+        let event = fake_pegout_registered_event(test_txid([3u8; 32]));
+
+        flow.complete_step(&StepData::PegoutRegistered(event.clone())).expect("flow completes");
+
+        assert_eq!(flow.current_step(), Steps::Done);
+        assert_eq!(flow.get_state().ctx.pegout_registered.as_ref(), Some(&event.inner));
+        assert_eq!(
+            flow.get_state().ctx.pegout_registered_tx.as_deref(),
+            Some(event.tx_hash.to_string().as_str())
+        );
+    }
+
+    #[test]
+    fn user_take_signatures_ready_dispatches_transaction() {
+        let tempdir = TempDir::new();
+        let contracts = MockRskContractsGatewayApi::new();
+        let flow_id = Uuid::new_v4();
+
+        let mut broker = MockBitVmxBroker::new();
+        broker
+            .expect_send()
+            .times(1)
+            .with(function(move |msg: &IncomingBitVMXApiMessages| {
+                matches!(
+                    msg,
+                    IncomingBitVMXApiMessages::DispatchTransactionName(id, name)
+                        if *id == flow_id && name == USER_TAKE_TX
+                )
+            }))
+            .returning(|_| Ok(true));
+
+        let mut store = MockCoordinatorStoreApi::new();
+        store.expect_save_flow::<State>().times(2).returning(|_, _| Ok(()));
+
+        let user_take_txid = test_txid([3u8; 32]);
+        let ctx = FlowContext {
+            pegout_requested: fake_pegout_requested().inner,
+            request_pegout_tx_hash:
+                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+            my_p2p_address: None,
+            committee_output: None,
+            peg_out_accepted: Some(fake_pegout_accepted(user_take_txid)),
+            spv_proof: None,
+            pegout_registered: None,
+            pegout_registered_tx: None,
+            transaction_status: None,
+        };
+
+        let mut flow = PegoutFlow::from_saved_state(
+            Rc::new(contracts),
+            RuntimeSync::new().expect("runtime"),
+            Rc::new(broker),
+            State { flow_id, step: Steps::WaitUserTakeSignaturesReady, ctx },
+            Rc::new(store),
+            Rc::new(Signaling::new(tempdir.path(), "local")),
+            NativeBridgeVerifier::Dummy,
+        );
+
+        let result = flow.complete_step(&StepData::UserTakeSignaturesReady);
+
+        assert!(result.is_ok());
+        assert_eq!(flow.current_step(), Steps::ConfirmUserTakeTransaction);
+    }
+
+    #[test]
     fn confirmed_pegout_registered_is_rejected_before_shared_checkpoint() {
         let tempdir = TempDir::new();
-        let mut flow = build_flow(Steps::DispatchTransaction, &tempdir, false, false);
+        let mut flow = build_flow(Steps::WaitUserTakeSignaturesReady, &tempdir, false, false);
         let event = fake_pegout_registered_event(test_txid([3u8; 32]));
 
         let result = flow.complete_step(&StepData::PegoutRegistered(event));
 
         assert!(result.is_err());
-        assert_eq!(flow.current_step(), Steps::DispatchTransaction);
+        assert_eq!(flow.current_step(), Steps::WaitUserTakeSignaturesReady);
         assert!(flow.get_state().ctx.pegout_registered.is_none());
         assert!(flow.get_state().ctx.pegout_registered_tx.is_none());
     }
