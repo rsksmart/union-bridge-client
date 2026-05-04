@@ -28,23 +28,26 @@ pub const ADVANCE_FUNDS_REQUEST_VAR_NAME: &str = "advance_funds_request";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Steps {
     #[default]
-    // Global checkpoint: a confirmed OperatorTakeTriggered event establishes the shared trigger.
-    OperatorTakeTriggeredCheckpoint,
-    GetCommInfo,
+    // Wait for the confirmed OperatorTakeTriggered event.
+    WaitOperatorTakeTriggered,
+    // Authoritative checkpoint: entered after confirmed OperatorTakeTriggered establishes
+    // the shared operator-take trigger.
+    GetCommInfoAuthoritativeCheckpoint,
     SetupAdvanceFundsProtocol,
     WaitForAdvanceFundsSPV,
     RegisterAdvanceFunds,
     WaitForAdvanceFundsRegistered,
-    // All-operators checkpoint: the required advance-funds registration has been confirmed.
-    NotifyAdvanceFundsRegisteredCheckpoint,
+    // Authoritative checkpoint: entered after advance-funds registration is confirmed.
+    // Notify BitVMX that the registration is available.
+    NotifyAdvanceFundsRegisteredAuthoritativeCheckpoint,
     WaitForPegoutRegistered,
     WaitForReimbursementKickoffSpv,
     RegisterReimbursementKickoff,
-    // Winner/global checkpoint: the selected operator path has reached operator-take SPV handling.
-    WaitForOperatorTakeSpvCheckpoint,
+    // Authoritative checkpoint: entered after reimbursement kickoff is confirmed on the
+    // selected-operator path. Wait for the operator-take SPV proof.
+    WaitForOperatorTakeSpvAuthoritativeCheckpoint,
     RegisterOperatorTake,
-    // Winner/global checkpoint: a confirmed PegoutRegistered event proves operator-take completion.
-    // Operators may try or skip the final side effect according to their role, then converge here.
+    // Terminal state after confirmed PegoutRegistered proves operator-take completion.
     Done,
     Failed,
 }
@@ -56,7 +59,7 @@ impl Steps {
             Steps::WaitForPegoutRegistered
                 | Steps::WaitForReimbursementKickoffSpv
                 | Steps::RegisterReimbursementKickoff
-                | Steps::WaitForOperatorTakeSpvCheckpoint
+                | Steps::WaitForOperatorTakeSpvAuthoritativeCheckpoint
                 | Steps::RegisterOperatorTake
         )
     }
@@ -171,7 +174,7 @@ where
             signaling,
             state: FlowContext {
                 flow_id,
-                step: Steps::OperatorTakeTriggeredCheckpoint,
+                step: Steps::WaitOperatorTakeTriggered,
                 trigger_data,
                 my_p2p_address: None,
                 accept_pegin_txid: None,
@@ -224,12 +227,12 @@ where
         );
 
         match next_step {
-            Steps::OperatorTakeTriggeredCheckpoint => {
+            Steps::WaitOperatorTakeTriggered => {
                 unreachable!(
                     "OperatorTakeTriggered is the initial step and should not be started explicitly"
                 );
             }
-            Steps::GetCommInfo => {
+            Steps::GetCommInfoAuthoritativeCheckpoint => {
                 info!(
                     "Requesting BitVMX comm info for advance funds flow_id: {}",
                     self.state.flow_id
@@ -273,7 +276,7 @@ where
                     self.state.flow_id
                 );
             }
-            Steps::NotifyAdvanceFundsRegisteredCheckpoint => {
+            Steps::NotifyAdvanceFundsRegisteredAuthoritativeCheckpoint => {
                 info!(
                     "Notifying BitVMX of advance funds registered for flow_id: {}",
                     self.state.flow_id
@@ -309,7 +312,7 @@ where
                     self.state.flow_id
                 );
             }
-            Steps::WaitForOperatorTakeSpvCheckpoint => {
+            Steps::WaitForOperatorTakeSpvAuthoritativeCheckpoint => {
                 if let Some(spv_proof) = self.state.operator_take_spv.clone() {
                     info!(
                         "Operator take SPV already buffered for flow_id: {}, proceeding",
@@ -368,10 +371,10 @@ where
 
     fn process_step_data(&mut self, current_step: Steps, data: StepData) -> Result<Steps> {
         match (current_step, data) {
-            (Steps::OperatorTakeTriggeredCheckpoint, StepData::OperatorTakeTriggered) => {
-                Ok(Steps::GetCommInfo)
+            (Steps::WaitOperatorTakeTriggered, StepData::OperatorTakeTriggered) => {
+                Ok(Steps::GetCommInfoAuthoritativeCheckpoint)
             }
-            (Steps::GetCommInfo, StepData::CommInfo(comm_info)) => {
+            (Steps::GetCommInfoAuthoritativeCheckpoint, StepData::CommInfo(comm_info)) => {
                 self.state.my_p2p_address = Some(comm_info);
                 Ok(Steps::SetupAdvanceFundsProtocol)
             }
@@ -395,9 +398,12 @@ where
                 StepData::AdvanceFundsConfirmed(data),
             ) => {
                 self.state.advance_funds_registered = Some(data);
-                Ok(Steps::NotifyAdvanceFundsRegisteredCheckpoint)
+                Ok(Steps::NotifyAdvanceFundsRegisteredAuthoritativeCheckpoint)
             }
-            (Steps::NotifyAdvanceFundsRegisteredCheckpoint, StepData::AdvanceFundsNotified) => {
+            (
+                Steps::NotifyAdvanceFundsRegisteredAuthoritativeCheckpoint,
+                StepData::AdvanceFundsNotified,
+            ) => {
                 if self.was_selected_operator() {
                     Ok(Steps::WaitForReimbursementKickoffSpv)
                 } else {
@@ -420,9 +426,12 @@ where
                 Ok(Steps::RegisterReimbursementKickoff)
             }
             (Steps::RegisterReimbursementKickoff, StepData::ReimbursementKickoffConfirmed) => {
-                Ok(Steps::WaitForOperatorTakeSpvCheckpoint)
+                Ok(Steps::WaitForOperatorTakeSpvAuthoritativeCheckpoint)
             }
-            (Steps::WaitForOperatorTakeSpvCheckpoint, StepData::OperatorTakeSPV(spv_proof)) => {
+            (
+                Steps::WaitForOperatorTakeSpvAuthoritativeCheckpoint,
+                StepData::OperatorTakeSPV(spv_proof),
+            ) => {
                 info!("Operator take SPV received for flow_id {}", self.state.flow_id);
                 self.state.operator_take_spv = Some(spv_proof);
                 Ok(Steps::RegisterOperatorTake)
@@ -665,17 +674,21 @@ where
 
 fn format_step(step: Steps) -> &'static str {
     match step {
-        Steps::OperatorTakeTriggeredCheckpoint => "OperatorTakeTriggeredCheckpoint",
-        Steps::GetCommInfo => "GetCommInfo",
+        Steps::WaitOperatorTakeTriggered => "WaitOperatorTakeTriggered",
+        Steps::GetCommInfoAuthoritativeCheckpoint => "GetCommInfoAuthoritativeCheckpoint",
         Steps::SetupAdvanceFundsProtocol => "SetupAdvanceFundsProtocol",
         Steps::WaitForAdvanceFundsSPV => "WaitForAdvanceFundsSPV",
         Steps::RegisterAdvanceFunds => "RegisterAdvanceFunds",
         Steps::WaitForAdvanceFundsRegistered => "WaitForAdvanceFundsRegistered",
-        Steps::NotifyAdvanceFundsRegisteredCheckpoint => "NotifyAdvanceFundsRegisteredCheckpoint",
+        Steps::NotifyAdvanceFundsRegisteredAuthoritativeCheckpoint => {
+            "NotifyAdvanceFundsRegisteredAuthoritativeCheckpoint"
+        }
         Steps::WaitForPegoutRegistered => "WaitForPegoutRegistered",
         Steps::WaitForReimbursementKickoffSpv => "WaitForReimbursementKickoffSpv",
         Steps::RegisterReimbursementKickoff => "RegisterReimbursementKickoff",
-        Steps::WaitForOperatorTakeSpvCheckpoint => "WaitForOperatorTakeSpvCheckpoint",
+        Steps::WaitForOperatorTakeSpvAuthoritativeCheckpoint => {
+            "WaitForOperatorTakeSpvAuthoritativeCheckpoint"
+        }
         Steps::RegisterOperatorTake => "RegisterOperatorTake",
         Steps::Done => "Done",
         Steps::Failed => "Failed",
@@ -775,7 +788,7 @@ mod tests {
             Rc::new(broker),
             flow_id,
             trigger_data,
-            Steps::GetCommInfo,
+            Steps::GetCommInfoAuthoritativeCheckpoint,
         );
 
         flow.start_step(Steps::SetupAdvanceFundsProtocol)
@@ -840,7 +853,7 @@ mod tests {
             Steps::WaitForPegoutRegistered,
             Steps::WaitForReimbursementKickoffSpv,
             Steps::RegisterReimbursementKickoff,
-            Steps::WaitForOperatorTakeSpvCheckpoint,
+            Steps::WaitForOperatorTakeSpvAuthoritativeCheckpoint,
             Steps::RegisterOperatorTake,
         ];
 

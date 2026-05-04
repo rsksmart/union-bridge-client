@@ -795,7 +795,9 @@ where
             .clone()
             .ok_or_else(|| anyhow!("OperatorTake SPV notification missing spv_proof data"))?;
 
-        let needs_retry = if flow.current_step() == Steps::WaitForOperatorTakeSpvCheckpoint {
+        let needs_retry = if flow.current_step()
+            == Steps::WaitForOperatorTakeSpvAuthoritativeCheckpoint
+        {
             match flow.complete_step(StepData::OperatorTakeSPV(spv_proof)) {
                 Ok(()) => false,
                 Err(err) if is_missing_native_bridge_confirmations(&err) => true,
@@ -885,9 +887,9 @@ where
             }
             OutgoingBitVMXApiMessages::CommInfo(req_id, comm_info) => {
                 trace!("Received CommInfo from BitVMX req_id: {req_id}, comm_info: {comm_info:?}");
-                // For any flow in GetCommInfo step, complete the step with the CommInfo
+                // For any flow in GetCommInfoAuthoritativeCheckpoint step, complete the step with the CommInfo
                 for (flow_id, flow) in &mut self.flows {
-                    if flow.current_step() == Steps::GetCommInfo {
+                    if flow.current_step() == Steps::GetCommInfoAuthoritativeCheckpoint {
                         debug!("Advance funds flow {flow_id} received comm info");
                         flow.complete_step(StepData::CommInfo(comm_info.clone()))?;
                     }
@@ -1437,7 +1439,7 @@ mod tests {
             .expect("selected operator should advance after reimbursement kickoff confirmation");
 
         let flow = processor.flows.get(&flow_id).expect("flow should still exist");
-        assert_eq!(flow.current_step(), Steps::WaitForOperatorTakeSpvCheckpoint);
+        assert_eq!(flow.current_step(), Steps::WaitForOperatorTakeSpvAuthoritativeCheckpoint);
     }
 
     #[test]

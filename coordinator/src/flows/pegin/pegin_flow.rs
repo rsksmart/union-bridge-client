@@ -40,11 +40,11 @@ pub enum Steps {
     PeginTransactionFound,
     // Request SPV proof for the pegin request (to call requestPegin)
     RequestPeginSpvProof,
-    // Winner/global checkpoint: a confirmed RSK PeginRequested event establishes the shared
-    // requestPegin result. Operators may try or skip that exact side effect, then converge here.
-    PeginRequestedCheckpoint,
-    // Get communication info from BitVMX
-    GetCommInfo,
+    // Wait for the confirmed RSK PeginRequested event after submitting requestPegin.
+    WaitPeginRequested,
+    // Authoritative checkpoint: entered after confirmed PeginRequested establishes
+    // the canonical requestPegin result.
+    GetCommInfoAuthoritativeCheckpoint,
     // Send pegin request to BitVMX and setup
     PreparePeginSetup,
     // Request BitVMX operator take transaction info for prover members
@@ -55,18 +55,19 @@ pub enum Steps {
     AddOperatorTakeHash,
     // Wait until every operator take tx hash has been registered on Rootstock
     WaitAllOperatorTakeTxidsAdded,
-    // Wait for the accept-pegin signature flow after every prover/operator take txid is registered.
-    WaitAcceptPeginSignaturesReady,
-    // All-signatures checkpoint: dispatch the fully signed accept-pegin Bitcoin transaction.
-    DispatchAcceptPeginTransactionCheckpoint,
+    // All-converge checkpoint: entered after AllOperatorTakeTxidsAdded proves every
+    // required operator take txid was registered. Wait for the accept-pegin signing subflow.
+    WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint,
+    // All-converge checkpoint: entered after the accept-pegin signing subflow completes.
+    // Dispatch the fully signed accept-pegin Bitcoin transaction.
+    DispatchAcceptPeginTransactionAllConvergeCheckpoint,
     // Confirm accept pegin transaction
     ConfirmAcceptPeginTransaction,
     // Request SPV proof for the accept pegin (to call acceptPegin)
     RequestAcceptPeginSpvProof,
     // Accept the pegin on RSK
     AcceptPegin,
-    // Winner/global checkpoint: a confirmed RSK PeginAccepted event establishes the shared
-    // acceptPegin result. Operators may try or skip that exact side effect, then converge here.
+    // Terminal state after confirmed RSK PeginAccepted establishes the acceptPegin result.
     Done,
     Failed,
 }
@@ -75,7 +76,7 @@ impl Steps {
     pub(crate) fn allows_fast_forward_to_pegin_accepted(self) -> bool {
         matches!(
             self,
-            Steps::DispatchAcceptPeginTransactionCheckpoint
+            Steps::DispatchAcceptPeginTransactionAllConvergeCheckpoint
                 | Steps::ConfirmAcceptPeginTransaction
                 | Steps::RequestAcceptPeginSpvProof
                 | Steps::AcceptPegin
@@ -271,11 +272,10 @@ where
                 info!("Requesting SPV proof for pegin request for flow_id: {}", self.state.flow_id);
                 self.request_pegin_spv_proof()?;
             }
-            Steps::PeginRequestedCheckpoint => {
-                // This step will be reached after PeginRequested event is confirmed
-                info!("PeginRequested event confirmed for flow_id: {}", self.state.flow_id);
+            Steps::WaitPeginRequested => {
+                info!("Waiting for PeginRequested event for flow_id: {}", self.state.flow_id);
             }
-            Steps::GetCommInfo => {
+            Steps::GetCommInfoAuthoritativeCheckpoint => {
                 self.migrate_to_official_flow_id()?;
                 self.request_bitvmx_comm_info()?;
             }
@@ -303,13 +303,13 @@ where
             Steps::WaitAllOperatorTakeTxidsAdded => {
                 info!("Waiting for AllOperatorTakeTxidsAdded for flow_id: {}", self.state.flow_id);
             }
-            Steps::WaitAcceptPeginSignaturesReady => {
+            Steps::WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint => {
                 info!(
                     "Waiting for signatures to be ready to dispatch transaction for flow_id: {}",
                     self.state.flow_id
                 );
             }
-            Steps::DispatchAcceptPeginTransactionCheckpoint => {
+            Steps::DispatchAcceptPeginTransactionAllConvergeCheckpoint => {
                 self.dispatch_transaction()?;
                 self.complete_step(&StepData::AcceptPeginTransactionDispatched)?;
             }
@@ -389,16 +389,16 @@ where
             (Steps::RequestPeginSpvProof, StepData::RequestPeginSpvProof(spv_proof)) => {
                 self.state.ctx.request_pegin_spv_proof = Some(spv_proof.clone());
                 self.request_pegin(spv_proof)?;
-                Ok(Steps::PeginRequestedCheckpoint)
+                Ok(Steps::WaitPeginRequested)
             }
             (Steps::RequestPeginSpvProof, StepData::RetryRequestPegin) => {
                 self.retry_request_pegin_step()
             }
-            (Steps::PeginRequestedCheckpoint, StepData::PeginRequested(pegin_requested)) => {
+            (Steps::WaitPeginRequested, StepData::PeginRequested(pegin_requested)) => {
                 self.state.ctx.pegin_requested = Some(pegin_requested.clone());
-                Ok(Steps::GetCommInfo)
+                Ok(Steps::GetCommInfoAuthoritativeCheckpoint)
             }
-            (Steps::GetCommInfo, StepData::CommInfo(comm_info)) => {
+            (Steps::GetCommInfoAuthoritativeCheckpoint, StepData::CommInfo(comm_info)) => {
                 self.state.ctx.my_p2p_address = Some(comm_info.clone());
                 Ok(Steps::PreparePeginSetup)
             }
@@ -422,13 +422,14 @@ where
                 Ok(Steps::WaitAllOperatorTakeTxidsAdded)
             }
             (Steps::WaitAllOperatorTakeTxidsAdded, StepData::AllOperatorTakeTxidsAdded) => {
-                Ok(Steps::WaitAcceptPeginSignaturesReady)
-            }
-            (Steps::WaitAcceptPeginSignaturesReady, StepData::AcceptPeginSignaturesReady) => {
-                Ok(Steps::DispatchAcceptPeginTransactionCheckpoint)
+                Ok(Steps::WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint)
             }
             (
-                Steps::DispatchAcceptPeginTransactionCheckpoint,
+                Steps::WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint,
+                StepData::AcceptPeginSignaturesReady,
+            ) => Ok(Steps::DispatchAcceptPeginTransactionAllConvergeCheckpoint),
+            (
+                Steps::DispatchAcceptPeginTransactionAllConvergeCheckpoint,
                 StepData::AcceptPeginTransactionDispatched,
             ) => Ok(Steps::ConfirmAcceptPeginTransaction),
             (
@@ -948,7 +949,7 @@ where
             anyhow!("SPV proof not available for pegin request - flow_id {}", self.state.flow_id)
         })?;
         self.request_pegin(spv_proof)?;
-        Ok(Steps::PeginRequestedCheckpoint)
+        Ok(Steps::WaitPeginRequested)
     }
 
     fn handle_operator_take_transaction_info(
@@ -1055,16 +1056,18 @@ fn format_step(step: Steps) -> &'static str {
     match step {
         Steps::PeginTransactionFound => "PeginTransactionFound",
         Steps::RequestPeginSpvProof => "RequestPeginSpvProof",
-        Steps::PeginRequestedCheckpoint => "PeginRequestedCheckpoint",
-        Steps::GetCommInfo => "GetCommInfo",
+        Steps::WaitPeginRequested => "WaitPeginRequested",
+        Steps::GetCommInfoAuthoritativeCheckpoint => "GetCommInfoAuthoritativeCheckpoint",
         Steps::PreparePeginSetup => "PreparePeginSetup",
         Steps::RequestOperatorTakeTransactionInfo => "RequestOperatorTakeTransactionInfo",
         Steps::RequestOperatorWonTransactionInfo => "RequestOperatorWonTransactionInfo",
         Steps::AddOperatorTakeHash => "AddOperatorTakeHash",
         Steps::WaitAllOperatorTakeTxidsAdded => "WaitAllOperatorTakeTxidsAdded",
-        Steps::WaitAcceptPeginSignaturesReady => "WaitAcceptPeginSignaturesReady",
-        Steps::DispatchAcceptPeginTransactionCheckpoint => {
-            "DispatchAcceptPeginTransactionCheckpoint"
+        Steps::WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint => {
+            "WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint"
+        }
+        Steps::DispatchAcceptPeginTransactionAllConvergeCheckpoint => {
+            "DispatchAcceptPeginTransactionAllConvergeCheckpoint"
         }
         Steps::ConfirmAcceptPeginTransaction => "ConfirmAcceptPeginTransaction",
         Steps::RequestAcceptPeginSpvProof => "RequestAcceptPeginSpvProof",
@@ -1604,7 +1607,7 @@ mod tests {
         let accept_pegin_txid = test_txid([8u8; 32]);
         let mut ctx = create_default_flow_context(
             flow_id,
-            Steps::WaitAcceptPeginSignaturesReady,
+            Steps::WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint,
             Some(ParticipantRole::Verifier),
         );
         ctx.bitvmx_pegin_accepted = Some(default_pegin_accepted_message(accept_pegin_txid));
@@ -1656,7 +1659,7 @@ mod tests {
         let accept_pegin_txid = test_txid([9u8; 32]);
 
         for step in [
-            Steps::DispatchAcceptPeginTransactionCheckpoint,
+            Steps::DispatchAcceptPeginTransactionAllConvergeCheckpoint,
             Steps::ConfirmAcceptPeginTransaction,
             Steps::RequestAcceptPeginSpvProof,
             Steps::AcceptPegin,

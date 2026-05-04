@@ -282,7 +282,7 @@ where
                 let should_buffer = self
                     .pegin_flows
                     .get(&temp_flow_id)
-                    .is_none_or(|flow| flow.current_step() != Steps::PeginRequestedCheckpoint);
+                    .is_none_or(|flow| flow.current_step() != Steps::WaitPeginRequested);
 
                 if should_buffer {
                     info!(
@@ -442,11 +442,11 @@ where
             };
 
             // Only complete the step if the flow is still waiting for signatures
-            if flow.current_step() != Steps::WaitAcceptPeginSignaturesReady {
+            if flow.current_step() != Steps::WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint {
                 warn!(
                     "Signature flow completed for flow_id: {flow_id} but flow is at step {:?}, expected {:?}. Skipping dispatch step.",
                     flow.current_step(),
-                    Steps::WaitAcceptPeginSignaturesReady
+                    Steps::WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint
                 );
                 continue;
             }
@@ -1058,10 +1058,12 @@ where
             // Handle CommInfo from BitVMX
             OutgoingBitVMXApiMessages::CommInfo(req_id, comm_info) => {
                 trace!("Received CommInfo from BitVMX req_id: {req_id}, comm_info: {comm_info:?}");
-                // For any flow in GetCommInfo step, complete the step with the CommInfo
+                // For any flow in GetCommInfoAuthoritativeCheckpoint step, complete the step with the CommInfo
                 for (flow_id, flow) in &mut self.pegin_flows {
-                    if flow.current_step() == Steps::GetCommInfo {
-                        debug!("Completing GetCommInfo step for flow {flow_id}");
+                    if flow.current_step() == Steps::GetCommInfoAuthoritativeCheckpoint {
+                        debug!(
+                            "Completing GetCommInfoAuthoritativeCheckpoint step for flow {flow_id}"
+                        );
                         let step_data = StepData::CommInfo(comm_info.clone());
                         flow.complete_step(&step_data)?;
                     }
@@ -1633,7 +1635,7 @@ mod tests {
 
         let flow = harness.create_flow_at_step(
             flow_id,
-            Steps::WaitAcceptPeginSignaturesReady,
+            Steps::WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint,
             accept_pegin_txid,
         );
         harness.processor.pegin_flows.insert(flow_id, flow);
