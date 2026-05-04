@@ -609,6 +609,8 @@ where
     }
 
     pub(crate) fn mark_failed(&mut self, reason: &str) -> Result<()> {
+        // Temporary operational escape hatch for pre-mainnet recovery. Remove this
+        // manual fail path before mainnet instead of treating it as regular API.
         info!("Admin marking setup committee flow {} as failed: {reason}", self.state.internal_id);
         self.state.step = Steps::Failed;
         self.persist_state()
