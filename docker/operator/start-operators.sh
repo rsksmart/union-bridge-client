@@ -18,6 +18,14 @@ BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
 DEFAULT_ENV_FILE="${SCRIPT_DIR}/docker-deploy.env"
 ENV_FILE="${DEFAULT_ENV_FILE}"
 
+# CI / fast restarts: published host ports can linger after `compose down` (docker-proxy, slow unbind).
+# Override in CI when needed (seconds / counts).
+START_OPERATORS_PORT_WAIT_TIMEOUT="${START_OPERATORS_PORT_WAIT_TIMEOUT:-90}"
+START_OPERATORS_PORT_WAIT_INTERVAL="${START_OPERATORS_PORT_WAIT_INTERVAL:-1}"
+START_OPERATORS_UP_MAX_ATTEMPTS="${START_OPERATORS_UP_MAX_ATTEMPTS:-4}"
+START_OPERATORS_RETRY_BACKOFF_INITIAL="${START_OPERATORS_RETRY_BACKOFF_INITIAL:-2}"
+START_OPERATORS_RETRY_BACKOFF_MAX="${START_OPERATORS_RETRY_BACKOFF_MAX:-30}"
+
 print_help() {
   echo "Usage: $0 [OPTIONS] [DOCKER_COMPOSE_ARGS...]"
   echo ""
@@ -48,6 +56,12 @@ print_help() {
   echo "  2-10 -> docker-compose.all.yml"
   echo ""
   echo "Any additional arguments will be passed directly to docker compose."
+  echo ""
+  echo "Optional environment (CI / flaky host ports after docker compose down):"
+  echo "  START_OPERATORS_PORT_WAIT_TIMEOUT   max seconds to wait for USER_API ports to release (default: 90)"
+  echo "  START_OPERATORS_PORT_WAIT_INTERVAL  poll interval seconds (default: 1)"
+  echo "  START_OPERATORS_UP_MAX_ATTEMPTS     docker compose up attempts per operator (default: 4)"
+  echo "  START_OPERATORS_RETRY_BACKOFF_INITIAL / _MAX  exponential sleep between retries (default: 2 / 30)"
   exit 0
 }
 
@@ -239,6 +253,117 @@ uses_shared_bitvmx_network() {
   return 1
 }
 
+# Returns 0 if something is listening on TCP host port $1 (best-effort; lsof preferred, then ss).
+host_tcp_port_in_use() {
+  local port="$1"
+
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1
+    return $?
+  fi
+
+  if command -v ss >/dev/null 2>&1; then
+    local out
+    out="$(ss -tlnH "sport = :${port}" 2>/dev/null || true)"
+    [[ -n "${out}" ]] && return 0
+    return 1
+  fi
+
+  return 1
+}
+
+dump_operator_user_api_port_diagnostics() {
+  local op_num="$1"
+  local compose_env port
+
+  compose_env="$(operator_compose_env_file_path "${op_num}")"
+  if [[ ! -f "${compose_env}" ]]; then
+    return 0
+  fi
+
+  port="$(read_env_value "${compose_env}" "USER_API_PORT")"
+  if [[ -z "${port}" ]]; then
+    return 0
+  fi
+
+  echo "── Diagnostics: op_${op_num} USER_API host port ${port} ──" >&2
+  if command -v ss >/dev/null 2>&1; then
+    echo "[ss -tln sport = :${port}]" >&2
+    ss -tln "sport = :${port}" 2>&1 || true
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    echo "[lsof -nP -iTCP:${port} -sTCP:LISTEN]" >&2
+    lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>&1 || true
+  fi
+}
+
+# Wait until USER_API_PORT for op_${op_num} has no TCP listener (or timeout). Returns 1 on timeout.
+wait_for_operator_user_api_port_free() {
+  local op_num="$1"
+  local timeout_secs="${2:-${START_OPERATORS_PORT_WAIT_TIMEOUT}}"
+  local compose_env port waited=0 interval="${START_OPERATORS_PORT_WAIT_INTERVAL}"
+
+  compose_env="$(operator_compose_env_file_path "${op_num}")"
+  if [[ ! -f "${compose_env}" ]]; then
+    return 0
+  fi
+
+  port="$(read_env_value "${compose_env}" "USER_API_PORT")"
+  if [[ -z "${port}" ]]; then
+    return 0
+  fi
+
+  echo "Waiting for host port ${port} (op_${op_num} user-api) to be released (timeout ${timeout_secs}s)..."
+  while host_tcp_port_in_use "${port}"; do
+    if [[ "${waited}" -ge "${timeout_secs}" ]]; then
+      echo "[ERROR] Timed out after ${timeout_secs}s waiting for port ${port} (op_${op_num}) to release." >&2
+      dump_operator_user_api_port_diagnostics "${op_num}"
+      return 1
+    fi
+    sleep "${interval}"
+    waited=$((waited + interval))
+  done
+  echo "Host port ${port} (op_${op_num}) is free."
+  return 0
+}
+
+# After a global --fresh teardown: wait until every resolved operator's USER_API_PORT is free.
+wait_for_all_resolved_operator_user_api_ports_free() {
+  local deadline=$((SECONDS + START_OPERATORS_PORT_WAIT_TIMEOUT))
+  local interval="${START_OPERATORS_PORT_WAIT_INTERVAL}"
+  local all_free compose_env port
+
+  echo "Waiting for all operator USER_API host ports to be released (deadline ${START_OPERATORS_PORT_WAIT_TIMEOUT}s)..."
+  while [[ "${SECONDS}" -lt "${deadline}" ]]; do
+    all_free=true
+    for op_num in $(resolved_operator_ids); do
+      compose_env="$(operator_compose_env_file_path "${op_num}")"
+      if [[ ! -f "${compose_env}" ]]; then
+        continue
+      fi
+      port="$(read_env_value "${compose_env}" "USER_API_PORT")"
+      if [[ -z "${port}" ]]; then
+        continue
+      fi
+      if host_tcp_port_in_use "${port}"; then
+        all_free=false
+        break
+      fi
+    done
+    if [[ "${all_free}" == true ]]; then
+      echo "All operator USER_API host ports are free."
+      return 0
+    fi
+    sleep "${interval}"
+  done
+
+  echo "[ERROR] Timed out waiting for all USER_API host ports to release after teardown." >&2
+  for op_num in $(resolved_operator_ids); do
+    dump_operator_user_api_port_diagnostics "${op_num}"
+  done
+  return 1
+}
+
 run_compose_stack() {
   local project_name="$1"
   local op_num="$2"
@@ -277,16 +402,33 @@ run_compose_stack() {
   echo "'"
 
   local compose_exit=0
-  if [[ -n "${UC_TAG:-}" ]]; then
-    UC_TAG="${UC_TAG}" "${compose_cmd[@]}" || compose_exit=$?
-  else
-    "${compose_cmd[@]}" || compose_exit=$?
-  fi
+  local max_attempts="${START_OPERATORS_UP_MAX_ATTEMPTS}"
+  local attempt=1
+  local backoff="${START_OPERATORS_RETRY_BACKOFF_INITIAL}"
 
-  # One retry: "address already in use" on published ports is a known flake when bringing
-  # up several operator stacks in sequence (e.g. GitHub Actions after a fresh down).
-  if [[ "${compose_exit}" -ne 0 && "${IS_STARTUP_COMMAND}" == true ]]; then
-    echo "[WARN] docker compose failed for ${project_name} (exit ${compose_exit}); retrying once after teardown and brief wait..." >&2
+  while true; do
+    compose_exit=0
+    if [[ -n "${UC_TAG:-}" ]]; then
+      UC_TAG="${UC_TAG}" "${compose_cmd[@]}" || compose_exit=$?
+    else
+      "${compose_cmd[@]}" || compose_exit=$?
+    fi
+
+    if [[ "${compose_exit}" -eq 0 ]]; then
+      return 0
+    fi
+
+    if [[ "${IS_STARTUP_COMMAND}" != true ]]; then
+      exit "${compose_exit}"
+    fi
+
+    if [[ "${attempt}" -ge "${max_attempts}" ]]; then
+      echo "[ERROR] docker compose failed for ${project_name} after ${max_attempts} attempt(s); last exit=${compose_exit}" >&2
+      dump_operator_user_api_port_diagnostics "${op_num}"
+      exit "${compose_exit}"
+    fi
+
+    echo "[WARN] docker compose failed for ${project_name} (exit ${compose_exit}); recoverable attempt ${attempt}/$((max_attempts - 1)) — tearing down stack, waiting for host port, backoff ${backoff}s..." >&2
     if [[ -n "${UC_TAG:-}" ]]; then
       UC_TAG="${UC_TAG}" docker compose -p "${project_name}" -f docker-compose.yml -f "${compose_override}" \
         --env-file "${ENV_FILE}" --env-file "${compose_env_file_path}" --env-file "${runtime_env_file_path}" \
@@ -296,18 +438,23 @@ run_compose_stack() {
         --env-file "${ENV_FILE}" --env-file "${compose_env_file_path}" --env-file "${runtime_env_file_path}" \
         down --volumes || true
     fi
-    sleep 5
-    compose_exit=0
-    if [[ -n "${UC_TAG:-}" ]]; then
-      UC_TAG="${UC_TAG}" "${compose_cmd[@]}" || compose_exit=$?
-    else
-      "${compose_cmd[@]}" || compose_exit=$?
-    fi
-  fi
 
-  if [[ "${compose_exit}" -ne 0 ]]; then
-    exit "${compose_exit}"
-  fi
+    # "address already in use" on published ports: wait until this operator's USER_API port is free, then backoff.
+    if ! wait_for_operator_user_api_port_free "${op_num}" "${START_OPERATORS_PORT_WAIT_TIMEOUT}"; then
+      echo "[WARN] Port wait for op_${op_num} did not complete cleanly; proceeding to next compose attempt." >&2
+    fi
+
+    sleep "${backoff}"
+    if [[ "${backoff}" -lt "${START_OPERATORS_RETRY_BACKOFF_MAX}" ]]; then
+      next_backoff=$((backoff * 2))
+      if [[ "${next_backoff}" -gt "${START_OPERATORS_RETRY_BACKOFF_MAX}" ]]; then
+        backoff="${START_OPERATORS_RETRY_BACKOFF_MAX}"
+      else
+        backoff="${next_backoff}"
+      fi
+    fi
+    attempt=$((attempt + 1))
+  done
 }
 
 if [[ "${FRESH}" == true ]]; then
@@ -331,9 +478,11 @@ if [[ "${FRESH}" == true ]]; then
     fi
     docker compose -p "${project_name}" -f docker-compose.yml -f "$(compose_override_file)" --env-file "${ENV_FILE}" --env-file "${operator_compose_env_file}" --env-file "${operator_runtime_env_file}" down --volumes
   done
-  # CI / fast restarts: host port bindings can linger briefly after down (TIME_WAIT / proxy).
-  echo "Waiting for host port bindings to release after teardown..."
-  sleep 3
+  # CI / fast restarts: host port bindings can linger after down (docker-proxy / slow unbind).
+  if ! wait_for_all_resolved_operator_user_api_ports_free; then
+    echo "Error: host ports for operator user-api are still in use after teardown." >&2
+    exit 1
+  fi
 fi
 
 if [[ "${IS_STARTUP_COMMAND}" == true ]] && uses_shared_bitvmx_network; then
