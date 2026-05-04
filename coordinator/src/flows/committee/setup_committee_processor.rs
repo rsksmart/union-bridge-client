@@ -28,8 +28,8 @@ use crate::flows::common::GlobalContext;
 use crate::flows::errors::{FailableFlow, FlowError};
 use crate::store::{CoordinatorStoreApi, StorePrefix, cleanup_flows_matching, restore_flows};
 use crate::types::{
-    AllCommunicationDataReadyEvent, EventStatus, NewCommitteePendingEvent, NewCommitteeReadyEvent,
-    RskPegManagerEvents, UserRequests,
+    AdminRequest, AllCommunicationDataReadyEvent, EventStatus, FlowKind, NewCommitteePendingEvent,
+    NewCommitteeReadyEvent, RskPegManagerEvents, UserRequests,
 };
 
 pub(crate) struct SetupCommitteeProcessor<CG, BC, FactoryBSF, S>
@@ -106,6 +106,19 @@ where
             &mut self.flows,
             SetupCommitteeFlow::is_terminal,
         );
+    }
+
+    /// Mark a setup committee flow as failed and stop pending local work for it.
+    fn fail_flow(&mut self, flow_id: Uuid, reason: &str) -> Result<()> {
+        if let Some(flow) = self.flows.get_mut(&flow_id) {
+            flow.mark_failed(reason)?;
+            warn!("Admin marked setup committee flow {flow_id} as failed: {reason}");
+        } else {
+            warn!("Admin requested fail for unknown setup committee flow {flow_id}: {reason}");
+        }
+
+        self.cleanup_terminal_flows();
+        Ok(())
     }
 }
 
@@ -315,13 +328,21 @@ where
         self.cleanup_terminal_flows();
 
         info!("Processing user request: {req:?}");
-        if let UserRequests::ApplyToStream(input) = req {
-            let internal_id = Uuid::new_v4();
-            let mut flow = self.flow_factory.create_flow(internal_id);
+        match req {
+            UserRequests::ApplyToStream(input) => {
+                let internal_id = Uuid::new_v4();
+                let mut flow = self.flow_factory.create_flow(internal_id);
 
-            Self::continue_flow(&mut flow, StepData::UserRequest(input.clone()));
+                Self::continue_flow(&mut flow, StepData::UserRequest(input.clone()));
 
-            self.flows.insert(internal_id, flow);
+                self.flows.insert(internal_id, flow);
+            }
+            UserRequests::Admin(AdminRequest::FailFlow { kind, flow_id, reason })
+                if *kind == FlowKind::CommitteeSetup =>
+            {
+                self.fail_flow(*flow_id, reason)?;
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -490,7 +511,9 @@ where
         Ok(())
     }
 
-    fn shutdown(&mut self) {}
+    fn shutdown(&mut self) {
+        self.events_confirming.clear();
+    }
 }
 
 #[cfg(test)]
@@ -623,6 +646,21 @@ mod tests {
             blockchain_view: BlockchainView::new(),
             events_confirming: HashMap::new(),
             store: Rc::new(MockCoordinatorStoreApi::new()),
+            required_confirmations: 1,
+        }
+    }
+
+    fn processor_with_delete_store() -> TestProcessor {
+        let mut store = MockCoordinatorStoreApi::new();
+        store.expect_delete_flow().returning(|_| Ok(()));
+
+        SetupCommitteeProcessor {
+            flow_factory: DummyFactory,
+            flows: HashMap::new(),
+            global_context: GlobalContext::new(),
+            blockchain_view: BlockchainView::new(),
+            events_confirming: HashMap::new(),
+            store: Rc::new(store),
             required_confirmations: 1,
         }
     }
@@ -835,5 +873,35 @@ mod tests {
         assert_eq!(processor.flows[&second_flow_id].current_step(), Steps::GetMyTakeKey);
         assert!(processor.flows[&first_flow_id].is_waiting_for_bitvmx_request(&req_a));
         assert!(!processor.flows[&second_flow_id].is_waiting_for_bitvmx_request(&req_b));
+    }
+
+    #[test]
+    fn admin_fail_flow_marks_setup_committee_failed_and_leaves_confirming_events() {
+        let flow_id = Uuid::new_v4();
+        let (flow, _) = flow_waiting_for_comm_info(flow_id, 1);
+        let pending_event =
+            RskPegManagerEvents::NewCommitteePending(test_pending_event(123, false));
+        let mut confirmable_event = ConfirmableEventWithData::new(
+            "123-pending".to_string(),
+            1,
+            BlockchainView::new(),
+            pending_event,
+        );
+        confirmable_event.start_confirming(BlockNumber::from(10)).expect("start confirming");
+
+        let mut processor = processor_with_delete_store();
+        processor.flows.insert(flow_id, flow);
+        processor.events_confirming.insert(confirmable_event.id(), confirmable_event);
+
+        processor
+            .process_user_request(&UserRequests::Admin(AdminRequest::FailFlow {
+                kind: FlowKind::CommitteeSetup,
+                flow_id,
+                reason: "manual cleanup".to_string(),
+            }))
+            .expect("admin fail should succeed");
+
+        assert!(!processor.flows.contains_key(&flow_id));
+        assert!(processor.events_confirming.contains_key("123-pending"));
     }
 }

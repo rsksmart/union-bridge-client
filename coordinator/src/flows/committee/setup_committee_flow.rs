@@ -608,6 +608,12 @@ where
             .is_some_and(|ev| ev.inner.committeeId == **committee_id)
     }
 
+    pub(crate) fn mark_failed(&mut self, reason: &str) -> Result<()> {
+        info!("Admin marking setup committee flow {} as failed: {reason}", self.state.internal_id);
+        self.state.step = Steps::Failed;
+        self.persist_state()
+    }
+
     pub(crate) fn is_waiting_for_dispute_core_variable(&self, program_id: &Uuid) -> bool {
         self.state.step == Steps::RequestDisputeChannelVars
             && self
@@ -1446,8 +1452,12 @@ where
     S: CoordinatorStoreApi,
 {
     fn fail(&mut self) {
-        error!("Marking flow {} as failed and cleaning up", self.state.internal_id);
-        self.state.step = Steps::Failed;
+        if let Err(err) = self.mark_failed("flow error") {
+            error!(
+                "Failed to persist failed setup committee flow {}: {err}",
+                self.state.internal_id
+            );
+        }
     }
 }
 

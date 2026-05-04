@@ -77,13 +77,14 @@ pub enum AdminRequest {
 }
 
 /// Discriminator for the family of flows admin operations target. Serialized as
-/// kebab-case ("pegin", "pegout", "advance-funds") on the wire.
+/// kebab-case ("pegin", "pegout", "advance-funds", "committee-setup") on the wire.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
 pub enum FlowKind {
     Pegin,
     Pegout,
     AdvanceFunds,
+    CommitteeSetup,
 }
 
 pub type PeginRequestedEvent = EventWithBlock<PeginRequested>;
@@ -1333,6 +1334,7 @@ mod tests {
             (FlowKind::Pegin, "\"pegin\""),
             (FlowKind::Pegout, "\"pegout\""),
             (FlowKind::AdvanceFunds, "\"advance-funds\""),
+            (FlowKind::CommitteeSetup, "\"committee-setup\""),
         ] {
             let encoded = serde_json::to_string(&kind).expect("serialize FlowKind");
             assert_eq!(encoded, expected, "unexpected wire form for {kind:?}");

@@ -414,7 +414,7 @@ fn verify_admin_auth(configured_token: Option<&str>, headers: &HeaderMap) -> Res
 /// Validate the `FailFlow` body and re-emit it in the wire shape the coordinator
 /// expects (`{"Admin":{"FailFlow":{...}}}`). Pure: no side effects.
 fn build_fail_flow_payload(body: &FailFlowReq) -> Result<Value, ApiError> {
-    const ALLOWED_KINDS: [&str; 3] = ["pegin", "pegout", "advance-funds"];
+    const ALLOWED_KINDS: [&str; 4] = ["pegin", "pegout", "advance-funds", "committee-setup"];
     if !ALLOWED_KINDS.contains(&body.kind.as_str()) {
         return Err(ApiError::InvalidData(format!("kind must be one of {ALLOWED_KINDS:?}")));
     }
@@ -542,7 +542,7 @@ mod tests {
 
     #[test]
     fn build_fail_flow_payload_accepts_all_documented_kinds() {
-        for kind in ["pegin", "pegout", "advance-funds"] {
+        for kind in ["pegin", "pegout", "advance-funds", "committee-setup"] {
             build_fail_flow_payload(&req(kind, "x")).unwrap_or_else(|e| {
                 panic!("kind {kind} should be valid, got {e:?}");
             });
