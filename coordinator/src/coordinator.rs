@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use bitcoin::Network;
-use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+use common::msg_broker::bitvmx_types::IncomingBitVMXApiMessages;
 use common::msg_broker::broker::{BitVmxBrokerClientApi, UnionBrokerClientApi};
 use common::msg_broker::types::ToServer;
 use common::runtime_sync::RuntimeSync;
@@ -285,10 +285,9 @@ impl<
                 if let Some(event) =
                     self.monitor.try_bitvmx_event().context("Error getting BitVMX event")?
                 {
-                    if Self::check_bitvmx_pong(&event, &mut bitvmx_liveness) {
-                        bitvmx_ping = None;
-                        bitvmx_last_msg = Instant::now();
-                    }
+                    bitvmx_ping = None;
+                    bitvmx_last_msg = Instant::now();
+                    Self::record_bitvmx_activity(&mut bitvmx_liveness);
 
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
@@ -385,28 +384,17 @@ impl<
         }
     }
 
-    fn check_bitvmx_pong(
-        event: &OutgoingBitVMXApiMessages,
-        bitvmx_liveness: &mut BitvmxLiveness,
-    ) -> bool {
-        match event {
-            OutgoingBitVMXApiMessages::Pong(uuid) => {
-                match bitvmx_liveness {
-                    BitvmxLiveness::Unknown => {
-                        info!("BitVMX is responsive (first Pong uuid: {uuid})");
-                    }
-                    BitvmxLiveness::NotResponding => {
-                        info!("BitVMX is back online (Pong uuid: {uuid})");
-                    }
-                    BitvmxLiveness::Healthy => {
-                        trace!("Received Pong from BitVMX with uuid: {uuid}");
-                    }
-                }
-                *bitvmx_liveness = BitvmxLiveness::Healthy;
-                true
+    fn record_bitvmx_activity(bitvmx_liveness: &mut BitvmxLiveness) {
+        match bitvmx_liveness {
+            BitvmxLiveness::Unknown => {
+                info!("BitVMX is responsive");
             }
-            _ => false,
+            BitvmxLiveness::NotResponding => {
+                info!("BitVMX is back online");
+            }
+            BitvmxLiveness::Healthy => {}
         }
+        *bitvmx_liveness = BitvmxLiveness::Healthy;
     }
 
     fn is_running(&self) -> bool {
