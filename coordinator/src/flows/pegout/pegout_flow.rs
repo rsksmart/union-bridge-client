@@ -1,4 +1,5 @@
 use std::rc::Rc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use bitcoin::{PublicKey, Txid};
@@ -8,7 +9,7 @@ use common::msg_broker::bitvmx_types::{
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
-use common::types::CommitteeId;
+use common::types::{BlockHash, BlockNumber, CommitteeId};
 use hex;
 use log::{debug, info, trace, warn};
 use serde::{Deserialize, Serialize};
@@ -86,9 +87,17 @@ pub enum StepData {
 pub struct FlowContext {
     pub pegout_requested: PegoutRequested,
     pub request_pegout_tx_hash: String,
+    #[serde(default)]
+    pub pegout_requested_received_at_secs: Option<u64>,
+    #[serde(default)]
+    pub pegout_requested_block_number: Option<BlockNumber>,
+    #[serde(default)]
+    pub pegout_requested_block_hash: Option<BlockHash>,
     pub my_p2p_address: Option<CommsAddress>,
     pub committee_output: Option<GetCommitteeOutput>,
     pub peg_out_accepted: Option<PegOutAccepted>,
+    #[serde(default)]
+    pub advance_funds_timeout_expires_at: Option<u64>,
     pub spv_proof: Option<BtcTxSPVProof>,
     pub pegout_registered: Option<PegoutRegistered>,
     pub pegout_registered_tx: Option<String>,
@@ -144,9 +153,16 @@ where
                 ctx: FlowContext {
                     pegout_requested: pegout_requested.inner.clone(),
                     request_pegout_tx_hash: pegout_requested.tx_hash.to_string(),
+                    pegout_requested_received_at_secs: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .ok()
+                        .map(|duration| duration.as_secs()),
+                    pegout_requested_block_number: Some(pegout_requested.block_number),
+                    pegout_requested_block_hash: Some(pegout_requested.block_hash),
                     my_p2p_address: None,
                     committee_output: None,
                     peg_out_accepted: None,
+                    advance_funds_timeout_expires_at: None,
                     pegout_registered: None,
                     pegout_registered_tx: None,
                     spv_proof: None,
@@ -528,6 +544,9 @@ where
     fn write_completion_marker(&self) -> Result<()> {
         let payload = json!({
             "request_pegout_tx_hash": self.state.ctx.request_pegout_tx_hash,
+            "pegout_requested_received_at_secs": self.state.ctx.pegout_requested_received_at_secs,
+            "pegout_requested_block_number": self.state.ctx.pegout_requested_block_number.map(|block| block.value()),
+            "pegout_requested_block_hash": self.state.ctx.pegout_requested_block_hash,
             "committee_id": self.state.ctx.pegout_requested.committeeId.to_string(),
             "stream_id": self.state.ctx.pegout_requested.streamId,
             "packet_number": self.state.ctx.pegout_requested.packetNumber,
@@ -645,6 +664,26 @@ where
             .ok_or_else(|| anyhow!("Expected user take tx_id not found"))?;
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetSPVProof(tx_id))?;
         Ok(())
+    }
+
+    pub fn advance_funds_timeout_expires_at(&self) -> Option<u64> {
+        self.state.ctx.advance_funds_timeout_expires_at
+    }
+
+    pub fn schedule_advance_funds_timeout(
+        &mut self,
+        current_timestamp: u64,
+        timeout_secs: u64,
+    ) -> Result<u64> {
+        let expires_at = current_timestamp.saturating_add(timeout_secs);
+        self.state.ctx.advance_funds_timeout_expires_at = Some(expires_at);
+        self.persist_state()?;
+        Ok(expires_at)
+    }
+
+    pub fn clear_advance_funds_timeout(&mut self) -> Result<()> {
+        self.state.ctx.advance_funds_timeout_expires_at = None;
+        self.persist_state()
     }
 
     pub fn is_terminal(&self) -> bool {
@@ -886,9 +925,13 @@ mod tests {
             pegout_requested: fake_pegout_requested().inner,
             request_pegout_tx_hash:
                 "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+            pegout_requested_received_at_secs: None,
+            pegout_requested_block_number: None,
+            pegout_requested_block_hash: None,
             my_p2p_address: None,
             committee_output: None,
             peg_out_accepted: Some(fake_pegout_accepted(user_take_txid)),
+            advance_funds_timeout_expires_at: None,
             spv_proof: (initial_step == Steps::RegisterPegout).then(|| BtcTxSPVProof {
                 block_hash: "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
                     .to_string(),
@@ -1022,9 +1065,13 @@ mod tests {
             pegout_requested: fake_pegout_requested().inner,
             request_pegout_tx_hash:
                 "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+            pegout_requested_received_at_secs: None,
+            pegout_requested_block_number: None,
+            pegout_requested_block_hash: None,
             my_p2p_address: None,
             committee_output: None,
             peg_out_accepted: Some(fake_pegout_accepted(user_take_txid)),
+            advance_funds_timeout_expires_at: None,
             spv_proof: None,
             pegout_registered: None,
             pegout_registered_tx: None,

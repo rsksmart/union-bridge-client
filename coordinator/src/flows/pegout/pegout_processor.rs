@@ -183,6 +183,7 @@ where
 
         processor.pegout_flows =
             restore_flows(store.as_ref(), StorePrefix::PegoutFlow, flow_factory)?;
+        processor.resume_restored_flows()?;
 
         Ok(processor)
     }
@@ -357,6 +358,7 @@ where
                     );
                     self.advance_funds_timeout_scheduler.cancel(flow_id);
                 }
+                flow.clear_advance_funds_timeout()?;
             } else {
                 warn!(
                     "Signature flow done for unknown pegout flow_id: {flow_id}. Skipping dispatch step"
@@ -483,33 +485,44 @@ where
         Ok(())
     }
 
-    fn schedule_pending_timeouts(&mut self, block: &RskBlockAndUncles) {
+    fn schedule_pending_timeouts(&mut self, block: &RskBlockAndUncles) -> Result<()> {
         if self.flows_pending_timeout.is_empty() {
-            return;
+            return Ok(());
         }
 
         let current_timestamp = block.block().timestamp().value();
         let pending_flows: Vec<Uuid> = self.flows_pending_timeout.iter().copied().collect();
 
         for flow_id in pending_flows {
-            if let Some(flow) = self.pegout_flows.get(&flow_id) {
+            if let Some(flow) = self.pegout_flows.get_mut(&flow_id) {
                 // Only schedule if flow is still waiting for signatures (not yet dispatched)
                 if flow.current_step() == Steps::WaitUserTakeSignaturesReady {
-                    self.advance_funds_timeout_scheduler.schedule(
-                        flow_id,
-                        current_timestamp,
-                        self.advance_funds_timeout_secs,
-                    );
+                    let expires_at =
+                        if let Some(expires_at) = flow.advance_funds_timeout_expires_at() {
+                            self.advance_funds_timeout_scheduler.schedule_at(flow_id, expires_at);
+                            expires_at
+                        } else {
+                            let expires_at = flow.schedule_advance_funds_timeout(
+                                current_timestamp,
+                                self.advance_funds_timeout_secs,
+                            )?;
+                            self.advance_funds_timeout_scheduler.schedule(
+                                flow_id,
+                                current_timestamp,
+                                self.advance_funds_timeout_secs,
+                            );
+                            expires_at
+                        };
                     info!(
                         "Scheduled advance funds timeout for flow_id: {} at timestamp: {} (expires at: {})",
-                        flow_id,
-                        current_timestamp,
-                        current_timestamp + self.advance_funds_timeout_secs
+                        flow_id, current_timestamp, expires_at
                     );
                 }
             }
             self.flows_pending_timeout.remove(&flow_id);
         }
+
+        Ok(())
     }
 
     /// Check for expired advance funds timeouts and trigger operator take
@@ -661,6 +674,87 @@ where
             &mut self.pegout_flows,
             PegoutFlow::is_terminal,
         );
+    }
+
+    fn resume_restored_flows(&mut self) -> Result<()> {
+        let flow_ids: Vec<Uuid> = self.pegout_flows.keys().copied().collect();
+
+        for flow_id in flow_ids {
+            let Some(step) = self.pegout_flows.get(&flow_id).map(PegoutFlow::current_step) else {
+                continue;
+            };
+
+            match step {
+                Steps::WaitPegoutRequested => {
+                    if let Some(flow) = self.pegout_flows.get_mut(&flow_id) {
+                        info!("Resuming pegout flow {flow_id} from WaitPegoutRequested");
+                        flow.complete_step(&StepData::PegoutRequested)?;
+                    }
+                }
+                Steps::GetCommInfoAuthoritativeCheckpoint
+                | Steps::PrepareUserTakeSetup
+                | Steps::DispatchUserTakeTransactionAllConvergeCheckpoint
+                | Steps::RequestUserTakeSpvProof => {
+                    if let Some(flow) = self.pegout_flows.get_mut(&flow_id) {
+                        info!("Replaying pegout flow {flow_id} side effects for step {step:?}");
+                        flow.start_step(step)?;
+                    }
+                }
+                Steps::RegisterPegout => {
+                    let resume_result = if let Some(flow) = self.pegout_flows.get_mut(&flow_id) {
+                        info!("Replaying pegout flow {flow_id} side effects for step {step:?}");
+                        flow.start_step(step)
+                    } else {
+                        Ok(())
+                    };
+
+                    if let Err(err) = resume_result {
+                        if is_missing_native_bridge_confirmations(&err) {
+                            self.schedule_register_pegout_retry(
+                                flow_id,
+                                1,
+                                "Missing confirmations on native bridge while resuming register_pegout, scheduling retry",
+                            );
+                            continue;
+                        }
+                        return Err(err);
+                    }
+                }
+                Steps::WaitUserTakeSignaturesReady => {
+                    info!(
+                        "Restored pegout flow {flow_id} waiting for user-take signatures; restoring advance-funds timeout"
+                    );
+                    if let Some(expires_at) = self
+                        .pegout_flows
+                        .get(&flow_id)
+                        .and_then(PegoutFlow::advance_funds_timeout_expires_at)
+                    {
+                        self.advance_funds_timeout_scheduler.schedule_at(flow_id, expires_at);
+                    } else {
+                        self.flows_pending_timeout.insert(flow_id);
+                    }
+                }
+                Steps::ConfirmUserTakeTransaction => {
+                    if let Some(flow) = self.pegout_flows.get(&flow_id) {
+                        info!("Resuming Bitcoin confirmation polling for pegout flow {flow_id}");
+                        flow.request_transaction_status()?;
+                    }
+                    self.tx_status_scheduler.schedule(flow_id, self.btc_status_retry_blocks);
+                }
+                Steps::TriggerOperatorTake => {
+                    if let Some(flow) = self.pegout_flows.get_mut(&flow_id) {
+                        info!("Resuming operator-take trigger for pegout flow {flow_id}");
+                        flow.start_step(Steps::TriggerOperatorTake)?;
+                        if flow.current_step() == Steps::TriggerOperatorTake {
+                            flow.complete_step(&StepData::TriggerOperatorTakeTimeout)?;
+                        }
+                    }
+                }
+                Steps::Done | Steps::Failed => {}
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -902,7 +996,7 @@ where
         self.cleanup_terminal_flows();
 
         // Schedule pending timeouts for flows that received pegout_accepted
-        self.schedule_pending_timeouts(block);
+        self.schedule_pending_timeouts(block)?;
 
         // Check for expired timeouts
         self.handle_advance_funds_timeout_expired(block)?;
@@ -1026,9 +1120,13 @@ mod tests {
                     request_pegout_tx_hash:
                         "0xfeedfacecafebeef000000000000000000000000000000000000000000000000"
                             .to_string(),
+                    pegout_requested_received_at_secs: None,
+                    pegout_requested_block_number: None,
+                    pegout_requested_block_hash: None,
                     my_p2p_address: None,
                     committee_output: None,
                     peg_out_accepted: Some(fake_pegout_accepted(test_txid([3u8; 32]))),
+                    advance_funds_timeout_expires_at: None,
                     pegout_registered: None,
                     pegout_registered_tx: None,
                     spv_proof: None,
@@ -1056,9 +1154,13 @@ mod tests {
                     request_pegout_tx_hash:
                         "0xfeedfacecafebeef000000000000000000000000000000000000000000000000"
                             .to_string(),
+                    pegout_requested_received_at_secs: None,
+                    pegout_requested_block_number: None,
+                    pegout_requested_block_hash: None,
                     my_p2p_address: None,
                     committee_output: None,
                     peg_out_accepted: Some(fake_pegout_accepted(test_txid([3u8; 32]))),
+                    advance_funds_timeout_expires_at: None,
                     pegout_registered: None,
                     pegout_registered_tx: None,
                     spv_proof: None,
@@ -1258,5 +1360,44 @@ mod tests {
         assert!(!harness.processor.register_pegout_retry_scheduler.is_scheduled(&flow_id));
         assert!(!harness.processor.flows_pending_timeout.contains(&flow_id));
         assert!(!harness.processor.unconfirmed_register_pegout.contains_key(&flow_id));
+    }
+
+    #[test]
+    fn resume_restored_waiting_signatures_restores_timeout_tracking() {
+        let mut harness = TestHarness::new();
+        let flow_id = Uuid::new_v4();
+        harness.processor.pegout_flows.insert(
+            flow_id,
+            harness.create_flow_at_step(flow_id, Steps::WaitUserTakeSignaturesReady),
+        );
+
+        harness.processor.resume_restored_flows().expect("resume should succeed");
+
+        assert!(harness.processor.flows_pending_timeout.contains(&flow_id));
+    }
+
+    #[test]
+    fn schedule_pending_timeout_persists_expiration_for_restored_flow() {
+        let mut harness = TestHarness::new();
+        let flow_id = Uuid::new_v4();
+        harness.processor.pegout_flows.insert(
+            flow_id,
+            harness.create_flow_at_step(flow_id, Steps::WaitUserTakeSignaturesReady),
+        );
+        harness.processor.flows_pending_timeout.insert(flow_id);
+
+        let block_generator = FakeBlockGenerator::new(None, Arc::new(AtomicBool::new(false)), None);
+        let block = RskBlockAndUncles::new_no_uncles(
+            block_generator
+                .generate_block(BlockNumber::from(100), None)
+                .expect("failed to generate test block"),
+        );
+
+        harness.processor.schedule_pending_timeouts(&block).expect("timeout scheduling");
+
+        let flow = harness.processor.pegout_flows.get(&flow_id).expect("flow exists");
+        assert!(flow.advance_funds_timeout_expires_at().is_some());
+        assert!(harness.processor.advance_funds_timeout_scheduler.is_scheduled(&flow_id));
+        assert!(!harness.processor.flows_pending_timeout.contains(&flow_id));
     }
 }

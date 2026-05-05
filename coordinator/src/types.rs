@@ -609,6 +609,10 @@ impl<K: Eq + Hash + Clone> TimeBasedScheduler<K> {
         self.pending.insert(id, expiration_timestamp);
     }
 
+    pub fn schedule_at(&mut self, id: K, expiration_timestamp: u64) {
+        self.pending.insert(id, expiration_timestamp);
+    }
+
     pub fn cancel(&mut self, id: &K) {
         self.pending.remove(id);
     }
