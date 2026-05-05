@@ -6,11 +6,11 @@ The on-disk format of the coordinator database did not change between `v0.3.1` a
 
 The relevant code path is `coordinator/src/store.rs::load_all_flows`. Restoring flows from disk is fail-fast at the prefix level: if a single row under `setup_committee_flows/`, `pegout_flows/` or `pegin_flows/` fails to deserialize, `restore_flows` returns `Err` and the coordinator refuses to start.
 
-The migration is performed by a stand-alone tool, `tools/migrate-v031/`, that the operator runs once before deploying `v0.4.x`. The tool mutates legacy rows in place. The mutations are idempotent (gated by `is_none()` checks) and additive (no field is removed or rewritten), so reruns are no-ops and a downgrade back to `v0.3.1` still works.
+The migration is performed by a stand-alone tool, `tools/migrate-v031/`, that the operator runs once before deploying `v0.4.x`. The tool mutates legacy rows in place. The mutations are idempotent: field additions are gated by `is_none()` checks, and step-name rewrites are gated by exact legacy names. No existing fields are removed. If you need a deterministic downgrade after running the tool, restore the operator snapshot; v0.3.1 ignores added fields, but it does not know the rewritten v0.4.x step names.
 
 The coordinator binary contains no migration code and is byte-identical to upstream `chore/release/v0.4.x` at the same merge base. The legacy `[bridge.*]` config detection and the post-migration schema verification both live inside the tool itself: pass `--config <toml-path>` to refuse migration if the TOML still has the legacy section, and the tool always probes the DB at the end to confirm the v0.4.x schema. If the operator forgets to run the tool, the v0.4.x coordinator's existing `restore_flows` will fail at startup with a deserialization error pointing at the missing field.
 
-Stable across the upgrade: `global_context` and the `PersistentGlobalContext` struct (committees, take key, dispute key, comm key), `StoreKey` and `StorePrefix`, every `Steps` enum variant from `v0.3.1` (new variants were added but none removed), and the storage backend itself. Operator keys and committee membership are preserved without any DB action.
+Stable across the upgrade: `global_context` and the `PersistentGlobalContext` struct (committees, take key, dispute key, comm key), `StoreKey` and `StorePrefix`, and the storage backend itself. Operator keys and committee membership are preserved without any DB action.
 
 ## Incompatibilities
 
@@ -18,9 +18,9 @@ Audited against `v0.3.1` at `4c286d981ebda52cbb353427ccfccc33dc4bfe0b` and `v0.4
 
 | Row prefix or file | What changed | Migration action |
 | --- | --- | --- |
-| `setup_committee_flows/*` | `ctx.setup_full_penalization_req: SetupChannelReq` is new and required, no default | Inject `[]` if missing |
-| `pegout_flows/*` | `ctx.request_pegout_tx_hash: String` is new and required, no default | Inject `""` if missing; warn for in-flight rows |
-| `pegin_flows/*` | `ctx.operator_take_txid: Option<Txid>` and `ctx.operator_won_txid: Option<Txid>` are new (Option, so missing rows still deserialize), but the flow expects them populated by step `AddOperatorTakeHash` | If missing, copy from `ctx.bitvmx_pegin_accepted.{operator_take_txid, operator_won_txid}` |
+| `setup_committee_flows/*` | `ctx.setup_full_penalization_req: SetupChannelReq` is new and required, no default. `DepositP2PData` and `SetupTakeAggregatedKey` were renamed. | Inject `[]` if missing. Rewrite `DepositP2PData` → `DepositP2PDataAuthoritativeCheckpoint` and `SetupTakeAggregatedKey` → `SetupTakeAggregatedKeyAllConvergeCheckpoint`. |
+| `pegout_flows/*` | `ctx.request_pegout_tx_hash: String` is new and required, no default. `PegoutRequested`, `GetCommInfo`, and `DispatchTransaction` were renamed. | Inject `""` if missing; warn for in-flight rows. Rewrite `PegoutRequested` → `WaitPegoutRequested`, `GetCommInfo` → `GetCommInfoAuthoritativeCheckpoint`, and `DispatchTransaction` → `WaitUserTakeSignaturesReady`. |
+| `pegin_flows/*` | `ctx.operator_take_txid: Option<Txid>` and `ctx.operator_won_txid: Option<Txid>` are new (Option, so missing rows still deserialize), but the flow expects them populated by the operator-take-hash path. `PeginRequested`, `GetCommInfo`, `AddOperatorTakeHash`, and `DispatchTransaction` were renamed or split. | If missing, copy from `ctx.bitvmx_pegin_accepted.{operator_take_txid, operator_won_txid}`. Rewrite `PeginRequested` → `WaitPeginRequested`, `GetCommInfo` → `GetCommInfoAuthoritativeCheckpoint`, `AddOperatorTakeHash` → `WaitAllOperatorTakeTxidsAdded`, and `DispatchTransaction` → `WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint`. |
 | `config/*.toml` | The `[bridge.*]` section was renamed and split across `[flows.*]` and `[coordinator]` | Manual edit before deploy. `migrate-v031 --config <toml-path>` refuses to migrate while the legacy section is still present |
 
 If after the migration any row still fails to deserialize as a `v0.4.x` `State`, the next call to `restore_flows` returns `Err` and the binary exits with a non-zero code. systemd or docker do not advance, the operator sees the error in logs, and they can restore from snapshot.
@@ -28,6 +28,7 @@ If after the migration any row still fails to deserialize as a `v0.4.x` `State`,
 ### Why These Defaults
 
 - `setup_committee_flows` → `[]`: not a fallback. The field is only populated during the new `FullPenalizationSetup` step, which did not exist in `v0.3.1`, so an empty list is the actual representative value for any pre-existing row.
+- Step rewrites: these are string-level rewrites for persisted enum variants whose role stayed equivalent under the v0.4.x state machines. The tool also verifies that no known legacy step names remain after migration, because those names would fail serde enum deserialization at startup.
 - `pegin_flows` → lift from `bitvmx_pegin_accepted`: this is the calculated value, not a default. When the source field is also missing, the flow is at an early step where the txids did not exist anywhere in `v0.3.1` either; `v0.4.x` populates them naturally when it executes the new `RequestOperatorTakeTransactionInfo` / `RequestOperatorWonTransactionInfo` steps.
 - `pegout_flows` → `""`: the only real default-vs-reconstruct decision. The original tx_hash comes from the `EventWithBlock` wrapper, which only the log-indexer persists in a separate DB. Reconstructing it would require a cross-DB lookup against the log-indexer keys. Left as future work; revisit if in-flight pegout warnings show up in production.
 
@@ -106,7 +107,7 @@ The legacy `[bridge.*]` section can be removed entirely once the new sections ar
 
    If the tool exits with `it appears to be locked by another process`, the coordinator is still running. Stop it (`docker compose down` or kill the cargo process) and rerun.
 
-4. *(Optional)* Dry-run against a copy. There is no `--dry-run` flag; the recommended preview is to run the tool plus `v0.4.x` against a copy of the operator directory.
+4. *(Optional)* Dry-run against the production DB or a copy. `--dry-run` logs every row that would be mutated without writing back. For a full startup rehearsal, run the tool plus `v0.4.x` against a copy of the operator directory.
 
    ```bash
    cp -r ~/.union_bridge/op_NN ~/.union_bridge/op_NN_dryrun
@@ -148,6 +149,8 @@ WARN  Migrating in-flight pegout pegout_flows/<uuid> (step=DispatchTransaction) 
 ```
 
 The flow continues under `v0.4.x` with an empty `request_pegout_tx_hash`; its final completion marker may carry that empty value. To avoid it, drain the pegout under `v0.3.1` before upgrading.
+
+The tool also logs a warning for committee setup rows persisted at `DepositAggregatedKey`. That serialized name still exists in v0.4.x, but the step moved later in the flow, after dispute and full-penalization setup. Prefer draining that committee setup flow before upgrading.
 
 ## Rollback
 

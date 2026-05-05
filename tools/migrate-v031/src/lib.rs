@@ -5,9 +5,11 @@
 //! in place to add the fields that v0.4.x requires for `restore_flows` to
 //! deserialize them.
 //!
-//! All mutations are gated by `is_none()` checks, so reruns are no-ops, and
-//! none of them remove or rewrite existing values, so a downgrade back to
-//! v0.3.1 still works (v0.3.1 ignores unknown fields on read).
+//! Field additions are gated by `is_none()` checks, and step rewrites are
+//! gated by exact legacy names, so reruns are no-ops. The migration does not
+//! remove existing values; downgrade remains possible because v0.3.1 ignores
+//! the added fields, but step names rewritten for v0.4.x should be restored
+//! from the operator snapshot before a downgrade.
 //!
 //! Two non-mutation helpers are also provided for the operator runbook:
 //! `check_config_no_legacy_bridge` (refuses to migrate if the operator's
@@ -30,6 +32,24 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use storage_backend::storage::{KeyValueStore, Storage};
 use storage_backend::storage_config::StorageConfig;
+
+const COMMITTEE_STEP_RENAMES: &[(&str, &str)] = &[
+    ("DepositP2PData", "DepositP2PDataAuthoritativeCheckpoint"),
+    ("SetupTakeAggregatedKey", "SetupTakeAggregatedKeyAllConvergeCheckpoint"),
+];
+
+const PEGIN_STEP_RENAMES: &[(&str, &str)] = &[
+    ("PeginRequested", "WaitPeginRequested"),
+    ("GetCommInfo", "GetCommInfoAuthoritativeCheckpoint"),
+    ("AddOperatorTakeHash", "WaitAllOperatorTakeTxidsAdded"),
+    ("DispatchTransaction", "WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint"),
+];
+
+const PEGOUT_STEP_RENAMES: &[(&str, &str)] = &[
+    ("PegoutRequested", "WaitPegoutRequested"),
+    ("GetCommInfo", "GetCommInfoAuthoritativeCheckpoint"),
+    ("DispatchTransaction", "WaitUserTakeSignaturesReady"),
+];
 
 /// Knobs for `run_with_options`. Defaults: do mutate the DB.
 #[derive(Debug, Default, Clone, Copy)]
@@ -141,9 +161,25 @@ fn migrate_committee_inner(
 ) -> Result<()> {
     for (key, raw) in storage.partial_compare("setup_committee_flows/")? {
         let mut v: Value = serde_json::from_str(&raw)?;
+        let mut changes = Vec::new();
+
+        if let Some((from, to)) = rewrite_string_field(&mut v, &["step"], COMMITTEE_STEP_RENAMES) {
+            changes.push(format!("step {from}->{to}"));
+        }
+
+        if string_field(&v, &["step"]) == Some("DepositAggregatedKey") {
+            warn!(
+                "Committee flow {key} is at legacy DepositAggregatedKey. v0.4.x keeps that serialized name but moved the step after dispute/full-penalization setup; drain this flow before upgrade if it has not already reached NewCommitteeReady.",
+            );
+        }
+
         if v["ctx"].get("setup_full_penalization_req").is_none() {
             v["ctx"]["setup_full_penalization_req"] = json!([]);
-            commit_or_log(storage, &key, &v, opts, "setup_full_penalization_req=[]")?;
+            changes.push("setup_full_penalization_req=[]".to_string());
+        }
+
+        if !changes.is_empty() {
+            commit_or_log(storage, &key, &v, opts, &changes.join(", "))?;
             mutated.push(key);
         }
     }
@@ -157,6 +193,12 @@ fn migrate_pegout_inner(
 ) -> Result<()> {
     for (key, raw) in storage.partial_compare("pegout_flows/")? {
         let mut v: Value = serde_json::from_str(&raw)?;
+        let mut changes = Vec::new();
+
+        if let Some((from, to)) = rewrite_string_field(&mut v, &["step"], PEGOUT_STEP_RENAMES) {
+            changes.push(format!("step {from}->{to}"));
+        }
+
         if v["ctx"].get("request_pegout_tx_hash").is_none() {
             v["ctx"]["request_pegout_tx_hash"] = json!("");
             let step = v.get("step").and_then(Value::as_str).unwrap_or("?");
@@ -165,7 +207,11 @@ fn migrate_pegout_inner(
                     "Migrating in-flight pegout {key} (step={step}) with empty request_pegout_tx_hash; flow may emit an incomplete completion marker",
                 );
             }
-            commit_or_log(storage, &key, &v, opts, "request_pegout_tx_hash=\"\"")?;
+            changes.push("request_pegout_tx_hash=\"\"".to_string());
+        }
+
+        if !changes.is_empty() {
+            commit_or_log(storage, &key, &v, opts, &changes.join(", "))?;
             mutated.push(key);
         }
     }
@@ -179,7 +225,13 @@ fn migrate_pegin_inner(
 ) -> Result<()> {
     for (key, raw) in storage.partial_compare("pegin_flows/")? {
         let mut v: Value = serde_json::from_str(&raw)?;
-        let mut changed = false;
+        let mut changes = Vec::new();
+
+        if let Some((from, to)) = rewrite_string_field(&mut v, &["ctx", "step"], PEGIN_STEP_RENAMES)
+        {
+            changes.push(format!("ctx.step {from}->{to}"));
+        }
+
         for field in ["operator_take_txid", "operator_won_txid"] {
             if v["ctx"].get(field).is_none() {
                 let lifted = v["ctx"]
@@ -188,15 +240,44 @@ fn migrate_pegin_inner(
                     .cloned()
                     .unwrap_or(Value::Null);
                 v["ctx"][field] = lifted;
-                changed = true;
+                changes.push(format!("lift ctx.{field}"));
             }
         }
-        if changed {
-            commit_or_log(storage, &key, &v, opts, "lift operator txids")?;
+
+        if !changes.is_empty() {
+            commit_or_log(storage, &key, &v, opts, &changes.join(", "))?;
             mutated.push(key);
         }
     }
     Ok(())
+}
+
+fn string_field<'a>(value: &'a Value, path: &[&str]) -> Option<&'a str> {
+    let mut current = value;
+    for segment in path {
+        current = current.get(*segment)?;
+    }
+    current.as_str()
+}
+
+fn string_field_mut<'a>(value: &'a mut Value, path: &[&str]) -> Option<&'a mut Value> {
+    let mut current = value;
+    for segment in path {
+        current = current.get_mut(*segment)?;
+    }
+    Some(current)
+}
+
+fn rewrite_string_field(
+    value: &mut Value,
+    path: &[&str],
+    renames: &[(&str, &str)],
+) -> Option<(String, String)> {
+    let field = string_field_mut(value, path)?;
+    let current = field.as_str()?.to_string();
+    let (_, to) = renames.iter().find(|(from, _)| current == *from)?;
+    *field = Value::String((*to).to_string());
+    Some((current, (*to).to_string()))
 }
 
 fn commit_or_log(
@@ -237,27 +318,53 @@ pub fn check_config_no_legacy_bridge(toml_path: &Path) -> Result<()> {
 }
 
 /// Probe the DB and confirm every persisted row carries the v0.4.x-required
-/// fields. Reads at most one row per prefix; intended as a post-migration
-/// sanity check, not as a substitute for `run`.
+/// fields and no legacy step names that would fail `Steps` enum deserialization.
 ///
 /// # Errors
 ///
 /// Returns an error if a row is at the v0.3.1 schema, or if reading the
 /// underlying storage fails or a row contains malformed JSON.
 pub fn verify_v04x_schema(storage: &Storage) -> Result<()> {
-    const PROBES: &[(&str, &str)] = &[
-        ("setup_committee_flows/", "setup_full_penalization_req"),
-        ("pegout_flows/", "request_pegout_tx_hash"),
-    ];
-    for (prefix, field) in PROBES {
-        if let Some((key, raw)) = storage.partial_compare(prefix)?.into_iter().next() {
-            let v: Value = serde_json::from_str(&raw)?;
-            if v["ctx"].get(field).is_none() {
-                bail!(
-                    "DB row {key} is at v0.3.1 schema (missing ctx.{field}); the DB has not been migrated yet. Run migrate-v031 against this DB first."
-                );
-            }
+    for (key, raw) in storage.partial_compare("setup_committee_flows/")? {
+        let v: Value = serde_json::from_str(&raw)?;
+        verify_no_legacy_step(&key, &v, &["step"], COMMITTEE_STEP_RENAMES)?;
+        if v["ctx"].get("setup_full_penalization_req").is_none() {
+            bail!(
+                "DB row {key} is at v0.3.1 schema (missing ctx.setup_full_penalization_req); the DB has not been migrated yet. Run migrate-v031 against this DB first."
+            );
         }
     }
+    for (key, raw) in storage.partial_compare("pegout_flows/")? {
+        let v: Value = serde_json::from_str(&raw)?;
+        verify_no_legacy_step(&key, &v, &["step"], PEGOUT_STEP_RENAMES)?;
+        if v["ctx"].get("request_pegout_tx_hash").is_none() {
+            bail!(
+                "DB row {key} is at v0.3.1 schema (missing ctx.request_pegout_tx_hash); the DB has not been migrated yet. Run migrate-v031 against this DB first."
+            );
+        }
+    }
+    for (key, raw) in storage.partial_compare("pegin_flows/")? {
+        let v: Value = serde_json::from_str(&raw)?;
+        verify_no_legacy_step(&key, &v, &["ctx", "step"], PEGIN_STEP_RENAMES)?;
+    }
+    Ok(())
+}
+
+fn verify_no_legacy_step(
+    key: &str,
+    value: &Value,
+    path: &[&str],
+    renames: &[(&str, &str)],
+) -> Result<()> {
+    let Some(step) = string_field(value, path) else {
+        return Ok(());
+    };
+
+    if renames.iter().any(|(from, _)| step == *from) {
+        bail!(
+            "DB row {key} is at v0.3.1 schema (legacy step {step}); the DB has not been migrated yet. Run migrate-v031 against this DB first."
+        );
+    }
+
     Ok(())
 }

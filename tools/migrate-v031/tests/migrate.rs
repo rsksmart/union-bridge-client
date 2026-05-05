@@ -54,6 +54,40 @@ fn migrates_committee_missing_full_penalization() {
 }
 
 #[test]
+fn migrates_committee_legacy_step_names() {
+    let (_dir, storage) = make_storage();
+    let p2p_key = "setup_committee_flows/00000000-0000-0000-0000-000000000012";
+    let take_key = "setup_committee_flows/00000000-0000-0000-0000-000000000013";
+
+    write_raw(
+        &storage,
+        p2p_key,
+        &json!({
+            "internal_id": "00000000-0000-0000-0000-000000000012",
+            "step": "DepositP2PData",
+            "ctx": { "setup_full_penalization_req": [] },
+        }),
+    );
+    write_raw(
+        &storage,
+        take_key,
+        &json!({
+            "internal_id": "00000000-0000-0000-0000-000000000013",
+            "step": "SetupTakeAggregatedKey",
+            "ctx": { "setup_full_penalization_req": [] },
+        }),
+    );
+
+    let n = migrate_committee(&storage).expect("migrate");
+    assert_eq!(n, 2);
+    assert_eq!(read_raw(&storage, p2p_key)["step"], json!("DepositP2PDataAuthoritativeCheckpoint"));
+    assert_eq!(
+        read_raw(&storage, take_key)["step"],
+        json!("SetupTakeAggregatedKeyAllConvergeCheckpoint")
+    );
+}
+
+#[test]
 fn migrates_pegout_missing_request_tx_hash() {
     let (_dir, storage) = make_storage();
     let key = "pegout_flows/00000000-0000-0000-0000-000000000002";
@@ -72,6 +106,36 @@ fn migrates_pegout_missing_request_tx_hash() {
     let row = read_raw(&storage, key);
     assert_eq!(row["ctx"]["request_pegout_tx_hash"], json!(""));
     assert_eq!(row["ctx"]["pegout_registered_tx"], json!("0xabcd"));
+}
+
+#[test]
+fn migrates_pegout_legacy_step_names() {
+    let (_dir, storage) = make_storage();
+    let requested_key = "pegout_flows/00000000-0000-0000-0000-000000000014";
+    let comm_key = "pegout_flows/00000000-0000-0000-0000-000000000015";
+    let dispatch_key = "pegout_flows/00000000-0000-0000-0000-000000000016";
+
+    for (key, step) in [
+        (requested_key, "PegoutRequested"),
+        (comm_key, "GetCommInfo"),
+        (dispatch_key, "DispatchTransaction"),
+    ] {
+        write_raw(
+            &storage,
+            key,
+            &json!({
+                "flow_id": key,
+                "step": step,
+                "ctx": { "request_pegout_tx_hash": "0xbeef" },
+            }),
+        );
+    }
+
+    let n = migrate_pegout(&storage).expect("migrate");
+    assert_eq!(n, 3);
+    assert_eq!(read_raw(&storage, requested_key)["step"], json!("WaitPegoutRequested"));
+    assert_eq!(read_raw(&storage, comm_key)["step"], json!("GetCommInfoAuthoritativeCheckpoint"));
+    assert_eq!(read_raw(&storage, dispatch_key)["step"], json!("WaitUserTakeSignaturesReady"));
 }
 
 #[test]
@@ -108,6 +172,52 @@ fn migrates_pegin_lifts_legacy_txids_when_present() {
     assert_eq!(
         row["ctx"]["bitvmx_pegin_accepted"]["operator_take_txid"],
         json!("1111111111111111111111111111111111111111111111111111111111111111")
+    );
+}
+
+#[test]
+fn migrates_pegin_legacy_step_names() {
+    let (_dir, storage) = make_storage();
+    let requested_key = "pegin_flows/00000000-0000-0000-0000-000000000017";
+    let comm_key = "pegin_flows/00000000-0000-0000-0000-000000000018";
+    let add_hash_key = "pegin_flows/00000000-0000-0000-0000-000000000019";
+    let dispatch_key = "pegin_flows/00000000-0000-0000-0000-00000000001a";
+
+    for (key, step) in [
+        (requested_key, "PeginRequested"),
+        (comm_key, "GetCommInfo"),
+        (add_hash_key, "AddOperatorTakeHash"),
+        (dispatch_key, "DispatchTransaction"),
+    ] {
+        write_raw(
+            &storage,
+            key,
+            &json!({
+                "flow_id": key,
+                "ctx": {
+                    "step": step,
+                    "operator_take_txid": null,
+                    "operator_won_txid": null,
+                    "bitvmx_pegin_accepted": null
+                },
+            }),
+        );
+    }
+
+    let n = migrate_pegin(&storage).expect("migrate");
+    assert_eq!(n, 4);
+    assert_eq!(read_raw(&storage, requested_key)["ctx"]["step"], json!("WaitPeginRequested"));
+    assert_eq!(
+        read_raw(&storage, comm_key)["ctx"]["step"],
+        json!("GetCommInfoAuthoritativeCheckpoint")
+    );
+    assert_eq!(
+        read_raw(&storage, add_hash_key)["ctx"]["step"],
+        json!("WaitAllOperatorTakeTxidsAdded")
+    );
+    assert_eq!(
+        read_raw(&storage, dispatch_key)["ctx"]["step"],
+        json!("WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint")
     );
 }
 
@@ -237,6 +347,27 @@ fn verify_v04x_schema_fails_for_unmigrated_committee_row() {
     );
     let err = verify_v04x_schema(&storage).expect_err("legacy row must fail");
     assert!(format!("{err}").contains("setup_full_penalization_req"));
+}
+
+#[test]
+fn verify_v04x_schema_fails_for_legacy_step_names() {
+    let (_dir, storage) = make_storage();
+    write_raw(
+        &storage,
+        "pegin_flows/00000000-0000-0000-0000-00000000001b",
+        &json!({
+            "flow_id": "00000000-0000-0000-0000-00000000001b",
+            "ctx": {
+                "step": "DispatchTransaction",
+                "operator_take_txid": null,
+                "operator_won_txid": null
+            },
+        }),
+    );
+
+    let err = verify_v04x_schema(&storage).expect_err("legacy step must fail");
+    let msg = format!("{err}");
+    assert!(msg.contains("legacy step DispatchTransaction"), "unexpected error: {msg}");
 }
 
 #[test]
