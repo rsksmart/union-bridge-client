@@ -32,5 +32,11 @@ pub trait EventProcessor {
         Ok(())
     }
 
+    #[allow(clippy::used_underscore_binding)]
+    fn hydrate_after_bitvmx_ready(&mut self) -> Result<()> {
+        // default no-op
+        Ok(())
+    }
+
     fn shutdown(&mut self);
 }

@@ -183,7 +183,6 @@ where
 
         processor.pegout_flows =
             restore_flows(store.as_ref(), StorePrefix::PegoutFlow, flow_factory)?;
-        processor.resume_restored_flows()?;
 
         Ok(processor)
     }
@@ -514,8 +513,7 @@ where
                             expires_at
                         };
                     info!(
-                        "Scheduled advance funds timeout for flow_id: {} at timestamp: {} (expires at: {})",
-                        flow_id, current_timestamp, expires_at
+                        "Scheduled advance funds timeout for flow_id: {flow_id} at timestamp: {current_timestamp} (expires at: {expires_at})",
                     );
                 }
             }
@@ -771,6 +769,10 @@ where
     BC: BitVmxBrokerClientApi,
     S: CoordinatorStoreApi,
 {
+    fn hydrate_after_bitvmx_ready(&mut self) -> Result<()> {
+        self.resume_restored_flows()
+    }
+
     fn process_user_request(&mut self, req: &UserRequests) -> Result<()> {
         self.cleanup_terminal_flows();
 

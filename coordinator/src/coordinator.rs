@@ -251,6 +251,7 @@ impl<
             Instant::now().checked_sub(self.bitvmx_ping_after_silence).unwrap_or_else(Instant::now);
         let mut bitvmx_ping: Option<Instant> = None;
         let mut bitvmx_liveness = BitvmxLiveness::Unknown;
+        let mut bitvmx_hydrated = false;
 
         let result = (|| -> Result<()> {
             loop {
@@ -288,6 +289,17 @@ impl<
                     bitvmx_ping = None;
                     bitvmx_last_msg = Instant::now();
                     Self::record_bitvmx_activity(&mut bitvmx_liveness);
+
+                    if !bitvmx_hydrated {
+                        bitvmx_hydrated = true;
+                        info!("BitVMX broker ready — hydrating restored flows");
+                        for p in &mut self.processors {
+                            if let Err(e) = p.hydrate_after_bitvmx_ready() {
+                                error!("Error hydrating processor after BitVMX ready: {e:?}");
+                                return Err(e);
+                            }
+                        }
+                    }
 
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
@@ -643,6 +655,7 @@ pub(crate) mod tests {
     }
 
     fn expect_processors_ok(mock_pegout_processor: &mut MockEventProcessor) {
+        mock_pegout_processor.expect_hydrate_after_bitvmx_ready().return_once(|| Ok(()));
         mock_pegout_processor.expect_process_new_bitvmx_event().returning(|_| Ok(())).times(1..);
         mock_pegout_processor.expect_process_new_block().returning(|_| Ok(())).times(1..);
         mock_pegout_processor.expect_process_new_rsk_event().returning(|_| Ok(())).times(1..);
