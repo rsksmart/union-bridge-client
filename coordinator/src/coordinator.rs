@@ -479,6 +479,7 @@ pub(crate) mod tests {
         assert!(super::uses_fake_native_bridge("LOCAL"));
 
         assert!(!super::uses_fake_native_bridge("docker"));
+        assert!(!super::uses_fake_native_bridge("local-regtest"));
         assert!(!super::uses_fake_native_bridge("regtest"));
         assert!(!super::uses_fake_native_bridge("alphanet"));
         assert!(!super::uses_fake_native_bridge("testnet"));

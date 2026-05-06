@@ -71,6 +71,7 @@ impl Signaling {
     pub(crate) fn new(storage_root: impl AsRef<Path>, runtime_environment: &str) -> Self {
         if runtime_environment.eq_ignore_ascii_case("local")
             || runtime_environment.eq_ignore_ascii_case("docker")
+            || runtime_environment.eq_ignore_ascii_case("local-regtest")
         {
             Self::File(FileSignal::new(storage_root))
         } else {

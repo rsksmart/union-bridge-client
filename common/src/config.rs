@@ -392,6 +392,37 @@ mod tests {
     }
 
     #[test]
+    fn test_local_regtest_environment_overrides() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+
+        let config: CommonConfig =
+            CommonConfig::load_config::<CommonConfig>(Some("local-regtest".to_string()))
+                .expect("Failed to load config with local-regtest environment");
+
+        assert_eq!(IndexerStartFrom::Best, config.indexer.start_from);
+        assert_eq!("local-regtest", config.environment);
+        assert_eq!("ws://127.0.0.1:4445", config.provider.rootstock.url);
+        assert_eq!("regtest", config.bitcoin_network);
+        assert_eq!(10, config.contracts.len());
+    }
+
+    #[test]
+    fn test_docker_local_regtest_environment_overrides() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+
+        let config: CommonConfig =
+            CommonConfig::load_config::<CommonConfig>(Some("docker-local-regtest".to_string()))
+                .expect("Failed to load config with docker-local-regtest environment");
+
+        assert_eq!(IndexerStartFrom::Best, config.indexer.start_from);
+        assert_eq!("/app/db/", config.indexer.storage.path);
+        assert_eq!("local-regtest", config.environment);
+        assert_eq!("ws://host.docker.internal:4445", config.provider.rootstock.url);
+        assert_eq!("regtest", config.bitcoin_network);
+        assert_eq!(10, config.contracts.len());
+    }
+
+    #[test]
     fn test_environment_variables_override_config_files() {
         let _guard = TEST_MUTEX.lock().unwrap();
 

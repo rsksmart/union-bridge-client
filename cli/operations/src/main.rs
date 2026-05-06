@@ -115,7 +115,7 @@ enum Commands {
 enum OperatorCommands {
     /// Fund operators
     Fund {
-        /// Environment to target (`local`, `docker`, or a remote profile name such as `alphanet`)
+        /// Environment to target (`local`, `docker`, `local-regtest`, or a remote profile name such as `alphanet`)
         #[arg(long = "env", short = 'e', default_value = "local", env = "UC_ENV")]
         env: Environment,
 
@@ -147,7 +147,7 @@ enum OperatorCommands {
     },
     /// Whitelist member addresses on the CommitteeRegistry contract
     Whitelist {
-        /// Environment to target (`local`, `docker`, or a remote profile name such as `alphanet`)
+        /// Environment to target (`local`, `docker`, `local-regtest`, or a remote profile name such as `alphanet`)
         #[arg(long = "env", short = 'e', default_value = "local")]
         env: Environment,
 
@@ -169,7 +169,7 @@ enum OperatorCommands {
     /// Emits a single integer to stdout so it can be consumed by scripts.
     #[command(name = "funding-amount")]
     FundingAmount {
-        /// Environment to target (`local`, `docker`, or a remote profile name such as `alphanet`)
+        /// Environment to target (`local`, `docker`, `local-regtest`, or a remote profile name such as `alphanet`)
         #[arg(long = "env", short = 'e', default_value = "local", env = "UC_ENV")]
         env: Environment,
 
@@ -184,7 +184,7 @@ enum OperatorCommands {
         #[arg(short = 's', long = "stream", value_name = "STREAM_ID")]
         stream_id: u64,
 
-        /// Target environment (`local`, `docker`, or a remote profile name such as `alphanet`)
+        /// Target environment (`local`, `docker`, `local-regtest`, or a remote profile name such as `alphanet`)
         #[arg(short = 'e', long = "env", default_value = "local", env = "UC_ENV")]
         env: Environment,
 
@@ -207,13 +207,13 @@ enum OperatorCommands {
 enum UserCommands {
     /// Display user addresses and funding instructions
     Fund {
-        /// Environment to target (`local`, `docker`, or a remote profile name such as `alphanet`)
+        /// Environment to target (`local`, `docker`, `local-regtest`, or a remote profile name such as `alphanet`)
         #[arg(long = "env", short = 'e', default_value = "local", env = "UC_ENV")]
         env: Environment,
     },
     /// Request a pegin address and print bitcoin-wallet CLI instructions
     Pegin {
-        /// Environment to target (`local`, `docker`, or a remote profile name such as `alphanet`)
+        /// Environment to target (`local`, `docker`, `local-regtest`, or a remote profile name such as `alphanet`)
         #[arg(long = "env", short = 'e', default_value = "local", env = "UC_ENV")]
         env: Environment,
 
@@ -231,7 +231,7 @@ enum UserCommands {
     },
     /// Request a pegout (withdraw from Rootstock to Bitcoin)
     Pegout {
-        /// Environment to target (`local`, `docker`, or a remote profile name such as `alphanet`)
+        /// Environment to target (`local`, `docker`, `local-regtest`, or a remote profile name such as `alphanet`)
         #[arg(long = "env", short = 'e', default_value = "local", env = "UC_ENV")]
         env: Environment,
 
@@ -298,7 +298,7 @@ async fn main() -> Result<()> {
                 .await?;
             }
             OperatorCommands::FundingAmount { env, stream_id } => {
-                let is_regtest = matches!(env, Environment::Local | Environment::Docker);
+                let is_regtest = env.is_local_regtest();
                 let profile = derive_stream_funding_profile(
                     stream_id,
                     is_regtest,

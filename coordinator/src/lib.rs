@@ -12,3 +12,4 @@ mod types;
 mod user_requests;
 
 pub const RUNTIME_ENV_LOCAL: &str = "local";
+pub const RUNTIME_ENV_LOCAL_REGTEST: &str = "local-regtest";
