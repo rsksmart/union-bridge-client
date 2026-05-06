@@ -244,12 +244,10 @@ pub async fn handle_user_funding(env: Environment) -> Result<()> {
                 }
             }
             Environment::Remote(_) => {
-                println!(
-                    "Fund with `cast` using a key you control. Replace <PRIVATE_KEY> locally:"
-                );
+                println!("Fund with `cast` interactively using a key you control:");
                 for (_, address) in &user_addresses {
                     println!(
-                        "  cast send {} --value <VARIABLE_AMOUNT_PER_STREAM> --private-key <PRIVATE_KEY> --rpc-url {}",
+                        "  cast send {} --value <VARIABLE_AMOUNT_PER_STREAM> --interactive --rpc-url {}",
                         address, rpc_url
                     );
                 }
@@ -512,7 +510,7 @@ async fn print_instructions(
     }
     println!();
 
-    println!("Fund with `cast` using a key you control. Replace <PRIVATE_KEY> locally:");
+    println!("Fund with `cast` interactively using a key you control:");
     for (index, address) in unique.into_iter().enumerate() {
         let required_balance = required_operator_rsk_balance(
             &rpc_url,
@@ -521,7 +519,7 @@ async fn print_instructions(
             roles[index],
         )?;
         println!(
-            "  cast send {} --value {} --private-key <PRIVATE_KEY> --rpc-url {}",
+            "  cast send {} --value {} --interactive --rpc-url {}",
             address, required_balance, rpc_url
         );
     }

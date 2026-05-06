@@ -652,9 +652,7 @@ where
     }
 
     pub fn mark_failed(&mut self, reason: &str) -> Result<()> {
-        // Temporary operational escape hatch for pre-mainnet recovery. Remove this
-        // manual fail path before mainnet instead of treating it as regular API.
-        info!("Admin marking pegout flow {} as failed: {reason}", self.state.flow_id);
+        info!("Marking pegout flow {} as failed: {reason}", self.state.flow_id);
         self.start_step(Steps::Failed)
     }
 

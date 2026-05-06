@@ -277,7 +277,7 @@ async fn main() -> Result<()> {
                     &member_funding_info,
                 )
                 .await?;
-                println!("=== Funding Bitcoin addresses ===");
+                println!("\n=== Funding Bitcoin addresses ===");
                 bitcoin_wallet::handle_bitcoin_funding(
                     env,
                     stream_id,
