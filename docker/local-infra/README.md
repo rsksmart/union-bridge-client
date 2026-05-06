@@ -1,6 +1,7 @@
 # Local Infra
 
-This doc owns the Docker-backed local infrastructure used when Union Bridge runs locally with `cargo`.
+This doc owns the Docker-backed local infrastructure used when Union Bridge runs locally with `cargo`
+or against the Docker-first `local-regtest` stack.
 
 For the full startup order, shared env rules, and the recommended local workflow, start with the
 [Local Setup Guide](../../LOCAL_SETUP.md).
@@ -47,7 +48,7 @@ background mining.
 
 ## Scripts
 
-- `start-blockchains.sh`: starts bitcoind (regtest) + Anvil loaded with predeployed contract state
+- `start-blockchains.sh`: starts bitcoind (regtest) + Anvil for `local`, or bitcoind + RSKj + powpeg-node for `local-regtest`
 - `cli-infra.sh --start-blockchains`: wraps blockchain startup, bootstraps the Bitcoin miner wallet with 101 blocks when needed, and then starts background mining
 - `start-bitvmx.sh`: starts 4 BitVMX client instances
 
@@ -116,6 +117,32 @@ cast rpc eth_chainId --rpc-url http://127.0.0.1:8545
 `./cli-infra.sh --start --fresh` can use the local image tag directly. If the
 selected image tag is not present locally, startup pulls it from GHCR and fails
 if the tag is not published. Use `--pull-contracts` to force a GHCR refresh.
+
+## Local-Regtest RSKj And PowPeg Versions
+
+`local-regtest` uses official Docker Hub images:
+
+- RSKj tags: <https://hub.docker.com/r/rsksmart/rskj/tags>
+- powpeg-node tags: <https://hub.docker.com/r/rsksmart/powpeg-node/tags>
+
+The default tested tags live in [`.env.local-regtest`](./.env.local-regtest):
+
+```bash
+RSKJ_TAG=VETIVER-9.0.1
+POWPEG_TAG=VETIVER-9.0.0.0
+```
+
+For a one-off run, pass the tags to `cli-infra.sh`:
+
+```bash
+PLATFORM=linux/arm64 ./cli-infra.sh --env local-regtest \
+  --start-blockchains --fresh \
+  --rskj-tag VETIVER-9.0.1 \
+  --powpeg-tag VETIVER-9.0.0.0
+```
+
+Use `--fresh` when changing RSKj or powpeg-node versions so old chain data does
+not leak into the new run.
 
 ## Scope
 

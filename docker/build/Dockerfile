@@ -11,6 +11,7 @@ ARG BUILDER_IMAGE=ghcr.io/rsksmart/union-client-builder:rust-1.95-v1
 FROM ${BUILDER_IMAGE} AS builder
 ARG JUST_CRATE=""
 ARG FEATURES=""
+ARG EXTRA_BUILD_PACKAGES=""
 
 WORKDIR /app
 
@@ -18,6 +19,7 @@ RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         ca-certificates \
         procps \
+        ${EXTRA_BUILD_PACKAGES} \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -47,7 +49,7 @@ RUN cargo fetch --locked
 # 2) build just one crate for speed
 # optionally builds with --features if provided
 # we also exclude key-manager from runtime image builds
-ARG EXCLUDES="--exclude check-fork --exclude check-fork-zkp --exclude key-manager"
+ARG EXCLUDES="--exclude check-fork --exclude check-fork-zkp --exclude check-fork-tester --exclude key-manager"
 # TODO when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips) via Dockerfile_coordinator
 # EXCLUDES="--exclude coordinator--exclude check-fork --exclude check-fork-zkp --exclude key-manager"
 RUN cargo build --workspace --quiet --release --locked ${EXCLUDES}${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES} && \
