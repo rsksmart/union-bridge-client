@@ -244,18 +244,10 @@ where
                 self.setup_advance_funds_protocol()?;
             }
             Steps::WaitForAdvanceFundsSPV => {
-                if let Some(spv_data) = self.state.advance_funds_spv.clone() {
-                    info!(
-                        "Advance funds SPV already buffered for flow_id: {}, proceeding",
-                        self.state.flow_id
-                    );
-                    self.complete_step(StepData::AdvanceFundsSPV(spv_data))?;
-                } else {
-                    info!(
-                        "Waiting for advance funds SPV proof for flow_id: {}",
-                        self.state.flow_id
-                    );
-                }
+                info!(
+                    "Waiting for advance funds SPV proof for flow_id: {}",
+                    self.state.flow_id,
+                );
             }
             Steps::RegisterAdvanceFunds => {
                 info!("Registering advance funds for flow_id: {}", self.state.flow_id);

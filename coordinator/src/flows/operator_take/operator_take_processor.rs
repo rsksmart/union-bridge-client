@@ -644,14 +644,6 @@ where
                 Err(err) if is_missing_native_bridge_confirmations(&err) => true,
                 Err(err) => return Err(err),
             }
-        } else if flow.current_step() == Steps::SetupAdvanceFundsProtocol {
-            info!(
-                "Flow {} not yet at WaitForAdvanceFundsSPV (current: {:?}), buffering SPV",
-                flow_id,
-                flow.current_step()
-            );
-            flow.state.advance_funds_spv = Some(spv_data.clone());
-            false
         } else {
             warn!(
                 "Advance funds flow {} received funds_advance_spv at unexpected step {:?}",
@@ -1051,7 +1043,7 @@ mod tests {
     use bitcoin::transaction::Version;
     use bitcoin::{PublicKey, Transaction};
     use common::msg_broker::bitvmx_types::{
-        AdvanceFundsRegistered, BtcTxSPVProof, FundsAdvanceSPV, IncomingBitVMXApiMessages,
+        AdvanceFundsRegistered, BtcTxSPVProof, IncomingBitVMXApiMessages,
         OutgoingBitVMXApiMessages, UnionSPVNotification, UnionTxType,
     };
     use common::msg_broker::broker::MockBrokerClientApi;
@@ -1148,47 +1140,6 @@ mod tests {
                 .expect("proof should be buffered")
                 .tx
                 .compute_txid(),
-            proof.tx.compute_txid()
-        );
-    }
-
-    #[test]
-    fn buffers_advance_funds_spv_until_wait_step_starts() {
-        let committee_id = Uuid::new_v4();
-        let slot_index = 1;
-        let flow_id = Uuid::new_v4();
-        let trigger_data = test_trigger_data(committee_id, slot_index);
-
-        let flow = AdvanceFundsFlow::new_for_test(
-            Rc::new(MockRskContractsGatewayApi::new()),
-            Rc::new(MockBitVmxBroker::new()),
-            flow_id,
-            trigger_data.clone(),
-            Steps::SetupAdvanceFundsProtocol,
-        );
-
-        let mut processor = AdvanceFundsFlowProcessor::new_for_test(
-            Rc::new(MockRskContractsGatewayApi::new()),
-            Rc::new(MockBitVmxBroker::new()),
-            GlobalContext::new(),
-        );
-        processor.flows.insert(flow_id, flow);
-
-        let proof = test_spv_proof();
-        let spv = FundsAdvanceSPV {
-            txid: proof.tx.compute_txid(),
-            committee_id,
-            slot_index,
-            pegout_id: trigger_data.pegout_id.value().as_bytes().to_vec(),
-            spv_proof: proof.clone(),
-        };
-
-        processor.handle_advance_funds_spv(&spv).expect("should buffer early advance funds spv");
-
-        let flow = processor.flows.get(&flow_id).expect("flow should still exist");
-        assert_eq!(flow.current_step(), Steps::SetupAdvanceFundsProtocol);
-        assert_eq!(
-            flow.state.advance_funds_spv.as_ref().expect("proof should be buffered").txid,
             proof.tx.compute_txid()
         );
     }
