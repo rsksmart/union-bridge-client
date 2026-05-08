@@ -57,10 +57,10 @@
 //!
 //! request pegin (bitcoin → rootstock):
 //! ```bash
-//! cargo run -- user pegin -a 0x1234...cdef -v 100000 -p 0 -k 0x<32-byte-xonly-pubkey> --env local
+//! cargo run -- user pegin -a 0x1234...cdef -v 100000 --env local
 //! # execute the printed bitcoin-wallet cli command
 //! # or use --execute to run the wallet command automatically:
-//! cargo run -- user pegin -a 0x1234...cdef -v 100000 -p 0 -k 0x<32-byte-xonly-pubkey> --env local --execute
+//! cargo run -- user pegin -a 0x1234...cdef -v 100000 --env local --execute
 //! ```
 //!
 //! request pegout (rootstock → bitcoin):
@@ -225,10 +225,6 @@ enum UserCommands {
         #[arg(short = 'v', long = "value", value_name = "VALUE")]
         value: u64,
 
-        /// Bitcoin public key for reimbursement (32-byte x-only pubkey with 0x prefix)
-        #[arg(short = 'k', long = "btc-pub-key", value_name = "BTC_PUB_KEY")]
-        btc_pub_key: String,
-
         /// Execute the wallet command programmatically instead of just printing it
         #[arg(long = "execute", default_value_t = false)]
         execute: bool,
@@ -320,8 +316,8 @@ async fn main() -> Result<()> {
             UserCommands::Fund { env } => {
                 rsk_wallet::handle_user_funding(env).await?;
             }
-            UserCommands::Pegin { env, rsk_address, value, btc_pub_key, execute } => {
-                pegin::create_pegin_tx(env, rsk_address, value, btc_pub_key, execute).await?;
+            UserCommands::Pegin { env, rsk_address, value, execute } => {
+                pegin::create_pegin_tx(env, rsk_address, value, execute).await?;
             }
             UserCommands::Pegout { env, value, usr_pub_key } => {
                 pegout::request_pegout(env, value, usr_pub_key).await?;

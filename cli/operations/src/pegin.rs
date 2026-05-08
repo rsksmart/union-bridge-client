@@ -11,7 +11,6 @@ use crate::environments::Environment;
 struct PeginAddressRequest {
     rootstock_deposit_address: String,
     value: u64,
-    btc_reimbursement_pub_key: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -26,7 +25,6 @@ pub(crate) async fn create_pegin_tx(
     environment: Environment,
     rsk_address: String,
     value: u64,
-    btc_pub_key: String,
     execute: bool,
 ) -> Result<()> {
     if execute && environment.is_remote() {
@@ -36,7 +34,6 @@ pub(crate) async fn create_pegin_tx(
     }
 
     validate_rsk_address(&rsk_address)?;
-    validate_btc_pub_key(&btc_pub_key)?;
 
     let env_name = environment.get_name();
     println!("Environment: {}", env_name);
@@ -46,7 +43,6 @@ pub(crate) async fn create_pegin_tx(
         println!("Pegin summary:");
         println!("  RSK address: {}", rsk_address);
         println!("  Value:       {} sats", value);
-        println!("  BTC pub key: {}", btc_pub_key);
         println!();
         print!("All good for {}? [y/N] ", env_name);
         io::stdout().flush().context("failed to flush stdout")?;
@@ -64,7 +60,6 @@ pub(crate) async fn create_pegin_tx(
     let payload = PeginAddressRequest {
         rootstock_deposit_address: rsk_address.clone(),
         value,
-        btc_reimbursement_pub_key: btc_pub_key.clone(),
     };
 
     let user_api_base = environment
@@ -107,7 +102,6 @@ pub(crate) async fn create_pegin_tx(
         .ok_or_else(|| anyhow!("user-api response did not contain enabler_script_pubkey"))?;
 
     println!("Requesting pegin: {} sats", value);
-    println!("  Source:      Bitcoin (public key: {})", btc_pub_key);
     println!("  Destination: RSK {}", rsk_address);
     println!();
     println!("Parameters:");
@@ -203,19 +197,3 @@ fn validate_rsk_address(address: &str) -> Result<()> {
     Ok(())
 }
 
-fn validate_btc_pub_key(key: &str) -> Result<()> {
-    let stripped = key
-        .strip_prefix("0x")
-        .or_else(|| key.strip_prefix("0X"))
-        .ok_or_else(|| anyhow!("BTC public key must start with 0x"))?;
-
-    if stripped.len() != 64 {
-        bail!("BTC public key must be a 32-byte x-only pubkey (64 hex characters after 0x prefix)");
-    }
-
-    if !stripped.chars().all(|c| c.is_ascii_hexdigit()) {
-        bail!("BTC public key must contain only hexadecimal characters");
-    }
-
-    Ok(())
-}
