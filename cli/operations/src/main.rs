@@ -271,7 +271,7 @@ async fn main() -> Result<()> {
                 fund_amount,
             } => {
                 let member_funding_info = collect_member_funding_info(&env, false).await?;
-                println!("\n=== Funding Rootstock wallets ===");
+                println!("\n=== Funding Rootstock wallets ({}) ===", env.get_name());
                 rsk_wallet::handle_operator_funding(
                     env.clone(),
                     stream_id,
@@ -280,7 +280,7 @@ async fn main() -> Result<()> {
                     &member_funding_info,
                 )
                 .await?;
-                println!("\n=== Funding Bitcoin addresses ===");
+                println!("\n=== Funding Bitcoin addresses ({}) ===", env.get_name());
                 bitcoin_wallet::handle_bitcoin_funding(
                     env,
                     stream_id,

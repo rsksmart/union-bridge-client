@@ -1,3 +1,4 @@
+use std::io::{self, Write};
 use std::process::Command;
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -36,6 +37,28 @@ pub(crate) async fn create_pegin_tx(
 
     validate_rsk_address(&rsk_address)?;
     validate_btc_pub_key(&btc_pub_key)?;
+
+    let env_name = environment.get_name();
+    println!("Environment: {}", env_name);
+    println!();
+
+    if environment.is_remote() {
+        println!("Pegin summary:");
+        println!("  RSK address: {}", rsk_address);
+        println!("  Value:       {} sats", value);
+        println!("  BTC pub key: {}", btc_pub_key);
+        println!();
+        print!("All good for {}? [y/N] ", env_name);
+        io::stdout().flush().context("failed to flush stdout")?;
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).context("failed to read confirmation")?;
+        if !matches!(input.trim().to_lowercase().as_str(), "y" | "yes") {
+            println!("Aborted.");
+            return Ok(());
+        }
+        println!();
+    }
+
     println!("Getting pegin data for {rsk_address}...");
 
     let payload = PeginAddressRequest {

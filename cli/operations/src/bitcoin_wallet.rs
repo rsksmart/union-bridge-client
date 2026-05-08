@@ -111,18 +111,25 @@ fn print_instructions(env: &Environment, addresses: &[String], amount: u64, fund
 }
 
 fn execute_wallet_command(addresses: &[String], amount: u64) -> Result<()> {
-    let wallet_script = "./cli-bitcoin-wallet.sh";
     let joined = addresses.join(",");
     let amount_str = amount.to_string();
 
     // just send to addresses - utxo mining and block mining handled externally
-    let mut cmd = Command::new(wallet_script);
-    cmd.arg("member").arg("send_to_address").arg(&joined).arg(&amount_str);
+    let stdout = run_wallet_command(&["member", "send_to_address", &joined, &amount_str])?;
+    println!("{}", stdout);
 
-    println!("Running: {} member send_to_address {} {}", wallet_script, joined, amount);
+    Ok(())
+}
+
+fn run_wallet_command(args: &[&str]) -> Result<String> {
+    let wallet_script = "./cli-bitcoin-wallet.sh";
+    let mut cmd = Command::new(wallet_script);
+    cmd.args(args);
+
+    let rendered_args = args.join(" ");
+    println!("Running: {} {}", wallet_script, rendered_args);
 
     let output = cmd.output().context("failed to execute cli-bitcoin-wallet.sh")?;
-
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -134,10 +141,7 @@ fn execute_wallet_command(addresses: &[String], amount: u64) -> Result<()> {
         );
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    println!("{}", stdout);
-
-    Ok(())
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 pub(crate) fn collect_user_bitcoin_addresses(
