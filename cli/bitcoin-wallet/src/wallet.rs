@@ -410,6 +410,20 @@ impl Wallet {
         Ok(())
     }
 
+    pub fn clear_active_address_utxos(&mut self) -> Result<usize> {
+        let Some(address) = self.active_address.clone() else {
+            return Ok(0);
+        };
+
+        let entries = self.utxo_store.load_by_address(&address)?;
+        for (outpoint, _) in &entries {
+            self.utxo_store.remove(outpoint)?;
+        }
+
+        self.reload_active_utxos()?;
+        Ok(entries.len())
+    }
+
     fn reload_active_utxos(&mut self) -> Result<()> {
         if let Some(address) = &self.active_address {
             let entries = self.utxo_store.load_by_address(address)?;
