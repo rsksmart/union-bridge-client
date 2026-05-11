@@ -182,8 +182,20 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 .context("Best block not found while listening blocks")?;
 
             let extends_canonical = new_block.parent_hash() == local_best_block.hash();
-            let is_reorg = !extends_canonical
-                && new_block.total_difficulty() > local_best_block.total_difficulty();
+            // We need to catch up whenever the new block does not directly
+            // extend the canonical chain but is either taller than our local tip
+            // or has higher Total Difficulty. Height alone is necessary because
+            // Total Difficulty does not always grow strictly between blocks
+            // (e.g. regtest), so a forward gap with flat Total Difficulty would
+            // otherwise be misclassified as "neither extending, nor competing"
+            // and leave local_best stuck.
+            //
+            // At this layer we cannot tell whether the trigger is a missed
+            // canonical block or a reorg — backward_sync resolves that per
+            // block and logs "Creating"/"Replacing" accordingly. We log
+            // neutrally here.
+            let needs_catch_up = new_block.number() > local_best_block.number()
+                || new_block.total_difficulty() > local_best_block.total_difficulty();
 
             if extends_canonical {
                 info!(
@@ -197,11 +209,12 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 // consumer should be resilient to re-notifications
                 self.notify_block(new_block.clone(), uncles);
                 self.save_as_best_block(&new_block).context("On Block subscription")?;
-            } else if is_reorg {
+            } else if needs_catch_up {
                 info!(
-                    "[subscribe_blocks] Processing block {} ({}): fixing local reorg",
+                    "[subscribe_blocks] Processing block {} ({}): catching up from local best {}",
                     new_block.number(),
-                    new_block.hash()
+                    new_block.hash(),
+                    local_best_block.number()
                 );
                 let provider_best_block =
                     self.rsk_provider.get_best_block().context("On Block subscription")?;
