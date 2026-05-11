@@ -43,8 +43,25 @@ const NON_REGTEST_FEE_RATE: u64 = 1; // TODO this should come from config or con
 // `min_deposit`; this crate adds both a percentage uplift and a probabilistic gas reserve so the
 // wallet can still submit later RSK transactions after posting the required deposit.
 const RSK_GAS_BUFFER_PERCENT: u64 = 20;
-const MEMBER_RSK_SETUP_RESERVE_WEI: u64 = 10_000_000_000_000_000;
-const MEMBER_RSK_RESERVE_PER_SLOT_WEI: u64 = 3_000_000_000_000_000;
+
+// Empirically derived from RSK testnet receipts (May 2026). The setup reserve covers one-shot
+// per-stream operator txs (apply_to_stream + deposit_communication_data + deposit_aggregated_key).
+// The per-slot reserve covers the happy-path per-slot operator txs
+// (accept_pegin + add_operator_take_tx_hash + register_pegout, plus 2 MuSig signing rounds —
+// one per pegin, one per pegout). Dispute-path txs (register_challenge / register_operator_take /
+// trigger_operator_take / register_input_revealed / register_advance_funds) are absorbed by the
+// SAFETY_FACTOR rather than budgeted explicitly, as they only fire on the unhappy path.
+const RSK_RESERVE_SAFETY_FACTOR: u64 = 10;
+// Worst observed effectiveGasPrice on RSK testnet ≈ 26 mgwei (≈ 0.026 gwei).
+const RSK_WORST_GAS_PRICE_WEI: u64 = 30_000_000;
+// Sum of gasUsed for the one-shot stream-setup operator txs (~713k gas total).
+const RSK_SETUP_GAS_PER_MEMBER: u64 = 750_000;
+// Sum of gasUsed for one happy-path slot lifecycle (1 pegin + 1 pegout + 2 signing rounds, ~1M gas).
+const RSK_GAS_PER_SLOT: u64 = 1_000_000;
+const MEMBER_RSK_SETUP_RESERVE_WEI: u64 =
+    RSK_SETUP_GAS_PER_MEMBER * RSK_WORST_GAS_PRICE_WEI * RSK_RESERVE_SAFETY_FACTOR;
+const MEMBER_RSK_RESERVE_PER_SLOT_WEI: u64 =
+    RSK_GAS_PER_SLOT * RSK_WORST_GAS_PRICE_WEI * RSK_RESERVE_SAFETY_FACTOR;
 const SLOT_BUDGET_Z_SCORE_NUMERATOR: u128 = 233;
 const SLOT_BUDGET_Z_SCORE_DENOMINATOR: u128 = 100;
 #[derive(Clone, Copy, Debug)]
@@ -390,6 +407,10 @@ mod tests {
 
     #[test]
     fn uses_probabilistic_reserve_for_small_min_deposit() {
+        // min_deposit = 0.025 RBTC; SLOTS=100, members=4 → slot_budget=36
+        // probabilistic_reserve = 0.000225 (setup) + 0.0003 × 36 = 0.011025 RBTC
+        // percentage_buffer = 0.2 × 0.025 = 0.005 RBTC; probabilistic wins
+        // total = 0.025 + 0.011025 = 0.036025 RBTC
         let min_deposit = U256::from(25_000_000_000_000_000_u64);
         assert_eq!(
             required_member_rsk_balance(
@@ -397,7 +418,7 @@ mod tests {
                 DEFAULT_SLOTS_PER_PACKAGE,
                 DEFAULT_COMMITTEE_MEMBER_COUNT
             ),
-            U256::from(143_000_000_000_000_000_u64)
+            U256::from(36_025_000_000_000_000_u64)
         );
     }
 
