@@ -187,7 +187,7 @@ where
 
         // move to the Nonces step
         let confirmable = ConfirmableEvent::new(
-            self.state.flow_id.to_string(),
+            format!("add-member-nonce-{}", self.state.flow_id),
             self.required_confirmations,
             self.blockchain_view.clone(),
         );
@@ -253,7 +253,7 @@ where
         // move to the Signatures step
 
         let confirmable = ConfirmableEvent::new(
-            self.state.flow_id.to_string(),
+            format!("add-member-signature-{}", self.state.flow_id),
             self.required_confirmations,
             self.blockchain_view.clone(),
         );
