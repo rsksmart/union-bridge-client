@@ -44,3 +44,7 @@ docs/node_modules/
 **/*.cert
 **/*.p12
 **/*.pfx
+
+# MemPalace per-project files
+mempalace.yaml
+entities.json
