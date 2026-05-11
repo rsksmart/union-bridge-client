@@ -3,10 +3,11 @@ use std::rc::Rc;
 
 use anyhow::{Context, Result, anyhow};
 use common::msg_broker::bitvmx_types::{
-    FundsAdvanceSPV, OutgoingBitVMXApiMessages, UnionSPVNotification, UnionTxType, VariableTypes,
+    AdvanceFundsRegistered, FundsAdvanceSPV, OutgoingBitVMXApiMessages, UnionSPVNotification,
+    UnionTxType, VariableTypes,
 };
 use common::runtime_sync::RuntimeSync;
-use common::types::{Hash256, RskBlockAndUncles};
+use common::types::{CommitteeId, Hash256, RskBlockAndUncles, TxIdParser};
 use log::{debug, error, info, trace, warn};
 use primitive_types::H256;
 use sha2::{Digest, Sha256};
@@ -14,16 +15,15 @@ use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use uuid::Uuid;
 
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
-use crate::config::AdvanceFundsConfig;
 use crate::event_processor::EventProcessor;
-use crate::flows::common::GlobalContext;
 use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
+use crate::flows::common::{GlobalContext, Signaling};
 use crate::flows::operator_take::operator_take_flow::{
     AdvanceFundsFlow, OperatorTakeTriggerData, StepData, Steps,
 };
 use crate::types::{
-    EventStatus, OperatorTakeTriggeredEvent, PegoutRegisteredEvent, RskPegManagerEvents,
-    TickScheduler,
+    AdminRequest, EventStatus, FlowKind, OperatorTakeTriggeredEvent, PegoutRegisteredEvent,
+    RskPegManagerEvents, TickScheduler, UserRequests,
 };
 
 fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
@@ -57,7 +57,9 @@ where
     register_reimbursement_kickoff_retry_scheduler: TickScheduler<Uuid>,
     unconfirmed_register_operator_take: HashMap<Uuid, i16>,
     register_operator_take_retry_scheduler: TickScheduler<Uuid>,
-    config: AdvanceFundsConfig,
+    btc_status_retry_blocks: u32,
+    signaling: Rc<Signaling>,
+    request_pegout_tx_hashes: HashMap<(CommitteeId, u64), String>,
 }
 
 impl<CG, BC> AdvanceFundsFlowProcessor<CG, BC>
@@ -71,9 +73,10 @@ where
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
+        signaling: Rc<Signaling>,
         required_confirmations: u32,
+        btc_status_retry_blocks: u32,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
-        config: AdvanceFundsConfig,
     ) -> Self {
         Self {
             contracts_gateway,
@@ -91,7 +94,9 @@ where
             register_reimbursement_kickoff_retry_scheduler: TickScheduler::new(),
             unconfirmed_register_operator_take: HashMap::new(),
             register_operator_take_retry_scheduler: TickScheduler::new(),
-            config,
+            btc_status_retry_blocks,
+            signaling,
+            request_pegout_tx_hashes: HashMap::new(),
         }
     }
 
@@ -117,15 +122,16 @@ where
             register_reimbursement_kickoff_retry_scheduler: TickScheduler::new(),
             unconfirmed_register_operator_take: HashMap::new(),
             register_operator_take_retry_scheduler: TickScheduler::new(),
-            config: AdvanceFundsConfig::default(),
+            btc_status_retry_blocks: 20,
+            signaling: Rc::new(Signaling::new("/tmp", "disabled")),
+            request_pegout_tx_hashes: HashMap::new(),
         }
     }
 
     fn schedule_register_advance_funds_retry(&mut self, flow_id: Uuid, attempt: i16, reason: &str) {
         info!("{reason} for flow {flow_id} (attempt {attempt})");
         self.unconfirmed_register_advance_funds.insert(flow_id, attempt);
-        self.register_advance_funds_retry_scheduler
-            .schedule(flow_id, self.config.blocks_delay_for_tx_check);
+        self.register_advance_funds_retry_scheduler.schedule(flow_id, self.btc_status_retry_blocks);
     }
 
     fn handle_register_advance_funds_retry_tick(&mut self) {
@@ -179,7 +185,7 @@ where
         info!("{reason} for flow {flow_id} (attempt {attempt})");
         self.unconfirmed_register_reimbursement_kickoff.insert(flow_id, attempt);
         self.register_reimbursement_kickoff_retry_scheduler
-            .schedule(flow_id, self.config.blocks_delay_for_tx_check);
+            .schedule(flow_id, self.btc_status_retry_blocks);
     }
 
     fn handle_register_reimbursement_kickoff_retry_tick(&mut self) {
@@ -230,8 +236,7 @@ where
     fn schedule_register_operator_take_retry(&mut self, flow_id: Uuid, attempt: i16, reason: &str) {
         info!("{reason} for flow {flow_id} (attempt {attempt})");
         self.unconfirmed_register_operator_take.insert(flow_id, attempt);
-        self.register_operator_take_retry_scheduler
-            .schedule(flow_id, self.config.blocks_delay_for_tx_check);
+        self.register_operator_take_retry_scheduler.schedule(flow_id, self.btc_status_retry_blocks);
     }
 
     fn handle_register_operator_take_retry_tick(&mut self) {
@@ -294,12 +299,31 @@ where
         Ok(Uuid::from_bytes(uuid_bytes))
     }
 
+    /// Tear down an advance-funds flow declared dead by an admin operator.
+    fn fail_flow(&mut self, flow_id: Uuid, reason: &str) -> Result<()> {
+        if let Some(flow) = self.flows.get_mut(&flow_id) {
+            flow.mark_failed(reason)?;
+            warn!("Admin marked advance-funds flow {flow_id} as failed: {reason}");
+        } else {
+            warn!("Admin requested fail for unknown advance-funds flow {flow_id}: {reason}");
+        }
+
+        self.cleanup_terminal_flows();
+
+        Ok(())
+    }
+
     fn create_flow_for_operator_take_triggered(
         &mut self,
         event: &OperatorTakeTriggeredEvent,
     ) -> Result<()> {
-        let trigger_data = OperatorTakeTriggerData::try_from_event(event)?;
-        let committee_id = trigger_data.committee_id;
+        let committee_id: CommitteeId = event.inner.pegoutInfo.committeeId.into();
+        let request_pegout_tx_hash = self
+            .request_pegout_tx_hashes
+            .get(&(committee_id, event.inner.streamPosition.slotId))
+            .cloned();
+        let trigger_data = OperatorTakeTriggerData::try_from_event(event, request_pegout_tx_hash)?;
+        let committee_id = trigger_data.committee_id.clone();
 
         if !self.global_context.my_committees().im_member(&committee_id) {
             debug!("Skipping OperatorTakeTriggered for committee {committee_id} - not a member",);
@@ -325,9 +349,10 @@ where
             self.rt_sync.clone(),
             self.bitvmx_broker.clone(),
             self.native_bridge_verifier.clone(),
+            self.signaling.clone(),
             flow_id,
-            event,
-        )?;
+            trigger_data,
+        );
 
         flow.complete_step(StepData::OperatorTakeTriggered)?;
         self.flows.insert(flow_id, flow);
@@ -354,29 +379,51 @@ where
         Ok(())
     }
 
-    fn complete_flow_by_pegout_id(
+    fn complete_step_by_pegout_id(
         &mut self,
         pegout_id: Hash256,
-        expected_step: Steps,
+        expected_steps: &[Steps],
         step_data: StepData,
         event_name: &str,
     ) -> Result<()> {
         if let Some(flow) =
             self.flows.values_mut().find(|f| f.trigger_data().pegout_id == pegout_id)
         {
-            if flow.current_step() == expected_step {
+            if expected_steps.contains(&flow.current_step()) {
                 info!("{event_name} confirmed for pegout_id {pegout_id}");
                 flow.complete_step(step_data)?;
             } else {
                 warn!(
-                    "Received {event_name} but flow is at {:?}, expected {expected_step:?}",
-                    flow.current_step()
+                    "Received {event_name} but flow is at {:?}, expected one of {:?}",
+                    flow.current_step(),
+                    expected_steps,
                 );
             }
         } else {
             trace!("No flow found for {event_name} with pegout_id {pegout_id}");
         }
         Ok(())
+    }
+
+    fn handle_reimbursement_kickoff_registered(&mut self, pegout_id: Hash256) -> Result<()> {
+        if self
+            .flows
+            .values()
+            .find(|f| f.trigger_data().pegout_id == pegout_id)
+            .is_some_and(|flow| flow.current_step() == Steps::WaitForPegoutRegistered)
+        {
+            info!(
+                "Non-winning operator, ignoring ReimbursementKickoffRegistered while waiting for PegoutRegistered for pegout_id {pegout_id}",
+            );
+            return Ok(());
+        }
+
+        self.complete_step_by_pegout_id(
+            pegout_id,
+            &[Steps::RegisterReimbursementKickoff],
+            StepData::ReimbursementKickoffConfirmed,
+            "ReimbursementKickoffRegistered",
+        )
     }
 
     fn has_flow_for_pegout_id(&self, pegout_id: Hash256) -> bool {
@@ -391,18 +438,72 @@ where
         })
     }
 
-    fn cleanup_completed_flows(&mut self) {
-        let completed: Vec<_> =
-            self.flows.iter().filter(|(_, flow)| flow.is_done()).map(|(k, _)| *k).collect();
+    fn build_advance_funds_registered(
+        event: &union_contracts::bindings::pegout_manager::PegoutManager::AdvanceFundsRegistered,
+    ) -> Result<AdvanceFundsRegistered> {
+        let committee_id = Uuid::from_u128(event.committeeId);
+        let slot_index = usize::try_from(event.streamInfo.slotId)
+            .context("Failed to convert slotId to usize")?;
+        let txid = TxIdParser::fb_32_to_txid(event.txid);
+        let pegout_id = event.pegoutId.as_slice().to_vec();
 
-        for flow_id in completed {
-            debug!("Removing completed advance funds flow {flow_id}");
+        let xonly =
+            bitcoin::secp256k1::XOnlyPublicKey::from_slice(event.operatorTakePubKey.as_slice())
+                .context("Failed to parse operatorTakePubKey as x-only key")?;
+        let operator_pubkey = bitcoin::PublicKey::new(xonly.public_key(bitcoin::key::Parity::Even));
+
+        Ok(AdvanceFundsRegistered { committee_id, slot_index, txid, pegout_id, operator_pubkey })
+    }
+
+    fn cleanup_terminal_flow_state(&mut self) {
+        let terminal: Vec<_> = self
+            .flows
+            .iter()
+            .filter(|(_, flow)| flow.is_terminal())
+            .map(|(flow_id, flow)| {
+                let trigger = flow.trigger_data();
+                (*flow_id, trigger.committee_id.clone(), trigger.slot_id)
+            })
+            .collect();
+
+        for (flow_id, committee_id, slot_id) in terminal {
+            self.register_advance_funds_retry_scheduler.cancel(&flow_id);
+            self.register_reimbursement_kickoff_retry_scheduler.cancel(&flow_id);
+            self.register_operator_take_retry_scheduler.cancel(&flow_id);
+            self.unconfirmed_register_advance_funds.remove(&flow_id);
+            self.unconfirmed_register_reimbursement_kickoff.remove(&flow_id);
+            self.unconfirmed_register_operator_take.remove(&flow_id);
+            self.request_pegout_tx_hashes.remove(&(committee_id, slot_id));
+        }
+    }
+
+    fn cleanup_terminal_flows(&mut self) {
+        self.cleanup_terminal_flow_state();
+
+        // Advance-funds flows are not persisted just yet, so this processor removes
+        // terminal flows from memory directly instead of using cleanup_flows_matching.
+        let terminal_flow_ids: Vec<_> = self
+            .flows
+            .iter()
+            .filter(|(_, flow)| flow.is_terminal())
+            .map(|(flow_id, _)| *flow_id)
+            .collect();
+
+        for flow_id in terminal_flow_ids {
+            debug!("Removing terminal advance funds flow {flow_id}");
             self.flows.remove(&flow_id);
         }
     }
 
     fn process_confirmed_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         match event {
+            RskPegManagerEvents::PegoutRequested(pegout_requested) => {
+                let committee_id: CommitteeId = pegout_requested.inner.committeeId.try_into()?;
+                self.request_pegout_tx_hashes.insert(
+                    (committee_id, pegout_requested.inner.slotId),
+                    pegout_requested.tx_hash.to_string(),
+                );
+            }
             RskPegManagerEvents::OperatorTakeTriggered(op_take) => {
                 info!(
                     "Processing confirmed OperatorTakeTriggered event: flow tx {:?}",
@@ -411,20 +512,17 @@ where
                 self.create_flow_for_operator_take_triggered(op_take)?;
             }
             RskPegManagerEvents::AdvanceFundsRegistered(e) => {
-                self.complete_flow_by_pegout_id(
-                    Hash256::from(e.inner.pegoutId),
-                    Steps::RegisterAdvanceFunds,
-                    StepData::AdvanceFundsConfirmed,
+                let ev = &e.inner;
+                let data = Self::build_advance_funds_registered(ev)?;
+                self.complete_step_by_pegout_id(
+                    Hash256::from(ev.pegoutId),
+                    &[Steps::RegisterAdvanceFunds, Steps::WaitForAdvanceFundsRegistered],
+                    StepData::AdvanceFundsConfirmed(data),
                     "AdvanceFundsRegistered",
                 )?;
             }
             RskPegManagerEvents::ReimbursementKickoffRegistered(e) => {
-                self.complete_flow_by_pegout_id(
-                    Hash256::from(e.inner.pegoutId),
-                    Steps::RegisterReimbursementKickoff,
-                    StepData::ReimbursementKickoffConfirmed,
-                    "ReimbursementKickoffRegistered",
-                )?;
+                self.handle_reimbursement_kickoff_registered(Hash256::from(e.inner.pegoutId))?;
             }
             RskPegManagerEvents::PegoutRegistered(pegout_registered) => {
                 self.handle_pegout_registered(pegout_registered)?;
@@ -434,8 +532,19 @@ where
             }
         }
 
-        self.cleanup_completed_flows();
+        self.cleanup_terminal_flows();
         Ok(())
+    }
+
+    fn build_pegout_requested_event_info(
+        event: &crate::types::PegoutRequestedEvent,
+    ) -> (String, EventStatus, common::types::BlockNumber, RskPegManagerEvents) {
+        (
+            format!("advance-funds-pegout-requested-{}", event.tx_hash),
+            event.removed,
+            event.block_number,
+            RskPegManagerEvents::PegoutRequested(event.clone()),
+        )
     }
 
     fn build_operator_take_triggered_event_info(
@@ -482,7 +591,7 @@ where
             }
         }
 
-        self.cleanup_completed_flows();
+        self.cleanup_terminal_flows();
         Ok(())
     }
 
@@ -618,7 +727,15 @@ where
                 Err(err) if is_missing_native_bridge_confirmations(&err) => true,
                 Err(err) => return Err(err),
             }
-        } else if flow.current_step() == Steps::RegisterAdvanceFunds {
+        } else if flow.current_step() == Steps::WaitForPegoutRegistered {
+            info!(
+                "Non-winning operator, ignoring ReimbursementKickoff SPV for flow {flow_id} while waiting for PegoutRegistered",
+            );
+            false
+        } else if matches!(
+            flow.current_step(),
+            Steps::RegisterAdvanceFunds | Steps::WaitForAdvanceFundsRegistered
+        ) {
             info!(
                 "Flow {} not yet at WaitForReimbursementKickoffSpv (current: {:?}), buffering SPV",
                 flow_id,
@@ -678,12 +795,19 @@ where
             .clone()
             .ok_or_else(|| anyhow!("OperatorTake SPV notification missing spv_proof data"))?;
 
-        let needs_retry = if flow.current_step() == Steps::WaitForOperatorTakeSpv {
+        let needs_retry = if flow.current_step()
+            == Steps::WaitForOperatorTakeSpvAuthoritativeCheckpoint
+        {
             match flow.complete_step(StepData::OperatorTakeSPV(spv_proof)) {
                 Ok(()) => false,
                 Err(err) if is_missing_native_bridge_confirmations(&err) => true,
                 Err(err) => return Err(err),
             }
+        } else if flow.current_step() == Steps::WaitForPegoutRegistered {
+            info!(
+                "Non-winning operator, ignoring OperatorTake SPV for flow {flow_id} while waiting for PegoutRegistered",
+            );
+            false
         } else {
             info!(
                 "Flow {} not yet at WaitForOperatorTakeSpv (current: {:?}), buffering SPV",
@@ -718,7 +842,22 @@ where
     CG: RskContractsGatewayApi,
     BC: common::msg_broker::broker::BitVmxBrokerClientApi,
 {
+    fn process_user_request(&mut self, req: &UserRequests) -> Result<()> {
+        self.cleanup_terminal_flows();
+
+        // Advance-funds flows have no other user-driven entry points; we only act
+        // on the admin "fail flow" lever.
+        if let UserRequests::Admin(AdminRequest::FailFlow { kind, flow_id, reason }) = req
+            && *kind == FlowKind::AdvanceFunds
+        {
+            self.fail_flow(*flow_id, reason)?;
+        }
+        Ok(())
+    }
+
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         match event {
             OutgoingBitVMXApiMessages::SetupCompleted(program_id) => {
                 debug!(
@@ -748,9 +887,9 @@ where
             }
             OutgoingBitVMXApiMessages::CommInfo(req_id, comm_info) => {
                 trace!("Received CommInfo from BitVMX req_id: {req_id}, comm_info: {comm_info:?}");
-                // For any flow in GetCommInfo step, complete the step with the CommInfo
+                // For any flow in GetCommInfoAuthoritativeCheckpoint step, complete the step with the CommInfo
                 for (flow_id, flow) in &mut self.flows {
-                    if flow.current_step() == Steps::GetCommInfo {
+                    if flow.current_step() == Steps::GetCommInfoAuthoritativeCheckpoint {
                         debug!("Advance funds flow {flow_id} received comm info");
                         flow.complete_step(StepData::CommInfo(comm_info.clone()))?;
                     }
@@ -791,11 +930,14 @@ where
     }
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         if self.required_confirmations == 0 {
             return self.process_confirmed_rsk_event(event);
         }
 
         let (id, is_removal, block_num, managed_event) = match event {
+            RskPegManagerEvents::PegoutRequested(e) => Self::build_pegout_requested_event_info(e),
             RskPegManagerEvents::OperatorTakeTriggered(e) => {
                 Self::build_operator_take_triggered_event_info(e)
             }
@@ -877,6 +1019,8 @@ where
     }
 
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         self.process_block_confirmations(block)?;
         self.handle_register_advance_funds_retry_tick();
         self.handle_register_reimbursement_kickoff_retry_tick();
@@ -907,8 +1051,8 @@ mod tests {
     use bitcoin::transaction::Version;
     use bitcoin::{PublicKey, Transaction};
     use common::msg_broker::bitvmx_types::{
-        BtcTxSPVProof, FundsAdvanceSPV, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages,
-        UnionSPVNotification, UnionTxType,
+        AdvanceFundsRegistered, BtcTxSPVProof, FundsAdvanceSPV, IncomingBitVMXApiMessages,
+        OutgoingBitVMXApiMessages, UnionSPVNotification, UnionTxType,
     };
     use common::msg_broker::broker::MockBrokerClientApi;
     use common::types::{Address, CommitteeId, Hash256};
@@ -928,6 +1072,7 @@ mod tests {
             committee_id: CommitteeId::from(committee_id.as_u128()),
             slot_id: slot_index as u64,
             slot_index,
+            request_pegout_tx_hash: None,
             user_pubkey: PublicKey::from_str(
                 "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
             )
@@ -958,10 +1103,11 @@ mod tests {
     fn buffers_reimbursement_kickoff_spv_while_waiting_for_advance_funds_confirmation() {
         let committee_id = Uuid::new_v4();
         let slot_index = 3;
-        let flow_id = AdvanceFundsFlowProcessor::<MockRskContractsGatewayApi, MockBitVmxBroker>::get_advance_funds_pid(
-            committee_id,
-            slot_index,
-        )
+        let flow_id =
+            AdvanceFundsFlowProcessor::<MockRskContractsGatewayApi, MockBitVmxBroker>::get_advance_funds_pid(
+                committee_id,
+                slot_index,
+            )
             .expect("flow id");
         let trigger_data = test_trigger_data(committee_id, slot_index);
 
@@ -970,7 +1116,7 @@ mod tests {
             Rc::new(MockBitVmxBroker::new()),
             flow_id,
             trigger_data,
-            Steps::RegisterAdvanceFunds,
+            Steps::WaitForAdvanceFundsRegistered,
         );
 
         let mut processor = AdvanceFundsFlowProcessor::new_for_test(
@@ -994,7 +1140,7 @@ mod tests {
             .expect("should buffer early reimbursement kickoff spv");
 
         let flow = processor.flows.get(&flow_id).expect("flow should still exist");
-        assert_eq!(flow.current_step(), Steps::RegisterAdvanceFunds);
+        assert_eq!(flow.current_step(), Steps::WaitForAdvanceFundsRegistered);
         assert_eq!(
             flow.state
                 .reimbursement_kickoff_spv
@@ -1044,6 +1190,342 @@ mod tests {
         assert_eq!(
             flow.state.advance_funds_spv.as_ref().expect("proof should be buffered").txid,
             proof.tx.compute_txid()
+        );
+    }
+
+    #[test]
+    fn buffers_reimbursement_kickoff_spv_while_waiting_for_advance_funds_registration() {
+        let committee_id = Uuid::new_v4();
+        let slot_index = 2;
+        let flow_id = AdvanceFundsFlowProcessor::<MockRskContractsGatewayApi, MockBitVmxBroker>::get_advance_funds_pid(
+            committee_id,
+            slot_index,
+        )
+        .expect("flow id");
+        let trigger_data = test_trigger_data(committee_id, slot_index);
+
+        let flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            flow_id,
+            trigger_data,
+            Steps::WaitForAdvanceFundsRegistered,
+        );
+
+        let mut processor = AdvanceFundsFlowProcessor::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+        );
+        processor.flows.insert(flow_id, flow);
+
+        let proof = test_spv_proof();
+        let notification = UnionSPVNotification {
+            txid: proof.tx.compute_txid(),
+            committee_id,
+            slot_index,
+            spv_proof: Some(proof.clone()),
+            tx_type: UnionTxType::ReimbursementKickoff,
+        };
+
+        processor
+            .handle_union_spv_notification(&notification)
+            .expect("should buffer reimbursement kickoff before advance funds confirmation");
+
+        let flow = processor.flows.get(&flow_id).expect("flow should still exist");
+        assert_eq!(flow.current_step(), Steps::WaitForAdvanceFundsRegistered);
+        assert_eq!(
+            flow.state
+                .reimbursement_kickoff_spv
+                .as_ref()
+                .expect("proof should be buffered")
+                .tx
+                .compute_txid(),
+            proof.tx.compute_txid()
+        );
+    }
+
+    #[test]
+    fn advance_funds_confirmation_notifies_passive_followers() {
+        let committee_id = Uuid::new_v4();
+        let slot_index = 4;
+        let flow_id = Uuid::new_v4();
+        let trigger_data = test_trigger_data(committee_id, slot_index);
+
+        let mut flow_broker = MockBitVmxBroker::new();
+        flow_broker.expect_send().times(1).returning(|_| Ok(true));
+        let mut contracts = MockRskContractsGatewayApi::new();
+        contracts.expect_my_address().return_const(Address::from(H160::from_low_u64_be(44)));
+
+        let flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(contracts),
+            Rc::new(flow_broker),
+            flow_id,
+            trigger_data.clone(),
+            Steps::WaitForAdvanceFundsRegistered,
+        );
+
+        let mut processor = AdvanceFundsFlowProcessor::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+        );
+        processor.flows.insert(flow_id, flow);
+
+        let registered_data = AdvanceFundsRegistered {
+            committee_id,
+            slot_index,
+            txid: proof_txid(),
+            pegout_id: trigger_data.pegout_id.value().as_bytes().to_vec(),
+            operator_pubkey: trigger_data.operator_take_pubkey,
+        };
+
+        processor
+            .complete_step_by_pegout_id(
+                trigger_data.pegout_id,
+                &[Steps::WaitForAdvanceFundsRegistered],
+                StepData::AdvanceFundsConfirmed(registered_data),
+                "AdvanceFundsRegistered",
+            )
+            .expect("passive follower should notify BitVMX after advance funds confirmation");
+
+        let flow = processor.flows.get(&flow_id).expect("flow should still exist");
+        assert_eq!(flow.current_step(), Steps::WaitForPegoutRegistered);
+        assert!(flow.state.advance_funds_registered.is_some());
+    }
+
+    #[test]
+    fn reimbursement_kickoff_registered_is_ignored_for_passive_followers() {
+        let committee_id = Uuid::new_v4();
+        let slot_index = 5;
+        let flow_id = Uuid::new_v4();
+        let trigger_data = test_trigger_data(committee_id, slot_index);
+
+        let flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            flow_id,
+            trigger_data.clone(),
+            Steps::WaitForPegoutRegistered,
+        );
+
+        let mut processor = AdvanceFundsFlowProcessor::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+        );
+        processor.flows.insert(flow_id, flow);
+
+        processor
+            .handle_reimbursement_kickoff_registered(trigger_data.pegout_id)
+            .expect("passive follower should ignore reimbursement kickoff confirmation");
+
+        let flow = processor.flows.get(&flow_id).expect("flow should still exist");
+        assert_eq!(flow.current_step(), Steps::WaitForPegoutRegistered);
+    }
+
+    #[test]
+    fn reimbursement_kickoff_spv_is_ignored_for_passive_followers() {
+        let committee_id = Uuid::new_v4();
+        let slot_index = 8;
+        let flow_id = AdvanceFundsFlowProcessor::<MockRskContractsGatewayApi, MockBitVmxBroker>::get_advance_funds_pid(
+            committee_id,
+            slot_index,
+        )
+        .expect("flow id");
+        let trigger_data = test_trigger_data(committee_id, slot_index);
+
+        let flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            flow_id,
+            trigger_data,
+            Steps::WaitForPegoutRegistered,
+        );
+
+        let mut processor = AdvanceFundsFlowProcessor::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+        );
+        processor.flows.insert(flow_id, flow);
+
+        let proof = test_spv_proof();
+        let notification = UnionSPVNotification {
+            txid: proof.tx.compute_txid(),
+            committee_id,
+            slot_index,
+            spv_proof: Some(proof),
+            tx_type: UnionTxType::ReimbursementKickoff,
+        };
+
+        processor
+            .handle_union_spv_notification(&notification)
+            .expect("passive follower should ignore reimbursement kickoff spv");
+
+        let flow = processor.flows.get(&flow_id).expect("flow should still exist");
+        assert_eq!(flow.current_step(), Steps::WaitForPegoutRegistered);
+        assert!(flow.state.reimbursement_kickoff_spv.is_none());
+    }
+
+    #[test]
+    fn operator_take_spv_is_ignored_for_passive_followers() {
+        let committee_id = Uuid::new_v4();
+        let slot_index = 9;
+        let flow_id = AdvanceFundsFlowProcessor::<MockRskContractsGatewayApi, MockBitVmxBroker>::get_advance_funds_pid(
+            committee_id,
+            slot_index,
+        )
+        .expect("flow id");
+        let trigger_data = test_trigger_data(committee_id, slot_index);
+
+        let flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            flow_id,
+            trigger_data,
+            Steps::WaitForPegoutRegistered,
+        );
+
+        let mut processor = AdvanceFundsFlowProcessor::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+        );
+        processor.flows.insert(flow_id, flow);
+
+        let proof = test_spv_proof();
+        let notification = UnionSPVNotification {
+            txid: proof.tx.compute_txid(),
+            committee_id,
+            slot_index,
+            spv_proof: Some(proof),
+            tx_type: UnionTxType::OperatorTake,
+        };
+
+        processor
+            .handle_union_spv_notification(&notification)
+            .expect("passive follower should ignore operator take spv");
+
+        let flow = processor.flows.get(&flow_id).expect("flow should still exist");
+        assert_eq!(flow.current_step(), Steps::WaitForPegoutRegistered);
+        assert!(flow.state.operator_take_spv.is_none());
+    }
+
+    #[test]
+    fn reimbursement_kickoff_registered_advances_selected_operator_path() {
+        let committee_id = Uuid::new_v4();
+        let slot_index = 6;
+        let flow_id = Uuid::new_v4();
+        let trigger_data = test_trigger_data(committee_id, slot_index);
+
+        let flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            flow_id,
+            trigger_data.clone(),
+            Steps::RegisterReimbursementKickoff,
+        );
+
+        let mut processor = AdvanceFundsFlowProcessor::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+        );
+        processor.flows.insert(flow_id, flow);
+
+        processor
+            .handle_reimbursement_kickoff_registered(trigger_data.pegout_id)
+            .expect("selected operator should advance after reimbursement kickoff confirmation");
+
+        let flow = processor.flows.get(&flow_id).expect("flow should still exist");
+        assert_eq!(flow.current_step(), Steps::WaitForOperatorTakeSpvAuthoritativeCheckpoint);
+    }
+
+    #[test]
+    fn reimbursement_kickoff_registered_keeps_early_state_unchanged() {
+        let committee_id = Uuid::new_v4();
+        let slot_index = 7;
+        let flow_id = Uuid::new_v4();
+        let trigger_data = test_trigger_data(committee_id, slot_index);
+
+        let flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            flow_id,
+            trigger_data.clone(),
+            Steps::WaitForAdvanceFundsRegistered,
+        );
+
+        let mut processor = AdvanceFundsFlowProcessor::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+        );
+        processor.flows.insert(flow_id, flow);
+
+        processor
+            .handle_reimbursement_kickoff_registered(trigger_data.pegout_id)
+            .expect("unexpected reimbursement kickoff confirmation should not crash");
+
+        let flow = processor.flows.get(&flow_id).expect("flow should still exist");
+        assert_eq!(flow.current_step(), Steps::WaitForAdvanceFundsRegistered);
+    }
+
+    fn proof_txid() -> bitcoin::Txid {
+        test_spv_proof().tx.compute_txid()
+    }
+
+    #[test]
+    fn cleanup_terminal_flows_removes_advance_funds_flow_and_retry_state() {
+        let committee_id = Uuid::new_v4();
+        let slot_index = 4;
+        let flow_id =
+            AdvanceFundsFlowProcessor::<MockRskContractsGatewayApi, MockBitVmxBroker>::get_advance_funds_pid(
+                committee_id,
+                slot_index,
+            )
+            .expect("flow id");
+        let trigger_data = test_trigger_data(committee_id, slot_index);
+
+        let flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            flow_id,
+            trigger_data,
+            Steps::Failed,
+        );
+
+        let mut processor = AdvanceFundsFlowProcessor::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+        );
+        processor.flows.insert(flow_id, flow);
+        processor.register_advance_funds_retry_scheduler.schedule(flow_id, 1);
+        processor.register_reimbursement_kickoff_retry_scheduler.schedule(flow_id, 1);
+        processor.register_operator_take_retry_scheduler.schedule(flow_id, 1);
+        processor.unconfirmed_register_advance_funds.insert(flow_id, 1);
+        processor.unconfirmed_register_reimbursement_kickoff.insert(flow_id, 1);
+        processor.unconfirmed_register_operator_take.insert(flow_id, 1);
+        processor.request_pegout_tx_hashes.insert(
+            (CommitteeId::from(committee_id.as_u128()), slot_index as u64),
+            "0xrequest".to_string(),
+        );
+
+        processor.cleanup_terminal_flows();
+
+        assert!(!processor.flows.contains_key(&flow_id));
+        assert!(!processor.register_advance_funds_retry_scheduler.is_scheduled(&flow_id));
+        assert!(!processor.register_reimbursement_kickoff_retry_scheduler.is_scheduled(&flow_id));
+        assert!(!processor.register_operator_take_retry_scheduler.is_scheduled(&flow_id));
+        assert!(!processor.unconfirmed_register_advance_funds.contains_key(&flow_id));
+        assert!(!processor.unconfirmed_register_reimbursement_kickoff.contains_key(&flow_id));
+        assert!(!processor.unconfirmed_register_operator_take.contains_key(&flow_id));
+        assert!(
+            !processor
+                .request_pegout_tx_hashes
+                .contains_key(&(CommitteeId::from(committee_id.as_u128()), slot_index as u64))
         );
     }
 }

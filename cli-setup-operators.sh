@@ -11,6 +11,7 @@ cd "${SCRIPT_DIR}" || {
 }
 
 NUM_OPERATORS=""
+AUTO_CONFIRM=false
 BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
 OPERATORS_TO_RUN=()
 NEW_USER_BITCOIN_WIF="${USER_BITCOIN_WIF:-}"
@@ -32,17 +33,19 @@ RESOLVED_BITVMX_MNEMONIC_SENTENCE=""
 RESOLVED_BITVMX_MNEMONIC_PASSPHRASE=""
 
 print_help() {
-  echo "Usage: $0 [--ops <N>]"
+  echo "Usage: $0 [--ops <N>] [--yes|-y]"
   echo ""
-  echo "Creates or reuses host-side local operator artifacts:"
+  echo "Removes and recreates host-side local operator artifacts:"
   echo "  - service identities under ${BASE_STORAGE_PATH}/.union_bridge/op_N/union-client/broker/<service>.*"
   echo "  - generated operator docker-compose.env/docker-service.env files under ${BASE_STORAGE_PATH}/.union_bridge/op_N/"
   echo "  - host-side Rootstock keystores under ${BASE_STORAGE_PATH}/.union_bridge/op_N/union-client/keystore/{member,user}"
-  echo "    reused by local cargo mode and docker/operator"
-  echo "  Existing operator env files are refreshed in place."
+  echo "    used by local cargo mode and docker/operator"
+  echo "  Existing selected operator folders are removed before setup starts."
+  echo "  Current KEY_STORE_PASSWORD and USER_BITCOIN_WIF must be exported or entered when prompted."
   echo ""
   echo "Options:"
   echo "  --ops <N>                  Number of operators to prepare (1-10)"
+  echo "  --yes, -y                  Automatic yes to operator folder removal confirmation"
   echo "  --help                     Display this help message"
   exit 0
 }
@@ -100,6 +103,46 @@ operator_root_path() {
   local op_num="$1"
 
   echo "${BASE_STORAGE_PATH}/.union_bridge/op_${op_num}"
+}
+
+confirm_and_remove_operator_roots() {
+  local op_num
+  local op_root
+  local confirmation
+  local -a existing_roots=()
+
+  for op_num in "${OPERATORS_TO_RUN[@]}"; do
+    op_root="$(operator_root_path "${op_num}")"
+    if [[ "${op_root}" != /* || ! "${op_root}" =~ /[.]union_bridge/op_(10|[1-9])$ ]]; then
+      echo "Error: refusing to remove unexpected operator path ${op_root}" >&2
+      echo "Set BASE_STORAGE_PATH to an absolute path before running setup." >&2
+      exit 1
+    fi
+    if [[ -d "${op_root}" ]]; then
+      existing_roots+=("${op_root}")
+    fi
+  done
+
+  if [[ ${#existing_roots[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  echo "The following operator folders will be removed before setup:"
+  for op_root in "${existing_roots[@]}"; do
+    echo "  - ${op_root}"
+  done
+
+  if [[ "${AUTO_CONFIRM}" != true ]]; then
+    read -r -p "Are you sure you want to continue? (yes/no): " confirmation
+    if [[ "${confirmation}" != "yes" ]]; then
+      echo "Aborted."
+      exit 1
+    fi
+  fi
+
+  for op_root in "${existing_roots[@]}"; do
+    rm -rf -- "${op_root}"
+  done
 }
 
 operator_compose_env_file_path() {
@@ -317,6 +360,27 @@ patch_bitvmx_component_pubkey_hash() {
   fi
 }
 
+ensure_bitvmx_broker_settings() {
+  local cfg_file="$1"
+
+  if grep -q '^[[:space:]]*settings:[[:space:]]*config/broker_settings.yaml[[:space:]]*$' "${cfg_file}"; then
+    return 0
+  fi
+
+  BITVMX_BROKER_SETTINGS_PATH="config/broker_settings.yaml" \
+    perl -0pi -e 's/(^broker:\s*\n)/${1}  settings: $ENV{BITVMX_BROKER_SETTINGS_PATH}\n/m' "${cfg_file}"
+}
+
+sync_bitvmx_support_files() {
+  local template_dir="$1"
+  local target_dir="$2"
+  local support_file
+
+  while IFS= read -r support_file; do
+    cp "${support_file}" "${target_dir}/$(basename "${support_file}")"
+  done < <(find "${template_dir}" -maxdepth 1 -type f ! -name 'op_*.yaml' | sort)
+}
+
 ensure_operator_bitvmx_config_tree() {
   local op_num="$1"
   local template_dir="$2"
@@ -373,6 +437,9 @@ write_operator_bitvmx_pubkey_hash_files() {
   if [[ -f "${target_keys_dir}/prover.key" ]]; then
     compute_pubkey_hash "${target_keys_dir}/prover.key" > "${target_keys_dir}/prover.pubkey_hash"
   fi
+  if [[ -f "${target_keys_dir}/garbler.key" ]]; then
+    compute_pubkey_hash "${target_keys_dir}/garbler.key" > "${target_keys_dir}/garbler.pubkey_hash"
+  fi
 }
 
 patch_operator_bitvmx_identity_hashes() {
@@ -382,6 +449,7 @@ patch_operator_bitvmx_identity_hashes() {
   local bitvmx_pubkey_hash=""
   local emulator_pubkey_hash=""
   local prover_pubkey_hash=""
+  local garbler_pubkey_hash=""
 
   if [[ -f "${target_keys_dir}/services.pubkey_hash" ]]; then
     bitvmx_pubkey_hash="$(tr -d ' \n' < "${target_keys_dir}/services.pubkey_hash")"
@@ -391,6 +459,9 @@ patch_operator_bitvmx_identity_hashes() {
   fi
   if [[ -f "${target_keys_dir}/prover.pubkey_hash" ]]; then
     prover_pubkey_hash="$(tr -d ' \n' < "${target_keys_dir}/prover.pubkey_hash")"
+  fi
+  if [[ -f "${target_keys_dir}/garbler.pubkey_hash" ]]; then
+    garbler_pubkey_hash="$(tr -d ' \n' < "${target_keys_dir}/garbler.pubkey_hash")"
   fi
 
   patch_bitvmx_component_pubkey_hash "${cfg_file}" "l2" "${coordinator_pubkey_hash}"
@@ -402,6 +473,9 @@ patch_operator_bitvmx_identity_hashes() {
   fi
   if [[ -n "${prover_pubkey_hash}" ]]; then
     patch_bitvmx_component_pubkey_hash "${cfg_file}" "prover" "${prover_pubkey_hash}"
+  fi
+  if [[ -n "${garbler_pubkey_hash}" ]]; then
+    patch_bitvmx_component_pubkey_hash "${cfg_file}" "garbler" "${garbler_pubkey_hash}"
   fi
 
   RESOLVED_BITVMX_BROKER_PUBKEY_HASH="${bitvmx_pubkey_hash}"
@@ -482,17 +556,8 @@ resolve_bitvmx_mnemonic_passphrase() {
   RESOLVED_BITVMX_MNEMONIC_PASSPHRASE=""
 }
 
-read_env_value() {
-  local env_file="$1"
-  local key="$2"
-
-  awk -F= -v key="${key}" '$1 == key {print substr($0, index($0, "=") + 1); exit}' "${env_file}"
-}
-
 resolve_key_store_password() {
   local op_num="$1"
-  local env_file="$2"
-  local existing_password=""
 
   if [[ -n "${KEY_STORE_PASSWORD:-}" ]]; then
     if [[ "${USED_EXPORTED_KEY_STORE_PASSWORD}" != true ]]; then
@@ -501,14 +566,6 @@ resolve_key_store_password() {
     fi
     RESOLVED_KEY_STORE_PASSWORD="${KEY_STORE_PASSWORD}"
     return 0
-  fi
-
-  if [[ -f "${env_file}" ]]; then
-    existing_password="$(read_env_value "${env_file}" "KEY_STORE_PASSWORD")"
-    if [[ -n "${existing_password}" ]]; then
-      RESOLVED_KEY_STORE_PASSWORD="${existing_password}"
-      return 0
-    fi
   fi
 
   if [[ -z "${NEW_KEY_STORE_PASSWORD}" ]]; then
@@ -526,20 +583,6 @@ resolve_key_store_password() {
 
 resolve_user_bitcoin_wif() {
   local op_num="$1"
-  local env_file="$2"
-  local existing_wif=""
-
-  if [[ -f "${env_file}" ]]; then
-    existing_wif="$(read_env_value "${env_file}" "USER_BITCOIN_WIF")"
-    if [[ -n "${existing_wif}" ]]; then
-      RESOLVED_USER_BITCOIN_WIF="${existing_wif}"
-      return 0
-    fi
-
-    echo "Error: existing operator env file ${env_file} is missing USER_BITCOIN_WIF." >&2
-    echo "Fix the file or delete it and rerun cli-setup-operators.sh." >&2
-    exit 1
-  fi
 
   if [[ -z "${NEW_USER_BITCOIN_WIF}" ]]; then
     while [[ -z "${NEW_USER_BITCOIN_WIF}" ]]; do
@@ -673,6 +716,8 @@ prepare_operator_bitvmx_config() {
   fi
 
   ensure_operator_bitvmx_config_tree "${op_num}" "${template_dir}" "${target_dir}" "${cfg_file}"
+  sync_bitvmx_support_files "${template_dir}" "${target_dir}"
+  ensure_bitvmx_broker_settings "${cfg_file}"
   resolve_bitvmx_mnemonic_sentence "${op_num}" "${cfg_file}"
   bitvmx_mnemonic_sentence="${RESOLVED_BITVMX_MNEMONIC_SENTENCE}"
   resolve_bitvmx_mnemonic_passphrase "${cfg_file}"
@@ -710,6 +755,10 @@ while [[ $# -gt 0 ]]; do
       fi
       shift 2
       ;;
+    --yes|-y)
+      AUTO_CONFIRM=true
+      shift
+      ;;
     *)
       echo "Error: unknown argument '$1'"
       echo "Run '$0 --help' for usage information."
@@ -730,12 +779,14 @@ while IFS= read -r op_num; do
   OPERATORS_TO_RUN+=("${op_num}")
 done < <(seq 1 "${NUM_OPERATORS}")
 
+confirm_and_remove_operator_roots
+
 for op_num in "${OPERATORS_TO_RUN[@]}"; do
   compose_env_file_path="$(operator_compose_env_file_path "${op_num}")"
   runtime_env_file_path="$(operator_runtime_env_file_path "${op_num}")"
-  resolve_key_store_password "${op_num}" "${runtime_env_file_path}"
+  resolve_key_store_password "${op_num}"
   key_store_password_value="${RESOLVED_KEY_STORE_PASSWORD}"
-  resolve_user_bitcoin_wif "${op_num}" "${runtime_env_file_path}"
+  resolve_user_bitcoin_wif "${op_num}"
   user_bitcoin_wif_value="${RESOLVED_USER_BITCOIN_WIF}"
 
   echo "=== op_${op_num} ==="

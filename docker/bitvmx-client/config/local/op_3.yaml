@@ -23,6 +23,7 @@ comms:
   storage_path: /tmp/regtest/op_3/comms.db
 
 broker:
+  settings: config/broker_settings.yaml
   allow_list: config/allow_list.yaml
   routing_table: config/routing_table.yaml
   port: 44444
@@ -44,6 +45,9 @@ components:
   prover:
     pubkey_hash: <to_patch_in_host>
     id: 0
+  garbler:
+    pubkey_hash: <to_patch_in_host>
+    id: 0
 
 testing:
   l2:
@@ -55,12 +59,20 @@ testing:
   prover:
     priv_key: config/keys/prover.key
     id: 0
+  garbler:
+    priv_key: config/keys/garbler.key
+    id: 0
 
-coordinator:
-  throtthle_bitcoin_updates_until_sync: 0
-  throtthle_bitcoin_updates: 0
+coordinator_throttle:
+  init_interval: 10
+  busy_interval: 50
+  idle_interval: 200
 
-client: 
+bitvmx_throttle:
+  busy_interval: 20
+  idle_interval: 200
+
+client:
   retry: 1
   retry_delay: 1000
 

@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 
 # wrapper script for local infrastructure management
-# usage: ./cli-infra.sh --start [--fresh] [--contracts-tag TAG]
+# usage: ./cli-infra.sh --start [--fresh] [--contracts-tag TAG] [--pull-contracts]
 #        ./cli-infra.sh --stop
-#        ./cli-infra.sh --start-blockchains [--fresh] [--contracts-tag TAG]
+#        ./cli-infra.sh --start-blockchains [--fresh] [--contracts-tag TAG] [--pull-contracts]
 #        ./cli-infra.sh --stop-blockchains
+#        ./cli-infra.sh --stop-mining
 #        ./cli-infra.sh --start-bitvmx [--fresh]
 #        ./cli-infra.sh --stop-bitvmx
-#        ./cli-infra.sh --start-mine
-#        ./cli-infra.sh --stop-mine
-
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
 MINE_PID_FILE="/tmp/union-bridge-mining.pids"
+BITCOIN_WALLET="mainwallet"
+BITCOIN_RPC_ARGS=(-regtest -rpcuser=foo -rpcpassword=rpcpassword -rpcwallet="${BITCOIN_WALLET}")
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -22,6 +22,66 @@ NC='\033[0m'
 
 log() { echo -e "${GREEN}[✓]${NC} $1"; }
 warn() { echo -e "${YELLOW}[!]${NC} $1"; }
+
+notify_terminal_bell() {
+    printf '\a'
+}
+
+notify_os_notification() {
+    local title="$1"
+    local message="$2"
+
+    if [[ "$(uname -s)" != "Darwin" ]] || ! command -v osascript &> /dev/null; then
+        return 1
+    fi
+
+    osascript - "$title" "$message" <<'APPLESCRIPT' &> /dev/null
+on run argv
+    set notificationTitle to item 1 of argv
+    set notificationMessage to item 2 of argv
+    display notification notificationMessage with title notificationTitle
+end run
+APPLESCRIPT
+}
+
+notify_completion() {
+    local title="$1"
+    local message="$2"
+
+    notify_os_notification "$title" "$message" || notify_terminal_bell
+}
+
+on_exit() {
+    local exit_code=$?
+    if [[ $exit_code -eq 0 ]]; then
+        notify_completion "CLI Infra" "Completed"
+    else
+        notify_completion "CLI Infra" "Failed"
+    fi
+    return "$exit_code"
+}
+trap on_exit EXIT
+
+pid_is_running() {
+    [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null
+}
+
+mining_is_running() {
+    if [ ! -f "$MINE_PID_FILE" ]; then
+        return 1
+    fi
+
+    local anvil_pid="" bitcoin_pid=""
+    read -r anvil_pid bitcoin_pid < "$MINE_PID_FILE" 2>/dev/null || true
+
+    pid_is_running "$anvil_pid" || pid_is_running "$bitcoin_pid"
+}
+
+cleanup_stale_mining_pid_file() {
+    if [ -f "$MINE_PID_FILE" ] && ! mining_is_running; then
+        rm -f "$MINE_PID_FILE"
+    fi
+}
 
 mine_anvil() {
     if ! cast rpc anvil_mine 1 --rpc-url http://localhost:8545 &>/dev/null; then
@@ -37,25 +97,61 @@ mine_anvil() {
 
 mine_bitcoin() {
     local mine_address
-    mine_address=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getnewaddress 2>/dev/null)
+    mine_address=$(bitcoin-cli "${BITCOIN_RPC_ARGS[@]}" getnewaddress 2>/dev/null)
     if [ -z "$mine_address" ]; then
         echo -e "${YELLOW}[WARN]${NC} Failed to get Bitcoin address for mining" >&2
         return 1
     fi
 
     while true; do
-        bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword generatetoaddress 1 "$mine_address" &>/dev/null || true
+        bitcoin-cli "${BITCOIN_RPC_ARGS[@]}" generatetoaddress 1 "$mine_address" &>/dev/null || true
         sleep 5
     done
 }
 
+bitcoin_trusted_balance_btc() {
+    bitcoin-cli "${BITCOIN_RPC_ARGS[@]}" getbalances 2>/dev/null \
+        | tr -d '\n ' \
+        | sed -n 's/.*"trusted":\([0-9.]*\).*/\1/p'
+}
+
+bootstrap_bitcoin_wallet() {
+    local trusted_balance_btc
+    trusted_balance_btc=$(bitcoin_trusted_balance_btc)
+
+    if [ -z "$trusted_balance_btc" ]; then
+        warn "Failed to read trusted Bitcoin balance from ${BITCOIN_WALLET}"
+        exit 1
+    fi
+
+    if [[ "$trusted_balance_btc" != "0.00000000" && "$trusted_balance_btc" != "0" ]]; then
+        log "Bitcoin wallet '${BITCOIN_WALLET}' already has ${trusted_balance_btc} BTC of mature funds"
+        return 0
+    fi
+
+    local bootstrap_address
+    bootstrap_address=$(bitcoin-cli "${BITCOIN_RPC_ARGS[@]}" getnewaddress bootstrap bech32 2>/dev/null)
+    if [ -z "$bootstrap_address" ]; then
+        warn "Failed to get Bitcoin bootstrap address from ${BITCOIN_WALLET}"
+        exit 1
+    fi
+
+    log "Bootstrapping Bitcoin wallet '${BITCOIN_WALLET}' with 101 regtest blocks"
+    if ! bitcoin-cli "${BITCOIN_RPC_ARGS[@]}" generatetoaddress 101 "$bootstrap_address" &>/dev/null; then
+        warn "Failed to bootstrap Bitcoin wallet '${BITCOIN_WALLET}'"
+        exit 1
+    fi
+}
+
 start_mining() {
+    cleanup_stale_mining_pid_file
+
     if [ -f "$MINE_PID_FILE" ]; then
         local anvil_pid bitcoin_pid
         read -r anvil_pid bitcoin_pid < "$MINE_PID_FILE" 2>/dev/null || true
-        if [ -n "$anvil_pid" ] && kill -0 "$anvil_pid" 2>/dev/null; then
+        if pid_is_running "$anvil_pid" || pid_is_running "$bitcoin_pid"; then
             warn "Mining already running (PIDs: $anvil_pid, $bitcoin_pid)"
-            warn "Use --stop-mine to stop first"
+            warn "Use ./cli-infra.sh --stop-mining if mining is stuck, or ./cli-infra.sh --stop-blockchains to stop everything first"
             exit 1
         fi
     fi
@@ -74,7 +170,7 @@ start_mining() {
         warn "Start blockchains first with: ./cli-infra.sh --start-blockchains"
         exit 1
     fi
-    if ! bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount &> /dev/null; then
+    if ! bitcoin-cli "${BITCOIN_RPC_ARGS[@]}" getblockcount &> /dev/null; then
         warn "Blockchains not started - Bitcoin regtest node not accessible"
         warn "Start blockchains first with: ./cli-infra.sh --start-blockchains"
         exit 1
@@ -88,12 +184,12 @@ start_mining() {
 
     log "Testing Bitcoin mining..."
     local test_address
-    test_address=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getnewaddress 2>/dev/null)
+    test_address=$(bitcoin-cli "${BITCOIN_RPC_ARGS[@]}" getnewaddress 2>/dev/null)
     if [ -z "$test_address" ]; then
         warn "Failed to get Bitcoin address for mining - check wallet is loaded"
         exit 1
     fi
-    if ! bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword generatetoaddress 1 "$test_address" &>/dev/null; then
+    if ! bitcoin-cli "${BITCOIN_RPC_ARGS[@]}" generatetoaddress 1 "$test_address" &>/dev/null; then
         warn "Bitcoin mining failed - check bitcoind is running correctly"
         exit 1
     fi
@@ -111,7 +207,6 @@ start_mining() {
     echo "$anvil_pid $bitcoin_pid" > "$MINE_PID_FILE"
 
     log "Mining started (PIDs: $anvil_pid, $bitcoin_pid)"
-    log "Use --stop-mine to stop"
 }
 
 stop_mining() {
@@ -162,10 +257,20 @@ start_blockchains() {
             fi
         fi
     done
+
+    cleanup_stale_mining_pid_file
+    if mining_is_running; then
+        log "Stopping existing background mining before restarting blockchains"
+        stop_mining
+    fi
+
     docker/local-infra/start-blockchains.sh "$@" up -d
+    bootstrap_bitcoin_wallet
+    start_mining
 }
 
 stop_blockchains() {
+    stop_mining
     docker/local-infra/start-blockchains.sh down
 }
 
@@ -197,6 +302,10 @@ start_all() {
                 BLOCKCHAINS_OPTS+=(--contracts-tag "$2")
                 shift 2
                 ;;
+            --pull-contracts)
+                BLOCKCHAINS_OPTS+=(--pull-contracts)
+                shift
+                ;;
             *)
                 BLOCKCHAINS_OPTS+=("$1")
                 BITVMX_OPTS+=("$1")
@@ -204,20 +313,14 @@ start_all() {
                 ;;
         esac
     done
-    docker/local-infra/start-blockchains.sh "${BLOCKCHAINS_OPTS[@]}" up -d
+    start_blockchains --start-blockchains "${BLOCKCHAINS_OPTS[@]}"
     docker/local-infra/start-bitvmx.sh "${BITVMX_OPTS[@]}" up -d
-
-    log "Starting mining..."
-    start_mining
 }
 
 stop_all() {
-    log "Stopping mining..."
-    stop_mining
-
     log "Stopping docker infrastructure..."
     docker/local-infra/start-bitvmx.sh down
-    docker/local-infra/start-blockchains.sh down
+    stop_blockchains
 }
 
 case "${1:-}" in
@@ -233,36 +336,31 @@ case "${1:-}" in
     --stop-blockchains)
         stop_blockchains
         ;;
+    --stop-mining)
+        stop_mining
+        ;;
     --start-bitvmx)
         start_bitvmx "$@"
         ;;
     --stop-bitvmx)
         stop_bitvmx
         ;;
-    --start-mine)
-        start_mining
-        ;;
-    --stop-mine)
-        stop_mining
-        ;;
     *)
-        echo "Usage: $0 {--start|--stop|--start-blockchains|--stop-blockchains|--start-bitvmx|--stop-bitvmx|--start-mine|--stop-mine}"
+        echo "Usage: $0 {--start|--stop|--start-blockchains|--stop-blockchains|--stop-mining|--start-bitvmx|--stop-bitvmx}"
         echo ""
         echo "Local Docker Infrastructure:"
-        echo "  --start [--fresh] [--contracts-tag TAG]              Start all blockchains + bitvmx + mining"
+        echo "  --start [--fresh] [--contracts-tag TAG] [--pull-contracts]              Start all blockchains + bitvmx + mining"
         echo "  --stop                                               Stop mining + bitvmx + blockchains"
-        echo "  --start-blockchains [--fresh] [--contracts-tag TAG]  Start blockchains only (anvil + bitcoin)"
-        echo "  --stop-blockchains                                   Stop blockchains only"
+        echo "  --start-blockchains [--fresh] [--contracts-tag TAG] [--pull-contracts]  Start blockchains + mining (anvil + bitcoin)"
+        echo "  --stop-blockchains                                   Stop mining + blockchains"
+        echo "  --stop-mining                                        Stop background mining only; run this if mining gets stuck"
         echo "  --start-bitvmx [--fresh]                             Start bitvmx only"
         echo "  --stop-bitvmx                                        Stop bitvmx only"
         echo ""
-        echo "Mining (requires blockchains running):"
-        echo "  --start-mine                                         Start background mining (anvil + bitcoin)"
-        echo "  --stop-mine                                          Stop background mining"
-        echo ""
         echo "Options:"
         echo "  --fresh                                              Clean/reset volumes before starting"
-        echo "  --contracts-tag TAG                                  Contracts image tag (only for blockchains; e.g. local-build or v0.2.0-alpha.1)"
+        echo "  --contracts-tag TAG                                  Predeployed Anvil/contracts tag (only for blockchains; e.g. local-build or v0.2.0-alpha.1)"
+        echo "  --pull-contracts                                     Pull predeployed Anvil image from registry even if it exists locally"
         exit 1
         ;;
 esac

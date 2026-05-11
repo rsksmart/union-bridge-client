@@ -13,11 +13,14 @@
 
 ## General Standards
 - Follow Rust API Guidelines and naming conventions (snake_case for functions/variables, PascalCase for types)
-- Use `rustfmt` for consistent formatting and `clippy` for linting
+- Check `rusty-hook.toml` for lints and formatting rules that you must follow
 - Prefer composition over inheritance when designing structs and traits
 - Always handle `Result` and `Option` types explicitly - avoid `.unwrap()` in production code except where panic is intentional
 - Use `?` operator for error propagation instead of manual unwrap/match when appropriate
 - Prefer Rc, RefCell, Arc... etc. wrapping in inner fields rather than in parent struct
+
+## Refactoring
+- Never remove code comments when refactoring and moving code around
 
 ## Memory Safety & Ownership Review
 - Verify ownership semantics are correct - question unnecessary `.clone()` calls

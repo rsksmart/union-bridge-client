@@ -11,5 +11,5 @@ start_from = "best"
 # Bridge Flow Configuration
 # ═══════════════════════════════════════════════════════
 
-[bridge.committee]
-drp_program_definition = "/app/resources/hello-world.yaml"
+[flows.committee]
+drp_program_definition = "/app/resources/union-verifier.yaml"

@@ -18,8 +18,8 @@ No local `.env` file is required for the supported build flow in this directory.
 The build compose uses the repository `config/` tree. Runtime overrides still follow the shared `UB__...`
 configuration model documented in the [Contributing Guide](../../CONTRIBUTING.md).
 
-For GHCR authentication, this directory uses the local shell variable `GITHUB_REGISTRY_TOKEN`. That is separate from
-the GitHub Actions secret `REGISTRY_TOKEN` documented in the [Workflow Guide](../../.github/WORKFLOWS.md).
+For GHCR authentication, this directory uses the local shell variable `GITHUB_REGISTRY_TOKEN`. That local variable is
+separate from the OOTB GitHub Actions GITHUB_TOKEN used in workflows.
 
 ## Build Builder Images
 

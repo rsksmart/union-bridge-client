@@ -14,19 +14,15 @@ pub enum VerificationStatus {
 }
 
 pub enum NativeBridgeVerifier<CG: RskContractsGatewayApi> {
-    Real { contracts: Rc<CG>, rt_sync: RuntimeSync, min_tx_confirmations: u32 },
+    Real { contracts: Rc<CG>, rt_sync: RuntimeSync, required_confirmations: u32 },
     Dummy, // used in local/test environments
 }
 
 impl<CG: RskContractsGatewayApi> Clone for NativeBridgeVerifier<CG> {
     fn clone(&self) -> Self {
         match self {
-            NativeBridgeVerifier::Real { contracts, rt_sync, min_tx_confirmations } => {
-                NativeBridgeVerifier::Real {
-                    contracts: Rc::clone(contracts),
-                    rt_sync: rt_sync.clone(),
-                    min_tx_confirmations: *min_tx_confirmations,
-                }
+            NativeBridgeVerifier::Real { contracts, rt_sync, required_confirmations } => {
+                Self::real(Rc::clone(contracts), rt_sync.clone(), *required_confirmations)
             }
             NativeBridgeVerifier::Dummy => NativeBridgeVerifier::Dummy,
         }
@@ -34,10 +30,14 @@ impl<CG: RskContractsGatewayApi> Clone for NativeBridgeVerifier<CG> {
 }
 
 impl<CG: RskContractsGatewayApi> NativeBridgeVerifier<CG> {
-    /// Returns the minimum TX confirmations required for this verifier
-    pub fn min_tx_confirmations(&self) -> u32 {
+    pub fn real(contracts: Rc<CG>, rt_sync: RuntimeSync, required_confirmations: u32) -> Self {
+        Self::Real { contracts, rt_sync, required_confirmations }
+    }
+
+    /// Returns the confirmations required for this verifier
+    pub fn required_confirmations(&self) -> u32 {
         match self {
-            NativeBridgeVerifier::Real { min_tx_confirmations, .. } => *min_tx_confirmations,
+            NativeBridgeVerifier::Real { required_confirmations, .. } => *required_confirmations,
             NativeBridgeVerifier::Dummy => 0, // Dummy verifier doesn't check confirmations
         }
     }
@@ -176,8 +176,8 @@ where
 {
     debug!("Verifying Native Bridge confirmations before invoking contract");
 
-    let min_tx_confirmations = native_bridge_verifier.min_tx_confirmations();
-    let res = native_bridge_verifier.verify_confirmations(spv_proof, min_tx_confirmations)?;
+    let required_confirmations = native_bridge_verifier.required_confirmations();
+    let res = native_bridge_verifier.verify_confirmations(spv_proof, required_confirmations)?;
 
     match res {
         VerificationStatus::Verified => {

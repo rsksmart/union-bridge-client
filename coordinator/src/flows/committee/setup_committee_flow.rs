@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use alloy_primitives::{Address, Bytes, FixedBytes, U256};
+use alloy_primitives::{Address, Bytes, FixedBytes};
 use anyhow::{Context, Result, bail, ensure};
 use bitcoin::key::Parity::Even;
-use bitcoin::{Amount, Network, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
+use bitcoin::{Network, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
 use common::msg_broker::bitvmx_types::{
     CommsAddress, Destination, IncomingBitVMXApiMessages, OP_COSIGN_UTXOS, OutputType, PartialUtxo,
     ParticipantRole, PubKeyHash, SignedPublicKey, Utxo, VariableTypes, WT_INIT_CHALLENGE_UTXOS,
@@ -17,7 +17,10 @@ use common::types::{CommitteeId, StreamId, TxIdParser};
 use log::{debug, error, info, trace, warn};
 #[cfg(test)]
 use mockall::automock;
+use op_funding::{derive_stream_funding_profile, required_member_rsk_balance};
+use protocol_params::{committee_member_count, prover_count, slots_per_package};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sha2::{Digest, Sha256};
 use tiny_keccak::{Hasher, Keccak};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
@@ -32,16 +35,19 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
 };
 use uuid::Uuid;
 
-use crate::config::CommitteeConfig;
 use crate::flows::committee::common::{
     CommitteeData, FundingUtxos, get_dispute_pair_aggregated_key_pid,
 };
 use crate::flows::committee::dispute_channel_setup::{
     DisputeChannelSetup, DisputeChannelSetupRequest,
 };
-use crate::flows::committee::dispute_core_setup::{AggregatedKeys, DisputeCoreSetup};
+use crate::flows::committee::dispute_core_setup::{
+    AggregatedKeys, CommitteeConfirmations, DisputeCoreSetup,
+};
+use crate::flows::committee::full_penalization_setup::FullPenalizationSetup;
 use crate::flows::common::{
-    COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, TAKE_KEY_INDEX, build_communication_data,
+    COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, Signaling, TAKE_KEY_INDEX,
+    build_communication_data,
 };
 use crate::flows::errors::{FailableFlow, FlowError, FlowResultExt};
 use crate::store::{CoordinatorStoreApi, StoreKey};
@@ -138,6 +144,7 @@ struct FlowContext {
     setup_core_req: SetupCoreReq,
     setup_channel_req: DisputeChannelReq,
     setup_channel_setup_req: SetupChannelReq,
+    setup_full_penalization_req: SetupChannelReq,
     #[serde(default)]
     committee_data: Option<CommitteeData>,
     // async
@@ -270,17 +277,17 @@ impl FlowContext {
             .context("Failed to get wpubkey_hash from dispute public key")?;
         let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
         let speedup_ot = OutputType::SegwitPublicKey {
-            value: Amount::from_sat(speedup_utxo_val),
+            value: speedup_utxo_val.into(),
             script_pubkey: script_pubkey.clone(),
             public_key,
         };
         let protocol_funding_ot = OutputType::SegwitPublicKey {
-            value: Amount::from_sat(funding_utxo_val),
+            value: funding_utxo_val.into(),
             script_pubkey: script_pubkey.clone(),
             public_key,
         };
         let advance_funds_ot = OutputType::SegwitPublicKey {
-            value: Amount::from_sat(advance_funds_utxo_val),
+            value: advance_funds_utxo_val.into(),
             script_pubkey: script_pubkey.clone(),
             public_key,
         };
@@ -313,14 +320,21 @@ pub(crate) enum Steps {
     SignMyCommKey,
     FundMyBitVmxAccount,
     ApplyToStream,
-    DepositP2PData,
-    SetupTakeAggregatedKey,
+    // Authoritative checkpoint: entered after NewCommitteePending confirms this member
+    // belongs to the canonical selected committee. Completes on AllCommunicationDataReady.
+    DepositP2PDataAuthoritativeCheckpoint,
+    // All-converge checkpoint: entered after AllCommunicationDataReady proves every
+    // selected member deposited P2P data. Starts take-key aggregation.
+    SetupTakeAggregatedKeyAllConvergeCheckpoint,
     SetupDisputeAggregatedKey,
-    DepositAggregatedKey,
     SetupPairwiseKeys,
     SetupDisputeCore,
     RequestDisputeChannelVars,
     DisputeChannelSetup,
+    FullPenalizationSetup,
+    DepositAggregatedKey,
+    // Terminal state after NewCommitteeReady confirms every selected member deposited
+    // matching aggregated key data.
     Done,
     Failed,
 }
@@ -449,7 +463,9 @@ pub(crate) struct SetupCommitteeFlow<
     global_context: GlobalContext,
     bitcoin_network: Network,
     store: Rc<S>,
-    config: CommitteeConfig,
+    drp_program_definition: String,
+    btc_confirmations: u32,
+    signaling: Rc<Signaling>,
 }
 
 const REGTEST_FEE_RATE: u64 = 10;
@@ -469,7 +485,7 @@ where
         &mut self.state.ctx
     }
 
-    pub fn is_done(&self) -> bool {
+    pub fn is_terminal(&self) -> bool {
         self.state.step == Steps::Done || self.state.step == Steps::Failed
     }
 
@@ -500,7 +516,9 @@ where
         state: State,
         bitcoin_network: Network,
         store: Rc<S>,
-        config: CommitteeConfig,
+        drp_program_definition: String,
+        btc_confirmations: u32,
+        signaling: Rc<Signaling>,
     ) -> Self {
         Self {
             contracts,
@@ -510,7 +528,9 @@ where
             global_context,
             bitcoin_network,
             store,
-            config,
+            drp_program_definition,
+            btc_confirmations,
+            signaling,
         }
     }
 
@@ -523,7 +543,9 @@ where
         internal_id: Uuid,
         bitcoin_network: Network,
         store: Rc<S>,
-        config: CommitteeConfig,
+        drp_program_definition: String,
+        btc_confirmations: u32,
+        signaling: Rc<Signaling>,
     ) -> Self {
         Self {
             contracts,
@@ -533,7 +555,9 @@ where
             global_context,
             bitcoin_network,
             store,
-            config,
+            drp_program_definition,
+            btc_confirmations,
+            signaling,
         }
     }
 
@@ -568,6 +592,10 @@ where
                     .map(|committee_data| committee_data.committee_id.clone()),
             )
             || Self::setup_channel_request_matches(&self.state.ctx.setup_channel_setup_req, req_id)
+            || Self::setup_channel_request_matches(
+                &self.state.ctx.setup_full_penalization_req,
+                req_id,
+            )
     }
 
     pub(crate) fn is_pairwise_aggregated_key_request(&self, req_id: &Uuid) -> bool {
@@ -584,6 +612,12 @@ where
             .committee_pending_ev
             .as_ref()
             .is_some_and(|ev| ev.inner.committeeId == **committee_id)
+    }
+
+    pub(crate) fn mark_failed(&mut self, reason: &str) -> Result<()> {
+        info!("Marking setup committee flow {} as failed: {reason}", self.state.internal_id);
+        self.state.step = Steps::Failed;
+        self.persist_state()
     }
 
     pub(crate) fn is_waiting_for_dispute_core_variable(&self, program_id: &Uuid) -> bool {
@@ -690,6 +724,18 @@ where
     fn validate_bitvmx_balance(&mut self, data: StepData) -> Result<()> {
         let balance = data.into_bitvmx_funding_balance()?;
 
+        let stream_id = self.ctx().get_stream_id()?;
+        let is_regtest = self.bitcoin_network == Network::Regtest;
+
+        let profile = derive_stream_funding_profile(
+            *stream_id,
+            is_regtest,
+            slots_per_package()?,
+            committee_member_count()?,
+            prover_count()?,
+        )?;
+        let min_funding_balance = profile.operator_fund_amount;
+
         let r = self
             .state
             .ctx
@@ -698,7 +744,6 @@ where
             .context("Funding balance request missing in context")?;
         r.1 = Some(balance);
 
-        let min_funding_balance = self.config.min_funding_balance;
         if balance < min_funding_balance {
             bail!("Insufficient funding balance: {balance} < {min_funding_balance}")
         }
@@ -727,9 +772,18 @@ where
 
         let balance_wei = self.rt_sync.run(self.contracts.get_balance())?;
 
-        let min_rsk_balance = self.config.min_rsk_balance;
-        // convert wei to a u64 (this is safe for reasonable balance values)
-        if balance_wei < U256::from(min_rsk_balance) {
+        let stream_id = self.ctx().get_stream_id()?;
+        let role = u8::from(self.ctx().get_user_input()?.role);
+        let stream_id_u8 = stream_id.as_u8()?;
+        let min_deposit =
+            self.rt_sync.run(self.contracts.get_minimum_deposit(stream_id_u8, role))?;
+        let min_rsk_balance = required_member_rsk_balance(
+            min_deposit,
+            slots_per_package()?,
+            committee_member_count()?,
+        );
+
+        if balance_wei < min_rsk_balance {
             bail!("Insufficient RSK balance: {balance_wei} < {min_rsk_balance}")
         }
 
@@ -831,8 +885,22 @@ where
             }
         }
 
-        let missing_responses = setup_channel_req.iter().any(|r| !r.1);
+        let missing_indices: Vec<_> = setup_channel_req
+            .iter()
+            .enumerate()
+            .filter_map(|(i, r)| if r.1 { None } else { Some((i, r.0)) })
+            .collect();
 
+        let missing_responses = !missing_indices.is_empty();
+
+        if missing_responses {
+            debug!(
+                "Missing responses: {missing_responses}, missing protocol IDs: {:?}",
+                missing_indices.iter().map(|(_, pid)| pid).collect::<Vec<_>>()
+            );
+        } else {
+            debug!("All setup_channel responses received");
+        }
         Ok(missing_responses)
     }
 
@@ -978,7 +1046,7 @@ where
         );
 
         let output_type = OutputType::SegwitPublicKey {
-            value: Amount::from_sat(utxo.amount),
+            value: utxo.amount.into(),
             script_pubkey,
             public_key: *member_dispute_key,
         };
@@ -1345,7 +1413,7 @@ where
 
         let dispute_channel_setup = DisputeChannelSetup::new(
             self.bitvmx_broker.clone(),
-            self.config.drp_program_definition.clone(),
+            self.drp_program_definition.clone(),
         );
 
         let protocol_ids = dispute_channel_setup.complete_setup(
@@ -1361,6 +1429,28 @@ where
 
         Ok(protocol_ids.len())
     }
+
+    fn complete_full_penalization_setup(&mut self) -> Result<usize> {
+        debug!("Completing FullPenalization setup");
+
+        let committee_data = self.ctx().get_committee_data()?;
+        let p2p_addrs = self.ctx().get_my_communication_data()?;
+
+        let my_address: types::Address = self.my_address();
+        let my_index = committee_data
+            .members
+            .iter()
+            .position(|m| m.address == my_address)
+            .context("My address not found in committee members")?;
+
+        let full_penalization_setup = FullPenalizationSetup::new(self.bitvmx_broker.clone());
+        let protocol_id =
+            full_penalization_setup.setup(committee_data.committee_uuid(), my_index, &p2p_addrs)?;
+
+        self.ctx_mut().setup_full_penalization_req = vec![(protocol_id, false)];
+
+        Ok(1)
+    }
 }
 
 impl<CG, BC, S> FailableFlow for SetupCommitteeFlow<CG, BC, S>
@@ -1370,8 +1460,12 @@ where
     S: CoordinatorStoreApi,
 {
     fn fail(&mut self) {
-        error!("Marking flow {} as failed and cleaning up", self.state.internal_id);
-        self.state.step = Steps::Failed;
+        if let Err(err) = self.mark_failed("flow error") {
+            error!(
+                "Failed to persist failed setup committee flow {}: {err}",
+                self.state.internal_id
+            );
+        }
     }
 }
 
@@ -1458,21 +1552,17 @@ where
                 debug!("CommitteeSetupFlow start apply to stream");
                 self.apply_to_stream()?;
             }
-            Steps::DepositP2PData => {
+            Steps::DepositP2PDataAuthoritativeCheckpoint => {
                 debug!("CommitteeSetupFlow start deposit P2PData");
                 self.deposit_communication_data()?;
             }
-            Steps::SetupTakeAggregatedKey => {
+            Steps::SetupTakeAggregatedKeyAllConvergeCheckpoint => {
                 debug!("CommitteeSetupFlow start setup taking aggregated key");
                 self.setup_bitvmx_aggregated_take_pubkey()?;
             }
             Steps::SetupDisputeAggregatedKey => {
                 debug!("CommitteeSetupFlow start setup dispute aggregated key");
                 self.setup_bitvmx_aggregated_dispute_pubkey()?;
-            }
-            Steps::DepositAggregatedKey => {
-                debug!("CommitteeSetupFlow start deposit aggregated key");
-                self.deposit_aggregated_key()?;
             }
             Steps::SetupPairwiseKeys => {
                 debug!("CommitteeSetupFlow start setup pairwise keys");
@@ -1493,7 +1583,17 @@ where
                 let req_count = self.complete_dispute_channel_setup()?;
                 trace!("Requested {req_count} DisputeChannel Setup");
             }
+            Steps::FullPenalizationSetup => {
+                debug!("CommitteeSetupFlow waiting for FullPenalization setup completion");
+                let req_count = self.complete_full_penalization_setup()?;
+                trace!("Requested {req_count} FullPenalization Setup");
+            }
+            Steps::DepositAggregatedKey => {
+                debug!("CommitteeSetupFlow start deposit aggregated key");
+                self.deposit_aggregated_key()?;
+            }
             Steps::Done => {
+                self.write_completion_marker()?;
                 info!("CommitteeSetupFlow Done: {}", self.state.internal_id);
             }
             Steps::Failed => {
@@ -1514,7 +1614,7 @@ where
         debug!("Completing step {current_step:?} for flow {}", self.state.internal_id);
         debug!("Step data: {data:?}");
 
-        debug!("Flow Context: {:?}", self.ctx());
+        trace!("Flow Context: {:?}", self.ctx());
         debug!("Global Context: {:?}", self.global_context);
 
         // Process the step
@@ -1526,12 +1626,12 @@ where
                 self.start_step(Steps::ValidateBalances)?;
             }
             Steps::ValidateBalances => {
-                debug!("CommitteeSetupFlow complete ValidateBalances");
+                debug!("CommitteeSetupFlow completing ValidateBalances");
                 self.validate_bitvmx_balance(data)?;
                 self.start_step(Steps::GetMyCommInfo)?;
             }
             Steps::GetMyCommInfo => {
-                debug!("CommitteeSetupFlow complete GetMyCommInfo");
+                debug!("CommitteeSetupFlow completing GetMyCommInfo");
                 self.ctx_mut().my_comm_info = Some(data.into_comms_address()?);
                 self.ctx_mut().comm_info_req_id = None;
                 if self.global_context.my_keys().is_set() {
@@ -1542,42 +1642,42 @@ where
                 }
             }
             Steps::GetMyTakeKey => {
-                debug!("CommitteeSetupFlow complete GetMyTakeKey");
+                debug!("CommitteeSetupFlow completing GetMyTakeKey");
                 Self::close_pub_key_req(&mut self.ctx_mut().my_take_key_req, data)?;
                 self.start_step(Steps::SignMyTakeKey)?;
             }
             Steps::SignMyTakeKey => {
-                debug!("CommitteeSetupFlow complete SignMyTakeKey");
+                debug!("CommitteeSetupFlow completing SignMyTakeKey");
                 Self::close_pub_key_signing_req(&mut self.ctx_mut().my_take_key_req, data)?;
                 self.start_step(Steps::GetMyDisputeKey)?;
             }
             Steps::GetMyDisputeKey => {
-                debug!("CommitteeSetupFlow complete GetMyDisputeKey");
+                debug!("CommitteeSetupFlow completing GetMyDisputeKey");
                 Self::close_pub_key_req(&mut self.ctx_mut().my_dispute_key_req, data)?;
                 self.start_step(Steps::SignMyDisputeKey)?;
             }
             Steps::SignMyDisputeKey => {
-                debug!("CommitteeSetupFlow complete SignMyDisputeKey");
+                debug!("CommitteeSetupFlow completing SignMyDisputeKey");
                 Self::close_pub_key_signing_req(&mut self.ctx_mut().my_dispute_key_req, data)?;
                 self.start_step(Steps::GetMyCommKey)?;
             }
             Steps::GetMyCommKey => {
-                debug!("CommitteeSetupFlow complete GetMyCommKey");
+                debug!("CommitteeSetupFlow completing GetMyCommKey");
                 Self::close_pub_key_req(&mut self.ctx_mut().my_comm_key_req, data)?;
                 self.start_step(Steps::SignMyCommKey)?;
             }
             Steps::SignMyCommKey => {
-                debug!("CommitteeSetupFlow complete SignMyCommKey");
+                debug!("CommitteeSetupFlow completing SignMyCommKey");
                 Self::close_pub_key_signing_req(&mut self.ctx_mut().my_comm_key_req, data)?;
                 self.start_step(Steps::FundMyBitVmxAccount)?;
             }
             Steps::FundMyBitVmxAccount => {
-                debug!("CommitteeSetupFlow complete FundMyBitVmxAccount");
+                debug!("CommitteeSetupFlow completing FundMyBitVmxAccount");
                 Self::close_send_funds_req(&mut self.ctx_mut().send_funds_req, data)?;
                 self.start_step(Steps::ApplyToStream)?;
             }
             Steps::ApplyToStream => {
-                debug!("CommitteeSetupFlow complete ApplyToStream");
+                debug!("CommitteeSetupFlow completing ApplyToStream");
                 let pending_committee = data.into_committee_pending()?;
                 let committee_id: CommitteeId = pending_committee.inner.committeeId.into();
 
@@ -1586,36 +1686,30 @@ where
                 if im_selected {
                     self.update_my_committees(pending_committee, &committee_id)?;
                     self.build_committee_data()?;
-                    self.start_step(Steps::DepositP2PData)?;
+                    self.start_step(Steps::DepositP2PDataAuthoritativeCheckpoint)?;
                 } else {
                     debug!("Not selected for committee {committee_id}");
                     self.start_step(Steps::Done)?;
                 }
             }
-            Steps::DepositP2PData => {
-                debug!("CommitteeSetupFlow complete DepositP2PData");
+            Steps::DepositP2PDataAuthoritativeCheckpoint => {
+                debug!("CommitteeSetupFlow completing DepositP2PData");
                 data.into_all_comm_data_ready()?;
                 self.close_communication_data_step()?;
-                self.start_step(Steps::SetupTakeAggregatedKey)?;
+                self.start_step(Steps::SetupTakeAggregatedKeyAllConvergeCheckpoint)?;
             }
-            Steps::SetupTakeAggregatedKey => {
-                debug!("CommitteeSetupFlow complete SetupTakeAggregatedKey");
+            Steps::SetupTakeAggregatedKeyAllConvergeCheckpoint => {
+                debug!("CommitteeSetupFlow completing SetupTakeAggregatedKey");
                 Self::close_agg_key_req(&mut self.ctx_mut().agg_take_key_req, data)?;
                 self.start_step(Steps::SetupDisputeAggregatedKey)?;
             }
             Steps::SetupDisputeAggregatedKey => {
-                debug!("CommitteeSetupFlow complete SetupDisputeAggregatedKey");
+                debug!("CommitteeSetupFlow completing SetupDisputeAggregatedKey");
                 Self::close_agg_key_req(&mut self.ctx_mut().agg_dispute_key_req, data)?;
-                self.start_step(Steps::DepositAggregatedKey)?;
-            }
-            Steps::DepositAggregatedKey => {
-                debug!("CommitteeSetupFlow complete DepositAggregatedKey");
-                self.ctx_mut().committee_ready_req = Some(data.into_committee_ready()?);
-                self.validate_committee_ready()?;
                 self.start_step(Steps::SetupPairwiseKeys)?;
             }
             Steps::SetupPairwiseKeys => {
-                debug!("CommitteeSetupFlow complete SetupPairwiseKeys");
+                debug!("CommitteeSetupFlow completing SetupPairwiseKeys");
                 let missing_responses = self.process_pairwise_key_response(data)?;
 
                 if missing_responses {
@@ -1628,7 +1722,7 @@ where
                 debug!("Setup PairwiseKeys completed");
             }
             Steps::SetupDisputeCore => {
-                debug!("CommitteeSetupFlow complete SetupDisputeCore");
+                debug!("CommitteeSetupFlow completing SetupDisputeCore");
                 let setup_core_state = &mut self.ctx_mut().setup_core_req;
                 let missing_responses = Self::close_setup_core_req(setup_core_state, data)?;
                 if missing_responses {
@@ -1639,7 +1733,7 @@ where
                 }
             }
             Steps::RequestDisputeChannelVars => {
-                debug!("CommitteeSetupFlow complete RequestDisputeChannelVars");
+                debug!("CommitteeSetupFlow completing RequestDisputeChannelVars");
                 let (dispute_core_pid, var_name, var_data) = data.into_dispute_core_variable()?;
 
                 let missing_responses =
@@ -1654,7 +1748,7 @@ where
                 }
             }
             Steps::DisputeChannelSetup => {
-                debug!("CommitteeSetupFlow complete DisputeChannelSetup");
+                debug!("CommitteeSetupFlow completing DisputeChannelSetup");
                 let missing_responses = Self::close_setup_channel_req(
                     &mut self.ctx_mut().setup_channel_setup_req,
                     data,
@@ -1665,15 +1759,36 @@ where
                     self.state.step = Steps::DisputeChannelSetup;
                 } else {
                     info!("All DisputeChannel setups completed");
-                    self.start_step(Steps::Done)?;
+                    self.start_step(Steps::FullPenalizationSetup)?;
                 }
             }
+            Steps::FullPenalizationSetup => {
+                debug!("CommitteeSetupFlow completing FullPenalizationSetup");
+                let missing_responses = Self::close_setup_channel_req(
+                    &mut self.ctx_mut().setup_full_penalization_req,
+                    data,
+                )?;
+
+                if missing_responses {
+                    debug!("Waiting for FullPenalization setup completion");
+                    self.state.step = Steps::FullPenalizationSetup;
+                } else {
+                    info!("FullPenalization setup completed");
+                    self.start_step(Steps::DepositAggregatedKey)?;
+                }
+            }
+            Steps::DepositAggregatedKey => {
+                debug!("CommitteeSetupFlow completing DepositAggregatedKey");
+                self.ctx_mut().committee_ready_req = Some(data.into_committee_ready()?);
+                self.validate_committee_ready()?;
+                self.start_step(Steps::Done)?;
+            }
             Steps::Done => {
-                debug!("CommitteeSetupFlow complete Done");
+                debug!("CommitteeSetupFlow completing Done");
                 unreachable!("Done step should not be reached in complete_step");
             }
             Steps::Failed => {
-                debug!("CommitteeSetupFlow complete Failed");
+                debug!("CommitteeSetupFlow completing Failed");
                 unreachable!("Failed step should not be reached in complete_step");
             }
         }
@@ -2079,6 +2194,11 @@ where
         );
 
         let committee_id = committee_data.committee_id.clone();
+        let confirmations = CommitteeConfirmations {
+            pegin: self.btc_confirmations,
+            pegout: self.btc_confirmations,
+            reject_pegin: self.btc_confirmations,
+        };
         let protocol_ids = dispute_core.setup(
             committee_data,
             &p2p_addrs,
@@ -2089,6 +2209,7 @@ where
             my_speedup_utxo,
             *stream_id,
             advance_funds_utxo,
+            confirmations,
         )?;
 
         for pid in protocol_ids {
@@ -2113,7 +2234,7 @@ where
 
         let dispute_channel_setup = DisputeChannelSetup::new(
             self.bitvmx_broker.clone(),
-            self.config.drp_program_definition.clone(),
+            self.drp_program_definition.clone(),
         );
 
         let requests = dispute_channel_setup.request_dispute_core_var(committee_data, my_index)?;
@@ -2121,6 +2242,26 @@ where
         self.ctx_mut().setup_channel_req = requests;
 
         Ok(())
+    }
+}
+
+impl<CG, BC, S> SetupCommitteeFlow<CG, BC, S>
+where
+    CG: RskContractsGatewayApi,
+    BC: BitVmxBrokerClientApi,
+    S: CoordinatorStoreApi,
+{
+    fn write_completion_marker(&self) -> Result<()> {
+        let payload = json!({
+            "stream_id": self.ctx().get_stream_id().ok().map(|stream_id| *stream_id),
+            "committee_id": self
+                .ctx()
+                .committee_pending_ev
+                .as_ref()
+                .map(|event| event.inner.committeeId.to_string()),
+        });
+
+        self.signaling.signal_done("setup", self.state.internal_id, &payload)
     }
 }
 
@@ -2136,7 +2277,9 @@ where
     global_context: GlobalContext,
     bitcoin_network: Network,
     store: Rc<S>,
-    config: CommitteeConfig,
+    drp_program_definition: String,
+    btc_confirmations: u32,
+    signaling: Rc<Signaling>,
 }
 
 impl<CG, BC, S> SetupCommitteeFlowFactory<CG, BC, S>
@@ -2153,7 +2296,9 @@ where
         global_context: GlobalContext,
         bitcoin_network: Network,
         store: Rc<S>,
-        config: CommitteeConfig,
+        drp_program_definition: String,
+        btc_confirmations: u32,
+        signaling: Rc<Signaling>,
     ) -> Self {
         Self {
             contracts_gateway,
@@ -2162,7 +2307,9 @@ where
             global_context,
             bitcoin_network,
             store,
-            config,
+            drp_program_definition,
+            btc_confirmations,
+            signaling,
         }
     }
 }
@@ -2182,7 +2329,9 @@ where
             internal_id,
             self.bitcoin_network,
             Rc::clone(&self.store),
-            self.config.clone(),
+            self.drp_program_definition.clone(),
+            self.btc_confirmations,
+            Rc::clone(&self.signaling),
         )
     }
 
@@ -2195,7 +2344,9 @@ where
             saved_state,
             self.bitcoin_network,
             Rc::clone(&self.store),
-            self.config.clone(),
+            self.drp_program_definition.clone(),
+            self.btc_confirmations,
+            Rc::clone(&self.signaling),
         )
     }
 }
@@ -2304,7 +2455,7 @@ mod tests {
     use crate::coordinator::tests::MockRskContractsGatewayApi;
     use crate::flows::committee::dispute_channel_setup::DisputeChannelSetupRequest;
     use crate::flows::common::GlobalContext;
-    use crate::store::MockCoordinatorStoreApi;
+    use crate::store::{MockCoordinatorStoreApi, StoreKey};
     use crate::types::{EventWithBlock, MemberOfCommittee, Utxo as UserUtxo};
     use crate::user_requests::ApplyToStream;
 
@@ -2312,6 +2463,14 @@ mod tests {
         MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
     type TestFlow =
         SetupCommitteeFlow<MockRskContractsGatewayApi, MockBitVmxBroker, MockCoordinatorStoreApi>;
+    type FlowFixture = (TestFlow, Uuid, NewCommitteeReadyEvent);
+
+    struct CommitteeFixture {
+        committee_data: CommitteeData,
+        pending_event: NewCommitteePendingEvent,
+        ready_event: NewCommitteeReadyEvent,
+        my_address: CommonAddress,
+    }
 
     fn test_public_key(seed: u8) -> PublicKey {
         let mut bytes = [0u8; 33];
@@ -2328,9 +2487,16 @@ mod tests {
         })
     }
 
+    fn test_valid_public_key(seed: u8) -> PublicKey {
+        let secret =
+            bitcoin::secp256k1::SecretKey::from_slice(&[seed; 32]).expect("valid secret key");
+        let secp = bitcoin::secp256k1::Secp256k1::new();
+        PublicKey::new(bitcoin::secp256k1::PublicKey::from_secret_key(&secp, &secret))
+    }
+
     fn test_signed_pubkey(seed: u8, recovery_id: u8) -> SignedPublicKey {
         SignedPublicKey {
-            public_key: test_public_key(seed),
+            public_key: test_valid_public_key(seed),
             signature_r: [seed; 32],
             signature_s: [seed + 1; 32],
             recovery_id,
@@ -2391,6 +2557,35 @@ mod tests {
         }
     }
 
+    fn test_committee_with_members(members: &[(AlloyAddress, u8)]) -> Committee {
+        Committee {
+            aggregatedKey: Bytes::from(vec![7u8; 32]),
+            members: members
+                .iter()
+                .map(|(member_address, role)| CommitteeMember {
+                    memberAddress: *member_address,
+                    role: *role,
+                })
+                .collect(),
+            leaderAddress: members[0].0,
+            operatorTakeIndex: U256::from(0),
+            createdAt: U256::from(0),
+            missingData: 0,
+            missingCommunicationData: 0,
+            isPending: false,
+            streamId: 7,
+            fundingUTXOs: members
+                .iter()
+                .enumerate()
+                .map(|(idx, _)| UTXO {
+                    txid: FixedBytes::<32>::from([3 + to_u8(idx); 32]),
+                    outputIndex: to_u32(idx),
+                    amount: 21_000 + u64::from(to_u32(idx)),
+                })
+                .collect(),
+        }
+    }
+
     fn test_pending_committee_event(committee_id: u128) -> EventWithBlock<NewPendingCommittee> {
         let member_address: AlloyAddress = [1u8; 20].into();
         EventWithBlock {
@@ -2405,6 +2600,19 @@ mod tests {
         }
     }
 
+    fn test_pending_committee_event_with_committee(
+        committee_id: u128,
+        committee: Committee,
+    ) -> EventWithBlock<NewPendingCommittee> {
+        EventWithBlock {
+            inner: NewPendingCommittee { committeeId: committee_id, _committee: committee },
+            block_number: BlockNumber::from(100),
+            block_hash: BlockHash::from(H256::from_low_u64_be(101)),
+            removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(102)),
+        }
+    }
+
     fn test_ready_committee_event(committee_id: u128) -> EventWithBlock<NewCommittee> {
         let member_address: AlloyAddress = [2u8; 20].into();
         EventWithBlock {
@@ -2412,6 +2620,19 @@ mod tests {
                 committeeId: committee_id,
                 _committee: test_committee(member_address, 1),
             },
+            block_number: BlockNumber::from(200),
+            block_hash: BlockHash::from(H256::from_low_u64_be(201)),
+            removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(202)),
+        }
+    }
+
+    fn test_ready_committee_event_with_committee(
+        committee_id: u128,
+        committee: Committee,
+    ) -> EventWithBlock<NewCommittee> {
+        EventWithBlock {
+            inner: NewCommittee { committeeId: committee_id, _committee: committee },
             block_number: BlockNumber::from(200),
             block_hash: BlockHash::from(H256::from_low_u64_be(201)),
             removed: false,
@@ -2435,11 +2656,19 @@ mod tests {
     }
 
     fn test_member(index: usize, role: ParticipantRole) -> MemberOfCommittee {
+        test_member_with_address(index, role, CommonAddress::from(H160::from([to_u8(index); 20])))
+    }
+
+    fn test_member_with_address(
+        index: usize,
+        role: ParticipantRole,
+        address: CommonAddress,
+    ) -> MemberOfCommittee {
         MemberOfCommittee {
-            address: CommonAddress::from(H160::from([to_u8(index); 20])),
+            address,
             role,
-            take_key: test_public_key(to_u8(index * 2)),
-            dispute_key: test_public_key(to_u8(index * 2 + 1)),
+            take_key: test_valid_public_key(to_u8(index * 2 + 1)),
+            dispute_key: test_valid_public_key(to_u8(index * 2 + 2)),
             funding_utxo: test_partial_utxo(to_u32(index)),
             committee_idx: index,
         }
@@ -2467,7 +2696,109 @@ mod tests {
             Uuid::new_v4(),
             Network::Regtest,
             Rc::new(MockCoordinatorStoreApi::new()),
-            CommitteeConfig::default(),
+            String::new(),
+            1,
+            Rc::new(Signaling::new("/tmp", "disabled")),
+        )
+    }
+
+    fn two_member_committee_fixture() -> CommitteeFixture {
+        let committee_uuid = Uuid::new_v4();
+        let committee_id = committee_uuid.as_u128();
+        let my_address = CommonAddress::from(H160::from([7u8; 20]));
+        let partner_address = CommonAddress::from(H160::from([8u8; 20]));
+        let committee = test_committee_with_members(&[
+            (my_address.into(), u8::from(ParticipantRole::Prover)),
+            (partner_address.into(), u8::from(ParticipantRole::Verifier)),
+        ]);
+        let pending_event =
+            test_pending_committee_event_with_committee(committee_id, committee.clone());
+        let ready_event =
+            test_ready_committee_event_with_committee(committee_id, committee.clone());
+        let committee_data = CommitteeData {
+            committee_id: CommitteeId::from(committee_id),
+            committee,
+            members: vec![
+                test_member_with_address(0, ParticipantRole::Prover, my_address),
+                test_member_with_address(1, ParticipantRole::Verifier, partner_address),
+            ],
+        };
+
+        CommitteeFixture { committee_data, pending_event, ready_event, my_address }
+    }
+
+    fn create_flow_waiting_for_dispute_aggregated_key() -> FlowFixture {
+        create_flow_waiting_for_dispute_aggregated_key_with_expected_deposits(1)
+    }
+
+    fn create_flow_waiting_for_dispute_aggregated_key_with_expected_deposits(
+        expected_deposits: usize,
+    ) -> FlowFixture {
+        let fixture = two_member_committee_fixture();
+        let dispute_agg_req_id = Uuid::new_v4();
+        let aggregated_take_key = test_valid_public_key(11);
+
+        let mut contracts = MockRskContractsGatewayApi::new();
+        contracts.expect_my_address().return_const(fixture.my_address);
+        contracts.expect_deposit_aggregated_key().times(expected_deposits).returning(|_| {
+            Ok(DepositAggregatedKeyOutput { transaction_hash: "test_hash".to_string() })
+        });
+
+        let mut broker = MockBitVmxBroker::new();
+        broker.expect_send().times(1..).returning(|_| Ok(true));
+
+        let mut store = MockCoordinatorStoreApi::new();
+        store.expect_save_flow::<State>().times(1..).returning(|key, _| {
+            assert!(matches!(key, StoreKey::SetupCommitteeFlow(_)));
+            Ok(())
+        });
+
+        let global_context = GlobalContext::new();
+        global_context.my_keys().set_dispute_key(test_signed_pubkey(12, 27));
+
+        let ctx = FlowContext {
+            user_input: Some(test_apply_to_stream(55)),
+            send_funds_req: Some((Uuid::new_v4(), Some(test_txid(90)))),
+            agg_take_key_req: Some((Uuid::new_v4(), Some(aggregated_take_key))),
+            agg_dispute_key_req: Some((dispute_agg_req_id, None)),
+            committee_data: Some(fixture.committee_data),
+            committee_pending_ev: Some(fixture.pending_event),
+            communication_data_ready_ev: Some(vec![test_comms_address(1), test_comms_address(2)]),
+            ..Default::default()
+        };
+
+        let flow = SetupCommitteeFlow::from_saved_state(
+            Rc::new(contracts),
+            RuntimeSync::new().expect("runtime"),
+            Rc::new(broker),
+            global_context,
+            State { internal_id: Uuid::new_v4(), step: Steps::SetupDisputeAggregatedKey, ctx },
+            Network::Regtest,
+            Rc::new(store),
+            String::new(),
+            1,
+            Rc::new(Signaling::new("/tmp", "disabled")),
+        );
+
+        (flow, dispute_agg_req_id, fixture.ready_event)
+    }
+
+    fn dispute_core_variable_payloads() -> (String, String) {
+        let op_cosign_utxos = vec![Some(test_partial_utxo(40)), Some(test_partial_utxo(41))];
+        let wt_init_challenge_utxos = vec![
+            Some(WtInitChallengeUtxos {
+                wt_stopper: test_partial_utxo(42),
+                op_stopper: test_partial_utxo(43),
+            }),
+            Some(WtInitChallengeUtxos {
+                wt_stopper: test_partial_utxo(44),
+                op_stopper: test_partial_utxo(45),
+            }),
+        ];
+
+        (
+            serde_json::to_string(&op_cosign_utxos).expect("serialize op cosign utxos"),
+            serde_json::to_string(&wt_init_challenge_utxos).expect("serialize wt challenge utxos"),
         )
     }
 
@@ -2703,7 +3034,9 @@ mod tests {
             Uuid::new_v4(),
             Network::Regtest,
             Rc::new(MockCoordinatorStoreApi::new()),
-            CommitteeConfig::default(),
+            String::new(),
+            1,
+            Rc::new(Signaling::new("/tmp", "disabled")),
         );
         flow.state.ctx.user_input = Some(test_apply_to_stream(55));
 
@@ -2812,6 +3145,110 @@ mod tests {
     }
 
     #[test]
+    fn test_committee_setup_delays_deposit_until_full_penalization_is_complete() {
+        let (mut flow, dispute_agg_req_id, ready_event) =
+            create_flow_waiting_for_dispute_aggregated_key();
+
+        flow.complete_step(StepData::PublicKey(test_valid_public_key(13)))
+            .expect("dispute aggregated key should advance to pairwise setup");
+        assert_eq!(flow.current_step(), Steps::SetupPairwiseKeys);
+
+        let pairwise_req_id =
+            flow.state.ctx.pairwise_keys_req.first().expect("pairwise request should be created").0;
+        assert_ne!(pairwise_req_id, dispute_agg_req_id);
+
+        flow.complete_step(StepData::PairwiseAggregatedKey(
+            pairwise_req_id,
+            test_valid_public_key(14),
+        ))
+        .expect("pairwise setup should advance to dispute core");
+        assert_eq!(flow.current_step(), Steps::SetupDisputeCore);
+
+        let setup_core_req_ids: Vec<_> =
+            flow.state.ctx.setup_core_req.iter().map(|(id, _, _)| *id).collect();
+        assert_eq!(setup_core_req_ids.len(), 2);
+        for (idx, req_id) in setup_core_req_ids.into_iter().enumerate() {
+            flow.complete_step(StepData::SetupCompleted(req_id))
+                .expect("dispute core setup completion should be accepted");
+            let expected_step =
+                if idx == 0 { Steps::SetupDisputeCore } else { Steps::RequestDisputeChannelVars };
+            assert_eq!(flow.current_step(), expected_step);
+        }
+
+        let setup_channel_req_ids: Vec<_> =
+            flow.state.ctx.setup_channel_req.iter().map(|req| req.dispute_core_pid).collect();
+        assert_eq!(setup_channel_req_ids.len(), 2);
+        let (op_cosign_utxos, wt_init_challenge_utxos) = dispute_core_variable_payloads();
+        for (idx, req_id) in setup_channel_req_ids.into_iter().enumerate() {
+            flow.complete_step(StepData::DisputeCoreVariable(
+                req_id,
+                OP_COSIGN_UTXOS.to_string(),
+                op_cosign_utxos.clone(),
+            ))
+            .expect("OP_COSIGN_UTXOS should be accepted");
+            assert_eq!(flow.current_step(), Steps::RequestDisputeChannelVars);
+
+            flow.complete_step(StepData::DisputeCoreVariable(
+                req_id,
+                WT_INIT_CHALLENGE_UTXOS.to_string(),
+                wt_init_challenge_utxos.clone(),
+            ))
+            .expect("WT_INIT_CHALLENGE_UTXOS should be accepted");
+            let expected_step = if idx == 0 {
+                Steps::RequestDisputeChannelVars
+            } else {
+                Steps::DisputeChannelSetup
+            };
+            assert_eq!(flow.current_step(), expected_step);
+        }
+
+        let dispute_channel_req_id = flow
+            .state
+            .ctx
+            .setup_channel_setup_req
+            .first()
+            .expect("dispute channel setup request should be created")
+            .0;
+        flow.complete_step(StepData::SetupCompleted(dispute_channel_req_id))
+            .expect("dispute channel completion should advance to full penalization");
+        assert_eq!(flow.current_step(), Steps::FullPenalizationSetup);
+
+        let full_penalization_req_id = flow
+            .state
+            .ctx
+            .setup_full_penalization_req
+            .first()
+            .expect("full penalization setup request should be created")
+            .0;
+        flow.complete_step(StepData::SetupCompleted(full_penalization_req_id))
+            .expect("full penalization completion should activate committee on-chain");
+        assert_eq!(flow.current_step(), Steps::DepositAggregatedKey);
+        assert!(flow.state.ctx.committee_ready_req.is_none());
+
+        flow.complete_step(StepData::ReadyCommittee(ready_event))
+            .expect("committee ready event should finish the flow after activation");
+        assert_eq!(flow.current_step(), Steps::Done);
+    }
+
+    #[test]
+    fn test_new_committee_ready_before_deposit_aggregated_key_does_not_advance() {
+        let (mut flow, _dispute_agg_req_id, ready_event) =
+            create_flow_waiting_for_dispute_aggregated_key_with_expected_deposits(0);
+
+        flow.complete_step(StepData::PublicKey(test_valid_public_key(13)))
+            .expect("dispute aggregated key should advance to pairwise setup");
+        assert_eq!(flow.current_step(), Steps::SetupPairwiseKeys);
+
+        let err = flow
+            .complete_step(StepData::ReadyCommittee(ready_event))
+            .expect_err("ready event should not be accepted before DepositAggregatedKey");
+
+        assert!(err.to_string().contains("Expected PairwiseAggregatedKey data"));
+        assert_eq!(flow.current_step(), Steps::SetupPairwiseKeys);
+        assert!(flow.state.ctx.committee_ready_req.is_none());
+    }
+
+    #[test]
     fn test_parse_member_key_and_build_member_funding_utxo() {
         let valid_xonly =
             "79be667ef9dcbbac55a06295ce870b07029bfcd b2dce28d959f2815b16f81798".replace(' ', "");
@@ -2847,7 +3284,9 @@ mod tests {
             GlobalContext::new(),
             Network::Regtest,
             Rc::new(MockCoordinatorStoreApi::new()),
-            CommitteeConfig::default(),
+            String::new(),
+            1,
+            Rc::new(Signaling::new("/tmp", "disabled")),
         );
 
         let internal_id = Uuid::new_v4();

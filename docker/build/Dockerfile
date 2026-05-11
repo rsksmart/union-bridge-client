@@ -4,10 +4,11 @@ ARG CRATE
 ARG FEATURES
 # --build-arg to specify just one crate to build in the builder stage
 ARG JUST_CRATE
+ARG BUILDER_IMAGE=ghcr.io/rsksmart/union-client-builder:rust-1.91-v1
 
 # --- BUILDER STAGE ---
 
-FROM ghcr.io/rsksmart/union-client-builder:rust-1.91-v1 AS builder
+FROM ${BUILDER_IMAGE} AS builder
 ARG JUST_CRATE=""
 ARG FEATURES=""
 
@@ -31,6 +32,8 @@ COPY log-indexer log-indexer
 COPY transaction-dispatcher transaction-dispatcher
 COPY key-manager key-manager
 COPY check-fork check-fork
+COPY op-funding op-funding
+COPY protocol-params protocol-params
 COPY coordinator coordinator
 COPY user-api user-api
 
@@ -47,7 +50,10 @@ RUN cargo fetch --locked
 ARG EXCLUDES="--exclude check-fork --exclude check-fork-zkp --exclude key-manager"
 # TODO when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips) via Dockerfile_coordinator
 # EXCLUDES="--exclude coordinator--exclude check-fork --exclude check-fork-zkp --exclude key-manager"
-RUN cargo build --workspace --quiet --release ${EXCLUDES}${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES};
+RUN cargo build --workspace --quiet --release ${EXCLUDES}${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES} && \
+    (rm -rf target/release/incremental 2>/dev/null || true) && \
+    (find target/release/deps -name "*.rmeta" -delete 2>/dev/null || true) && \
+    (find target/release/build -type f -name "*.d" -delete 2>/dev/null || true)
 
 # --- RUNTIME STAGE ---
 

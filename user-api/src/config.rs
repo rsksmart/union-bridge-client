@@ -20,6 +20,9 @@ pub struct UserApiConfig {
     pub broker_key_path: String,
     pub notifier: NotifierConfig,
     pub http: HttpConfig,
+    /// Bearer token required by `POST /admin/fail-flow`. When unset/empty the endpoint returns 401.
+    #[serde(default)]
+    pub admin_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

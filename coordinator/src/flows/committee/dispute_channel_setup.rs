@@ -9,7 +9,8 @@ use common::msg_broker::bitvmx_types::{
     WT_INIT_CHALLENGE_UTXOS, WtInitChallengeUtxos,
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
-use common::msg_broker::config::{ConfigResult, ConfigResults, DisputeConfiguration};
+use common::msg_broker::config::{ConfigResult, DisputeConfiguration, ForceFailConfiguration};
+use hex::decode;
 use log::{debug, info};
 use uuid::Uuid;
 
@@ -18,6 +19,13 @@ use crate::flows::committee::setup_committee_flow::NO_LEADER_IDX;
 use crate::types::MemberOfCommittee;
 
 const DRP_TIMELOCK_BLOCKS: u16 = 15;
+const UNION_DRP_AUTO_DISPATCH_INPUT: u8 = 2;
+const UNION_DRP_TIMELOCK_MULTIPLIER: u16 = 4;
+const UNION_DRP_JOURNAL_SIZE_WORDS: u32 = 76 / 4;
+const UNION_DRP_ELF_ID_HEX: &str =
+    "589837bb0123b9d5854e0807a8b3ed2b15a848c19e2287ac585a31ec93d711b5";
+const UNION_DRP_OPERATOR_ID: [u8; 36] = [1; 36];
+const UNION_DRP_FLAGS: [u8; 4] = [1, 0, 1, 0];
 
 #[derive(Clone, Copy)]
 struct OperatorSetupParams<'a> {
@@ -387,7 +395,9 @@ impl<BC: BitVmxBrokerClientApi> DisputeChannelSetup<BC> {
             PROGRAM_TYPE_DISPUTE_CHANNEL, drp_id, i.op_index, i.wt_index,
         );
 
-        let dispute_config = ConfigResults {
+        let dispute_config = ForceFailConfiguration {
+            prover_force_second_nary: false,
+            fail_input_tx: None,
             main: ConfigResult {
                 fail_config_prover: None,
                 fail_config_verifier: None,
@@ -397,19 +407,21 @@ impl<BC: BitVmxBrokerClientApi> DisputeChannelSetup<BC> {
             read: ConfigResult::default(),
         };
 
+        self.set_union_verifier_inputs(drp_id)?;
+
         let dispute_configuration = DisputeConfiguration {
             id: drp_id,
             operators_aggregated_pub: i.pair_key,
-            protocol_connection: (i.op_cosign, vec![]),
+            protocol_connection: (i.op_cosign, 1),
             prover_actions: vec![(i.op_stopper, vec![1])], // Consume leaf 1
             prover_enablers: vec![],
             verifier_actions: vec![(i.wt_stopper, vec![1])], // Consume leaf 1
             verifier_enablers: vec![],
-            timelock_blocks: DRP_TIMELOCK_BLOCKS,
+            timelock_blocks: DRP_TIMELOCK_BLOCKS.saturating_mul(UNION_DRP_TIMELOCK_MULTIPLIER),
             program_definition: self.drp_program_definition.clone(),
             fail_force_config: Some(dispute_config),
             notify_protocol: vec![("dispute_core".to_string(), dispute_core_pid)],
-            auto_dispatch_input: Some(0),
+            auto_dispatch_input: Some(UNION_DRP_AUTO_DISPATCH_INPUT),
         };
 
         debug!(
@@ -440,6 +452,30 @@ impl<BC: BitVmxBrokerClientApi> DisputeChannelSetup<BC> {
         )?;
 
         Ok(drp_id)
+    }
+
+    fn set_union_verifier_inputs(&self, drp_id: Uuid) -> Result<()> {
+        // Match the union verifier setup used by bitvmx-client examples/union.
+        self.set_program_input(drp_id, 0, UNION_DRP_JOURNAL_SIZE_WORDS.to_le_bytes().to_vec())?;
+        self.set_program_input(
+            drp_id,
+            1,
+            decode(UNION_DRP_ELF_ID_HEX).context("Invalid union verifier ELF id hex")?,
+        )?;
+        self.set_program_input(drp_id, 3, UNION_DRP_OPERATOR_ID.to_vec())?;
+        self.set_program_input(drp_id, 6, UNION_DRP_FLAGS.to_vec())?;
+        Ok(())
+    }
+
+    fn set_program_input(&self, drp_id: Uuid, input_index: u32, input_data: Vec<u8>) -> Result<()> {
+        send_bitvmx_msg(
+            self.broker_client.as_ref(),
+            IncomingBitVMXApiMessages::SetVar(
+                drp_id,
+                format!("program_input_{input_index}"),
+                VariableTypes::Input(input_data),
+            ),
+        )
     }
 }
 
@@ -519,7 +555,7 @@ mod tests {
         let wpkh = WPubkeyHash::from_slice(&[to_u8_from_u32(index); 20]).expect("valid wpkh");
         let script = ScriptBuf::new_p2wpkh(&wpkh);
         let output_type = OutputType::SegwitPublicKey {
-            value: amount,
+            value: amount.into(),
             script_pubkey: script,
             public_key: test_public_key(to_u8_from_u32(index)),
         };
@@ -920,14 +956,14 @@ mod tests {
         let setup_sequence = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
 
         let seq_clone = setup_sequence.clone();
-        // setup_one sends exactly 2 messages: SetVar and Setup
+        // setup_one seeds union-verifier inputs, then sends dispute configuration and setup.
         mock_broker
             .expect_send()
             .withf(move |msg: &IncomingBitVMXApiMessages| {
                 seq_clone.lock().unwrap().push(format!("{msg:?}"));
                 true
             })
-            .times(2)
+            .times(6)
             .returning(|_| Ok(true));
 
         let setup = DisputeChannelSetup::new(Rc::new(mock_broker), "test.yaml".to_string());
@@ -959,17 +995,17 @@ mod tests {
         let protocol_id = result.unwrap();
         assert!(!protocol_id.is_nil());
 
-        // Verify both messages were sent
+        // Verify all verifier-input and setup messages were sent.
         let sequence = setup_sequence.lock().unwrap();
-        assert_eq!(sequence.len(), 2);
+        assert_eq!(sequence.len(), 6);
     }
 
     #[test]
     fn test_setup_one_uses_deterministic_protocol_id() {
         let mut mock_broker =
             MockBrokerClientApi::<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>::new();
-        // setup_one sends 2 messages per call, so 4 total for 2 calls
-        mock_broker.expect_send().times(4).returning(|_| Ok(true));
+        // setup_one sends 6 messages per call, so 12 total for 2 calls.
+        mock_broker.expect_send().times(12).returning(|_| Ok(true));
 
         let setup = DisputeChannelSetup::new(Rc::new(mock_broker), "test.yaml".to_string());
 
@@ -1022,8 +1058,8 @@ mod tests {
     fn test_setup_one_different_indices_different_ids() {
         let mut mock_broker =
             MockBrokerClientApi::<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>::new();
-        // setup_one sends 2 messages per call, so 4 total for 2 calls
-        mock_broker.expect_send().times(4).returning(|_| Ok(true));
+        // setup_one sends 6 messages per call, so 12 total for 2 calls.
+        mock_broker.expect_send().times(12).returning(|_| Ok(true));
 
         let setup = DisputeChannelSetup::new(Rc::new(mock_broker), "test.yaml".to_string());
 

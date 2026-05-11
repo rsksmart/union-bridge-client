@@ -38,7 +38,8 @@ For the sequence context, see [Union Bridge Flows](flows.md).
 | --- | --- |
 | `SPVProof` for the pegin transaction | input to `request_pegin` |
 | `PeginAcceptedMessage.accept_pegin_txid` | Bitcoin transaction id later proven in `accept_pegin` |
-| `PeginAcceptedMessage.operator_take_txid` | operator-side tx hash stored through `add_operator_take_tx_hash` |
+| `TransactionInfo("OPERATOR_TAKE_TX_<my_idx>")` | operator-side take tx hash stored through `add_operator_take_tx_hash` |
+| `TransactionInfo("OPERATOR_WON_TX_<my_idx>")` | operator-side won tx hash stored through `add_operator_take_tx_hash` |
 | `PegOutAccepted.user_take_txid` | Bitcoin transaction id later proven in `register_pegout` |
 | `FundsAdvanceSPV` | Bitcoin proof later passed to `register_advance_funds` |
 | `union_spv_notification` for reimbursement kickoff | Bitcoin proof later passed to `register_reimbursement_kickoff` |

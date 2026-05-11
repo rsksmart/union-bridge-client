@@ -1,12 +1,13 @@
 services:
   bitvmx-client:
     # Published by the upstream BitVMX client project; override if you mirror the image or need a different ref.
-    image: ghcr.io/fairgatelabs/rust-bitvmx-workspace/bitvmx-client:v0.5.3-alpha
+    image: ghcr.io/fairgatelabs/rust-bitvmx-workspace/bitvmx-client:v0.7.2
     # container_name: bitvmx-client-container
     restart: unless-stopped
     entrypoint: [ "./run.sh" ]
     environment:
       RUST_BACKTRACE: full
+      RUST_LOG: info,bitvmx_client=debug,bitcoin_coordinator=info,bitcoin_indexer=warn,bitcoincore_rpc=warn,hyper=warn,hyper_util=warn,tarpc=warn,bitvmx_bitcoin_rpc=info,bitvmx_transaction_monitor=info
       CLIENT_OP: ${CLIENT_OP}
     healthcheck:
       test: [ "CMD-SHELL", "pgrep -f bitvmx-client" ] # Check bitvmx-client process is running

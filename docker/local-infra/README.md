@@ -5,6 +5,11 @@ This doc owns the Docker-backed local infrastructure used when Union Bridge runs
 For the full startup order, shared env rules, and the recommended local workflow, start with the
 [Contributing Guide](../../CONTRIBUTING.md).
 
+Environment note:
+
+- `./cli-infra.sh` reads `BASE_STORAGE_PATH` and any other exported variables from your current shell; it does not source `.envrc` itself.
+- For the Docker-backed local setup, the generated BitVMX configs are patched from `BITCOIND_URL`, which should match the local Docker value in [`.env.local`](./.env.local): `http://foo:rpcpassword@host.docker.internal:18443`.
+
 ## Related Docs
 
 - [Docker Guide](../README.md): Docker flow selection
@@ -18,16 +23,19 @@ background mining.
 
 ```text
 # Start all Docker infra (blockchains + bitvmx) + mining
-./cli-infra.sh --start [--fresh] [--contracts-tag TAG]
+./cli-infra.sh --start [--fresh] [--contracts-tag TAG] [--pull-contracts]
 
 # Stop mining + all Docker infra
 ./cli-infra.sh --stop
 
-# Start blockchains only
-./cli-infra.sh --start-blockchains [--fresh] [--contracts-tag TAG]
+# Start blockchains + background mining
+./cli-infra.sh --start-blockchains [--fresh] [--contracts-tag TAG] [--pull-contracts]
 
-# Stop blockchains only
+# Stop background mining + blockchains
 ./cli-infra.sh --stop-blockchains
+
+# Stop background mining only
+./cli-infra.sh --stop-mining
 
 # Start BitVMX only
 ./cli-infra.sh --start-bitvmx [--fresh]
@@ -35,20 +43,79 @@ background mining.
 # Stop BitVMX only
 ./cli-infra.sh --stop-bitvmx
 
-# Start or stop background mining
-./cli-infra.sh --start-mine
-./cli-infra.sh --stop-mine
-```
+``` 
 
 ## Scripts
 
-- `start-blockchains.sh`: starts bitcoind (regtest) + anvil + deploys contracts
+- `start-blockchains.sh`: starts bitcoind (regtest) + Anvil loaded with predeployed contract state
+- `cli-infra.sh --start-blockchains`: wraps blockchain startup, bootstraps the Bitcoin miner wallet with 101 blocks when needed, and then starts background mining
 - `start-bitvmx.sh`: starts 4 BitVMX client instances
+
+Mining is coupled to the blockchain lifecycle in this wrapper:
+
+- `cli-infra.sh --start`: starts blockchains, BitVMX, and background mining
+- `cli-infra.sh --start-blockchains`: starts blockchains, ensures `mainwallet` has mature regtest funds, and starts background mining
+- `cli-infra.sh --stop-blockchains`: stops background mining and blockchains
+- `cli-infra.sh --stop-mining`: stops background mining only; run this if mining gets stuck
 
 ## Contracts Version
 
-By default, `start-blockchains.sh` uses the contracts version from `Cargo.toml`. Override with `--contracts-tag
-local-build` when you want to use a local contracts checkout instead of the registry image.
+By default, `start-blockchains.sh` uses the contracts version from `Cargo.toml` and resolves the matching predeployed
+Anvil image from `PREDEPLOYED_ANVIL_IMAGE_BASE`. That image contains an Anvil state snapshot with the local contracts
+already deployed, so `cli-infra` does not run a contract deployment container during startup.
+
+For registry-style tags, the script uses the local Docker image when it already exists. If the image is missing locally,
+the script pulls it from GHCR. Pass `--pull-contracts` when you explicitly want to refresh the image from GHCR even if a
+local copy already exists.
+
+Override with `--contracts-tag local-build` when you want to build a predeployed Anvil image from a local contracts
+checkout instead of using the registry image. Contract changes require rebuilding this image.
+
+### Building A Predeployed Anvil Image
+
+The predeployed Anvil image is built from the contracts repository. During the
+image build, Docker starts a temporary Anvil instance, deploys the contracts,
+dumps the resulting state to `/opt/anvil/predeployed-state.json`, and packages
+that snapshot into the final image.
+
+Build the image from a sibling contracts checkout:
+
+```bash
+cd ../union-bridge-contracts
+
+docker buildx build \
+  --platform linux/amd64 \
+  -t ghcr.io/rsksmart/union-bridge-contracts-anvil:<tag> \
+  -f ../union-bridge-client/docker/local-infra/Dockerfile_predeployed_anvil \
+  .
+```
+
+Example:
+
+```bash
+docker buildx build \
+  --platform linux/amd64 \
+  -t ghcr.io/rsksmart/union-bridge-contracts-anvil:v0.4.1-alpha-10-4-2 \
+  -f ../union-bridge-client/docker/local-infra/Dockerfile_predeployed_anvil \
+  .
+```
+
+Validate the local image:
+
+```bash
+docker run --rm -p 8545:8545 \
+  ghcr.io/rsksmart/union-bridge-contracts-anvil:<tag>
+```
+
+In another terminal:
+
+```bash
+cast rpc eth_chainId --rpc-url http://127.0.0.1:8545
+```
+
+`./cli-infra.sh --start --fresh` can use the local image tag directly. If the
+selected image tag is not present locally, startup pulls it from GHCR and fails
+if the tag is not published. Use `--pull-contracts` to force a GHCR refresh.
 
 ## Scope
 

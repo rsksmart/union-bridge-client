@@ -15,6 +15,7 @@ struct RequestPegoutPayload {
 #[derive(Debug, Deserialize)]
 struct PegoutResponse {
     result: Option<String>,
+    transaction_hash: Option<String>,
     error: Option<String>,
 }
 
@@ -32,8 +33,9 @@ pub async fn request_pegout(
     validate_usr_pub_key(&usr_pub_key)?;
     let amount_in_wei = sats_to_wei(value);
 
-    let rsk_address = get_user_rsk_address(&environment, true)?
-        .unwrap_or_else(|| "<unknown - check user-api logs>".to_string());
+    let rsk_address = get_user_rsk_address(&environment, true)
+        .await?
+        .unwrap_or_else(|| "<unknown - check user-api /user/rsk-address>".to_string());
 
     println!("Requesting pegout: {} sats ({} wei)", value, amount_in_wei);
     println!("  Source:      RSK {}", rsk_address);
@@ -83,6 +85,9 @@ pub async fn request_pegout(
     println!("Pegout request successful!");
     if let Some(result) = pegout_response.result {
         println!("Result: {}", result);
+    }
+    if let Some(transaction_hash) = pegout_response.transaction_hash {
+        println!("Transaction hash: {}", transaction_hash);
     }
 
     Ok(())

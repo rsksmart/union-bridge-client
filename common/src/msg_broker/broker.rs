@@ -62,6 +62,18 @@ impl<T> UnionBrokerServerApi for T where T: BrokerServerApi<ToServer, FromServer
 pub trait UnionBrokerClientApi: BrokerClientApi<ToServer, FromServer> {}
 impl<T> UnionBrokerClientApi for T where T: BrokerClientApi<ToServer, FromServer> {}
 
+impl<S: Serialize, C: DeserializeOwned, T: BrokerClientApi<S, C>> BrokerClientApi<S, C>
+    for std::rc::Rc<T>
+{
+    fn send(&self, msg: S) -> Result<bool, BrokerError> {
+        self.as_ref().send(msg)
+    }
+
+    fn try_recv(&self) -> Result<Option<C>, BrokerError> {
+        self.as_ref().try_recv()
+    }
+}
+
 impl BrokerServer {
     /// Create a new `BrokerServer` in simple/testing mode (allow all connections)
     /// Uses a deterministic identity from the provided key file.

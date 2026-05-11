@@ -10,8 +10,6 @@ This file is the narrow reference for the workflow files currently tracked under
 - Trigger: push tags matching `v*`
 - Purpose: build and push `block-indexer`, `log-indexer`, `coordinator`, and `user-api` images to GHCR
 - Variants: `prod` and `anvil`
-- Required secrets:
-  - `REGISTRY_TOKEN`
 
 ### `tests.yml`
 
@@ -94,9 +92,6 @@ Adjust `.actrc` to match your local Docker/runner preferences before relying on 
 
 ## Secrets and Auth Notes
 
-- `REGISTRY_TOKEN`: GitHub Personal Access Token (PAT) with `write:packages` scope for GHCR authentication in
-  `docker-release.yml`. This is the CI secret name; local Docker helper scripts use the shell variable
-  `GITHUB_REGISTRY_TOKEN` instead.
 - `E2E_FRAMEWORK_GITHUB_TOKEN`: token used by `e2e-smoke-tests.yml` to dispatch the external E2E workflow. In practice
   this is usually a PAT with access to `union_bridge_e2e_framework` and its workflows.
 - Local `act` runs can still diverge from GitHub-hosted runs, especially when private-repo access or cross-repo
@@ -105,7 +100,5 @@ Adjust `.actrc` to match your local Docker/runner preferences before relying on 
 ## Troubleshooting
 
 - `docker-release.yml` did not start: confirm the pushed tag matches the `v*` pattern used by the workflow
-- GHCR push failures: verify `REGISTRY_TOKEN`, `write:packages` scope, workflow `packages: write` permission, and
-  package permissions
 - missing `e2e-smoke-tests` status on a PR: confirm the PR targets `main` and is not draft
 - `docker-release.yml` images are built for `linux/amd64` only; this workflow does not currently publish ARM variants

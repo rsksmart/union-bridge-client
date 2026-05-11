@@ -26,10 +26,10 @@ use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
 use crate::event_processor::EventProcessor;
 use crate::flows::common::GlobalContext;
 use crate::flows::errors::{FailableFlow, FlowError};
-use crate::store::{CoordinatorStoreApi, StorePrefix, cleanup_completed_flows, restore_flows};
+use crate::store::{CoordinatorStoreApi, StorePrefix, cleanup_flows_matching, restore_flows};
 use crate::types::{
-    AllCommunicationDataReadyEvent, EventStatus, NewCommitteePendingEvent, NewCommitteeReadyEvent,
-    RskPegManagerEvents, UserRequests,
+    AdminRequest, AllCommunicationDataReadyEvent, EventStatus, FlowKind, NewCommitteePendingEvent,
+    NewCommitteeReadyEvent, RskPegManagerEvents, UserRequests,
 };
 
 pub(crate) struct SetupCommitteeProcessor<CG, BC, FactoryBSF, S>
@@ -96,6 +96,28 @@ where
             VariableTypes::String(settings_json),
         ))?;
 
+        Ok(())
+    }
+
+    fn cleanup_terminal_flows(&mut self) {
+        cleanup_flows_matching(
+            self.store.as_ref(),
+            StorePrefix::SetupCommitteeFlow,
+            &mut self.flows,
+            SetupCommitteeFlow::is_terminal,
+        );
+    }
+
+    /// Mark a setup committee flow as failed and stop pending local work for it.
+    fn fail_flow(&mut self, flow_id: Uuid, reason: &str) -> Result<()> {
+        if let Some(flow) = self.flows.get_mut(&flow_id) {
+            flow.mark_failed(reason)?;
+            warn!("Admin marked setup committee flow {flow_id} as failed: {reason}");
+        } else {
+            warn!("Admin requested fail for unknown setup committee flow {flow_id}: {reason}");
+        }
+
+        self.cleanup_terminal_flows();
         Ok(())
     }
 }
@@ -237,8 +259,10 @@ where
             }
             RskPegManagerEvents::AllCommunicationDataReady(acdr) => {
                 let committee_id: CommitteeId = acdr.inner._committeeId.into();
-                let found_flow =
-                    self.get_flow_for_committee_pending(&committee_id, Steps::DepositP2PData);
+                let found_flow = self.get_flow_for_committee_pending(
+                    &committee_id,
+                    Steps::DepositP2PDataAuthoritativeCheckpoint,
+                );
                 found_flow.map(|f| (f, StepData::ReadyCommunicationData(acdr.clone())))
             }
             RskPegManagerEvents::NewCommitteeReady(ncr) => {
@@ -303,6 +327,8 @@ where
     S: CoordinatorStoreApi + 'static,
 {
     fn process_user_request(&mut self, req: &UserRequests) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         info!("Processing user request: {req:?}");
         match req {
             UserRequests::ApplyToStream(input) => {
@@ -313,15 +339,20 @@ where
 
                 self.flows.insert(internal_id, flow);
             }
-            UserRequests::GetBitVMXFundingAddress => {
-                trace!("Ignoring user request: {req:?}");
+            UserRequests::Admin(AdminRequest::FailFlow { kind, flow_id, reason })
+                if *kind == FlowKind::CommitteeSetup =>
+            {
+                self.fail_flow(*flow_id, reason)?;
             }
+            _ => {}
         }
         Ok(())
     }
 
     fn process_new_bitvmx_event(&mut self, event: &OutgoingBitVMXApiMessages) -> Result<()> {
-        debug!("Processing new bitvmx event: {event:?}");
+        self.cleanup_terminal_flows();
+
+        trace!("Processing new bitvmx event: {event:?}");
 
         match event {
             OutgoingBitVMXApiMessages::CommInfo(req_id, comm_info) => {
@@ -333,7 +364,7 @@ where
                     );
                     Self::continue_flow(flow, StepData::CommInfo(comm_info.clone()));
                 } else {
-                    warn!("Received unmatched BitVMX CommInfo for req_id {req_id}");
+                    trace!("Received unmatched BitVMX CommInfo for req_id {req_id}");
                 }
             }
 
@@ -403,6 +434,8 @@ where
     }
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         debug!("Processing new rsk event: {event:?}");
         if self.required_confirmations == 0 {
             self.process_confirmed_rsk_event(event);
@@ -452,6 +485,8 @@ where
     }
 
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
+        self.cleanup_terminal_flows();
+
         if self.events_confirming.is_empty() {
             trace!("No events left to confirm, skipping block");
             return Ok(());
@@ -474,17 +509,13 @@ where
             }
         }
 
-        // blocks allow periodic cleanup of completed flows, we can improve it with a cleanup task if needed
-        cleanup_completed_flows(
-            self.store.as_ref(),
-            StorePrefix::SetupCommitteeFlow,
-            &mut self.flows,
-            SetupCommitteeFlow::is_done,
-        );
+        self.cleanup_terminal_flows();
         Ok(())
     }
 
-    fn shutdown(&mut self) {}
+    fn shutdown(&mut self) {
+        self.events_confirming.clear();
+    }
 }
 
 #[cfg(test)]
@@ -503,6 +534,7 @@ mod tests {
     use common::runtime_sync::RuntimeSync;
     use common::types::{Address as CommonAddress, BlockHash, BlockNumber, StreamId, TxHash};
     use mockall::predicate::function;
+    use op_funding::derive_stream_funding_profile;
     use primitive_types::{H160, H256};
     use union_contracts::bindings::committee_registry::CommitteeRegistry::{
         AllCommunicationDataReady, Committee, CommitteeMember, NewCommittee, NewPendingCommittee,
@@ -510,7 +542,6 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
-    use crate::config::CommitteeConfig;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
     use crate::flows::committee::setup_committee_flow::SetupCommitteeFlowFactory;
     use crate::store::{MockCoordinatorStoreApi, StoreKey};
@@ -621,6 +652,21 @@ mod tests {
         }
     }
 
+    fn processor_with_delete_store() -> TestProcessor {
+        let mut store = MockCoordinatorStoreApi::new();
+        store.expect_delete_flow().returning(|_| Ok(()));
+
+        SetupCommitteeProcessor {
+            flow_factory: DummyFactory,
+            flows: HashMap::new(),
+            global_context: GlobalContext::new(),
+            blockchain_view: BlockchainView::new(),
+            events_confirming: HashMap::new(),
+            store: Rc::new(store),
+            required_confirmations: 1,
+        }
+    }
+
     fn test_apply_to_stream(stream_id: u64) -> ApplyToStream {
         ApplyToStream {
             stream_id: StreamId::from(stream_id),
@@ -651,7 +697,8 @@ mod tests {
         contracts
             .expect_get_balance()
             .times(1)
-            .returning(|| Ok(U256::from(1_000_000_000_500_001_u64)));
+            .returning(|| Ok(U256::from(200_000_000_000_000_000_u64)));
+        contracts.expect_get_minimum_deposit().times(1).returning(|_, _| Ok(U256::from(0_u64)));
 
         let comm_info_req_id = Arc::new(Mutex::new(None));
         let comm_info_req_id_for_broker = Arc::clone(&comm_info_req_id);
@@ -677,16 +724,19 @@ mod tests {
             GlobalContext::new(),
             bitcoin::Network::Regtest,
             Rc::new(store),
-            CommitteeConfig::default(),
+            String::new(),
+            1,
+            Rc::new(crate::flows::common::Signaling::new("/tmp", "disabled")),
         );
 
         let mut flow = factory.create_flow(internal_id);
         flow.complete_step(StepData::UserRequest(test_apply_to_stream(stream_id)))
             .expect("init should advance to ValidateBalances");
-        flow.complete_step(StepData::BitVmxFundingBalance(
-            CommitteeConfig::default().min_funding_balance,
-        ))
-        .expect("validate balances should advance to GetMyCommInfo");
+        let min_funding_balance = derive_stream_funding_profile(stream_id, true, 100, 4, 2)
+            .expect("valid stream id for test")
+            .operator_fund_amount;
+        flow.complete_step(StepData::BitVmxFundingBalance(min_funding_balance))
+            .expect("validate balances should advance to GetMyCommInfo");
 
         let captured_req_id = comm_info_req_id
             .lock()
@@ -796,8 +846,8 @@ mod tests {
 
     #[test]
     fn test_process_new_bitvmx_event_comm_info_routes_to_matching_flow() {
-        let (flow_a, req_a) = flow_waiting_for_comm_info(Uuid::new_v4(), 11);
-        let (flow_b, req_b) = flow_waiting_for_comm_info(Uuid::new_v4(), 22);
+        let (flow_a, req_a) = flow_waiting_for_comm_info(Uuid::new_v4(), 0);
+        let (flow_b, req_b) = flow_waiting_for_comm_info(Uuid::new_v4(), 1);
         let first_flow_id = flow_a.internal_id();
         let second_flow_id = flow_b.internal_id();
         assert_ne!(req_a, req_b);
@@ -819,5 +869,35 @@ mod tests {
         assert_eq!(processor.flows[&second_flow_id].current_step(), Steps::GetMyTakeKey);
         assert!(processor.flows[&first_flow_id].is_waiting_for_bitvmx_request(&req_a));
         assert!(!processor.flows[&second_flow_id].is_waiting_for_bitvmx_request(&req_b));
+    }
+
+    #[test]
+    fn admin_fail_flow_marks_setup_committee_failed_and_leaves_confirming_events() {
+        let flow_id = Uuid::new_v4();
+        let (flow, _) = flow_waiting_for_comm_info(flow_id, 1);
+        let pending_event =
+            RskPegManagerEvents::NewCommitteePending(test_pending_event(123, false));
+        let mut confirmable_event = ConfirmableEventWithData::new(
+            "123-pending".to_string(),
+            1,
+            BlockchainView::new(),
+            pending_event,
+        );
+        confirmable_event.start_confirming(BlockNumber::from(10)).expect("start confirming");
+
+        let mut processor = processor_with_delete_store();
+        processor.flows.insert(flow_id, flow);
+        processor.events_confirming.insert(confirmable_event.id(), confirmable_event);
+
+        processor
+            .process_user_request(&UserRequests::Admin(AdminRequest::FailFlow {
+                kind: FlowKind::CommitteeSetup,
+                flow_id,
+                reason: "manual cleanup".to_string(),
+            }))
+            .expect("admin fail should succeed");
+
+        assert!(!processor.flows.contains_key(&flow_id));
+        assert!(processor.events_confirming.contains_key("123-pending"));
     }
 }

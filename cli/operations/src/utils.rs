@@ -1,6 +1,5 @@
 use anyhow::Result;
 use reqwest::Request;
-use serde_json;
 use std::process::Command;
 
 /// Prompts the user for confirmation before executing a remote operation.

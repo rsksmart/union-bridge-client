@@ -67,9 +67,12 @@ services:
       - db-coordinator:/app/db/coordinator
     restart: no
     environment:
-      - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
-      - BITCOIN_NETWORK=${BITCOIN_NETWORK:-dummy-bitcoin-network}
-      - CONFIG=${CONFIG:-dummy-config-name}
+      KEY_STORE_PASSWORD: ${KEY_STORE_PASSWORD}
+      CONFIG: ${CONFIG:-dummy-config-name}
+      # Temporary protocol sizing workaround until we source these values from contracts.
+      SLOTS_PER_PACKAGE:
+      COMMITTEE_MEMBER_COUNT:
+      COMMITTEE_PROVER_COUNT:
     healthcheck:
       interval: 30s
       timeout: 10s

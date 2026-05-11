@@ -31,6 +31,7 @@ docs/node_modules/
 .claude
 .DS_Store
 .intent
+.air
 
 # Local tooling
 **/.llmignore
@@ -43,3 +44,7 @@ docs/node_modules/
 **/*.cert
 **/*.p12
 **/*.pfx
+
+# MemPalace per-project files
+mempalace.yaml
+entities.json

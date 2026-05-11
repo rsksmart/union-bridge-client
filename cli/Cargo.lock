@@ -838,9 +838,9 @@ dependencies = [
 
 [[package]]
 name = "bitcoin"
-version = "0.32.8"
+version = "0.32.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e499f9fc0407f50fe98af744ab44fa67d409f76b6772e1689ec8485eb0c0f66"
+checksum = "ad8929a18b8e33ea6b3c09297b687baaa71fb1b97353243a3f1029fad5c59c5b"
 dependencies = [
  "base58ck",
  "bech32 0.11.1",
@@ -2659,7 +2659,7 @@ dependencies = [
 
 [[package]]
 name = "key-manager"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "alloy-primitives",
  "alloy-signer",
@@ -2952,6 +2952,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
+name = "op-funding"
+version = "0.4.0"
+dependencies = [
+ "alloy-primitives",
+]
+
+[[package]]
 name = "opaque-debug"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3003,15 +3010,20 @@ dependencies = [
 
 [[package]]
 name = "operations"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
+ "alloy-primitives",
  "anyhow",
+ "bitcoin 0.32.6",
  "clap",
  "key-manager",
+ "op-funding",
+ "protocol-params",
  "reqwest",
  "rpassword",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 
@@ -3252,6 +3264,13 @@ dependencies = [
  "rusty-fork",
  "tempfile",
  "unarray",
+]
+
+[[package]]
+name = "protocol-params"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
 ]
 
 [[package]]
@@ -3659,7 +3678,7 @@ checksum = "48fd7bd8a6377e15ad9d42a8ec25371b94ddc67abe7c8b9127bec79bebaaae18"
 
 [[package]]
 name = "run"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -4724,11 +4743,11 @@ checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 
 [[package]]
 name = "ub-wallet"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "base64 0.13.1",
- "bitcoin 0.32.8",
+ "bitcoin 0.32.6",
  "bitcoincore-rpc",
  "bollard",
  "chrono",

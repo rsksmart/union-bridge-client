@@ -17,7 +17,6 @@ use transaction_dispatcher::config::Config as TxDispatcherConfig;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config";
-
 fn create_broker(
     host: String,
     port: u16,
@@ -55,10 +54,12 @@ fn parse_cli_args() -> Option<String> {
                 .help("Configuration profile name (e.g., local, docker, alphanet)"),
         )
         .get_matches();
+
     Logger::init(matches.get_one::<String>(LOGGER_CLI_FLAG)).expect("Failed to load logger");
     matches.get_one::<String>(CONFIG_CLI_FLAG).cloned()
 }
 
+#[allow(clippy::too_many_lines)]
 fn main() -> Result<()> {
     let config_name = parse_cli_args();
 
@@ -83,6 +84,10 @@ fn main() -> Result<()> {
         .context("Failed to derive coordinator broker pubkey_hash")?;
 
     info!("Coordinator broker client identity pubkey_hash={coordinator_pubkey_hash}");
+
+    let check_period = config.coordinator.check_period();
+    let bitvmx_not_responding_threshold = config.coordinator.bitvmx_not_responding_threshold();
+    let bitvmx_ping_after_silence = config.coordinator.bitvmx_ping_after_silence();
 
     let broker_client_id = u8::try_from(config.coordinator.broker.client_id)
         .context("broker.client_id must fit in u8")?;
@@ -111,14 +116,14 @@ fn main() -> Result<()> {
 
     let user_pubkey_hash = require_pubkey_hash(&config.coordinator.user.pubkey_hash, "user")?;
     debug!("Coordinator user broker target pubkey_hash={user_pubkey_hash}");
-    let user_broker = create_broker(
+    let user_broker = Rc::new(create_broker(
         config.coordinator.user.host,
         config.coordinator.user.port,
         user_pubkey_hash,
         broker_client_id,
         broker_key_path,
         "user",
-    )?;
+    )?);
 
     let bitvmx_pubkey_hash = require_pubkey_hash(&config.coordinator.bitvmx.pubkey_hash, "bitvmx")?;
     debug!("Coordinator BitVMX broker target pubkey_hash={bitvmx_pubkey_hash}");
@@ -136,7 +141,7 @@ fn main() -> Result<()> {
     let monitor = Monitor::new(
         log_broker,
         block_broker,
-        user_broker,
+        user_broker.clone(),
         bitvmx_broker.clone(),
         contract_addresses,
     );
@@ -160,11 +165,21 @@ fn main() -> Result<()> {
         monitor,
         contracts_gateway,
         &bitvmx_broker,
+        user_broker,
         store,
         shutdown_flag.clone(),
         bitcoin_network,
         &config.environment,
-        &config.bridge,
+        check_period,
+        bitvmx_not_responding_threshold,
+        bitvmx_ping_after_silence,
+        config.flows.common.rsk_confirmations,
+        config.flows.common.btc_confirmations,
+        config.flows.common.btc_status_retry_blocks,
+        config.flows.pegout.advance_funds_timeout_secs,
+        config.flows.committee.drp_program_definition.clone(),
+        config.flows.native_bridge.btc_confirmations_buffer,
+        store_path,
     );
     coordinator.run().inspect_err(|e| {
         error!("Unrecoverable error running coordinator: {e:?}"); // signal other threads to shut down

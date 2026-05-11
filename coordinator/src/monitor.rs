@@ -56,7 +56,7 @@ where
 {
     log_broker: UBC,
     block_broker: UBC,
-    user_broker: UBC,
+    user_broker: Rc<UBC>,
     bitvmx_broker: Rc<BBC>,
     #[allow(dead_code)] // field kept for potential future use or API compatibility
     event_decoder: EventDecoder,
@@ -124,7 +124,7 @@ where
     pub fn new(
         log_broker: UBC,
         block_broker: UBC,
-        user_broker: UBC,
+        user_broker: Rc<UBC>,
         bitvmx_broker: Rc<BBC>,
         peg_manager_addresses: Vec<Address>,
     ) -> Self {
@@ -301,6 +301,19 @@ where
                     );
                     trace!("Received BitVMX message (full): {response:?}");
                 }
+                OutgoingBitVMXApiMessages::OutputPatternTransactionFound(tx_id, tx_status, tag) => {
+                    debug!(
+                        "Received BitVMX message: OutputPatternTransactionFound(tx_id: {}, confirmations: {}, status: {:?}, tag: {:?})",
+                        tx_id,
+                        tx_status.confirmations,
+                        tx_status.status,
+                        String::from_utf8_lossy(tag)
+                    );
+                    trace!("Received BitVMX message (full): {response:?}");
+                }
+                OutgoingBitVMXApiMessages::Pong(uuid) => {
+                    trace!("Received BitVMX message: Pong({uuid})");
+                }
                 _ => {
                     debug!("Received BitVMX message: {response:?}");
                 }
@@ -375,7 +388,7 @@ where
                     }
                 }
             }
-            Some(FromServer::MemberRequest) => Ok(Some(UserRequests::GetBitVMXFundingAddress)),
+            Some(FromServer::MemberRequest(req_id)) => Ok(Some(UserRequests::FundingInfo(req_id))),
             Some(br) => {
                 bail!("Unexpected request from User {br:?}")
             }
@@ -483,7 +496,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockUnionBroker::new(),
             block_broker,
-            MockUnionBroker::new(),
+            Rc::new(MockUnionBroker::new()),
             Rc::new(MockBitVmxBroker::new()),
             vec![get_fake_address_1()],
         );
@@ -519,7 +532,7 @@ mod tests {
         let mut monitor = Monitor::new(
             log_broker,
             MockUnionBroker::new(),
-            MockUnionBroker::new(),
+            Rc::new(MockUnionBroker::new()),
             Rc::new(MockBitVmxBroker::new()),
             vec![address_1, address_2],
         );
@@ -545,7 +558,7 @@ mod tests {
         let mut monitor = Monitor::new(
             log_broker,
             MockUnionBroker::new(),
-            MockUnionBroker::new(),
+            Rc::new(MockUnionBroker::new()),
             Rc::new(MockBitVmxBroker::new()),
             vec![address_1],
         );
@@ -559,7 +572,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockUnionBroker::new(),
             MockUnionBroker::new(),
-            MockUnionBroker::new(),
+            Rc::new(MockUnionBroker::new()),
             Rc::new(MockBitVmxBroker::new()),
             vec![get_fake_address_1()],
         );
@@ -578,7 +591,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockUnionBroker::new(),
             block_broker,
-            MockUnionBroker::new(),
+            Rc::new(MockUnionBroker::new()),
             Rc::new(MockBitVmxBroker::new()),
             vec![get_fake_address_1()],
         );
@@ -599,7 +612,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockUnionBroker::new(),
             block_broker,
-            MockUnionBroker::new(),
+            Rc::new(MockUnionBroker::new()),
             Rc::new(MockBitVmxBroker::new()),
             vec![get_fake_address_1()],
         );
@@ -613,7 +626,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockUnionBroker::new(),
             MockUnionBroker::new(),
-            MockUnionBroker::new(),
+            Rc::new(MockUnionBroker::new()),
             Rc::new(MockBitVmxBroker::new()),
             vec![get_fake_address_1()],
         );
@@ -627,7 +640,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockUnionBroker::new(),
             MockUnionBroker::new(),
-            MockUnionBroker::new(),
+            Rc::new(MockUnionBroker::new()),
             Rc::new(MockBitVmxBroker::new()),
             vec![get_fake_address_1()],
         );
@@ -651,7 +664,7 @@ mod tests {
         let mut monitor = Monitor::new(
             log_broker,
             MockUnionBroker::new(),
-            MockUnionBroker::new(),
+            Rc::new(MockUnionBroker::new()),
             Rc::new(MockBitVmxBroker::new()),
             vec![get_fake_address_1()],
         );
@@ -670,7 +683,7 @@ mod tests {
         let mut monitor = Monitor::new(
             log_broker,
             MockUnionBroker::new(),
-            MockUnionBroker::new(),
+            Rc::new(MockUnionBroker::new()),
             Rc::new(MockBitVmxBroker::new()),
             vec![get_fake_address_1()],
         );
@@ -695,7 +708,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockUnionBroker::new(),
             block_broker,
-            MockUnionBroker::new(),
+            Rc::new(MockUnionBroker::new()),
             Rc::new(MockBitVmxBroker::new()),
             vec![get_fake_address_1()],
         );
@@ -713,7 +726,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockUnionBroker::new(),
             block_broker,
-            MockUnionBroker::new(),
+            Rc::new(MockUnionBroker::new()),
             Rc::new(MockBitVmxBroker::new()),
             vec![get_fake_address_1()],
         );
@@ -734,7 +747,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockUnionBroker::new(),
             MockUnionBroker::new(),
-            MockUnionBroker::new(),
+            Rc::new(MockUnionBroker::new()),
             Rc::new(bitvmx_broker),
             vec![get_fake_address_1()],
         );
@@ -752,7 +765,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockUnionBroker::new(),
             MockUnionBroker::new(),
-            MockUnionBroker::new(),
+            Rc::new(MockUnionBroker::new()),
             Rc::new(bitvmx_broker),
             vec![get_fake_address_1()],
         );
@@ -774,7 +787,7 @@ mod tests {
         let mut monitor = Monitor::new(
             log_broker,
             MockUnionBroker::new(),
-            MockUnionBroker::new(),
+            Rc::new(MockUnionBroker::new()),
             Rc::new(MockBitVmxBroker::new()),
             vec![address_1, address_2],
         );
@@ -792,7 +805,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockUnionBroker::new(),
             block_broker,
-            MockUnionBroker::new(),
+            Rc::new(MockUnionBroker::new()),
             Rc::new(MockBitVmxBroker::new()),
             vec![get_fake_address_1()],
         );
@@ -809,7 +822,7 @@ mod tests {
         let mut monitor = Monitor::new(
             MockUnionBroker::new(),
             MockUnionBroker::new(),
-            MockUnionBroker::new(),
+            Rc::new(MockUnionBroker::new()),
             Rc::new(bitvmx_broker),
             vec![get_fake_address_1()],
         );

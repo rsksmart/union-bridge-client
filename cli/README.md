@@ -20,6 +20,13 @@ Run the wrapper scripts below from the repository root.
 - local Docker operator runtime: use `--env docker` after following the [Operator Docker Runtime Guide](../docker/operator/README.md)
 - remote CLI profile: use `--env <profile>` with a matching `cli/.env.<profile>`
 
+For the automated happy-path script:
+
+- `bash tests/run-flows.sh --setup` prepares member/operator state only
+- `bash tests/run-flows.sh --committee` applies operators to the stream and waits for committee completion
+- `bash tests/run-flows.sh --pegin`, `--pegout`, and `--operator-take` reuse the prepared state
+- the script does not start `cli-infra.sh`, `cli-run.sh`, or `docker/operator/start-operators.sh` for you
+
 ## `cli-run.sh`
 
 Launch one or more Union Bridge clients locally for development and testing.
@@ -37,6 +44,14 @@ Launch one or more Union Bridge clients locally for development and testing.
 ## `cli-operations.sh`
 
 Operator and user operations for local, Docker-backed, and remote-profile environments.
+
+Address sources now differ by flow:
+
+- member Bitcoin and member RSK addresses come from `/member/funding-info`, exposed by `user-api`
+  and backed by coordinator runtime state
+- user RSK address comes from `/user/rsk-address`, exposed by `user-api`
+- user Bitcoin address is still derived locally from `USER_BITCOIN_WIF` in the generated
+  `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-service.env`
 
 ### Supported Environments
 
@@ -63,7 +78,7 @@ For remote CLI access, copy `cli/.env.sample` to `cli/.env.<profile>` and fill i
 ./cli-operations.sh operator fund --env docker
 
 # Local operator apply-stream
-./cli-operations.sh operator apply-stream --stream-id 1
+./cli-operations.sh operator apply-stream --stream 1
 
 # Local whitelist
 ./cli-operations.sh operator whitelist --contract-address 0x742d35... --env local
@@ -110,6 +125,7 @@ cli/
 │   │   ├── pegin.rs
 │   │   ├── pegout.rs
 │   │   ├── environments.rs
+│   │   ├── member_funding_info.rs
 │   │   ├── constants.rs
 │   │   └── utils.rs
 │   └── Cargo.toml

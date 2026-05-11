@@ -5,38 +5,64 @@ use bitcoin::PublicKey;
 use bitcoin::key::Parity::Even;
 use bitcoin::secp256k1::XOnlyPublicKey;
 use common::msg_broker::bitvmx_types::{
-    AdvanceFundsRequest, BtcTxSPVProof, CommsAddress, FundsAdvanceSPV, IncomingBitVMXApiMessages,
-    VariableTypes,
+    AdvanceFundsRegistered, AdvanceFundsRequest, BtcTxSPVProof, CommsAddress, FundsAdvanceSPV,
+    IncomingBitVMXApiMessages, VariableTypes,
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::{Address, CommitteeId, Hash256};
 use log::{debug, info, trace};
+use serde_json::json;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{RegisterAdvanceFundsInput, RequestPeginInput};
 use union_contracts::bindings::pegout_manager::PegoutManager::PegoutRegistered;
 use uuid::Uuid;
 
+use crate::flows::common::Signaling;
 use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
 use crate::types::OperatorTakeTriggeredEvent;
 
 pub const PROGRAM_TYPE_ADVANCE_FUNDS: &str = "advance_funds";
-pub const SELECTED_OPERATOR_PUBKEY_VAR_PREFIX: &str = "SELECTED_OPERATOR_PUBKEY_";
 pub const ADVANCE_FUNDS_REQUEST_VAR_NAME: &str = "advance_funds_request";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Steps {
     #[default]
-    OperatorTakeTriggered,
-    GetCommInfo,
+    // Wait for the confirmed OperatorTakeTriggered event.
+    WaitOperatorTakeTriggered,
+    // Authoritative checkpoint: entered after confirmed OperatorTakeTriggered establishes
+    // the shared operator-take trigger.
+    GetCommInfoAuthoritativeCheckpoint,
     SetupAdvanceFundsProtocol,
     WaitForAdvanceFundsSPV,
     RegisterAdvanceFunds,
+    WaitForAdvanceFundsRegistered,
+    // Authoritative checkpoint: entered after advance-funds registration is confirmed.
+    // Notify BitVMX that the registration is available.
+    NotifyAdvanceFundsRegisteredAuthoritativeCheckpoint,
+    WaitForPegoutRegistered,
     WaitForReimbursementKickoffSpv,
     RegisterReimbursementKickoff,
-    WaitForOperatorTakeSpv,
+    // Authoritative checkpoint: entered after reimbursement kickoff is confirmed on the
+    // selected-operator path. Wait for the operator-take SPV proof.
+    WaitForOperatorTakeSpvAuthoritativeCheckpoint,
     RegisterOperatorTake,
+    // Terminal state after confirmed PegoutRegistered proves operator-take completion.
     Done,
+    Failed,
+}
+
+impl Steps {
+    fn allows_fast_forward_to_operator_take_registered(self) -> bool {
+        matches!(
+            self,
+            Steps::WaitForPegoutRegistered
+                | Steps::WaitForReimbursementKickoffSpv
+                | Steps::RegisterReimbursementKickoff
+                | Steps::WaitForOperatorTakeSpvAuthoritativeCheckpoint
+                | Steps::RegisterOperatorTake
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -45,7 +71,8 @@ pub enum StepData {
     CommInfo(CommsAddress),
     SetupCompleted,
     AdvanceFundsSPV(FundsAdvanceSPV),
-    AdvanceFundsConfirmed,
+    AdvanceFundsConfirmed(AdvanceFundsRegistered),
+    AdvanceFundsNotified,
     ReimbursementKickoffSPV(BtcTxSPVProof),
     ReimbursementKickoffConfirmed,
     OperatorTakeSPV(BtcTxSPVProof),
@@ -63,13 +90,17 @@ pub struct OperatorTakeTriggerData {
     pub committee_id: CommitteeId,
     pub slot_id: u64,
     pub slot_index: usize,
+    pub request_pegout_tx_hash: Option<String>,
     pub user_pubkey: PublicKey,
     pub take_operator_address: Address,
     pub operator_take_pubkey: PublicKey,
 }
 
 impl OperatorTakeTriggerData {
-    pub fn try_from_event(event: &OperatorTakeTriggeredEvent) -> Result<Self> {
+    pub fn try_from_event(
+        event: &OperatorTakeTriggeredEvent,
+        request_pegout_tx_hash: Option<String>,
+    ) -> Result<Self> {
         let inner = &event.inner;
         let pegout_txid = Hash256::from(inner.pegoutTxid);
         let pegout_id = Hash256::from(inner.pegoutInfo.pegoutId);
@@ -87,6 +118,7 @@ impl OperatorTakeTriggerData {
             committee_id,
             slot_id,
             slot_index,
+            request_pegout_tx_hash,
             user_pubkey,
             take_operator_address,
             operator_take_pubkey,
@@ -102,6 +134,7 @@ pub struct FlowContext {
     pub my_p2p_address: Option<CommsAddress>,
     pub accept_pegin_txid: Option<alloy_primitives::FixedBytes<32>>,
     pub advance_funds_spv: Option<FundsAdvanceSPV>,
+    pub advance_funds_registered: Option<AdvanceFundsRegistered>,
     pub reimbursement_kickoff_spv: Option<BtcTxSPVProof>,
     pub operator_take_spv: Option<BtcTxSPVProof>,
 }
@@ -115,6 +148,7 @@ where
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
     native_bridge_verifier: NativeBridgeVerifier<CG>,
+    signaling: Rc<Signaling>,
     pub(crate) state: FlowContext,
 }
 
@@ -128,27 +162,28 @@ where
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
+        signaling: Rc<Signaling>,
         flow_id: Uuid,
-        event: &OperatorTakeTriggeredEvent,
-    ) -> Result<Self> {
-        let trigger_data = OperatorTakeTriggerData::try_from_event(event)?;
-
-        Ok(Self {
+        trigger_data: OperatorTakeTriggerData,
+    ) -> Self {
+        Self {
             contracts,
             rt_sync,
             bitvmx_broker,
             native_bridge_verifier,
+            signaling,
             state: FlowContext {
                 flow_id,
-                step: Steps::OperatorTakeTriggered,
+                step: Steps::WaitOperatorTakeTriggered,
                 trigger_data,
                 my_p2p_address: None,
                 accept_pegin_txid: None,
                 advance_funds_spv: None,
+                advance_funds_registered: None,
                 reimbursement_kickoff_spv: None,
                 operator_take_spv: None,
             },
-        })
+        }
     }
 
     #[cfg(test)]
@@ -164,6 +199,7 @@ where
             rt_sync: RuntimeSync::new().expect("Failed to create runtime sync for test flow"),
             bitvmx_broker,
             native_bridge_verifier: NativeBridgeVerifier::Dummy,
+            signaling: Rc::new(Signaling::new("/tmp", "disabled")),
             state: FlowContext {
                 flow_id,
                 step,
@@ -171,6 +207,7 @@ where
                 my_p2p_address: None,
                 accept_pegin_txid: None,
                 advance_funds_spv: None,
+                advance_funds_registered: None,
                 reimbursement_kickoff_spv: None,
                 operator_take_spv: None,
             },
@@ -190,12 +227,12 @@ where
         );
 
         match next_step {
-            Steps::OperatorTakeTriggered => {
+            Steps::WaitOperatorTakeTriggered => {
                 unreachable!(
                     "OperatorTakeTriggered is the initial step and should not be started explicitly"
                 );
             }
-            Steps::GetCommInfo => {
+            Steps::GetCommInfoAuthoritativeCheckpoint => {
                 info!(
                     "Requesting BitVMX comm info for advance funds flow_id: {}",
                     self.state.flow_id
@@ -233,6 +270,20 @@ where
                     self.state.flow_id
                 );
             }
+            Steps::WaitForAdvanceFundsRegistered => {
+                info!(
+                    "Waiting for advance funds registration confirmation for flow_id: {}",
+                    self.state.flow_id
+                );
+            }
+            Steps::NotifyAdvanceFundsRegisteredAuthoritativeCheckpoint => {
+                info!(
+                    "Notifying BitVMX of advance funds registered for flow_id: {}",
+                    self.state.flow_id
+                );
+                self.notify_advance_funds_registered()?;
+                self.complete_step(StepData::AdvanceFundsNotified)?;
+            }
             Steps::WaitForReimbursementKickoffSpv => {
                 if let Some(spv_proof) = self.state.reimbursement_kickoff_spv.clone() {
                     info!(
@@ -242,7 +293,7 @@ where
                     self.complete_step(StepData::ReimbursementKickoffSPV(spv_proof))?;
                 } else {
                     info!(
-                        "Waiting for reimbursement kickoff SPV for flow_id: {}",
+                        "Selected operator waiting for reimbursement kickoff SPV for flow_id: {}",
                         self.state.flow_id
                     );
                 }
@@ -261,7 +312,7 @@ where
                     self.state.flow_id
                 );
             }
-            Steps::WaitForOperatorTakeSpv => {
+            Steps::WaitForOperatorTakeSpvAuthoritativeCheckpoint => {
                 if let Some(spv_proof) = self.state.operator_take_spv.clone() {
                     info!(
                         "Operator take SPV already buffered for flow_id: {}, proceeding",
@@ -270,7 +321,7 @@ where
                     self.complete_step(StepData::OperatorTakeSPV(spv_proof))?;
                 } else {
                     info!(
-                        "Waiting for operator take SPV proof for flow_id: {}",
+                        "Selected operator waiting for operator take SPV proof for flow_id: {}",
                         self.state.flow_id
                     );
                 }
@@ -284,8 +335,18 @@ where
                     .ok_or_else(|| anyhow!("Operator take SPV not available"))?;
                 self.register_operator_take(spv_proof)?;
             }
+            Steps::WaitForPegoutRegistered => {
+                info!(
+                    "Non-selected operator waiting for operator take completion on-chain for flow_id: {}",
+                    self.state.flow_id
+                );
+            }
             Steps::Done => {
+                self.write_completion_marker()?;
                 info!("AdvanceFundsFlow {}: Done", self.state.flow_id);
+            }
+            Steps::Failed => {
+                info!("AdvanceFundsFlow {}: Failed", self.state.flow_id);
             }
         }
 
@@ -310,10 +371,10 @@ where
 
     fn process_step_data(&mut self, current_step: Steps, data: StepData) -> Result<Steps> {
         match (current_step, data) {
-            (Steps::OperatorTakeTriggered, StepData::OperatorTakeTriggered) => {
-                Ok(Steps::GetCommInfo)
+            (Steps::WaitOperatorTakeTriggered, StepData::OperatorTakeTriggered) => {
+                Ok(Steps::GetCommInfoAuthoritativeCheckpoint)
             }
-            (Steps::GetCommInfo, StepData::CommInfo(comm_info)) => {
+            (Steps::GetCommInfoAuthoritativeCheckpoint, StepData::CommInfo(comm_info)) => {
                 self.state.my_p2p_address = Some(comm_info);
                 Ok(Steps::SetupAdvanceFundsProtocol)
             }
@@ -332,8 +393,22 @@ where
                 info!("Retrying register advance funds for flow_id: {}", self.state.flow_id);
                 Ok(Steps::RegisterAdvanceFunds)
             }
-            (Steps::RegisterAdvanceFunds, StepData::AdvanceFundsConfirmed) => {
-                Ok(Steps::WaitForReimbursementKickoffSpv)
+            (
+                Steps::RegisterAdvanceFunds | Steps::WaitForAdvanceFundsRegistered,
+                StepData::AdvanceFundsConfirmed(data),
+            ) => {
+                self.state.advance_funds_registered = Some(data);
+                Ok(Steps::NotifyAdvanceFundsRegisteredAuthoritativeCheckpoint)
+            }
+            (
+                Steps::NotifyAdvanceFundsRegisteredAuthoritativeCheckpoint,
+                StepData::AdvanceFundsNotified,
+            ) => {
+                if self.was_selected_operator() {
+                    Ok(Steps::WaitForReimbursementKickoffSpv)
+                } else {
+                    Ok(Steps::WaitForPegoutRegistered)
+                }
             }
             (
                 Steps::WaitForReimbursementKickoffSpv,
@@ -351,9 +426,12 @@ where
                 Ok(Steps::RegisterReimbursementKickoff)
             }
             (Steps::RegisterReimbursementKickoff, StepData::ReimbursementKickoffConfirmed) => {
-                Ok(Steps::WaitForOperatorTakeSpv)
+                Ok(Steps::WaitForOperatorTakeSpvAuthoritativeCheckpoint)
             }
-            (Steps::WaitForOperatorTakeSpv, StepData::OperatorTakeSPV(spv_proof)) => {
+            (
+                Steps::WaitForOperatorTakeSpvAuthoritativeCheckpoint,
+                StepData::OperatorTakeSPV(spv_proof),
+            ) => {
                 info!("Operator take SPV received for flow_id {}", self.state.flow_id);
                 self.state.operator_take_spv = Some(spv_proof);
                 Ok(Steps::RegisterOperatorTake)
@@ -362,7 +440,9 @@ where
                 info!("Retrying register operator take for flow_id: {}", self.state.flow_id);
                 Ok(Steps::RegisterOperatorTake)
             }
-            (Steps::RegisterOperatorTake, StepData::OperatorTakeRegistered(pegout_registered)) => {
+            (step, StepData::OperatorTakeRegistered(pegout_registered))
+                if step.allows_fast_forward_to_operator_take_registered() =>
+            {
                 debug!(
                     "Operator take registered for flow {}: {:?}",
                     self.state.flow_id, pegout_registered
@@ -374,28 +454,14 @@ where
     }
 
     fn setup_advance_funds_protocol(&mut self) -> Result<()> {
-        let committee_id: CommitteeId = self.state.trigger_data.committee_id.clone();
-        let slot_index = self.state.trigger_data.slot_index;
         let operator_address = self.state.trigger_data.take_operator_address;
-
         let operator_pubkey = self.state.trigger_data.operator_take_pubkey;
-        let var_name = format!("{SELECTED_OPERATOR_PUBKEY_VAR_PREFIX}{slot_index}");
-        let committee_id_uuid = Uuid::from_u128(*committee_id);
-        debug!(
-            "Publishing selected operator pubkey for committee {committee_id} slot {slot_index}",
-        );
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
-            committee_id_uuid,
-            var_name,
-            VariableTypes::PubKey(operator_pubkey),
-        ))?;
 
-        let my_address = self.contracts.my_address();
-        if my_address != operator_address {
+        if !self.was_selected_operator() {
             debug!(
-                "Advance funds setup: node {my_address} is not selected operator (selected: {operator_address}), finishing flow",
+                "Not selected operator (selected: {operator_address}), waiting for confirmed registration",
             );
-            self.start_step(Steps::Done)?;
+            self.start_step(Steps::WaitForAdvanceFundsRegistered)?;
             return Ok(());
         }
 
@@ -534,10 +600,48 @@ where
             .context("Failed to encode advance funds request payload to JSON")
     }
 
+    fn notify_advance_funds_registered(&self) -> Result<()> {
+        let data =
+            self.state.advance_funds_registered.as_ref().ok_or_else(|| {
+                anyhow!("AdvanceFundsRegistered data not available for notification")
+            })?;
+
+        let key = AdvanceFundsRegistered::name(data.slot_index);
+        let json = serde_json::to_string(data)
+            .context("Failed to serialize AdvanceFundsRegistered for BitVMX")?;
+
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::SetVar(
+            data.committee_id,
+            key,
+            VariableTypes::String(json),
+        ))
+    }
+
     fn send_bitvmx_msg(&self, msg: IncomingBitVMXApiMessages) -> Result<()> {
         trace!("AdvanceFundsFlow - sending message to BitVMX: {msg:?}");
         self.bitvmx_broker.send(msg)?;
         Ok(())
+    }
+
+    fn was_selected_operator(&self) -> bool {
+        self.contracts.my_address() == self.state.trigger_data.take_operator_address
+    }
+
+    fn write_completion_marker(&self) -> Result<()> {
+        let payload = json!({
+            "request_pegout_tx_hash": self.state.trigger_data.request_pegout_tx_hash,
+            "pegout_txid": self.state.trigger_data.pegout_txid.to_string(),
+            "pegout_id": self.state.trigger_data.pegout_id.to_string(),
+            "committee_id": self.state.trigger_data.committee_id.to_string(),
+            "slot_id": self.state.trigger_data.slot_id,
+            "slot_index": self.state.trigger_data.slot_index,
+            "selected_operator_address": self.state.trigger_data.take_operator_address.to_string(),
+            "was_selected_operator": self.was_selected_operator(),
+            "accept_pegin_txid": self.state.accept_pegin_txid.map(|txid| format!("{txid:#066x}")),
+            "advance_funds_txid": self.state.advance_funds_registered.as_ref().map(|event| event.txid.to_string()),
+        });
+
+        self.signaling.signal_done("advance-funds", self.state.flow_id, &payload)
     }
 
     pub fn flow_id(&self) -> Uuid {
@@ -548,8 +652,13 @@ where
         self.state.step
     }
 
-    pub fn is_done(&self) -> bool {
-        self.state.step == Steps::Done
+    pub fn is_terminal(&self) -> bool {
+        matches!(self.state.step, Steps::Done | Steps::Failed)
+    }
+
+    pub fn mark_failed(&mut self, reason: &str) -> Result<()> {
+        info!("Marking advance funds flow {} as failed: {reason}", self.state.flow_id);
+        self.start_step(Steps::Failed)
     }
 
     pub fn committee_id_uuid(&self) -> Uuid {
@@ -563,16 +672,24 @@ where
 
 fn format_step(step: Steps) -> &'static str {
     match step {
-        Steps::OperatorTakeTriggered => "OperatorTakeTriggered",
-        Steps::GetCommInfo => "GetCommInfo",
+        Steps::WaitOperatorTakeTriggered => "WaitOperatorTakeTriggered",
+        Steps::GetCommInfoAuthoritativeCheckpoint => "GetCommInfoAuthoritativeCheckpoint",
         Steps::SetupAdvanceFundsProtocol => "SetupAdvanceFundsProtocol",
         Steps::WaitForAdvanceFundsSPV => "WaitForAdvanceFundsSPV",
         Steps::RegisterAdvanceFunds => "RegisterAdvanceFunds",
+        Steps::WaitForAdvanceFundsRegistered => "WaitForAdvanceFundsRegistered",
+        Steps::NotifyAdvanceFundsRegisteredAuthoritativeCheckpoint => {
+            "NotifyAdvanceFundsRegisteredAuthoritativeCheckpoint"
+        }
+        Steps::WaitForPegoutRegistered => "WaitForPegoutRegistered",
         Steps::WaitForReimbursementKickoffSpv => "WaitForReimbursementKickoffSpv",
         Steps::RegisterReimbursementKickoff => "RegisterReimbursementKickoff",
-        Steps::WaitForOperatorTakeSpv => "WaitForOperatorTakeSpv",
+        Steps::WaitForOperatorTakeSpvAuthoritativeCheckpoint => {
+            "WaitForOperatorTakeSpvAuthoritativeCheckpoint"
+        }
         Steps::RegisterOperatorTake => "RegisterOperatorTake",
         Steps::Done => "Done",
+        Steps::Failed => "Failed",
     }
 }
 
@@ -600,6 +717,7 @@ mod tests {
     use mockall::predicate::function;
     use primitive_types::{H160, H256};
     use transaction_dispatcher::types::RegisterReimbursementKickoffInput;
+    use union_contracts::bindings::pegout_manager::PegoutManager::StreamPosition;
     use uuid::Uuid;
 
     use super::*;
@@ -615,6 +733,7 @@ mod tests {
             committee_id: CommitteeId::from(committee_id.as_u128()),
             slot_id: slot_index as u64,
             slot_index,
+            request_pegout_tx_hash: None,
             user_pubkey: PublicKey::from_str(
                 "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
             )
@@ -641,6 +760,41 @@ mod tests {
         }
     }
 
+    fn test_pegout_registered() -> PegoutRegistered {
+        PegoutRegistered {
+            blockHash: FixedBytes::from([1u8; 32]),
+            txid: FixedBytes::from([2u8; 32]),
+            acceptPeginTxid: FixedBytes::from([3u8; 32]),
+            committeeId: 1,
+            streamInfo: StreamPosition { streamId: 0, packetNumber: 0, slotId: 0, pegStatus: 0 },
+        }
+    }
+
+    #[test]
+    fn non_selected_operator_waits_for_advance_funds_registration() {
+        let committee_id = Uuid::new_v4();
+        let flow_id = Uuid::new_v4();
+        let trigger_data = test_trigger_data(committee_id, 0);
+
+        let mut contracts = MockRskContractsGatewayApi::new();
+        contracts.expect_my_address().return_const(Address::from(H160::from_low_u64_be(44)));
+
+        let broker = MockBitVmxBroker::new();
+
+        let mut flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(contracts),
+            Rc::new(broker),
+            flow_id,
+            trigger_data,
+            Steps::GetCommInfoAuthoritativeCheckpoint,
+        );
+
+        flow.start_step(Steps::SetupAdvanceFundsProtocol)
+            .expect("non-selected operator should remain in passive advance funds flow");
+
+        assert_eq!(flow.current_step(), Steps::WaitForAdvanceFundsRegistered);
+    }
+
     #[test]
     fn entering_wait_for_reimbursement_kickoff_consumes_buffered_spv() {
         let committee_id = Uuid::new_v4();
@@ -648,6 +802,7 @@ mod tests {
         let trigger_data = test_trigger_data(committee_id, 3);
 
         let mut contracts = MockRskContractsGatewayApi::new();
+        contracts.expect_my_address().return_const(Address::from(H160::from_low_u64_be(33)));
         contracts
             .expect_register_reimbursement_kickoff()
             .with(function(move |input: &RegisterReimbursementKickoffInput| {
@@ -660,19 +815,88 @@ mod tests {
                 })
             });
 
+        let mut broker = MockBitVmxBroker::new();
+        broker.expect_send().times(1).returning(|_| Ok(true));
+
         let mut flow = AdvanceFundsFlow::new_for_test(
             Rc::new(contracts),
-            Rc::new(MockBitVmxBroker::new()),
+            Rc::new(broker),
             flow_id,
             trigger_data,
-            Steps::RegisterAdvanceFunds,
+            Steps::WaitForAdvanceFundsRegistered,
         );
         flow.state.accept_pegin_txid = Some(FixedBytes::<32>::from([7u8; 32]));
         flow.state.reimbursement_kickoff_spv = Some(test_spv_proof());
 
-        flow.complete_step(StepData::AdvanceFundsConfirmed)
+        let registered_data = AdvanceFundsRegistered {
+            committee_id,
+            slot_index: 3,
+            txid: common::types::TxIdParser::fb_32_to_txid(FixedBytes::<32>::ZERO),
+            pegout_id: vec![0u8; 32],
+            operator_pubkey: PublicKey::from_str(
+                "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            )
+            .expect("valid test pubkey"),
+        };
+
+        flow.complete_step(StepData::AdvanceFundsConfirmed(registered_data))
             .expect("buffered reimbursement kickoff SPV should be consumed");
 
         assert_eq!(flow.current_step(), Steps::RegisterReimbursementKickoff);
+    }
+
+    #[test]
+    fn operator_take_registered_fast_forwards_from_terminal_intermediate_steps() {
+        let terminal_intermediate_steps = [
+            Steps::WaitForPegoutRegistered,
+            Steps::WaitForReimbursementKickoffSpv,
+            Steps::RegisterReimbursementKickoff,
+            Steps::WaitForOperatorTakeSpvAuthoritativeCheckpoint,
+            Steps::RegisterOperatorTake,
+        ];
+
+        for step in terminal_intermediate_steps {
+            let committee_id = Uuid::new_v4();
+            let flow_id = Uuid::new_v4();
+            let trigger_data = test_trigger_data(committee_id, 0);
+
+            let mut contracts = MockRskContractsGatewayApi::new();
+            contracts.expect_my_address().return_const(Address::from(H160::from_low_u64_be(33)));
+
+            let broker = MockBitVmxBroker::new();
+            let mut flow = AdvanceFundsFlow::new_for_test(
+                Rc::new(contracts),
+                Rc::new(broker),
+                flow_id,
+                trigger_data,
+                step,
+            );
+
+            flow.complete_step(StepData::OperatorTakeRegistered(test_pegout_registered()))
+                .expect("confirmed operator take registration should fast-forward");
+
+            assert_eq!(flow.current_step(), Steps::Done, "failed from {step:?}");
+        }
+    }
+
+    #[test]
+    fn operator_take_registered_is_rejected_before_terminal_intermediate_steps() {
+        let committee_id = Uuid::new_v4();
+        let flow_id = Uuid::new_v4();
+        let trigger_data = test_trigger_data(committee_id, 0);
+        let contracts = MockRskContractsGatewayApi::new();
+        let broker = MockBitVmxBroker::new();
+        let mut flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(contracts),
+            Rc::new(broker),
+            flow_id,
+            trigger_data,
+            Steps::WaitForAdvanceFundsRegistered,
+        );
+
+        let result = flow.complete_step(StepData::OperatorTakeRegistered(test_pegout_registered()));
+
+        assert!(result.is_err());
+        assert_eq!(flow.current_step(), Steps::WaitForAdvanceFundsRegistered);
     }
 }

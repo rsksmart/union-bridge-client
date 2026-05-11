@@ -13,14 +13,16 @@ anvil = []
 alloy-primitives = { workspace = true }
 alloy-sol-types = { workspace = true }
 anyhow = { workspace = true }
-bincode = { package = "bincode", version = "1.3.3" }
 bitcoin = { workspace = true }
+chrono = { version = "0.4.42", default-features = false, features = ["clock", "std"] }
 clap = { workspace = true }
 common = { path = "../common" }
 hex = { workspace = true }
 log = { workspace = true }
 musig2 = { workspace = true }
+op-funding = { path = "../op-funding" }
 primitive-types = { workspace = true }
+protocol-params = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_path_to_error = "0.1.20"

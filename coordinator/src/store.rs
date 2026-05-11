@@ -12,7 +12,6 @@ use storage_backend::storage_config::StorageConfig;
 use uuid::Uuid;
 
 use crate::flows::common::GlobalContext;
-
 /// Key used to persist Coordinator data
 pub enum StoreKey {
     GlobalContext,
@@ -247,28 +246,28 @@ where
     Ok(restored_flows)
 }
 
-pub fn cleanup_completed_flows<Store, Flow, IsDone, H>(
+pub fn cleanup_flows_matching<Store, Flow, Condition, H>(
     store: &Store,
     prefix: StorePrefix,
     flows: &mut HashMap<Uuid, Flow, H>,
-    mut is_done: IsDone,
+    mut condition: Condition,
 ) where
     Store: CoordinatorStoreApi,
     H: BuildHasher,
-    IsDone: FnMut(&Flow) -> bool,
+    Condition: FnMut(&Flow) -> bool,
 {
-    let completed_flow_ids: Vec<Uuid> =
-        flows.iter().filter(|(_, flow)| is_done(flow)).map(|(flow_id, _)| *flow_id).collect();
+    let matching_flow_ids: Vec<Uuid> =
+        flows.iter().filter(|(_, flow)| condition(flow)).map(|(flow_id, _)| *flow_id).collect();
 
-    for flow_id in &completed_flow_ids {
+    for flow_id in &matching_flow_ids {
         flows.remove(flow_id);
     }
 
-    for flow_id in completed_flow_ids {
-        debug!("Removing completed {prefix:?} flow: {flow_id}");
+    for flow_id in matching_flow_ids {
+        debug!("Removing {prefix:?} flow: {flow_id}");
 
         if let Err(err) = store.delete_flow(&prefix.as_store_key(flow_id)) {
-            error!("Failed to remove completed {prefix:?} flow {flow_id} from persistence: {err}");
+            error!("Failed to remove {prefix:?} flow {flow_id} from persistence: {err}");
         }
     }
 }
