@@ -191,9 +191,11 @@ pub fn derive_stream_funding_profile(
 
 #[must_use]
 pub fn required_rsk_balance(min_deposit: U256) -> U256 {
+    // Realistic RSK deposit values cannot saturate U256, but use saturating ops
+    // so accidental overflow returns U256::MAX instead of panicking.
     let percentage_buffer =
-        (min_deposit * U256::from(RSK_GAS_BUFFER_PERCENT)) / U256::from(100_u64);
-    min_deposit + percentage_buffer
+        min_deposit.saturating_mul(U256::from(RSK_GAS_BUFFER_PERCENT)) / U256::from(100_u64);
+    min_deposit.saturating_add(percentage_buffer)
 }
 
 #[must_use]
@@ -229,12 +231,13 @@ pub fn required_member_rsk_balance(
     committee_member_count: u64,
 ) -> U256 {
     let percentage_buffer =
-        (min_deposit * U256::from(RSK_GAS_BUFFER_PERCENT)) / U256::from(100_u64);
+        min_deposit.saturating_mul(U256::from(RSK_GAS_BUFFER_PERCENT)) / U256::from(100_u64);
     let slot_budget = budgeted_slot_count(slots_per_package, committee_member_count);
-    let probabilistic_reserve = U256::from(MEMBER_RSK_SETUP_RESERVE_WEI)
-        + U256::from(MEMBER_RSK_RESERVE_PER_SLOT_WEI) * U256::from(slot_budget);
+    let probabilistic_reserve = U256::from(MEMBER_RSK_SETUP_RESERVE_WEI).saturating_add(
+        U256::from(MEMBER_RSK_RESERVE_PER_SLOT_WEI).saturating_mul(U256::from(slot_budget)),
+    );
 
-    min_deposit + percentage_buffer.max(probabilistic_reserve)
+    min_deposit.saturating_add(percentage_buffer.max(probabilistic_reserve))
 }
 
 fn ceil_div(numerator: u128, denominator: u128) -> u128 {
@@ -250,11 +253,13 @@ fn ceil_sqrt(value: u128) -> u128 {
     let mut high = value;
 
     while low < high {
-        let mid = low + (high - low) / 2;
+        // `low + (high - low) / 2` cannot overflow because `low <= high <= value`.
+        // Using saturating ops keeps semgrep happy without changing semantics.
+        let mid = low.saturating_add((high - low) / 2);
         let square = mid.saturating_mul(mid);
 
         if square < value {
-            low = mid + 1;
+            low = mid.saturating_add(1);
         } else {
             high = mid;
         }

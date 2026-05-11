@@ -3,7 +3,7 @@ use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use bitcoin::Network;
 use common::msg_broker::bitvmx_types::IncomingBitVMXApiMessages;
 use common::msg_broker::broker::{BitVmxBrokerClientApi, UnionBrokerClientApi};
@@ -192,6 +192,7 @@ impl<
             Box::new(FundingInfoProcessor::new(
                 bitvmx_broker.clone(),
                 contracts_arc.clone(),
+                bitcoin_network,
                 user_reply_tx,
             )),
         ];
@@ -402,8 +403,11 @@ impl<
     }
 
     fn send_user_reply(&mut self, reply: ToServer) -> Result<()> {
+        // A transient user-api disconnect (or backpressure) should not take down
+        // the coordinator. We log and drop the reply; the user-api side has its
+        // own request timeout and will surface the failure to the caller.
         if !self.user_broker.send(reply)? {
-            bail!("Broker could not deliver user reply");
+            warn!("Broker could not deliver user reply; dropping");
         }
         Ok(())
     }

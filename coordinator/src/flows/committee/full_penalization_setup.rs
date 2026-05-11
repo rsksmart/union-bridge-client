@@ -69,8 +69,10 @@ impl<BC: BitVmxBrokerClientApi> FullPenalizationSetup<BC> {
         hasher.update(committee_id.as_bytes());
         hasher.update("full_penalization");
 
-        // Get the result as a byte array
         let hash = hasher.finalize();
-        Uuid::from_bytes(hash[0..16].try_into().unwrap())
+        // SHA-256 always produces 32 bytes, so the 16-byte prefix is guaranteed.
+        let prefix: &[u8; 16] =
+            hash.first_chunk().expect("SHA-256 output is always at least 16 bytes");
+        Uuid::from_bytes(*prefix)
     }
 }

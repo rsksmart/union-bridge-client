@@ -39,7 +39,14 @@ pub fn slots_per_package() -> Result<u64> {
 
 fn env_u64_or_default(env_var: &str, default: u64) -> Result<u64> {
     match std::env::var(env_var) {
-        Ok(value) => value.parse::<u64>().with_context(|| format!("{env_var} must be a valid u64")),
+        Ok(value) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                Ok(default)
+            } else {
+                trimmed.parse::<u64>().with_context(|| format!("{env_var} must be a valid u64"))
+            }
+        }
         Err(std::env::VarError::NotPresent) => Ok(default),
         Err(err) => Err(err).with_context(|| format!("failed to read {env_var}")),
     }

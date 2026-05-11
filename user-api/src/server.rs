@@ -103,7 +103,7 @@ impl FundingSyncBroker {
     }
 
     async fn fetch_funding_info(&self) -> Result<MemberFundingInfo, (StatusCode, Json<Value>)> {
-        info!("Received member_funding_info for destination: {}", self.destination);
+        info!("Requesting member_funding_info from destination: {}", self.destination);
         let req_id = Uuid::new_v4();
         let deadline = Instant::now() + Duration::from_secs(9);
 
@@ -126,18 +126,30 @@ impl FundingSyncBroker {
             let message = self.broker.try_recv().map_err(internal_error)?;
 
             match message {
-                Some((ToServer::MemberFundingInfo(response_id, info), _sender))
-                    if response_id == req_id =>
+                Some((ToServer::MemberFundingInfo(response_id, info), sender))
+                    if response_id == req_id && sender == self.destination =>
                 {
                     return Ok(info);
                 }
-                Some((ToServer::BitVmxWalletError(response_id, error), _sender))
-                    if response_id == req_id =>
+                Some((ToServer::BitVmxWalletError(response_id, error), sender))
+                    if response_id == req_id && sender == self.destination =>
                 {
                     return Err((
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(json!({ "error": error })),
                     ));
+                }
+                Some((ToServer::MemberFundingInfo(response_id, _), sender))
+                | Some((ToServer::BitVmxWalletError(response_id, _), sender))
+                    if response_id == req_id =>
+                {
+                    // Matches our req_id but came from an unexpected sender. Drop and
+                    // log so suspicious traffic is visible.
+                    warn!(
+                        "Discarding reply for req {req_id}: sender {sender} != expected {}",
+                        self.destination
+                    );
+                    sleep(Duration::from_millis(50)).await;
                 }
                 Some(_) | None => {
                     sleep(Duration::from_millis(50)).await;
