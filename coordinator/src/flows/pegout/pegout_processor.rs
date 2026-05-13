@@ -927,6 +927,10 @@ where
         self.register_pegout_retry_scheduler.clear();
         self.unconfirmed_register_pegout.clear();
     }
+
+    fn active_flows(&self) -> Vec<crate::event_processor::FlowDetails> {
+        self.pegout_flows.values().map(PegoutFlow::get_flow_details).collect()
+    }
 }
 
 #[cfg(test)]
@@ -1034,6 +1038,7 @@ mod tests {
                     spv_proof: None,
                     transaction_status: None,
                 },
+                created_at: None,
             };
 
             PegoutFlow::from_saved_state(
@@ -1064,6 +1069,7 @@ mod tests {
                     spv_proof: None,
                     transaction_status: None,
                 },
+                created_at: None,
             };
 
             PegoutFlow::from_saved_state(

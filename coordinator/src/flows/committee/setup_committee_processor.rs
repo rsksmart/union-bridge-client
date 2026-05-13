@@ -516,6 +516,10 @@ where
     fn shutdown(&mut self) {
         self.events_confirming.clear();
     }
+
+    fn active_flows(&self) -> Vec<crate::event_processor::FlowDetails> {
+        self.flows.values().map(SetupCommitteeFlow::get_flow_details).collect()
+    }
 }
 
 #[cfg(test)]

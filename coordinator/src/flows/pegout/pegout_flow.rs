@@ -100,6 +100,13 @@ pub struct State {
     pub flow_id: Uuid,
     pub step: Steps,
     pub ctx: FlowContext,
+    /// When this flow was first created. `None` for flows persisted before
+    /// this field existed (they pre-date the change and we can't backfill).
+    // TODO: once all v0.4.0 flows have been migrated through this version and
+    // no on-disk record lacks `created_at`, drop both `#[serde(default)]` and
+    // the `Option` wrapper (the field becomes a required `DateTime<Utc>`).
+    #[serde(default)]
+    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 pub struct PegoutFlow<CG, BC, S>
@@ -152,6 +159,7 @@ where
                     spv_proof: None,
                     transaction_status: None,
                 },
+                created_at: Some(chrono::Utc::now()),
             },
             store,
             signaling,
@@ -664,6 +672,15 @@ where
         self.state.step
     }
 
+    pub(crate) fn get_flow_details(&self) -> crate::event_processor::FlowDetails {
+        crate::event_processor::FlowDetails {
+            kind: crate::types::FlowKind::Pegout,
+            id: self.flow_id().to_string(),
+            step: format!("{:?}", self.current_step()),
+            created_at: self.state.created_at,
+        }
+    }
+
     #[cfg(test)]
     pub fn get_state(&self) -> &State {
         &self.state
@@ -908,7 +925,7 @@ mod tests {
             Rc::new(contracts),
             RuntimeSync::new().expect("runtime"),
             Rc::new(broker),
-            State { flow_id: Uuid::new_v4(), step: initial_step, ctx },
+            State { flow_id: Uuid::new_v4(), step: initial_step, ctx, created_at: None },
             Rc::new(store),
             Rc::new(Signaling::new(signaling_root.path(), "local")),
             NativeBridgeVerifier::Dummy,
@@ -1033,7 +1050,7 @@ mod tests {
             Rc::new(contracts),
             RuntimeSync::new().expect("runtime"),
             Rc::new(broker),
-            State { flow_id, step: Steps::WaitUserTakeSignaturesReady, ctx },
+            State { flow_id, step: Steps::WaitUserTakeSignaturesReady, ctx, created_at: None },
             Rc::new(store),
             Rc::new(Signaling::new(tempdir.path(), "local")),
             NativeBridgeVerifier::Dummy,
