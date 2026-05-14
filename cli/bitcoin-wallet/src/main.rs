@@ -552,14 +552,10 @@ fn handle_command(wallet: &mut Wallet, line: &str, mode: &WalletMode) -> Result<
                     wallet.network()
                 );
             }
-            if wallet.active_address().is_none() {
-                bail!("import or switch to an address before auto-registering UTXOs");
-            }
-
             let active_address = wallet
                 .active_address()
                 .cloned()
-                .context("missing active address")?;
+                .context("import or switch to an address before auto-registering UTXOs")?;
             let active_address_str = active_address.to_string();
             println!(
                 "Auto-registering testnet UTXOs for active wallet address: {}",
@@ -578,10 +574,9 @@ fn handle_command(wallet: &mut Wallet, line: &str, mode: &WalletMode) -> Result<
             for utxo in &confirmed_utxos {
                 let block_hash = utxo.status.block_hash.as_ref().context("missing block hash")?;
                 let txid = Txid::from_str(&utxo.txid).context("invalid txid from Blockstream")?;
-                let _block_hash =
-                    bitcoincore_rpc::bitcoin::BlockHash::from_str(block_hash).context(
-                        "invalid block hash from Blockstream",
-                    )?;
+                // validate block_hash format before registering the UTXO
+                bitcoincore_rpc::bitcoin::BlockHash::from_str(block_hash)
+                    .context("invalid block hash from Blockstream")?;
                 let outpoint = OutPoint::new(txid, utxo.vout);
                 wallet.register_utxo(outpoint, utxo.value)?;
             }
@@ -595,7 +590,7 @@ fn handle_command(wallet: &mut Wallet, line: &str, mode: &WalletMode) -> Result<
         }
         "create_pegin_tx" => {
             require_operational_mode(mode, command)?;
-            // Syntax: create_pegin_tx <stream_value> <packet_number> <dest_addr> <rsk_address> <enabler_script_pubkey> <btc_reimbursement_pub_key>
+            // Syntax: create_pegin_tx <stream_value> <packet_number> <dest_addr> <rsk_address> <enabler_script_pubkey>
             let stream_value_str = parts.next().context("expected stream value in satoshis")?;
             let stream_value: u64 =
                 stream_value_str.parse().context("invalid stream value (satoshis)")?;
@@ -936,7 +931,7 @@ fn print_help(sats_per_byte: u64, mode: &WalletMode) {
             "  register_utxos_auto                   - Testnet only: refresh active-address UTXOs from Blockstream"
         );
         println!(
-            "  create_pegin_tx <value> <packet> <addr> <rsk> <enabler> <btc_pub_key>  - Create RSK pegin transaction"
+            "  create_pegin_tx <value> <packet> <addr> <rsk> <enabler>  - Create RSK pegin transaction"
         );
         println!();
         println!("RBF (Replace-By-Fee) commands:");
@@ -979,18 +974,13 @@ struct BlockstreamUtxoStatus {
 fn fetch_testnet_utxos(address: &str) -> Result<Vec<BlockstreamUtxo>> {
     let url = format!("https://blockstream.info/testnet/api/address/{address}/utxo");
     let client = Client::new();
-    let response = client
-        .get(&url)
-        .send()
-        .with_context(|| format!("failed to call {url}"))?;
+    let response = client.get(&url).send().with_context(|| format!("failed to call {url}"))?;
     let status = response.status();
     if !status.is_success() {
         let body = response.text().unwrap_or_else(|_| String::from("<failed to read body>"));
         bail!("blockstream API returned {}: {}", status, body);
     }
-    response
-        .json::<Vec<BlockstreamUtxo>>()
-        .context("failed to parse blockstream UTXO response")
+    response.json::<Vec<BlockstreamUtxo>>().context("failed to parse blockstream UTXO response")
 }
 
 #[cfg(test)]

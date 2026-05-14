@@ -1,6 +1,6 @@
 use std::process::Command;
 
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use reqwest::Request;
 
 /// Prompts the user for confirmation before executing a remote operation.
@@ -24,6 +24,30 @@ pub(crate) fn command_to_string(cmd: &Command) -> String {
     let args: Vec<String> = cmd.get_args().map(|arg| arg.to_string_lossy().to_string()).collect();
 
     if args.is_empty() { program.to_string() } else { format!("{} {}", program, args.join(" ")) }
+}
+
+/// Runs a bitcoin-wallet CLI command and returns its stdout.
+pub(crate) fn run_wallet_command(args: &[&str]) -> Result<String> {
+    let wallet_script = "./cli-bitcoin-wallet.sh";
+    let mut cmd = Command::new(wallet_script);
+    cmd.args(args);
+
+    let rendered_args = args.join(" ");
+    println!("Running: {} {}", wallet_script, rendered_args);
+
+    let output = cmd.output().context("failed to execute cli-bitcoin-wallet.sh")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        bail!(
+            "wallet command failed with status {}:\nstdout: {}\nstderr: {}",
+            output.status,
+            stdout.trim(),
+            stderr.trim()
+        );
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 /// Converts an HTTP Request to a string representation for display

@@ -1,11 +1,9 @@
-use std::io::{self, Write};
-use std::process::Command;
-
 use anyhow::{Context, Result, anyhow, bail};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use crate::environments::Environment;
+use crate::utils::{confirm_operation, run_wallet_command};
 
 #[derive(Debug, Serialize)]
 struct PeginAddressRequest {
@@ -20,7 +18,6 @@ struct PeginAddressResponse {
     enabler_script_pubkey: Option<String>,
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn create_pegin_tx(
     environment: Environment,
     rsk_address: String,
@@ -40,15 +37,11 @@ pub(crate) async fn create_pegin_tx(
     println!();
 
     if environment.is_remote() {
-        println!("Pegin summary:");
-        println!("  RSK address: {}", rsk_address);
-        println!("  Value:       {} sats", value);
-        println!();
-        print!("All good for {}? [y/N] ", env_name);
-        io::stdout().flush().context("failed to flush stdout")?;
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).context("failed to read confirmation")?;
-        if !matches!(input.trim().to_lowercase().as_str(), "y" | "yes") {
+        let description = format!(
+            "Pegin summary:\n  RSK address: {}\n  Value:       {} sats",
+            rsk_address, value
+        );
+        if !confirm_operation(&description)? {
             println!("Aborted.");
             return Ok(());
         }
@@ -57,10 +50,7 @@ pub(crate) async fn create_pegin_tx(
 
     println!("Getting pegin data for {rsk_address}...");
 
-    let payload = PeginAddressRequest {
-        rootstock_deposit_address: rsk_address.clone(),
-        value,
-    };
+    let payload = PeginAddressRequest { rootstock_deposit_address: rsk_address.clone(), value };
 
     let user_api_base = environment
         .user_api_endpoints()?
@@ -114,13 +104,16 @@ pub(crate) async fn create_pegin_tx(
     if execute {
         println!("Executing wallet command programmatically...");
         println!();
-        execute_wallet_command(
-            value,
-            packet_number,
+        let stdout = run_wallet_command(&[
+            "user",
+            "create_pegin_tx",
+            &value.to_string(),
+            &packet_number.to_string(),
             &pegin_address,
             &rsk_address,
             &enabler_script_pubkey,
-        )?;
+        ])?;
+        println!("{}", stdout);
     } else {
         println!("Now run the following command in bitcoin-wallet CLI (user mode):");
         println!();
@@ -129,53 +122,6 @@ pub(crate) async fn create_pegin_tx(
             value, packet_number, pegin_address, rsk_address, enabler_script_pubkey
         );
     }
-
-    Ok(())
-}
-
-fn execute_wallet_command(
-    stream_amount: u64,
-    packet_number: u64,
-    pegin_address: &str,
-    rsk_address: &str,
-    enabler_script_pubkey: &str,
-) -> Result<()> {
-    let wallet_script = "./cli-bitcoin-wallet.sh";
-
-    let mut cmd = Command::new(wallet_script);
-    cmd.arg("user")
-        .arg("create_pegin_tx")
-        .arg(stream_amount.to_string())
-        .arg(packet_number.to_string())
-        .arg(pegin_address)
-        .arg(rsk_address)
-        .arg(enabler_script_pubkey);
-
-    println!(
-        "Running: {} user create_pegin_tx {} {} {} {} {}",
-        wallet_script,
-        stream_amount,
-        packet_number,
-        pegin_address,
-        rsk_address,
-        enabler_script_pubkey
-    );
-
-    let output = cmd.output().context("failed to execute cli-bitcoin-wallet.sh")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        bail!(
-            "wallet command failed with status {}:\nstdout: {}\nstderr: {}",
-            output.status,
-            stdout.trim(),
-            stderr.trim()
-        );
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    println!("{}", stdout);
 
     Ok(())
 }
@@ -196,4 +142,3 @@ fn validate_rsk_address(address: &str) -> Result<()> {
 
     Ok(())
 }
-

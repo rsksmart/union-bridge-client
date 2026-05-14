@@ -12,7 +12,7 @@ use protocol_params::{committee_member_count, prover_count, slots_per_package};
 use crate::constants::{UNION_BRIDGE_DIR, operator_ids};
 use crate::environments::*;
 use crate::member_funding_info::CollectedMemberFundingInfo;
-use crate::utils::command_to_string;
+use crate::utils::{command_to_string, run_wallet_command};
 
 pub(crate) async fn handle_bitcoin_funding(
     environment: Environment,
@@ -119,29 +119,6 @@ fn execute_wallet_command(addresses: &[String], amount: u64) -> Result<()> {
     println!("{}", stdout);
 
     Ok(())
-}
-
-fn run_wallet_command(args: &[&str]) -> Result<String> {
-    let wallet_script = "./cli-bitcoin-wallet.sh";
-    let mut cmd = Command::new(wallet_script);
-    cmd.args(args);
-
-    let rendered_args = args.join(" ");
-    println!("Running: {} {}", wallet_script, rendered_args);
-
-    let output = cmd.output().context("failed to execute cli-bitcoin-wallet.sh")?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        bail!(
-            "wallet command failed with status {}:\nstdout: {}\nstderr: {}",
-            output.status,
-            stdout.trim(),
-            stderr.trim()
-        );
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 pub(crate) fn collect_user_bitcoin_addresses(
