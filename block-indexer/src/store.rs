@@ -240,7 +240,7 @@ impl<C: Cache<RskBlock>> BlockStore for CachedBlockStore<C> {
 
     fn get_canonical_block(&self, block_height: BlockNumber) -> Result<Option<RskBlock>> {
         self.get_canonical_block(block_height)
-            .context(format!("Error getting canonical block for height: {block_height}",))
+            .context(format!("Error getting canonical block for height: {block_height}"))
     }
 
     fn set_canonical_block(&self, block: &RskBlock) -> Result<()> {

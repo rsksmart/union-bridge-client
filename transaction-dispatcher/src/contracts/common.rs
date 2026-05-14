@@ -122,15 +122,15 @@ fn timeout_30sec() -> Duration {
 }
 
 fn timeout_1min() -> Duration {
-    Duration::from_secs(60)
+    Duration::from_mins(1)
 }
 
 fn timeout_2min() -> Duration {
-    Duration::from_secs(120)
+    Duration::from_mins(2)
 }
 
 fn timeout_5min() -> Duration {
-    Duration::from_secs(300)
+    Duration::from_mins(5)
 }
 
 async fn send_transaction<P, D>(

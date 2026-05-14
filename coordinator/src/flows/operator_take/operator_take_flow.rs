@@ -449,7 +449,7 @@ where
                 );
                 Ok(Steps::Done)
             }
-            _ => Err(anyhow!("Invalid state transition from {current_step:?} with provided data",)),
+            _ => Err(anyhow!("Invalid state transition from {current_step:?} with provided data")),
         }
     }
 
