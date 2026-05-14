@@ -244,10 +244,7 @@ where
                 self.setup_advance_funds_protocol()?;
             }
             Steps::WaitForAdvanceFundsSPV => {
-                info!(
-                    "Waiting for advance funds SPV proof for flow_id: {}",
-                    self.state.flow_id,
-                );
+                info!("Waiting for advance funds SPV proof for flow_id: {}", self.state.flow_id,);
             }
             Steps::RegisterAdvanceFunds => {
                 info!("Registering advance funds for flow_id: {}", self.state.flow_id);
