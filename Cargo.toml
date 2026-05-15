@@ -74,8 +74,8 @@ thiserror = "2.0.18"
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 tokio = { version = "1.47.1" }
 tower-http = { version = "0.6.8", features = ["timeout", "trace"] }
-tracing = "0.1"
-tracing-appender = "0.2"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing = "=0.1.43"
+tracing-appender = "=0.2.4"
+tracing-subscriber = { version = "=0.3.22", features = ["env-filter"] }
 union-contracts = { package = "union-bridge-contracts", git = "https://github.com/rsksmart/union-bridge-contracts.git", tag = "v0.4.1-alpha" }
 uuid = { version = "1.11.1", features = ["v4", "serde"] }

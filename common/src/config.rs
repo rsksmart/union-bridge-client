@@ -6,9 +6,12 @@ use bitcoin::Network;
 use config::{self, Environment, Source};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use tracing::{info, trace};
+use tracing::{Event, Subscriber, info, trace};
 pub use tracing_appender::non_blocking::WorkerGuard as LogGuard;
+use tracing_subscriber::fmt::format::Writer;
+use tracing_subscriber::fmt::{FmtContext, FormatEvent, FormatFields};
 use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use tracing_subscriber::{EnvFilter, fmt};
 
@@ -21,6 +24,34 @@ const BASE_CONFIG_PATH: &str = "config/base";
 const CONFIG_DIR_PATH: &str = "config";
 const EXTENSION_TYPE: &str = "toml";
 const LOG_DIR_ENV_VAR: &str = "UB_LOG_DIR";
+const CLIENT_ID_ENV_VAR: &str = "CLIENT_ID";
+
+/// Wraps an event formatter to prepend `[op-N]` to each stdout line. Used so that
+/// when several services are launched in parallel under the local client launcher
+/// (cli/run), their multiplexed output can be visually attributed to each operator.
+struct PrefixedFormat<F> {
+    prefix: Option<String>,
+    inner: F,
+}
+
+impl<S, N, F> FormatEvent<S, N> for PrefixedFormat<F>
+where
+    S: Subscriber + for<'a> LookupSpan<'a>,
+    N: for<'a> FormatFields<'a> + 'static,
+    F: FormatEvent<S, N>,
+{
+    fn format_event(
+        &self,
+        ctx: &FmtContext<'_, S, N>,
+        mut writer: Writer<'_>,
+        event: &Event<'_>,
+    ) -> std::fmt::Result {
+        if let Some(prefix) = &self.prefix {
+            write!(writer, "[{prefix}] ")?;
+        }
+        self.inner.format_event(ctx, writer, event)
+    }
+}
 
 #[derive(Debug, Deserialize)]
 pub struct CommonConfig {
@@ -237,8 +268,14 @@ impl CommonConfig {
     /// Initializes the tracing subscriber.
     ///
     /// Always emits to **stdout**. When a log directory is provided via `log_dir_opt` or the
-    /// `UB_LOG_DIR` environment variable, a second layer writes to a per-execution timestamped
-    /// file: `<log_dir>/<crate_name>-YYYYMMDD_HHMMSS.log`.
+    /// `UB_LOG_DIR` environment variable, a second layer writes to a file under that directory.
+    ///
+    /// When the `CLIENT_ID` environment variable is set (the cli/run launcher exports it for
+    /// each operator), the per-operator naming convention is used:
+    /// `<log_dir>/<crate_name>-<CLIENT_ID>.log`, and stdout lines are prefixed with
+    /// `[op-<CLIENT_ID>] ` so that the launcher's interleaved output is disambiguable.
+    /// Otherwise, the file falls back to a per-execution timestamped name:
+    /// `<log_dir>/<crate_name>-YYYYMMDD_HHMMSS.log`.
     ///
     /// Log levels follow the `RUST_LOG` env var (standard tracing convention). When unset,
     /// defaults to `debug` with noisy third-party crates suppressed to `warn`.
@@ -257,28 +294,43 @@ impl CommonConfig {
 
         // Resolve log directory: CLI arg → UB_LOG_DIR env var → None (stdout only)
         let log_dir: Option<String> = log_dir_opt
-            .map(String::clone)
+            .cloned()
             .or_else(|| std::env::var(LOG_DIR_ENV_VAR).ok().filter(|s| !s.is_empty()));
 
+        // Operator identifier injected by the local client launcher (cli/run).
+        let client_id = std::env::var(CLIENT_ID_ENV_VAR).ok().filter(|s| !s.is_empty());
+
         // Build the file writer when a directory is configured; otherwise drain to sink.
+        // With CLIENT_ID set, the parent directory is already per-execution (logs/YYMMDD/HHMMSS/)
+        // and the launcher expects stable per-operator filenames, so no timestamp suffix.
         let (file_writer, guard) = if let Some(ref dir) = log_dir {
             std::fs::create_dir_all(dir)
                 .with_context(|| format!("Failed to create log directory: {dir}"))?;
-            let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-            let file_name = format!("{crate_name}-{timestamp}.log");
+            let file_name = if let Some(id) = &client_id {
+                format!("{crate_name}-{id}.log")
+            } else {
+                let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+                format!("{crate_name}-{timestamp}.log")
+            };
             println!("Logging to file: {dir}/{file_name}");
             tracing_appender::non_blocking(tracing_appender::rolling::never(dir, file_name))
         } else {
             tracing_appender::non_blocking(std::io::sink())
         };
 
-        // File layer is included only when a log directory was resolved.
+        // File layer never carries the prefix — each file is already operator-specific.
         let file_layer = log_dir.map(|_| fmt::layer().with_writer(file_writer).with_ansi(false));
+
+        // Stdout layer carries `[op-N]` when CLIENT_ID is set, plain otherwise.
+        let stdout_layer = fmt::layer().event_format(PrefixedFormat {
+            prefix: client_id.as_ref().map(|id| format!("op-{id}")),
+            inner: fmt::format(),
+        });
 
         // try_init returns Err when a global subscriber is already set (harmless in tests).
         tracing_subscriber::registry()
             .with(filter)
-            .with(fmt::layer()) // stdout, always
+            .with(stdout_layer) // stdout, always (prefixed when CLIENT_ID is set)
             .with(file_layer) // file, opt-in
             .try_init()
             .ok();
