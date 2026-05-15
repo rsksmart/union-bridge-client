@@ -242,6 +242,7 @@ impl<
 
     /// # Errors
     /// Returns an error if the coordinator run loop fails.
+    #[instrument(skip_all)]
     pub fn run(&mut self) -> Result<()> {
         self.monitor.start_event_monitoring().context("Failed to start event monitoring")?;
 

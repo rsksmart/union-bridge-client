@@ -61,7 +61,7 @@ impl Logger {
     /// # Errors
     ///
     /// Returns an error if the logger configuration file cannot be loaded or parsed
-    pub fn init(logger_file_opt: Option<&String>) -> anyhow::Result<()> {
+    pub fn init(logger_file_opt: Option<&String>) -> anyhow::Result<common::config::LogGuard> {
         CommonConfig::init_logger(logger_file_opt, CARGO_PKG_NAME)
     }
 }

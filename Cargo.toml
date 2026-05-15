@@ -49,6 +49,7 @@ axum = "0.8.8"
 bincode = { version = "2.0.1", features = ["serde"] }
 # Version pinned to 0.32.6 for compatibility with bitvmx-emulator crate
 bitcoin = { version = "=0.32.6", features = ["std", "rand-std", "serde"] }
+chrono = { version = "0.4.42", default-features = false, features = ["clock", "std"] }
 clap = "4.5.61"
 config = "0.15.22"
 hex = "0.4.3"
@@ -70,6 +71,7 @@ tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 tokio = { version = "1.47.1" }
 tower-http = { version = "0.6.8", features = ["timeout", "trace"] }
 tracing = "0.1"
+tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 union-contracts = { package = "union-bridge-contracts", git = "https://github.com/rsksmart/union-bridge-contracts.git", tag = "v0.4.1-alpha" }
 uuid = { version = "1.11.1", features = ["v4", "serde"] }

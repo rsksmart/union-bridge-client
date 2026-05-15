@@ -467,6 +467,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 }
 
 impl<P: RskProvider, S: BlockStore> RskIndexer<P, S> for BlockIndexer<P, S> {
+    #[instrument(skip_all)]
     fn run(&self) -> Result<()> {
         let initial_block = self.get_initial_block(&self.rsk_provider);
 
