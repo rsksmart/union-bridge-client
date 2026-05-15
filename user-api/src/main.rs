@@ -15,7 +15,7 @@ use transaction_dispatcher::config::Config as TxDispatcherConfig;
 use user_api::Server;
 use user_api::config::{Config, Logger};
 
-const LOGGER_CLI_FLAG: &str = "logger-path";
+const LOG_DIR_CLI_FLAG: &str = "log-dir";
 const CONFIG_CLI_FLAG: &str = "config";
 
 struct BrokerDropGuard(Option<Arc<BrokerServer>>);
@@ -46,11 +46,11 @@ impl Drop for BrokerDropGuard {
 async fn main() -> Result<()> {
     let matches = Command::new("Union Bridge User API")
         .arg(
-            Arg::new(LOGGER_CLI_FLAG)
+            Arg::new(LOG_DIR_CLI_FLAG)
                 .short('l')
-                .long(LOGGER_CLI_FLAG)
-                .value_name("PATH")
-                .help("Sets the path to the log4rs configuration file"),
+                .long(LOG_DIR_CLI_FLAG)
+                .value_name("DIR")
+                .help("Directory for log files (also set via UB_LOG_DIR). Omit for stdout only."),
         )
         .arg(
             Arg::new(CONFIG_CLI_FLAG)
@@ -61,8 +61,8 @@ async fn main() -> Result<()> {
         )
         .get_matches();
 
-    let logger_cfg_path = matches.get_one::<String>(LOGGER_CLI_FLAG);
-    Logger::init(logger_cfg_path).expect("Failed to load logger");
+    let log_dir = matches.get_one::<String>(LOG_DIR_CLI_FLAG);
+    let _log_guard = Logger::init(log_dir).expect("Failed to load logger");
 
     let config_file = matches.get_one::<String>(CONFIG_CLI_FLAG).cloned();
 

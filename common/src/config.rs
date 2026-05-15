@@ -7,7 +7,10 @@ use config::{self, Environment, Source};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use tracing::{info, trace};
-use tracing_subscriber::EnvFilter;
+pub use tracing_appender::non_blocking::WorkerGuard as LogGuard;
+use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::util::SubscriberInitExt as _;
+use tracing_subscriber::{EnvFilter, fmt};
 
 use crate::errors::ConfigError;
 use crate::rsk_provider::RskProvider;
@@ -17,6 +20,7 @@ const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 const BASE_CONFIG_PATH: &str = "config/base";
 const CONFIG_DIR_PATH: &str = "config";
 const EXTENSION_TYPE: &str = "toml";
+const LOG_DIR_ENV_VAR: &str = "UB_LOG_DIR";
 
 #[derive(Debug, Deserialize)]
 pub struct CommonConfig {
@@ -230,27 +234,56 @@ impl CommonConfig {
         ))
     }
 
-    /// Initializes the tracing subscriber with stdout output.
+    /// Initializes the tracing subscriber.
     ///
-    /// Log levels are controlled via the `RUST_LOG` environment variable (standard tracing
-    /// convention). If unset, defaults to `debug` with noisy third-party crates at `warn`.
+    /// Always emits to **stdout**. When a log directory is provided via `log_dir_opt` or the
+    /// `UB_LOG_DIR` environment variable, a second layer writes to a per-execution timestamped
+    /// file: `<log_dir>/<crate_name>-YYYYMMDD_HHMMSS.log`.
     ///
-    /// The `logger_file_opt` parameter is retained for CLI compatibility but is no longer used;
-    /// configure levels via `RUST_LOG` instead.
+    /// Log levels follow the `RUST_LOG` env var (standard tracing convention). When unset,
+    /// defaults to `debug` with noisy third-party crates suppressed to `warn`.
+    ///
+    /// Returns a [`LogGuard`] that must be held alive for the duration of the process; dropping
+    /// it flushes and closes the background file-writer thread.
     ///
     /// # Errors
     ///
-    /// Never returns an error; signature kept for backward compatibility.
-    pub fn init_logger(_logger_file_opt: Option<&String>, _crate_name: &str) -> Result<()> {
+    /// Returns an error only when the log directory cannot be created.
+    pub fn init_logger(log_dir_opt: Option<&String>, crate_name: &str) -> Result<LogGuard> {
         let default_filter = "debug,tarpc=warn,alloy_provider=warn,alloy_pubsub=warn,alloy_rpc_client=warn,alloy_json_rpc=warn";
 
         let filter =
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter));
 
-        // try_init returns Err if a global subscriber is already set (e.g., in tests); safe to ignore.
-        let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
+        // Resolve log directory: CLI arg → UB_LOG_DIR env var → None (stdout only)
+        let log_dir: Option<String> = log_dir_opt
+            .map(String::clone)
+            .or_else(|| std::env::var(LOG_DIR_ENV_VAR).ok().filter(|s| !s.is_empty()));
 
-        Ok(())
+        // Build the file writer when a directory is configured; otherwise drain to sink.
+        let (file_writer, guard) = if let Some(ref dir) = log_dir {
+            std::fs::create_dir_all(dir)
+                .with_context(|| format!("Failed to create log directory: {dir}"))?;
+            let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+            let file_name = format!("{crate_name}-{timestamp}.log");
+            println!("Logging to file: {dir}/{file_name}");
+            tracing_appender::non_blocking(tracing_appender::rolling::never(dir, file_name))
+        } else {
+            tracing_appender::non_blocking(std::io::sink())
+        };
+
+        // File layer is included only when a log directory was resolved.
+        let file_layer = log_dir.map(|_| fmt::layer().with_writer(file_writer).with_ansi(false));
+
+        // try_init returns Err when a global subscriber is already set (harmless in tests).
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(fmt::layer()) // stdout, always
+            .with(file_layer) // file, opt-in
+            .try_init()
+            .ok();
+
+        Ok(guard)
     }
 
     fn project_root() -> String {
