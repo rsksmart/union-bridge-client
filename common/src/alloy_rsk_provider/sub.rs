@@ -65,7 +65,7 @@ impl AlloySubscription<Header> {
         };
 
         let new_block_header: Value = serde_json::from_str(&new_block_header_raw)
-            .context(format!("Error parsing header json: {new_block_header_raw}",))
+            .context(format!("Error parsing header json: {new_block_header_raw}"))
             .map_err(RskSubscriptionError::Unexpected)?;
         let new_block_hash = new_block_header["hash"].as_str().ok_or_else(|| {
             RskSubscriptionError::Unexpected(anyhow!(

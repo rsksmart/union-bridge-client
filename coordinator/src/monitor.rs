@@ -379,7 +379,7 @@ where
             Some(FromServer::UserRequest(req)) => {
                 match serde_json::from_value::<UserRequests>(req) {
                     Ok(ur) => {
-                        info!("Received UserRequest {ur:?}",);
+                        info!("Received UserRequest {ur:?}");
                         Ok(Some(ur))
                     }
                     Err(e) => {

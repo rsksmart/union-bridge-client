@@ -374,7 +374,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             {
                 let is_full_sync = provider_best_block.hash() == store_best_block.hash();
                 if is_full_sync {
-                    debug!("[startup_backward_sync] No more rounds needed",);
+                    debug!("[startup_backward_sync] No more rounds needed");
                     return Ok(());
                 }
 

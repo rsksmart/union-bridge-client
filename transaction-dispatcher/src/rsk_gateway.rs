@@ -452,7 +452,7 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: PeginAddressInput,
     ) -> Result<PeginAddressOutput, DomainErrors> {
-        info!("Interacting with PeginManager#getRequestPeginData",);
+        info!("Interacting with PeginManager#getRequestPeginData");
 
         self.get_temporary_pegin_address_call.run(input).await.map_err(|err| {
             error!("Error on get_temporary_pegin_address_call: {err}");
@@ -464,7 +464,7 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: RequestPeginInput,
     ) -> Result<RequestPeginOutput, DomainErrors> {
-        info!("Interacting with PeginManager#requestPegin",);
+        info!("Interacting with PeginManager#requestPegin");
 
         self.request_pegin_invoke.run(input).await.map_err(|err| {
             error!("Error on request_pegin_invoke: {err}");
@@ -476,7 +476,7 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: AcceptPeginInput,
     ) -> Result<AcceptPeginOutput, DomainErrors> {
-        info!("Interacting with PeginManager#acceptPegin",);
+        info!("Interacting with PeginManager#acceptPegin");
 
         self.accept_pegin_invoke.run(input).await.map_err(|err| {
             error!("Error on accept_pegin_invoke: {err}");
@@ -518,7 +518,7 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: RequestPegoutInput,
     ) -> Result<RequestPegoutOutput, DomainErrors> {
-        info!("Interacting with PegoutManager#tryPegoutRequest",);
+        info!("Interacting with PegoutManager#tryPegoutRequest");
 
         self.request_pegout_invoke.run(input).await.map_err(|err| {
             error!("Error on try_pegout_invoke: {err}");
@@ -566,7 +566,7 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: GetMemberPublicKeysInput,
     ) -> Result<GetMemberPublicKeysOutput, DomainErrors> {
-        info!("Interacting with CommitteeRegistry#getMemberPublicKeys",);
+        info!("Interacting with CommitteeRegistry#getMemberPublicKeys");
 
         self.get_member_public_keys_call.run(input).await.map_err(|err| {
             error!("Error on get_member_public_keys_call: {err}");
@@ -578,7 +578,7 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         &self,
         input: ApplyToStreamInput,
     ) -> Result<ApplyToStreamOutput, DomainErrors> {
-        info!("Interacting with CommitteeRegistry#applyToStream",);
+        info!("Interacting with CommitteeRegistry#applyToStream");
 
         self.apply_to_stream_invoke.run(input).await.map_err(|err| {
             error!("Error on apply_to_stream_invoke: {err}");
