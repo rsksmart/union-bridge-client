@@ -1,4 +1,4 @@
-mod common;
+pub(crate) mod common;
 mod dispute_channel_setup;
 mod dispute_core_setup;
 mod full_penalization_setup;

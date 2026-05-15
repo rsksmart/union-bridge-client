@@ -314,7 +314,7 @@ where
     pub(crate) fn complete_step(&mut self, data: &StepData) -> Result<()> {
         let current_step: Steps = self.state.step;
 
-        info!(
+        debug!(
             "PegoutFlow {}: Completing step {} with data: {:?} for flow_id {}",
             self.state.log_id,
             format_step(current_step),
