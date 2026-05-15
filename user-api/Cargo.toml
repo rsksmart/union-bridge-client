@@ -12,12 +12,12 @@ bitcoin = { workspace = true, features = ["std", "rand-std", "serde"] }
 clap = { workspace = true }
 common = { path = "../common" }
 hex = "0.4.3"
-log = { workspace = true }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tower-http = { workspace = true }
+tracing = { workspace = true }
 transaction-dispatcher = { path = "../transaction-dispatcher", features = ["types"] }
 uuid = { workspace = true }
 

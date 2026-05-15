@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use anyhow::Result;
 use common::types::{BlockNumber, RskBlock, RskBlockAndUncles};
-use log::{debug, info, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 use crate::types::RskPegManagerEvents;
 

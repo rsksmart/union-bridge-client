@@ -12,7 +12,7 @@ use coordinator::config::{Config, Logger};
 use coordinator::coordinator::Coordinator;
 use coordinator::monitor::Monitor;
 use coordinator::store::CoordinatorStore;
-use log::{debug, error, info};
+use tracing::{debug, error, info};
 use transaction_dispatcher::config::Config as TxDispatcherConfig;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";

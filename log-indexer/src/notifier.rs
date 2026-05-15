@@ -10,7 +10,7 @@ use common::msg_broker::broker::{Identifier, UnionBrokerServerApi};
 use common::msg_broker::types::{FromServer, ToServer};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::{Address, RskLog};
-use log::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, instrument, trace, warn};
 
 pub struct Notifier<BS: UnionBrokerServerApi> {
     new_log_channel: mpsc::Receiver<RskLog>,
@@ -60,6 +60,7 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
     /// # Errors
     ///
     /// Returns an error if there's a failure in the message broker or channel communication
+    #[instrument(skip_all)]
     pub fn run(&mut self) -> Result<()> {
         loop {
             if self.shutdown_flag.is_on() {

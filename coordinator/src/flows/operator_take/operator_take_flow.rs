@@ -11,8 +11,8 @@ use common::msg_broker::bitvmx_types::{
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::{Address, CommitteeId, Hash256, TxHash};
-use log::{debug, info, trace};
 use serde_json::json;
+use tracing::{debug, info, trace};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{RegisterAdvanceFundsInput, RequestPeginInput};
 use union_contracts::bindings::pegout_manager::PegoutManager::PegoutRegistered;

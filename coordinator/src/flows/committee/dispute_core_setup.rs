@@ -7,7 +7,7 @@ use common::msg_broker::bitvmx_types::{
     MemberData, PartialUtxo, Utxo, VariableTypes,
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
-use log::{debug, info};
+use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::flows::committee::common::{CommitteeData, send_bitvmx_msg};

@@ -12,10 +12,10 @@ use bitcoin::blockdata::block::Header;
 use bitcoin::consensus::encode::deserialize as btc_deserialize;
 use bitcoin::hashes::Hash;
 use hex::FromHexError;
-use log::error;
 use musig2::PubNonce;
 use primitive_types::{H160, H256, U256};
 use serde::{Deserialize, Deserializer, Serialize, de};
+use tracing::error;
 
 /// A trait for types that can be converted into a hexadecimal string.
 ///

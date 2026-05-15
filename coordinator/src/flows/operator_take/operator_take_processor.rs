@@ -8,8 +8,8 @@ use common::msg_broker::bitvmx_types::{
 };
 use common::runtime_sync::RuntimeSync;
 use common::types::{CommitteeId, Hash256, RskBlockAndUncles, TxIdParser};
-use log::{debug, error, info, trace, warn};
 use primitive_types::H256;
+use tracing::{debug, error, info, trace, warn};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use uuid::Uuid;
 

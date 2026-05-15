@@ -6,8 +6,8 @@ use alloy_rpc_client::RpcClient;
 use alloy_rpc_types::{Filter, FilterSet, Header, Log};
 use alloy_transport::layers::RetryBackoffLayer;
 use anyhow::{Context, Result, bail};
-use log::debug;
 use serde_json::{Value, json};
+use tracing::debug;
 
 use crate::alloy_rsk_provider::sub::AlloySubscription;
 use crate::rsk_provider::{RskProvider, RskSubscriptionFilter};

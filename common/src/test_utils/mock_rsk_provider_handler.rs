@@ -6,7 +6,7 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::anyhow;
-use log::info;
+use tracing::info;
 
 use crate::rsk_provider::{
     MockRskProvider, MockRskSubscription, RskSubscriptionError, RskSubscriptionFilter,

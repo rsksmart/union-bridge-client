@@ -14,16 +14,16 @@ anvil = ["common/anvil"]
 anyhow = { workspace = true }
 clap = { workspace = true }
 common = { path = "../common" }
-log = { workspace = true }
 mockall = { workspace = true }
 serde = { workspace = true }
 storage-backend = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
-env_logger = { workspace = true }
 primitive-types = { workspace = true }
 rand = "0.9.2"
 tempfile = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [lints]
 workspace = true

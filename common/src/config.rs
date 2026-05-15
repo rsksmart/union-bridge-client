@@ -4,10 +4,10 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use bitcoin::Network;
 use config::{self, Environment, Source};
-use log::{info, trace};
-use log4rs::config::RawConfig;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use tracing::{info, trace};
+use tracing_subscriber::EnvFilter;
 
 use crate::errors::ConfigError;
 use crate::rsk_provider::RskProvider;
@@ -16,9 +16,7 @@ use crate::types::{BlockHash, RskBlock};
 const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 const BASE_CONFIG_PATH: &str = "config/base";
 const CONFIG_DIR_PATH: &str = "config";
-const DEFAULT_LOG_DIR: &str = "./logs";
 const EXTENSION_TYPE: &str = "toml";
-const LOG_DIR_ENV_VAR: &str = "UB_LOG_DIR";
 
 #[derive(Debug, Deserialize)]
 pub struct CommonConfig {
@@ -232,53 +230,27 @@ impl CommonConfig {
         ))
     }
 
+    /// Initializes the tracing subscriber with stdout output.
+    ///
+    /// Log levels are controlled via the `RUST_LOG` environment variable (standard tracing
+    /// convention). If unset, defaults to `debug` with noisy third-party crates at `warn`.
+    ///
+    /// The `logger_file_opt` parameter is retained for CLI compatibility but is no longer used;
+    /// configure levels via `RUST_LOG` instead.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the logger configuration cannot be read or initialized.
-    pub fn init_logger(logger_file_opt: Option<&String>, crate_name: &str) -> Result<()> {
-        // otherwise, use the default template and tweak it (mostly for local)
-        let project_root = Self::project_root();
+    /// Never returns an error; signature kept for backward compatibility.
+    pub fn init_logger(_logger_file_opt: Option<&String>, _crate_name: &str) -> Result<()> {
+        let default_filter = "debug,tarpc=warn,alloy_provider=warn,alloy_pubsub=warn,alloy_rpc_client=warn,alloy_json_rpc=warn";
 
-        let logger_spec = if let Some(path) = logger_file_opt {
-            println!("Using custom logger defined @ {path}");
-            path.clone()
-        } else {
-            println!("Using default logger");
-            format!("{project_root}/log4rs.yaml")
-        };
+        let filter =
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter));
 
-        // Read and optionally expand env vars in the template
-        let mut config_str = fs::read_to_string(&logger_spec)
-            .context(format!("Failed to read base log4rs config: {logger_spec}"))?;
+        // try_init returns Err if a global subscriber is already set (e.g., in tests); safe to ignore.
+        let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
 
-        // Replace placeholders if any in the spec
-        config_str = config_str.replace("{CRATE_NAME}", crate_name);
-
-        let log_destination = Self::log_destination()?;
-        config_str = config_str.replace("{DESTINATION}", &log_destination);
-
-        let client_id = std::env::var("CLIENT_ID").unwrap_or_else(|_| "0".to_string());
-        config_str = config_str.replace("{CLIENT_ID}", &client_id);
-
-        println!(
-            "Logging to {:?}",
-            format!("{}/{}-{}.log", log_destination, crate_name, client_id)
-        );
-
-        // Parse and initialize log4rs
-        let config = serde_yaml::from_str::<RawConfig>(&config_str)
-            .context("Failed to parse log4rs config")?;
-        log4rs::init_raw_config(config).context("Failed to initialize log4rs")
-    }
-
-    fn log_destination() -> Result<String> {
-        match std::env::var(LOG_DIR_ENV_VAR) {
-            Ok(path) if !path.is_empty() => Ok(path),
-            Ok(_) | Err(std::env::VarError::NotPresent) => Ok(DEFAULT_LOG_DIR.to_string()),
-            Err(std::env::VarError::NotUnicode(_)) => {
-                bail!("{LOG_DIR_ENV_VAR} must be valid UTF-8")
-            }
-        }
+        Ok(())
     }
 
     fn project_root() -> String {
@@ -316,7 +288,6 @@ mod tests {
 
     fn cleanup_env_vars() {
         unsafe {
-            remove_var(LOG_DIR_ENV_VAR);
             remove_var("UB__INDEXER__STORAGE__PATH");
             remove_var("UB__INDEXER__CACHE__SIZE");
             remove_var("UB__PROVIDER__ROOTSTOCK__URL");
@@ -454,33 +425,5 @@ mod tests {
                 panic!("unexpected error variant: {other:?}");
             }
         }
-    }
-
-    #[test]
-    fn test_log_destination_defaults_to_logs_when_env_var_is_not_set() {
-        let _guard = TEST_MUTEX.lock().unwrap();
-
-        unsafe {
-            remove_var(LOG_DIR_ENV_VAR);
-        }
-
-        let destination = CommonConfig::log_destination().expect("Failed to resolve log dir");
-
-        assert_eq!(DEFAULT_LOG_DIR, destination);
-    }
-
-    #[test]
-    fn test_log_destination_uses_ub_log_dir_when_env_var_is_set() {
-        let _guard = TEST_MUTEX.lock().unwrap();
-        let expected_destination = "/tmp/union-bridge-client-logs";
-
-        unsafe {
-            set_var(LOG_DIR_ENV_VAR, expected_destination);
-        }
-
-        let destination = CommonConfig::log_destination().expect("Failed to resolve log dir");
-
-        assert_eq!(expected_destination, destination);
-        cleanup_env_vars();
     }
 }

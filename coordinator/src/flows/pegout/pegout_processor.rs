@@ -10,7 +10,7 @@ use common::msg_broker::bitvmx_types::{
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles, TxIdParser};
-use log::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use union_contracts::bindings::pegout_manager::PegoutManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;

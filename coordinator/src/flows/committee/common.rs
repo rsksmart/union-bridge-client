@@ -5,8 +5,8 @@ use common::msg_broker::bitvmx_types::{
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::types::CommitteeId;
-use log::{debug, error};
 use serde::{Deserialize, Serialize};
+use tracing::{debug, error};
 use union_contracts::bindings::committee_registry::CommitteeRegistry::Committee;
 use uuid::Uuid;
 

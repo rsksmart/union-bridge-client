@@ -9,9 +9,9 @@ use alloy_provider::Provider;
 use alloy_provider::network::ReceiptResponse;
 use alloy_rpc_types::TransactionReceipt;
 use alloy_sol_types::SolCall;
-use log::{debug, error, warn};
 use thiserror::Error;
 use tokio::time::{sleep, timeout};
+use tracing::{debug, error, warn};
 
 use crate::contracts::{
     bitcoin_manager, challenge_manager, committee_registry, member_registry, pegin_manager,

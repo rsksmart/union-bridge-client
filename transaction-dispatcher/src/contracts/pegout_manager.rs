@@ -1,9 +1,9 @@
 use alloy_primitives::hex::FromHex;
 use alloy_primitives::{Address, Bytes, FixedBytes, TxHash, U256};
 use alloy_provider::Provider;
-use log::{error, info};
 #[cfg(test)]
 use mockall::automock;
+use tracing::{error, info};
 use union_contracts::bindings::pegout_manager::PegoutManager::{
     self, BtcTransaction, BtcTxIn, BtcTxOut, BtcTxSPVProof, PegoutManagerErrors,
     PegoutManagerInstance,

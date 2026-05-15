@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::info;
+use tracing::info;
 use union_contracts::bindings::pegout_manager::PegoutManager::BtcTxSPVProof;
 
 use crate::contracts::pegout_manager::PegoutManagerContractApi;

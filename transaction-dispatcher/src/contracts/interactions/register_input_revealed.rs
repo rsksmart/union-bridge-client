@@ -1,4 +1,4 @@
-use log::info;
+use tracing::info;
 use union_contracts::bindings::challenge_manager::ChallengeManager::BtcTxSPVProof;
 
 use crate::contracts::challenge_manager::ChallengeManagerContractApi;

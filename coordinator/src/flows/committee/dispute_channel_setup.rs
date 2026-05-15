@@ -11,7 +11,7 @@ use common::msg_broker::bitvmx_types::{
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::msg_broker::config::{ConfigResult, DisputeConfiguration, ForceFailConfiguration};
 use hex::decode;
-use log::{debug, info};
+use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::flows::committee::common::{CommitteeData, send_bitvmx_msg};

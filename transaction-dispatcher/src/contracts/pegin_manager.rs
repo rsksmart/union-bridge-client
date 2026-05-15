@@ -2,9 +2,9 @@ use alloy_primitives::hex::FromHex;
 use alloy_primitives::{Address, FixedBytes, TxHash};
 use alloy_provider::Provider;
 use anyhow::Result;
-use log::{error, info};
 #[cfg(test)]
 use mockall::automock;
+use tracing::{error, info};
 use union_contracts::bindings::pegin_manager::PeginManager::{
     self, BtcTransaction, BtcTxSPVProof, PeginManagerErrors, PeginManagerInstance,
 };
