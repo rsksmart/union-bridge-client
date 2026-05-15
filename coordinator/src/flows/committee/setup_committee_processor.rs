@@ -15,7 +15,7 @@ use common::msg_broker::bitvmx_types::{
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::types::{BlockNumber, CommitteeId, RskBlockAndUncles, StreamId};
-use log::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
 

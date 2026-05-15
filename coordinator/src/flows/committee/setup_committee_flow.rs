@@ -15,7 +15,6 @@ use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types;
 use common::types::{CommitteeId, StreamId, TxIdParser};
-use log::{debug, error, info, trace, warn};
 #[cfg(test)]
 use mockall::automock;
 use op_funding::{derive_stream_funding_profile, required_member_rsk_balance};
@@ -23,6 +22,7 @@ use protocol_params::{committee_member_count, prover_count, slots_per_package};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tiny_keccak::{Hasher, Keccak};
+use tracing::{debug, error, info, trace, warn};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use transaction_dispatcher::types::{
     ApplyToStreamInput, ApplyToStreamOutput, CommitteeECDSA, DepositAggregatedKeyInput,

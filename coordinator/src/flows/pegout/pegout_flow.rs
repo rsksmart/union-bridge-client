@@ -10,9 +10,10 @@ use common::msg_broker::bitvmx_types::{
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::{CommitteeId, TxHash};
-use log::{debug, info, trace, warn};
+use hex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use tracing::{debug, info, trace, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{
     GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,

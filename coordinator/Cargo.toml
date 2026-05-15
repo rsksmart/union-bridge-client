@@ -18,7 +18,6 @@ chrono = { version = "0.4.42", default-features = false, features = ["clock", "s
 clap = { workspace = true }
 common = { path = "../common" }
 hex = { workspace = true }
-log = { workspace = true }
 musig2 = { workspace = true }
 op-funding = { path = "../op-funding" }
 primitive-types = { workspace = true }
@@ -31,6 +30,7 @@ sha2 = { workspace = true }
 storage-backend = { workspace = true }
 thiserror = { workspace = true }
 tiny-keccak = { workspace = true }
+tracing = { workspace = true }
 transaction-dispatcher = { path = "../transaction-dispatcher", features = ["types"] }
 union-contracts = { workspace = true }
 

@@ -6,7 +6,7 @@ use common::rsk_indexer::RskIndexer;
 use common::rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::{BlockHash, BlockNumber, RskBlock, RskBlockAndUncles};
-use log::{debug, error, info, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 use crate::store::BlockStore;
 

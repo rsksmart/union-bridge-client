@@ -1,8 +1,8 @@
 use alloy_primitives::TxHash;
 use alloy_provider::Provider;
-use log::info;
 #[cfg(test)]
 use mockall::automock;
+use tracing::info;
 use union_contracts::bindings::signature_manager::SignatureManager;
 use union_contracts::bindings::signature_manager::SignatureManager::SignatureManagerInstance;
 

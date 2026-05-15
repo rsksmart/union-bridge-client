@@ -68,11 +68,7 @@ impl Logger {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::path::Path;
-
     use common::config::IndexerStartFrom;
-    use tempfile::TempDir;
 
     use super::*;
 
@@ -109,49 +105,8 @@ mod tests {
     }
 
     #[test]
-    fn test_init_logger_with_custom_file() {
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let logger_file = temp_dir.path().join("log4rs.yaml");
-        let log_file = &format!("{}/{}", temp_dir.path().to_str().unwrap(), CARGO_PKG_NAME);
-
-        let logger_config_template = r#"
-refresh_rate: 30 seconds
-
-appenders:
-  rolling_file:
-    kind: rolling_file
-    path: "{TO_REPLACE}.log"
-    encoder:
-      pattern: "{d(%Y-%m-%d %H:%M:%S%.3f)} - {l:>5} - {m}{n}"
-    policy:
-      trigger:
-        kind: size
-        limit: 10mb
-      roller:
-        kind: fixed_window
-        base: 1
-        count: 5
-        pattern: "{TO_REPLACE}.{}.log"
-
-root:
-  level: debug
-  appenders:
-    - rolling_file
-"#;
-
-        let logger_config_content =
-            logger_config_template.to_string().replace("{TO_REPLACE}", log_file);
-
-        fs::write(&logger_file, logger_config_content).expect("Failed to write logger config");
-
-        let result = CommonConfig::init_logger(
-            Some(&logger_file.to_string_lossy().to_string()),
-            "test_crate",
-        );
-
-        println!("result: {result:?}");
-
+    fn test_init_logger() {
+        let result = CommonConfig::init_logger(None, "test_crate");
         assert!(result.is_ok());
-        assert!(Path::new(&format!("{log_file}.log")).exists());
     }
 }

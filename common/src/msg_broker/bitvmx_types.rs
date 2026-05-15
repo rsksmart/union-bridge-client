@@ -12,7 +12,7 @@ pub use bitvmx_emulator::decision::challenge::{ForceChallenge, ForceCondition};
 pub use bitvmx_emulator::executor::utils::{
     FailConfiguration, FailExecute, FailOpcode, FailRead, FailReads, FailSelectionBits, FailWrite,
 };
-use log::info;
+use tracing::info;
 use musig2::PubNonce;
 use musig2::secp::MaybeScalar;
 use serde::{Deserialize, Serialize};

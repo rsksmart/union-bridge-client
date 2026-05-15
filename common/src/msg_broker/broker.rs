@@ -1,7 +1,6 @@
 use std::net::{IpAddr, Ipv4Addr, ToSocketAddrs};
 use std::sync::{Arc, Mutex};
 
-use log::{debug, trace};
 use message_broker::broker_memstorage::MemStorage;
 use message_broker::channel::channel::{DualChannel, LocalChannel};
 // Re-export for convenience - these are used in the public API
@@ -15,6 +14,7 @@ use mockall::automock;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use thiserror::Error;
+use tracing::{debug, trace};
 
 use crate::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
 use crate::msg_broker::types::{FromServer, ToServer};

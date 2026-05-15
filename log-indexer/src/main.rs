@@ -9,11 +9,11 @@ use common::msg_broker::broker::BrokerServer;
 use common::rsk_indexer::RskIndexer;
 use common::shutdown_flag::ShutdownFlag;
 use common::types::RskLog;
-use log::{debug, error, info};
 use log_indexer::config::{Config, Logger};
 use log_indexer::indexer::LogIndexer;
 use log_indexer::notifier::Notifier;
 use log_indexer::store::RawLogStore;
+use tracing::{debug, error, info};
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config";
@@ -98,7 +98,6 @@ fn main() -> Result<()> {
     })?;
 
     info!("Quitting now...");
-    log::logger().flush();
 
     Ok(())
 }

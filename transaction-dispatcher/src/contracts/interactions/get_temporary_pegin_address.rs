@@ -1,5 +1,5 @@
 use alloy_primitives::{Address, FixedBytes};
-use log::debug;
+use tracing::debug;
 
 use crate::contracts::pegin_manager::PeginManagerContractApi;
 use crate::contracts::stream_manager::StreamManagerContractApi;
@@ -268,6 +268,6 @@ mod tests {
 
     #[allow(unused)]
     fn init_logger() {
-        env_logger::builder().is_test(true).try_init();
+        tracing_subscriber::fmt().with_test_writer().try_init();
     }
 }

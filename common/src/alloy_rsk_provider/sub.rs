@@ -2,9 +2,9 @@ use alloy_primitives::{Address as AlloyAddress, B256};
 use alloy_pubsub::{Subscription, SubscriptionItem};
 use alloy_rpc_types::{FilterBlockOption, Header, Log, Topic};
 use anyhow::{Context, Result, anyhow};
-use log::trace;
 use serde::de::DeserializeOwned;
 use tokio::sync::broadcast::error::RecvError;
+use tracing::trace;
 
 use crate::alloy_rsk_provider::rpc::AlloyProvider;
 use crate::rsk_provider::{

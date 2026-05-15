@@ -9,7 +9,7 @@ use common::rsk_provider::{
 };
 use common::shutdown_flag::ShutdownFlag;
 use common::types::{Address, BlockNumber, ContractInfo, RskLog};
-use log::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, instrument, trace, warn};
 
 use crate::store::LogStore;
 
@@ -87,6 +87,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 }
 
 impl<P: RskProvider, S: LogStore> RskIndexer<P, S> for LogIndexer<P, S> {
+    #[instrument(skip_all)]
     fn run(&self) -> Result<()> {
         if !self.is_running() {
             info!("[subscribe_logs] Shutdown requested, skipping...");

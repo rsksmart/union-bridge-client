@@ -21,8 +21,6 @@ bitcoin = { workspace = true }
 bitvmx-emulator = { git = "https://github.com/FairgateLabs/BitVMX-CPU.git", tag = "v0.5.11", package = "emulator" }
 config = { workspace = true }
 hex = { workspace = true }
-log = { workspace = true }
-log4rs = { workspace = true }
 lru = "0.16"
 message-broker = { workspace = true }
 mockall = { workspace = true }
@@ -36,6 +34,8 @@ sha3 = "0.10.8"
 signal-hook = "0.3.18"
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 uuid = { version = "1.11.1", features = ["v4", "serde"] }
 
 # cargo-husky installs the git hooks from `.cargo-husky/hooks/` the first time

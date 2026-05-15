@@ -1,4 +1,4 @@
-use log::info;
+use tracing::info;
 
 use crate::contracts::committee_registry::CommitteeRegistryContractApi;
 use crate::rsk_gateway::DomainErrors;
