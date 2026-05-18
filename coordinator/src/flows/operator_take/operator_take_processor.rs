@@ -4,22 +4,22 @@ use std::rc::Rc;
 use anyhow::{Context, Result, anyhow};
 use common::msg_broker::bitvmx_types::{
     AdvanceFundsRegistered, FundsAdvanceSPV, OutgoingBitVMXApiMessages, UnionSPVNotification,
-    UnionTxType, VariableTypes,
+    UnionTxType, VariableTypes, advance_funds_protocol_id,
 };
 use common::runtime_sync::RuntimeSync;
 use common::types::{CommitteeId, Hash256, RskBlockAndUncles, TxIdParser};
 use log::{debug, error, info, trace, warn};
 use primitive_types::H256;
-use sha2::{Digest, Sha256};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use uuid::Uuid;
 
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
 use crate::event_processor::EventProcessor;
 use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
-use crate::flows::common::{GlobalContext, Signaling};
+use crate::flows::common::{FlowId, GlobalContext, Signaling};
 use crate::flows::operator_take::operator_take_flow::{
     AdvanceFundsFlow, OperatorTakeTriggerData, StepData, Steps,
+    flow_id_from_operator_take_triggered_tx_hash,
 };
 use crate::types::{
     AdminRequest, EventStatus, FlowKind, OperatorTakeTriggeredEvent, PegoutRegisteredEvent,
@@ -45,18 +45,18 @@ where
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
     global_context: GlobalContext,
-    flows: HashMap<Uuid, AdvanceFundsFlow<CG, BC>>,
+    flows: HashMap<FlowId, AdvanceFundsFlow<CG, BC>>,
     blockchain_view: BlockchainView,
     events_confirming: HashMap<String, ConfirmableEventWithData>,
     required_confirmations: u32,
     native_bridge_verifier: NativeBridgeVerifier<CG>,
     // For retry logic when native bridge lacks confirmations
-    unconfirmed_register_advance_funds: HashMap<Uuid, i16>,
-    register_advance_funds_retry_scheduler: TickScheduler<Uuid>,
-    unconfirmed_register_reimbursement_kickoff: HashMap<Uuid, i16>,
-    register_reimbursement_kickoff_retry_scheduler: TickScheduler<Uuid>,
-    unconfirmed_register_operator_take: HashMap<Uuid, i16>,
-    register_operator_take_retry_scheduler: TickScheduler<Uuid>,
+    unconfirmed_register_advance_funds: HashMap<FlowId, i16>,
+    register_advance_funds_retry_scheduler: TickScheduler<FlowId>,
+    unconfirmed_register_reimbursement_kickoff: HashMap<FlowId, i16>,
+    register_reimbursement_kickoff_retry_scheduler: TickScheduler<FlowId>,
+    unconfirmed_register_operator_take: HashMap<FlowId, i16>,
+    register_operator_take_retry_scheduler: TickScheduler<FlowId>,
     btc_status_retry_blocks: u32,
     signaling: Rc<Signaling>,
     request_pegout_tx_hashes: HashMap<(CommitteeId, u64), String>,
@@ -128,7 +128,12 @@ where
         }
     }
 
-    fn schedule_register_advance_funds_retry(&mut self, flow_id: Uuid, attempt: i16, reason: &str) {
+    fn schedule_register_advance_funds_retry(
+        &mut self,
+        flow_id: FlowId,
+        attempt: i16,
+        reason: &str,
+    ) {
         info!("{reason} for flow {flow_id} (attempt {attempt})");
         self.unconfirmed_register_advance_funds.insert(flow_id, attempt);
         self.register_advance_funds_retry_scheduler.schedule(flow_id, self.btc_status_retry_blocks);
@@ -178,7 +183,7 @@ where
 
     fn schedule_register_reimbursement_kickoff_retry(
         &mut self,
-        flow_id: Uuid,
+        flow_id: FlowId,
         attempt: i16,
         reason: &str,
     ) {
@@ -233,7 +238,12 @@ where
         }
     }
 
-    fn schedule_register_operator_take_retry(&mut self, flow_id: Uuid, attempt: i16, reason: &str) {
+    fn schedule_register_operator_take_retry(
+        &mut self,
+        flow_id: FlowId,
+        attempt: i16,
+        reason: &str,
+    ) {
         info!("{reason} for flow {flow_id} (attempt {attempt})");
         self.unconfirmed_register_operator_take.insert(flow_id, attempt);
         self.register_operator_take_retry_scheduler.schedule(flow_id, self.btc_status_retry_blocks);
@@ -282,25 +292,8 @@ where
         }
     }
 
-    // It is not needed to generate a specific UUID for the advance funds flow, but it is useful to have a consistent way to identify the flow.
-    pub fn get_advance_funds_pid(committee_id: Uuid, slot_index: usize) -> Result<Uuid> {
-        let mut hasher = Sha256::new();
-        hasher.update(committee_id.as_bytes());
-        hasher.update(slot_index.to_be_bytes());
-        hasher.update("advance_funds");
-
-        let hash = hasher.finalize();
-        let slice = hash
-            .as_slice()
-            .get(..16)
-            .ok_or_else(|| anyhow!("SHA256 hash too short for UUID generation"))?;
-        let uuid_bytes: [u8; 16] =
-            slice.try_into().context("Failed to convert hash slice to UUID bytes")?;
-        Ok(Uuid::from_bytes(uuid_bytes))
-    }
-
     /// Tear down an advance-funds flow declared dead by an admin operator.
-    fn fail_flow(&mut self, flow_id: Uuid, reason: &str) -> Result<()> {
+    fn fail_flow(&mut self, flow_id: FlowId, reason: &str) -> Result<()> {
         if let Some(flow) = self.flows.get_mut(&flow_id) {
             flow.mark_failed(reason)?;
             warn!("Admin marked advance-funds flow {flow_id} as failed: {reason}");
@@ -330,17 +323,16 @@ where
             return Ok(());
         }
 
-        let committee_uuid = Uuid::from_u128(*committee_id);
-        let flow_id = Self::get_advance_funds_pid(committee_uuid, trigger_data.slot_index)?;
+        let flow_id = flow_id_from_operator_take_triggered_tx_hash(event.tx_hash);
 
         if self.flows.contains_key(&flow_id) {
             debug!(
                 "Advance funds flow {flow_id} already exists for committee {committee_id}, updating trigger data",
             );
         } else {
-            debug!(
-                "Creating advance funds flow {} for committee {} and slot {}",
-                flow_id, committee_id, trigger_data.slot_index
+            info!(
+                "Created AdvanceFundsFlow {flow_id} for operator_take_triggered_tx_hash={} (committee {}, slot {})",
+                event.tx_hash, committee_id, trigger_data.slot_index
             );
         }
 
@@ -351,8 +343,22 @@ where
             self.native_bridge_verifier.clone(),
             self.signaling.clone(),
             flow_id,
+            event.tx_hash,
             trigger_data,
         );
+
+        // Protocol id should be unique; if it isn't, that's an upstream bug we are flagging here.
+        let protocol_id = flow.bitvmx_protocol_id();
+        if let Some(existing) = self
+            .flows
+            .iter()
+            .find(|(fid, f)| **fid != flow_id && f.bitvmx_protocol_id() == protocol_id)
+        {
+            anyhow::bail!(
+                "AdvanceFundsFlow {flow_id}: another flow ({}) already holds BitVMX protocol id {protocol_id}; refusing to create duplicate",
+                existing.0
+            );
+        }
 
         flow.complete_step(StepData::OperatorTakeTriggered)?;
         self.flows.insert(flow_id, flow);
@@ -697,6 +703,18 @@ where
         Ok(())
     }
 
+    /// Find a flow by the `BitVMX` protocol id derived from (`committee_id`,
+    /// `slot_index`) on a BitVMX-side notification. O(n) scan over the
+    /// in-memory map.
+    fn flow_by_committee_slot(
+        &mut self,
+        committee_id: Uuid,
+        slot_index: usize,
+    ) -> Option<&mut AdvanceFundsFlow<CG, BC>> {
+        let target = advance_funds_protocol_id(committee_id, slot_index);
+        self.flows.values_mut().find(|flow| flow.bitvmx_protocol_id() == target)
+    }
+
     fn handle_reimbursement_kickoff_spv_notification(
         &mut self,
         notification: &UnionSPVNotification,
@@ -706,16 +724,16 @@ where
             notification.committee_id, notification.slot_index, notification.txid
         );
 
-        let flow_id =
-            Self::get_advance_funds_pid(notification.committee_id, notification.slot_index)?;
-
-        let Some(flow) = self.flows.get_mut(&flow_id) else {
+        let Some(flow) =
+            self.flow_by_committee_slot(notification.committee_id, notification.slot_index)
+        else {
             trace!(
                 "Ignoring ReimbursementKickoff SPV for committee {} slot {} - no matching flow",
                 notification.committee_id, notification.slot_index
             );
             return Ok(());
         };
+        let flow_id = flow.flow_id();
 
         let spv_proof = notification.spv_proof.clone().ok_or_else(|| {
             anyhow!("ReimbursementKickoff SPV notification missing spv_proof data")
@@ -779,16 +797,16 @@ where
             notification.committee_id, notification.slot_index, notification.txid
         );
 
-        let flow_id =
-            Self::get_advance_funds_pid(notification.committee_id, notification.slot_index)?;
-
-        let Some(flow) = self.flows.get_mut(&flow_id) else {
+        let Some(flow) =
+            self.flow_by_committee_slot(notification.committee_id, notification.slot_index)
+        else {
             debug!(
                 "Ignoring OperatorTake SPV for committee {} slot {} - no matching flow",
                 notification.committee_id, notification.slot_index
             );
             return Ok(());
         };
+        let flow_id = flow.flow_id();
 
         let spv_proof = notification
             .spv_proof
@@ -864,9 +882,10 @@ where
                     "Advance funds flow processor received SetupCompleted for program_id: {program_id}",
                 );
                 let mut matched_flow = false;
-                for (flow_id, flow) in &mut self.flows {
-                    if flow_id == program_id {
+                for flow in self.flows.values_mut() {
+                    if flow.bitvmx_protocol_id().value() == *program_id {
                         matched_flow = true;
+                        let flow_id = flow.flow_id();
                         if flow.current_step() == Steps::SetupAdvanceFundsProtocol {
                             flow.complete_step(StepData::SetupCompleted)?;
                         } else {
@@ -1063,7 +1082,7 @@ mod tests {
         OutgoingBitVMXApiMessages, UnionSPVNotification, UnionTxType,
     };
     use common::msg_broker::broker::MockBrokerClientApi;
-    use common::types::{Address, CommitteeId, Hash256};
+    use common::types::{Address, CommitteeId, Hash256, TxHash};
     use primitive_types::{H160, H256};
     use uuid::Uuid;
 
@@ -1111,18 +1130,14 @@ mod tests {
     fn buffers_reimbursement_kickoff_spv_while_waiting_for_advance_funds_confirmation() {
         let committee_id = Uuid::new_v4();
         let slot_index = 3;
-        let flow_id =
-            AdvanceFundsFlowProcessor::<MockRskContractsGatewayApi, MockBitVmxBroker>::get_advance_funds_pid(
-                committee_id,
-                slot_index,
-            )
-            .expect("flow id");
+        let flow_id = flow_id_from_operator_take_triggered_tx_hash(TxHash::from(H256::random()));
         let trigger_data = test_trigger_data(committee_id, slot_index);
 
         let flow = AdvanceFundsFlow::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             flow_id,
+            TxHash::from(H256::zero()),
             trigger_data,
             Steps::WaitForAdvanceFundsRegistered,
         );
@@ -1164,13 +1179,14 @@ mod tests {
     fn buffers_advance_funds_spv_until_wait_step_starts() {
         let committee_id = Uuid::new_v4();
         let slot_index = 1;
-        let flow_id = Uuid::new_v4();
+        let flow_id = flow_id_from_operator_take_triggered_tx_hash(TxHash::from(H256::random()));
         let trigger_data = test_trigger_data(committee_id, slot_index);
 
         let flow = AdvanceFundsFlow::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             flow_id,
+            TxHash::from(H256::zero()),
             trigger_data.clone(),
             Steps::SetupAdvanceFundsProtocol,
         );
@@ -1205,17 +1221,14 @@ mod tests {
     fn buffers_reimbursement_kickoff_spv_while_waiting_for_advance_funds_registration() {
         let committee_id = Uuid::new_v4();
         let slot_index = 2;
-        let flow_id = AdvanceFundsFlowProcessor::<MockRskContractsGatewayApi, MockBitVmxBroker>::get_advance_funds_pid(
-            committee_id,
-            slot_index,
-        )
-        .expect("flow id");
+        let flow_id = flow_id_from_operator_take_triggered_tx_hash(TxHash::from(H256::random()));
         let trigger_data = test_trigger_data(committee_id, slot_index);
 
         let flow = AdvanceFundsFlow::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             flow_id,
+            TxHash::from(H256::zero()),
             trigger_data,
             Steps::WaitForAdvanceFundsRegistered,
         );
@@ -1257,7 +1270,7 @@ mod tests {
     fn advance_funds_confirmation_notifies_passive_followers() {
         let committee_id = Uuid::new_v4();
         let slot_index = 4;
-        let flow_id = Uuid::new_v4();
+        let flow_id = flow_id_from_operator_take_triggered_tx_hash(TxHash::from(H256::random()));
         let trigger_data = test_trigger_data(committee_id, slot_index);
 
         let mut flow_broker = MockBitVmxBroker::new();
@@ -1269,6 +1282,7 @@ mod tests {
             Rc::new(contracts),
             Rc::new(flow_broker),
             flow_id,
+            TxHash::from(H256::zero()),
             trigger_data.clone(),
             Steps::WaitForAdvanceFundsRegistered,
         );
@@ -1306,13 +1320,14 @@ mod tests {
     fn reimbursement_kickoff_registered_is_ignored_for_passive_followers() {
         let committee_id = Uuid::new_v4();
         let slot_index = 5;
-        let flow_id = Uuid::new_v4();
+        let flow_id = flow_id_from_operator_take_triggered_tx_hash(TxHash::from(H256::random()));
         let trigger_data = test_trigger_data(committee_id, slot_index);
 
         let flow = AdvanceFundsFlow::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             flow_id,
+            TxHash::from(H256::zero()),
             trigger_data.clone(),
             Steps::WaitForPegoutRegistered,
         );
@@ -1336,17 +1351,14 @@ mod tests {
     fn reimbursement_kickoff_spv_is_ignored_for_passive_followers() {
         let committee_id = Uuid::new_v4();
         let slot_index = 8;
-        let flow_id = AdvanceFundsFlowProcessor::<MockRskContractsGatewayApi, MockBitVmxBroker>::get_advance_funds_pid(
-            committee_id,
-            slot_index,
-        )
-        .expect("flow id");
+        let flow_id = flow_id_from_operator_take_triggered_tx_hash(TxHash::from(H256::random()));
         let trigger_data = test_trigger_data(committee_id, slot_index);
 
         let flow = AdvanceFundsFlow::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             flow_id,
+            TxHash::from(H256::zero()),
             trigger_data,
             Steps::WaitForPegoutRegistered,
         );
@@ -1380,17 +1392,14 @@ mod tests {
     fn operator_take_spv_is_ignored_for_passive_followers() {
         let committee_id = Uuid::new_v4();
         let slot_index = 9;
-        let flow_id = AdvanceFundsFlowProcessor::<MockRskContractsGatewayApi, MockBitVmxBroker>::get_advance_funds_pid(
-            committee_id,
-            slot_index,
-        )
-        .expect("flow id");
+        let flow_id = flow_id_from_operator_take_triggered_tx_hash(TxHash::from(H256::random()));
         let trigger_data = test_trigger_data(committee_id, slot_index);
 
         let flow = AdvanceFundsFlow::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             flow_id,
+            TxHash::from(H256::zero()),
             trigger_data,
             Steps::WaitForPegoutRegistered,
         );
@@ -1424,13 +1433,14 @@ mod tests {
     fn reimbursement_kickoff_registered_advances_selected_operator_path() {
         let committee_id = Uuid::new_v4();
         let slot_index = 6;
-        let flow_id = Uuid::new_v4();
+        let flow_id = flow_id_from_operator_take_triggered_tx_hash(TxHash::from(H256::random()));
         let trigger_data = test_trigger_data(committee_id, slot_index);
 
         let flow = AdvanceFundsFlow::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             flow_id,
+            TxHash::from(H256::zero()),
             trigger_data.clone(),
             Steps::RegisterReimbursementKickoff,
         );
@@ -1454,13 +1464,14 @@ mod tests {
     fn reimbursement_kickoff_registered_keeps_early_state_unchanged() {
         let committee_id = Uuid::new_v4();
         let slot_index = 7;
-        let flow_id = Uuid::new_v4();
+        let flow_id = flow_id_from_operator_take_triggered_tx_hash(TxHash::from(H256::random()));
         let trigger_data = test_trigger_data(committee_id, slot_index);
 
         let flow = AdvanceFundsFlow::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             flow_id,
+            TxHash::from(H256::zero()),
             trigger_data.clone(),
             Steps::WaitForAdvanceFundsRegistered,
         );
@@ -1488,18 +1499,14 @@ mod tests {
     fn cleanup_terminal_flows_removes_advance_funds_flow_and_retry_state() {
         let committee_id = Uuid::new_v4();
         let slot_index = 4;
-        let flow_id =
-            AdvanceFundsFlowProcessor::<MockRskContractsGatewayApi, MockBitVmxBroker>::get_advance_funds_pid(
-                committee_id,
-                slot_index,
-            )
-            .expect("flow id");
+        let flow_id = flow_id_from_operator_take_triggered_tx_hash(TxHash::from(H256::random()));
         let trigger_data = test_trigger_data(committee_id, slot_index);
 
         let flow = AdvanceFundsFlow::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             flow_id,
+            TxHash::from(H256::zero()),
             trigger_data,
             Steps::Failed,
         );

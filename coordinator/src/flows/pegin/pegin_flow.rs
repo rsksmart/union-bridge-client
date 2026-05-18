@@ -1,13 +1,14 @@
 use std::rc::Rc;
 
 use anyhow::{Context, Result, anyhow, bail};
+use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::Parity::Even;
 use bitcoin::secp256k1::XOnlyPublicKey;
 use bitcoin::{PublicKey, Txid};
 use common::msg_broker::bitvmx_types::{
-    ACCEPT_PEGIN_TX, BtcTxSPVProof, CommsAddress, IncomingBitVMXApiMessages, OPERATOR_TAKE_TX,
-    OPERATOR_WON_TX, ParticipantRole, PeginAcceptedMessage, PubKeyHash, TransactionStatus,
-    VariableTypes,
+    ACCEPT_PEGIN_TX, BitVmxProtocolId, BtcTxSPVProof, CommsAddress, IncomingBitVMXApiMessages,
+    OPERATOR_TAKE_TX, OPERATOR_WON_TX, ParticipantRole, PeginAcceptedMessage, PubKeyHash,
+    TransactionStatus, VariableTypes, accept_pegin_protocol_id, build_communication_data,
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
@@ -24,13 +25,18 @@ use union_contracts::bindings::pegin_manager::PeginManager::{PeginAccepted, Pegi
 use uuid::Uuid;
 
 use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
-use crate::flows::common::{COMM_KEY_INDEX, Signaling, build_communication_data};
-use crate::flows::pegin::utils::{get_accept_pegin_pid, get_temp_pegin_pid};
+use crate::flows::common::{COMM_KEY_INDEX, FlowId, Signaling};
 use crate::store::{CoordinatorStoreApi, StoreKey};
 
 const PEGIN_REQUEST: &str = "pegin_request";
 const PEGIN_ACCEPTED_VAR_NAME: &str = "PeginAccepted";
 const PROGRAM_TYPE_ACCEPT_PEGIN: &str = "accept_pegin";
+
+/// Derive the pegin flow id from the request-pegin BTC txid.
+#[must_use]
+pub fn flow_id_from_request_pegin_txid(request_pegin_txid: Txid) -> FlowId {
+    FlowId::from_tx("pegin_flow", request_pegin_txid.to_byte_array().as_slice())
+}
 
 /// Steps for the pegin state machine flow
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -136,14 +142,20 @@ pub struct PeginRequestMessage {
 /// Context for the pegin flow state machine
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlowContext {
-    pub flow_id: Uuid,
+    pub flow_id: FlowId,
+    /// Canonical on-chain identifier this flow tracks. Set at flow
+    /// creation from the `PeginTransactionFound` event.
+    pub request_pegin_btc_tx_id: Txid,
     pub step: Steps,
 
-    // ID tracking for migration
-    pub temp_flow_id: Option<Uuid>, // Temporary ID (Bitcoin txid-based)
-    pub official_flow_id: Option<Uuid>, // Official ID (committee+slot based)
+    /// `BitVMX` program id for the accept-pegin program. `None` until
+    /// `PeginRequested` arrives, since the id is derived from
+    /// `(committee_id, slot_index)`. Used at every `BitVMX` message boundary
+    /// (`Setup`, `SetVar`, `GetTransactionInfoByName`,
+    /// `DispatchTransactionName`, `GetTransaction`) and matches
+    /// `get_accept_pegin_pid` on the `BitVMX` side.
+    pub bitvmx_protocol_id: Option<BitVmxProtocolId>,
 
-    pub request_pegin_btc_tx_id: Option<Txid>,
     pub request_pegin_btc_tx_status: Option<TransactionStatus>,
     pub request_pegin_spv_proof: Option<BtcTxSPVProof>,
     pub pegin_requested: Option<PeginRequested>,
@@ -161,7 +173,12 @@ pub struct FlowContext {
 /// Serializable state for persistence
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct State {
-    pub flow_id: Uuid,
+    pub flow_id: FlowId,
+    /// Pre-formatted display id `{flow_id} ({request_pegin_btc_tx_id})`
+    /// for log lines. Not persisted — re-computed at construction and on
+    /// `from_saved_state` via `build_log_id`.
+    #[serde(skip)]
+    pub log_id: String,
     pub ctx: FlowContext,
     /// When this flow was first created. `None` for flows persisted before
     /// this field existed (they pre-date the change and we can't backfill).
@@ -170,6 +187,12 @@ pub struct State {
     // the `Option` wrapper (the field becomes a required `DateTime<Utc>`).
     #[serde(default)]
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl State {
+    fn build_log_id(&self) -> String {
+        format!("{} ({})", self.flow_id, self.ctx.request_pegin_btc_tx_id)
+    }
 }
 
 /// State machine for handling pegin flow
@@ -204,59 +227,55 @@ where
         signaling: Rc<Signaling>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Self {
-        let temp_flow_id = get_temp_pegin_pid(btc_tx_id);
-
-        Self {
-            contracts,
-            rt_sync,
-            bitvmx_broker,
-            state: State {
-                flow_id: temp_flow_id,
-                ctx: FlowContext {
-                    flow_id: temp_flow_id,
-                    step: Steps::PeginTransactionFound,
-                    temp_flow_id: Some(temp_flow_id),
-                    official_flow_id: None,
-                    request_pegin_btc_tx_id: Some(btc_tx_id),
-                    request_pegin_btc_tx_status: None,
-                    request_pegin_spv_proof: None,
-                    pegin_requested: None,
-                    my_p2p_address: None,
-                    committee_output: None,
-                    bitvmx_pegin_accepted: None,
-                    operator_take_txid: None,
-                    operator_won_txid: None,
-                    accept_pegin_spv_proof: None,
-                    accept_pegin_tx_status: None,
-                    pegin_accepted: None,
-                    op_role: None,
-                },
-                created_at: Some(chrono::Utc::now()),
+        let flow_id = flow_id_from_request_pegin_txid(btc_tx_id);
+        let mut state = State {
+            flow_id,
+            log_id: String::new(),
+            ctx: FlowContext {
+                flow_id,
+                request_pegin_btc_tx_id: btc_tx_id,
+                step: Steps::PeginTransactionFound,
+                bitvmx_protocol_id: None,
+                request_pegin_btc_tx_status: None,
+                request_pegin_spv_proof: None,
+                pegin_requested: None,
+                my_p2p_address: None,
+                committee_output: None,
+                bitvmx_pegin_accepted: None,
+                operator_take_txid: None,
+                operator_won_txid: None,
+                accept_pegin_spv_proof: None,
+                accept_pegin_tx_status: None,
+                pegin_accepted: None,
+                op_role: None,
             },
-            store,
-            signaling,
-            native_bridge_verifier,
-        }
+            created_at: Some(chrono::Utc::now()),
+        };
+        state.log_id = state.build_log_id();
+        info!("Created PeginFlow {}", state.log_id);
+
+        Self { contracts, rt_sync, bitvmx_broker, state, store, signaling, native_bridge_verifier }
     }
 
     pub fn from_saved_state(
         contracts: Rc<CG>,
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
-        state: State,
+        mut state: State,
         store: Rc<S>,
         signaling: Rc<Signaling>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Self {
+        state.log_id = state.build_log_id();
         Self { contracts, rt_sync, bitvmx_broker, state, store, signaling, native_bridge_verifier }
     }
 
     fn persist_state(&self) -> Result<()> {
         debug!(
             "PeginFlow {}: Persisting state for step: {:?}",
-            self.state.flow_id, self.state.ctx.step
+            self.state.log_id, self.state.ctx.step
         );
-        self.store.save_flow(&StoreKey::PeginFlow(self.state.flow_id), self.state.clone())
+        self.store.save_flow(&StoreKey::PeginFlow(self.state.flow_id.value()), self.state.clone())
     }
 
     /// Start the next step and log the transition
@@ -266,7 +285,7 @@ where
 
         debug!(
             "PeginFlow {}: {} -> {}",
-            self.state.flow_id,
+            self.state.log_id,
             format_step(previous_step),
             format_step(next_step)
         );
@@ -277,14 +296,12 @@ where
                 unreachable!("Init step should not be reached in start_step");
             }
             Steps::RequestPeginSpvProof => {
-                info!("Requesting SPV proof for pegin request for flow_id: {}", self.state.flow_id);
                 self.request_pegin_spv_proof()?;
             }
             Steps::WaitPeginRequested => {
-                info!("Waiting for PeginRequested event for flow_id: {}", self.state.flow_id);
+                info!("Waiting for PeginRequested event for flow_id: {}", self.state.log_id);
             }
             Steps::GetCommInfoAuthoritativeCheckpoint => {
-                self.migrate_to_official_flow_id()?;
                 self.request_bitvmx_comm_info()?;
             }
             Steps::PreparePeginSetup => {
@@ -293,14 +310,14 @@ where
             Steps::RequestOperatorTakeTransactionInfo => {
                 info!(
                     "Requesting operator take transaction info from BitVMX for flow_id: {}",
-                    self.state.flow_id
+                    self.state.log_id
                 );
                 self.request_operator_take_transaction_info()?;
             }
             Steps::RequestOperatorWonTransactionInfo => {
                 info!(
                     "Requesting operator won transaction info from BitVMX for flow_id: {}",
-                    self.state.flow_id
+                    self.state.log_id
                 );
                 self.request_operator_won_transaction_info()?;
             }
@@ -309,12 +326,12 @@ where
                 self.complete_step(&StepData::OperatorTakeHashAdded)?;
             }
             Steps::WaitAllOperatorTakeTxidsAdded => {
-                info!("Waiting for AllOperatorTakeTxidsAdded for flow_id: {}", self.state.flow_id);
+                info!("Waiting for AllOperatorTakeTxidsAdded for flow_id: {}", self.state.log_id);
             }
             Steps::WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint => {
                 info!(
                     "Waiting for signatures to be ready to dispatch transaction for flow_id: {}",
-                    self.state.flow_id
+                    self.state.log_id
                 );
             }
             Steps::DispatchAcceptPeginTransactionAllConvergeCheckpoint => {
@@ -326,25 +343,25 @@ where
                 // to ensure the transaction has time to be broadcast before querying
                 info!(
                     "Waiting for AcceptPegin Bitcoin confirmations for flow_id: {} and tx_id: {:?}",
-                    self.state.flow_id,
+                    self.state.log_id,
                     self.get_accept_pegin_txid_from_bitvmx_var()
                 );
             }
             Steps::RequestAcceptPeginSpvProof => {
                 info!(
                     "Requesting SPV proof for flow_id: {} and tx_id: {:?}",
-                    self.state.flow_id,
+                    self.state.log_id,
                     self.get_accept_pegin_txid_from_bitvmx_var()
                 );
                 self.request_spv_proof()?;
             }
             Steps::AcceptPegin => {
-                info!("Accepting pegin for flow_id: {}", self.state.flow_id);
+                info!("Accepting pegin for flow_id: {}", self.state.log_id);
                 let spv_proof =
                     self.state.ctx.accept_pegin_spv_proof.as_ref().ok_or_else(|| {
                         anyhow!(
                             "SPV proof not available for pegin acceptance - flow_id {}",
-                            self.state.flow_id
+                            self.state.log_id
                         )
                     })?;
                 self.accept_pegin(spv_proof)?;
@@ -352,10 +369,10 @@ where
             Steps::Done => {
                 self.send_pegin_accepted_to_bitvmx()?;
                 self.write_completion_marker()?;
-                info!("PeginFlow Done: {}", self.state.flow_id);
+                info!("PeginFlow Done: {}", self.state.log_id);
             }
             Steps::Failed => {
-                info!("PeginFlow Failed: {}", self.state.flow_id);
+                info!("PeginFlow Failed: {}", self.state.log_id);
             }
         }
 
@@ -374,7 +391,7 @@ where
 
         info!(
             "PeginFlow {}: Completing step {} with data: {:?}",
-            self.state.flow_id,
+            self.state.log_id,
             format_step(current_step),
             data
         );
@@ -404,6 +421,15 @@ where
             }
             (Steps::WaitPeginRequested, StepData::PeginRequested(pegin_requested)) => {
                 self.state.ctx.pegin_requested = Some(pegin_requested.clone());
+                // committee_id and slotId are now known: derive the BitVMX
+                // protocol id (must match `get_accept_pegin_pid` on the
+                // BitVMX side, used in dispute_core lookups).
+                let committee_id: CommitteeId = pegin_requested.committeeId.into();
+                let committee_uuid = Uuid::from_u128(*committee_id);
+                let slot_index = usize::try_from(pegin_requested.streamPosition.slotId)
+                    .map_err(|_| anyhow!("Slot ID too large for usize"))?;
+                self.state.ctx.bitvmx_protocol_id =
+                    Some(accept_pegin_protocol_id(committee_uuid, slot_index));
                 Ok(Steps::GetCommInfoAuthoritativeCheckpoint)
             }
             (Steps::GetCommInfoAuthoritativeCheckpoint, StepData::CommInfo(comm_info)) => {
@@ -445,13 +471,13 @@ where
                 StepData::AcceptPeginTransactionConfirmed(tx_status),
             ) => self.confirm_accept_pegin_transaction(tx_status),
             (Steps::RequestAcceptPeginSpvProof, StepData::AcceptPeginSpvProof(spv_proof)) => {
-                info!("Received SPV proof for flow_id: {}", self.state.flow_id);
+                info!("Received SPV proof for flow_id: {}", self.state.log_id);
                 trace!("SPV Proof data: {spv_proof:?}");
                 self.state.ctx.accept_pegin_spv_proof = Some(spv_proof.clone());
                 Ok(Steps::AcceptPegin)
             }
             (Steps::AcceptPegin, StepData::RetryAcceptPegin) => {
-                info!("Retrying accept pegin for flow_id: {}", self.state.flow_id);
+                info!("Retrying accept pegin for flow_id: {}", self.state.log_id);
                 Ok(Steps::AcceptPegin)
             }
             (step, StepData::PeginAccepted(pegin_accepted))
@@ -476,7 +502,6 @@ where
             bail!("PeginAccepted txid mismatch: got {accepted_txid:?}, expected {expected_txid:?}");
         }
 
-        info!("PeginFlow Done: {}", self.state.flow_id);
         trace!("PeginAccepted data: {pegin_accepted:?}");
         self.state.ctx.pegin_accepted = Some(pegin_accepted.clone());
 
@@ -484,7 +509,7 @@ where
     }
 
     fn prepare_pegin_setup(&mut self) -> Result<()> {
-        info!("Preparing pegin setup for BitVMX with flow_id: {}", self.state.flow_id);
+        info!("Preparing pegin setup for BitVMX with flow_id: {}", self.state.log_id);
 
         let pegin_requested = self
             .state
@@ -500,7 +525,7 @@ where
     }
 
     fn send_pegin_request_to_bitvmx(&mut self, committee_id: &CommitteeId) -> Result<()> {
-        debug!("Sending pegin request to BitVMX with flow_id: {}", self.state.flow_id);
+        debug!("Sending pegin request to BitVMX with flow_id: {}", self.state.log_id);
 
         let committee_output = self.get_committee_output(committee_id.clone())?;
         self.state.ctx.committee_output = Some(committee_output.clone());
@@ -517,7 +542,7 @@ where
             Self::build_pegin_request_message(pegin_requested, &committee_output, amount)?;
 
         let msg = IncomingBitVMXApiMessages::SetVar(
-            self.state.flow_id,
+            self.bitvmx_protocol_id()?.value(),
             PEGIN_REQUEST.to_string(),
             VariableTypes::String(serde_json::to_string(&pegin_request)?),
         );
@@ -527,7 +552,7 @@ where
     }
 
     fn send_setup_to_bitvmx(&mut self, committee_id: &CommitteeId) -> Result<()> {
-        debug!("Sending setup to BitVMX with flow_id: {}", self.state.flow_id);
+        debug!("Sending setup to BitVMX with flow_id: {}", self.state.log_id);
 
         let committee_addresses = self.get_committee_addresses(committee_id)?;
         let committee_pubkey_hashes = self.get_committee_pubkey_hashes(committee_id)?;
@@ -546,7 +571,7 @@ where
         )?;
 
         let msg = IncomingBitVMXApiMessages::Setup(
-            self.state.flow_id,
+            self.bitvmx_protocol_id()?.value(),
             PROGRAM_TYPE_ACCEPT_PEGIN.to_string(),
             comms_addresses,
             0, // No leader
@@ -568,7 +593,7 @@ where
 
         debug!(
             "Adding operator (prover) take tx hash for flow_id: {}, accept_pegin_txid: {}",
-            self.state.flow_id, pegin_accepted.accept_pegin_txid
+            self.state.log_id, pegin_accepted.accept_pegin_txid
         );
 
         let take_tx_hash = self
@@ -596,7 +621,7 @@ where
 
     fn request_operator_take_transaction_info(&self) -> Result<()> {
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetTransactionInfoByName(
-            self.state.flow_id,
+            self.bitvmx_protocol_id()?.value(),
             self.operator_take_transaction_name()?,
         ))?;
 
@@ -605,7 +630,7 @@ where
 
     fn request_operator_won_transaction_info(&self) -> Result<()> {
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetTransactionInfoByName(
-            self.state.flow_id,
+            self.bitvmx_protocol_id()?.value(),
             self.operator_won_transaction_name()?,
         ))?;
 
@@ -613,9 +638,9 @@ where
     }
 
     fn dispatch_transaction(&self) -> Result<()> {
-        info!("Dispatching transaction {} for flow_id: {}", ACCEPT_PEGIN_TX, self.state.flow_id);
+        info!("Dispatching transaction {} for flow_id: {}", ACCEPT_PEGIN_TX, self.state.log_id);
         let msg = IncomingBitVMXApiMessages::DispatchTransactionName(
-            self.state.flow_id,
+            self.bitvmx_protocol_id()?.value(),
             ACCEPT_PEGIN_TX.to_string(),
         );
         self.send_bitvmx_msg(msg)?;
@@ -670,10 +695,10 @@ where
             .as_ref()
             .ok_or_else(|| anyhow!("PeginAccepted data not available"))?;
 
-        debug!("Notifying pegin accepted to BitVMX with flow_id: {}", self.state.flow_id);
+        debug!("Notifying pegin accepted to BitVMX with flow_id: {}", self.state.log_id);
         let data = serde_json::to_string(&pegin_accepted)?;
         let msg = IncomingBitVMXApiMessages::SetVar(
-            self.state.flow_id,
+            self.bitvmx_protocol_id()?.value(),
             PEGIN_ACCEPTED_VAR_NAME.to_string(),
             VariableTypes::String(data),
         );
@@ -683,9 +708,7 @@ where
 
     fn write_completion_marker(&self) -> Result<()> {
         let payload = json!({
-            "official_flow_id": self.state.ctx.official_flow_id,
-            "temp_flow_id": self.state.ctx.temp_flow_id,
-            "request_pegin_btc_tx_id": self.state.ctx.request_pegin_btc_tx_id.map(|txid| txid.to_string()),
+            "request_pegin_btc_tx_id": self.state.ctx.request_pegin_btc_tx_id.to_string(),
             "request_pegin_txid": self.state.ctx.pegin_requested.as_ref().map(|event| format!("{:#066x}", event.requestPeginTxid)),
             "accept_pegin_txid": self.state.ctx.pegin_accepted.as_ref().map(|event| format!("{:#066x}", event.acceptPeginTxid)),
             "committee_id": self.state.ctx.pegin_requested.as_ref().map(|event| event.committeeId.to_string()),
@@ -694,7 +717,9 @@ where
             "rbtc_amount": self.state.ctx.pegin_accepted.as_ref().map(|event| event.rbtcAmount.to_string()),
         });
 
-        self.signaling.signal_done("pegin", self.state.flow_id, &payload)
+        // signal_done currently keys completion markers by a Uuid; reuse the
+        // BitVMX protocol id (always set by the time we reach Done).
+        self.signaling.signal_done("pegin", self.bitvmx_protocol_id()?.value(), &payload)
     }
 
     fn extract_pegin_amount(&self) -> Result<u64> {
@@ -714,43 +739,13 @@ where
     }
 
     fn request_pegin_spv_proof(&self) -> Result<()> {
-        let btc_tx_id = self
-            .state
-            .ctx
-            .request_pegin_btc_tx_id
-            .ok_or_else(|| anyhow!("Bitcoin transaction ID not available"))?;
-
-        info!("Requesting SPV proof for Bitcoin transaction: {btc_tx_id}");
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetSPVProof(btc_tx_id))?;
-        Ok(())
-    }
-
-    fn migrate_to_official_flow_id(&mut self) -> Result<()> {
-        let pegin_requested = self
-            .state
-            .ctx
-            .pegin_requested
-            .as_ref()
-            .ok_or_else(|| anyhow!("PeginRequested data not available for migration"))?;
-
-        // Calculate official flow ID from committee and slot information
-        let committee_id: CommitteeId = pegin_requested.committeeId.into();
-        let committee_uuid: Uuid = Uuid::from_u128(*committee_id);
-        let official_flow_id = get_accept_pegin_pid(
-            committee_uuid,
-            usize::try_from(pegin_requested.streamPosition.slotId)
-                .map_err(|_| anyhow!("Slot ID too large for usize"))?,
-        )?;
+        let btc_tx_id = self.state.ctx.request_pegin_btc_tx_id;
 
         info!(
-            "Migrating flow from temp ID {} to official ID {}",
-            self.state.flow_id, official_flow_id
+            "Requesting SPV proof for pegin request: flow_id={}, btc_tx_id={btc_tx_id}",
+            self.state.log_id
         );
-
-        // Update flow context with official ID
-        self.state.ctx.official_flow_id = Some(official_flow_id);
-        self.state.flow_id = official_flow_id;
-
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetSPVProof(btc_tx_id))?;
         Ok(())
     }
 
@@ -873,7 +868,7 @@ where
     }
 
     fn request_bitvmx_comm_info(&self) -> Result<()> {
-        info!("Requesting BitVMX comm info for flow_id: {}", self.state.flow_id);
+        info!("Requesting BitVMX comm info for flow_id: {}", self.state.log_id);
         let req_id = Uuid::new_v4();
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo(req_id))
     }
@@ -890,9 +885,12 @@ where
             .ok_or_else(|| anyhow!("Expected accept pegin tx_id not found"))?;
         info!(
             "Requesting transaction status for flow_id: {} and tx_id: {:?}",
-            self.state.flow_id, tx_id
+            self.state.log_id, tx_id
         );
-        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetTransaction(self.state.flow_id, tx_id))?;
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetTransaction(
+            self.bitvmx_protocol_id()?.value(),
+            tx_id,
+        ))?;
         Ok(())
     }
 
@@ -954,7 +952,7 @@ where
 
     fn retry_request_pegin_step(&mut self) -> Result<Steps> {
         let spv_proof = self.state.ctx.request_pegin_spv_proof.as_ref().ok_or_else(|| {
-            anyhow!("SPV proof not available for pegin request - flow_id {}", self.state.flow_id)
+            anyhow!("SPV proof not available for pegin request - flow_id {}", self.state.log_id)
         })?;
         self.request_pegin(spv_proof)?;
         Ok(Steps::WaitPeginRequested)
@@ -969,7 +967,7 @@ where
         if tx_name != expected_tx_name {
             bail!(
                 "Unexpected transaction info for flow {} in step {:?}: got {}, expected {}",
-                self.state.flow_id,
+                self.state.log_id,
                 Steps::RequestOperatorTakeTransactionInfo,
                 tx_name,
                 expected_tx_name
@@ -984,7 +982,7 @@ where
         if tx_name != expected_tx_name {
             bail!(
                 "Unexpected transaction info for flow {} in step {:?}: got {}, expected {}",
-                self.state.flow_id,
+                self.state.log_id,
                 Steps::RequestOperatorWonTransactionInfo,
                 tx_name,
                 expected_tx_name
@@ -997,7 +995,7 @@ where
     fn confirm_accept_pegin_transaction(&mut self, tx_status: &TransactionStatus) -> Result<Steps> {
         info!(
             "Transaction confirmed for flow_id: {} and tx_id: {:?}",
-            self.state.flow_id, tx_status.tx_id
+            self.state.log_id, tx_status.tx_id
         );
         trace!("Transaction status data: {tx_status:?}");
         let expected_tx_id = self
@@ -1018,18 +1016,46 @@ where
         self.state.ctx.bitvmx_pegin_accepted.as_ref().map(|accepted| accepted.accept_pegin_txid)
     }
 
+    /// `BitVMX` program id for the accept-pegin program. Populated once
+    /// `PeginRequested` has been processed; calling before that is a
+    /// state-machine bug.
+    fn bitvmx_protocol_id(&self) -> Result<BitVmxProtocolId> {
+        self.state.ctx.bitvmx_protocol_id.ok_or_else(|| {
+            anyhow!(
+                "bitvmx_protocol_id not yet set for pegin flow {} at step {:?}",
+                self.state.log_id,
+                self.state.ctx.step
+            )
+        })
+    }
+
+    /// Convenience for callers that need to handle the not-yet-set state.
+    pub fn bitvmx_protocol_id_opt(&self) -> Option<BitVmxProtocolId> {
+        self.state.ctx.bitvmx_protocol_id
+    }
+
     pub fn is_terminal(&self) -> bool {
         matches!(self.state.ctx.step, Steps::Done | Steps::Failed)
     }
 
     pub fn mark_failed(&mut self, reason: &str) -> Result<()> {
-        info!("Marking pegin flow {} as failed: {reason}", self.state.flow_id);
+        info!("Marking pegin flow {} as failed: {reason}", self.state.log_id);
         self.start_step(Steps::Failed)
     }
 
-    /// Get the internal ID of the flow
-    pub fn flow_id(&self) -> Uuid {
+    /// Get the flow id (a `Uuid` derived from `request_pegin_btc_tx_id`).
+    pub fn flow_id(&self) -> FlowId {
         self.state.flow_id
+    }
+
+    /// Pre-formatted display id for log lines.
+    pub fn log_id(&self) -> &str {
+        &self.state.log_id
+    }
+
+    /// Get the canonical on-chain identifier (the request-pegin BTC txid).
+    pub fn request_pegin_btc_tx_id(&self) -> Txid {
+        self.state.ctx.request_pegin_btc_tx_id
     }
 
     /// Get the current step
@@ -1172,17 +1198,21 @@ mod tests {
     }
 
     fn create_default_flow_context(
-        flow_id: Uuid,
+        flow_id: FlowId,
         step: Steps,
         op_role: Option<ParticipantRole>,
     ) -> FlowContext {
+        // Default accept-pegin txid embedded in bitvmx_pegin_accepted; kept as
+        // the zero hash so tests can assert against a known constant.
         let btc_tx_id = Txid::from_raw_hash(bitcoin::hashes::sha256d::Hash::all_zeros());
         FlowContext {
             flow_id,
+            request_pegin_btc_tx_id: test_txid([1u8; 32]),
             step,
-            temp_flow_id: Some(flow_id),
-            official_flow_id: None,
-            request_pegin_btc_tx_id: Some(btc_tx_id),
+            // Most tests construct flows at steps where bitvmx_protocol_id
+            // would already be set; supply a stable test value derived from
+            // the flow's txid to mirror production.
+            bitvmx_protocol_id: Some(accept_pegin_protocol_id(Uuid::nil(), 0)),
             request_pegin_btc_tx_status: None,
             request_pegin_spv_proof: None,
             pegin_requested: None,
@@ -1222,7 +1252,7 @@ mod tests {
         let mock_store = std::rc::Rc::new(MockCoordinatorStoreApi::new());
         let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
 
-        let state = State { flow_id: ctx.flow_id, ctx, created_at: None };
+        let state = State { flow_id: ctx.flow_id, log_id: String::new(), ctx, created_at: None };
 
         let flow = PeginFlow::from_saved_state(
             mock_contracts.clone(),
@@ -1242,7 +1272,7 @@ mod tests {
         step: Steps,
         op_role: Option<ParticipantRole>,
     ) -> (MockPeginFlow, std::rc::Rc<crate::coordinator::tests::MockRskContractsGatewayApi>) {
-        let flow_id = Uuid::new_v4();
+        let flow_id = flow_id_from_request_pegin_txid(test_txid([1u8; 32]));
         let ctx = create_default_flow_context(flow_id, step, op_role);
         create_test_flow_with_mock_contracts(my_address, ctx)
     }
@@ -1277,7 +1307,7 @@ mod tests {
     #[test]
     fn test_add_operator_take_hash_prover_calls_contract() {
         let my_address = test_address([1u8; 20]);
-        let flow_id = Uuid::new_v4();
+        let flow_id = flow_id_from_request_pegin_txid(test_txid([1u8; 32]));
         let btc_tx_id = test_txid([0u8; 32]);
 
         let mut ctx = create_default_flow_context(
@@ -1316,7 +1346,7 @@ mod tests {
     #[test]
     fn test_request_operator_take_transaction_info_prover_stays_in_request_step() {
         let my_address = test_address([1u8; 20]);
-        let flow_id = Uuid::new_v4();
+        let flow_id = flow_id_from_request_pegin_txid(test_txid([1u8; 32]));
         let btc_tx_id = test_txid([0u8; 32]);
 
         let mut ctx = create_default_flow_context(
@@ -1338,7 +1368,7 @@ mod tests {
                 matches!(
                     msg,
                     IncomingBitVMXApiMessages::GetTransactionInfoByName(id, name)
-                        if *id == flow_id && name == "OPERATOR_TAKE_TX_0"
+                        if *id == accept_pegin_protocol_id(Uuid::nil(), 0).value() && name == "OPERATOR_TAKE_TX_0"
                 )
             })
             .times(1)
@@ -1350,7 +1380,7 @@ mod tests {
         mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
         let mock_store = std::rc::Rc::new(mock_store);
         let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
-        let state = State { flow_id: ctx.flow_id, ctx, created_at: None };
+        let state = State { flow_id: ctx.flow_id, log_id: String::new(), ctx, created_at: None };
         let mut flow = PeginFlow::from_saved_state(
             mock_contracts,
             rt_sync,
@@ -1369,7 +1399,7 @@ mod tests {
     #[test]
     fn test_operator_take_transaction_info_moves_to_won_step_and_caches_txid() {
         let my_address = test_address([1u8; 20]);
-        let flow_id = Uuid::new_v4();
+        let flow_id = flow_id_from_request_pegin_txid(test_txid([1u8; 32]));
         let txid = test_txid([3u8; 32]);
 
         let mut ctx = create_default_flow_context(
@@ -1390,7 +1420,7 @@ mod tests {
                 matches!(
                     msg,
                     IncomingBitVMXApiMessages::GetTransactionInfoByName(id, name)
-                        if *id == flow_id && name == "OPERATOR_WON_TX_0"
+                        if *id == accept_pegin_protocol_id(Uuid::nil(), 0).value() && name == "OPERATOR_WON_TX_0"
                 )
             })
             .times(1)
@@ -1402,7 +1432,7 @@ mod tests {
         mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
         let mock_store = std::rc::Rc::new(mock_store);
         let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
-        let state = State { flow_id: ctx.flow_id, ctx, created_at: None };
+        let state = State { flow_id: ctx.flow_id, log_id: String::new(), ctx, created_at: None };
         let mut flow = PeginFlow::from_saved_state(
             mock_contracts,
             rt_sync,
@@ -1425,7 +1455,7 @@ mod tests {
     #[test]
     fn test_request_operator_won_transaction_info_prover_stays_in_request_step() {
         let my_address = test_address([1u8; 20]);
-        let flow_id = Uuid::new_v4();
+        let flow_id = flow_id_from_request_pegin_txid(test_txid([1u8; 32]));
         let btc_tx_id = test_txid([0u8; 32]);
 
         let mut ctx = create_default_flow_context(
@@ -1447,7 +1477,7 @@ mod tests {
                 matches!(
                     msg,
                     IncomingBitVMXApiMessages::GetTransactionInfoByName(id, name)
-                        if *id == flow_id && name == "OPERATOR_WON_TX_0"
+                        if *id == accept_pegin_protocol_id(Uuid::nil(), 0).value() && name == "OPERATOR_WON_TX_0"
                 )
             })
             .times(1)
@@ -1459,7 +1489,7 @@ mod tests {
         mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
         let mock_store = std::rc::Rc::new(mock_store);
         let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
-        let state = State { flow_id: ctx.flow_id, ctx, created_at: None };
+        let state = State { flow_id: ctx.flow_id, log_id: String::new(), ctx, created_at: None };
         let mut flow = PeginFlow::from_saved_state(
             mock_contracts,
             rt_sync,
@@ -1478,7 +1508,7 @@ mod tests {
     #[test]
     fn test_operator_won_transaction_info_moves_to_add_step_and_caches_txid() {
         let my_address = test_address([1u8; 20]);
-        let flow_id = Uuid::new_v4();
+        let flow_id = flow_id_from_request_pegin_txid(test_txid([1u8; 32]));
         let txid = test_txid([4u8; 32]);
         let take_txid = test_txid([3u8; 32]);
 
@@ -1516,7 +1546,7 @@ mod tests {
         mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
         let mock_store = std::rc::Rc::new(mock_store);
         let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
-        let state = State { flow_id: ctx.flow_id, ctx, created_at: None };
+        let state = State { flow_id: ctx.flow_id, log_id: String::new(), ctx, created_at: None };
         let mut flow = PeginFlow::from_saved_state(
             mock_contracts,
             rt_sync,
@@ -1539,7 +1569,7 @@ mod tests {
     #[test]
     fn test_prepare_pegin_setup_verifier_skips_operator_info_step() {
         let my_address = test_address([1u8; 20]);
-        let flow_id = Uuid::new_v4();
+        let flow_id = flow_id_from_request_pegin_txid(test_txid([1u8; 32]));
         let btc_tx_id = test_txid([0u8; 32]);
 
         let ctx = create_default_flow_context(
@@ -1560,7 +1590,7 @@ mod tests {
         mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
         let mock_store = std::rc::Rc::new(mock_store);
         let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
-        let state = State { flow_id: ctx.flow_id, ctx, created_at: None };
+        let state = State { flow_id: ctx.flow_id, log_id: String::new(), ctx, created_at: None };
         let mut flow = PeginFlow::from_saved_state(
             mock_contracts,
             rt_sync,
@@ -1581,7 +1611,7 @@ mod tests {
     #[test]
     fn test_wait_all_operator_take_txids_added_has_no_entry_action() {
         let my_address = test_address([1u8; 20]);
-        let flow_id = Uuid::new_v4();
+        let flow_id = flow_id_from_request_pegin_txid(test_txid([1u8; 32]));
         let ctx = create_default_flow_context(
             flow_id,
             Steps::WaitAllOperatorTakeTxidsAdded,
@@ -1599,7 +1629,7 @@ mod tests {
         mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
         let mock_store = std::rc::Rc::new(mock_store);
         let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
-        let state = State { flow_id: ctx.flow_id, ctx, created_at: None };
+        let state = State { flow_id: ctx.flow_id, log_id: String::new(), ctx, created_at: None };
         let mut flow = PeginFlow::from_saved_state(
             mock_contracts,
             rt_sync,
@@ -1618,7 +1648,7 @@ mod tests {
     #[test]
     fn test_accept_pegin_signatures_ready_dispatches_transaction() {
         let my_address = test_address([1u8; 20]);
-        let flow_id = Uuid::new_v4();
+        let flow_id = flow_id_from_request_pegin_txid(test_txid([1u8; 32]));
         let accept_pegin_txid = test_txid([8u8; 32]);
         let mut ctx = create_default_flow_context(
             flow_id,
@@ -1639,7 +1669,7 @@ mod tests {
                 matches!(
                     msg,
                     IncomingBitVMXApiMessages::DispatchTransactionName(id, name)
-                        if *id == flow_id && name == "ACCEPT_PEGIN_TX"
+                        if *id == accept_pegin_protocol_id(Uuid::nil(), 0).value() && name == "ACCEPT_PEGIN_TX"
                 )
             })
             .times(1)
@@ -1651,7 +1681,7 @@ mod tests {
         let mock_store = std::rc::Rc::new(mock_store);
 
         let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
-        let state = State { flow_id: ctx.flow_id, ctx, created_at: None };
+        let state = State { flow_id: ctx.flow_id, log_id: String::new(), ctx, created_at: None };
         let mut flow = PeginFlow::from_saved_state(
             mock_contracts,
             rt_sync,
@@ -1679,7 +1709,7 @@ mod tests {
             Steps::RequestAcceptPeginSpvProof,
             Steps::AcceptPegin,
         ] {
-            let flow_id = Uuid::new_v4();
+            let flow_id = flow_id_from_request_pegin_txid(test_txid([1u8; 32]));
             let mut ctx =
                 create_default_flow_context(flow_id, step, Some(ParticipantRole::Verifier));
             ctx.bitvmx_pegin_accepted = Some(default_pegin_accepted_message(accept_pegin_txid));
@@ -1698,7 +1728,8 @@ mod tests {
             let mock_store = std::rc::Rc::new(mock_store);
 
             let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
-            let state = State { flow_id: ctx.flow_id, ctx, created_at: None };
+            let state =
+                State { flow_id: ctx.flow_id, log_id: String::new(), ctx, created_at: None };
             let mut flow = PeginFlow::from_saved_state(
                 mock_contracts,
                 rt_sync,

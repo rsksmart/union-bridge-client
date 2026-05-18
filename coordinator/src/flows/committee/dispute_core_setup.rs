@@ -109,7 +109,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
         let mut protocol_ids = vec![];
         debug!("Members to setup: {:?}", committee_data.members);
         for member in &committee_data.members {
-            let protocol_id = committee_data.get_dispute_core_pid_for_key(&member.take_key)?;
+            let protocol_id = committee_data.get_dispute_core_pid_for_key(&member.take_key).value();
 
             protocol_ids.push(protocol_id);
 

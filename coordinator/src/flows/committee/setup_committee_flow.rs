@@ -8,7 +8,8 @@ use bitcoin::{Network, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
 use common::msg_broker::bitvmx_types::{
     CommsAddress, Destination, IncomingBitVMXApiMessages, OP_COSIGN_UTXOS, OutputType, PartialUtxo,
     ParticipantRole, PubKeyHash, SignedPublicKey, Utxo, VariableTypes, WT_INIT_CHALLENGE_UTXOS,
-    WtInitChallengeUtxos,
+    WtInitChallengeUtxos, build_communication_data, dispute_aggregated_key_protocol_id,
+    pairwise_aggregated_key_protocol_id, take_aggregated_key_protocol_id,
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
@@ -21,7 +22,6 @@ use op_funding::{derive_stream_funding_profile, required_member_rsk_balance};
 use protocol_params::{committee_member_count, prover_count, slots_per_package};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sha2::{Digest, Sha256};
 use tiny_keccak::{Hasher, Keccak};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use transaction_dispatcher::types::{
@@ -35,9 +35,7 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
 };
 use uuid::Uuid;
 
-use crate::flows::committee::common::{
-    CommitteeData, FundingUtxos, get_dispute_pair_aggregated_key_pid,
-};
+use crate::flows::committee::common::{CommitteeData, FundingUtxos};
 use crate::flows::committee::dispute_channel_setup::{
     DisputeChannelSetup, DisputeChannelSetupRequest,
 };
@@ -46,8 +44,7 @@ use crate::flows::committee::dispute_core_setup::{
 };
 use crate::flows::committee::full_penalization_setup::FullPenalizationSetup;
 use crate::flows::common::{
-    COMM_KEY_INDEX, DISPUTE_KEY_INDEX, GlobalContext, Signaling, TAKE_KEY_INDEX,
-    build_communication_data,
+    COMM_KEY_INDEX, DISPUTE_KEY_INDEX, FlowId, GlobalContext, Signaling, TAKE_KEY_INDEX,
 };
 use crate::flows::errors::{FailableFlow, FlowError, FlowResultExt};
 use crate::store::{CoordinatorStoreApi, StoreKey};
@@ -111,7 +108,7 @@ pub(crate) trait SetupCommitteeFlowFactoryApi<
     S: CoordinatorStoreApi,
 >
 {
-    fn create_flow(&self, internal_id: Uuid) -> SetupCommitteeFlow<CG, BC, S>;
+    fn create_flow(&self, flow_id: FlowId, stream_id: u64) -> SetupCommitteeFlow<CG, BC, S>;
     fn create_flow_from_saved_state(&self, saved_state: State) -> SetupCommitteeFlow<CG, BC, S>;
 }
 
@@ -446,7 +443,15 @@ impl StepData {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct State {
-    internal_id: Uuid,
+    /// `internal_id` is the legacy on-disk field name; the alias keeps
+    /// pre-rename entries readable while new writes use `flow_id`.
+    /// TODO can drop the alias when all v0.4.0 entries have been migrated.
+    #[serde(alias = "internal_id")]
+    flow_id: FlowId,
+    /// Pre-formatted display id for log lines. Not persisted — re-computed
+    /// at construction and on `from_saved_state` via `build_log_id`.
+    #[serde(skip)]
+    log_id: String,
     step: Steps,
     ctx: FlowContext,
     /// When this flow was first created. `None` for flows persisted before
@@ -456,6 +461,12 @@ pub struct State {
     // the `Option` wrapper (the field becomes a required `DateTime<Utc>`).
     #[serde(default)]
     created_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl State {
+    fn build_log_id(&self, stream_id: u64) -> String {
+        format!("{} (stream {stream_id})", self.flow_id)
+    }
 }
 
 pub(crate) struct SetupCommitteeFlow<
@@ -500,9 +511,9 @@ where
         Self::validate_state_serialization(&self.state)
             .context("Flow state serialization failed")?;
         self.store
-            .save_flow(&StoreKey::SetupCommitteeFlow(self.state.internal_id), self.state.clone())
+            .save_flow(&self.store_key(), self.state.clone())
             .context("Failed to persist state")?;
-        debug!("State persisted for flow {}", self.state.internal_id);
+        debug!("State persisted for flow {}", self.state.log_id);
         Ok(())
     }
 
@@ -520,13 +531,20 @@ where
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
-        state: State,
+        mut state: State,
         bitcoin_network: Network,
         store: Rc<S>,
         drp_program_definition: String,
         btc_confirmations: u32,
         signaling: Rc<Signaling>,
     ) -> Self {
+        let stream_id = state
+            .ctx
+            .user_input
+            .as_ref()
+            .map(|input| *input.stream_id)
+            .expect("Persisted SetupCommitteeFlow must have user_input set");
+        state.log_id = state.build_log_id(stream_id);
         Self {
             contracts,
             rt_sync,
@@ -547,23 +565,28 @@ where
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
-        internal_id: Uuid,
+        flow_id: FlowId,
+        stream_id: u64,
         bitcoin_network: Network,
         store: Rc<S>,
         drp_program_definition: String,
         btc_confirmations: u32,
         signaling: Rc<Signaling>,
     ) -> Self {
+        let mut state = State {
+            flow_id,
+            log_id: String::new(),
+            step: Steps::Init,
+            ctx: FlowContext::default(),
+            created_at: Some(chrono::Utc::now()),
+        };
+        state.log_id = state.build_log_id(stream_id);
+        info!("Created SetupCommitteeFlow {}", state.log_id);
         Self {
             contracts,
             rt_sync,
             bitvmx_broker,
-            state: State {
-                internal_id,
-                step: Steps::Init,
-                ctx: FlowContext::default(),
-                created_at: Some(chrono::Utc::now()),
-            },
+            state,
             global_context,
             bitcoin_network,
             store,
@@ -575,8 +598,22 @@ where
 
     // --- Accessors for SetupCommitteeProcessor (encapsulation) ---
 
-    pub(crate) fn internal_id(&self) -> Uuid {
-        self.state.internal_id
+    /// Flow id (random `Uuid`, stable for the flow's lifetime).
+    pub(crate) fn flow_id(&self) -> FlowId {
+        self.state.flow_id
+    }
+
+    /// `RocksDB` key for this flow's persisted state. Stable for the flow's
+    /// lifetime.
+    pub(crate) fn store_key(&self) -> StoreKey {
+        StoreKey::SetupCommitteeFlow(self.state.flow_id.value())
+    }
+
+    /// Just the `Uuid` part of `store_key`, exposed so callers comparing
+    /// store identities (e.g. admin `FailFlow`) don't have to pattern-match
+    /// on `StoreKey`.
+    pub(crate) fn store_key_uuid(&self) -> Uuid {
+        self.state.flow_id.value()
     }
 
     pub(crate) fn current_step(&self) -> Steps {
@@ -586,7 +623,7 @@ where
     pub(crate) fn get_flow_details(&self) -> crate::event_processor::FlowDetails {
         crate::event_processor::FlowDetails {
             kind: crate::types::FlowKind::CommitteeSetup,
-            id: self.internal_id().to_string(),
+            id: self.flow_id().to_string(),
             step: format!("{:?}", self.current_step()),
             created_at: self.state.created_at,
         }
@@ -636,7 +673,7 @@ where
     }
 
     pub(crate) fn mark_failed(&mut self, reason: &str) -> Result<()> {
-        info!("Marking setup committee flow {} as failed: {reason}", self.state.internal_id);
+        info!("Marking setup committee flow {} as failed: {reason}", self.state.log_id);
         self.state.step = Steps::Failed;
         self.persist_state()
     }
@@ -982,30 +1019,6 @@ where
         });
 
         Ok(was_selected)
-    }
-
-    fn get_take_aggregated_key_id(&self) -> Result<Uuid> {
-        let mut hasher = Sha256::new();
-
-        let committee_id = *self.ctx().get_committee_data()?.committee_id;
-        hasher.update(committee_id.to_be_bytes());
-        hasher.update("take_aggregated_key");
-
-        // Get the result as a byte array
-        let hash = hasher.finalize();
-        Uuid::from_slice(&hash[0..16]).context("Failed to convert hash to Uuid")
-    }
-
-    fn get_dispute_aggregated_key_id(&self) -> Result<Uuid> {
-        let mut hasher = Sha256::new();
-
-        let committee_id = self.ctx().get_committee_data()?.committee_id.clone();
-        hasher.update(committee_id.to_be_bytes());
-        hasher.update("dispute_aggregated_key");
-
-        // Get the result as a byte array
-        let hash = hasher.finalize();
-        Uuid::from_slice(&hash[0..16]).context("Failed to convert hash to Uuid")
     }
 
     fn request_bitvmx_member_pub_key(&self, req_id: Uuid) {
@@ -1468,22 +1481,9 @@ where
         let protocol_id =
             full_penalization_setup.setup(committee_data.committee_uuid(), my_index, &p2p_addrs)?;
 
-        self.ctx_mut().setup_full_penalization_req = vec![(protocol_id, false)];
+        self.ctx_mut().setup_full_penalization_req = vec![(protocol_id.value(), false)];
 
         Ok(1)
-    }
-
-    fn write_completion_marker(&self) -> Result<()> {
-        let payload = json!({
-            "stream_id": self.ctx().get_stream_id().ok().map(|stream_id| *stream_id),
-            "committee_id": self
-                .ctx()
-                .committee_pending_ev
-                .as_ref()
-                .map(|event| event.inner.committeeId.to_string()),
-        });
-
-        self.signaling.signal_done("setup", self.state.internal_id, &payload)
     }
 }
 
@@ -1495,10 +1495,7 @@ where
 {
     fn fail(&mut self) {
         if let Err(err) = self.mark_failed("flow error") {
-            error!(
-                "Failed to persist failed setup committee flow {}: {err}",
-                self.state.internal_id
-            );
+            error!("Failed to persist failed setup committee flow {}: {err}", self.state.log_id);
         }
     }
 }
@@ -1521,7 +1518,7 @@ where
                 unreachable!("Init step should not be reached in start_step");
             }
             Steps::ValidateBalances => {
-                debug!("CommitteeSetupFlow start validating balances: {}", self.state.internal_id);
+                debug!("CommitteeSetupFlow start validating balances: {}", self.state.log_id);
                 self.validate_rsk_balance().or_transient()?;
                 self.request_bitvmx_funding_balance();
             }
@@ -1628,7 +1625,7 @@ where
             }
             Steps::Done => {
                 self.write_completion_marker()?;
-                info!("CommitteeSetupFlow Done: {}", self.state.internal_id);
+                info!("CommitteeSetupFlow Done: {}", self.state.log_id);
             }
             Steps::Failed => {
                 unreachable!("Failed step should not be reached in start_step");
@@ -1645,7 +1642,7 @@ where
     fn complete_step(&mut self, data: StepData) -> Result<(), FlowError> {
         let current_step = self.state.step;
 
-        debug!("Completing step {current_step:?} for flow {}", self.state.internal_id);
+        debug!("Completing step {current_step:?} for flow {}", self.state.log_id);
         debug!("Step data: {data:?}");
 
         trace!("Flow Context: {:?}", self.ctx());
@@ -1841,7 +1838,7 @@ where
         self.ctx_mut().comm_info_req_id = Some(req_id);
         debug!(
             "Requesting BitVMX comm info for setup committee flow {} with req_id {}",
-            self.state.internal_id, req_id
+            self.state.log_id, req_id
         );
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo(req_id));
     }
@@ -1989,7 +1986,10 @@ where
         pending_committee: NewCommitteePendingEvent,
         committee_id: &CommitteeId,
     ) -> Result<()> {
-        info!("Selected for committee {committee_id}");
+        info!(
+            "SetupCommitteeFlow {} matched NewCommitteePending committee_id={committee_id}",
+            self.state.log_id
+        );
         self.ctx_mut().committee_pending_ev = Some(pending_committee);
         self.ctx_mut().committee_data = None;
         let role = self.ctx().get_user_input()?.role;
@@ -2000,7 +2000,8 @@ where
     fn setup_bitvmx_aggregated_take_pubkey(&mut self) -> Result<()> {
         debug!("Setting up aggregated take key");
 
-        let take_key_id = self.get_take_aggregated_key_id()?;
+        let committee_uuid = self.ctx().get_committee_data()?.committee_uuid();
+        let take_key_id = take_aggregated_key_protocol_id(committee_uuid).value();
         self.ctx_mut().agg_take_key_req = Some((take_key_id, None));
 
         let committee_take_keys = self.get_committee_keys_by_type(TAKE_KEY_INDEX)?;
@@ -2020,7 +2021,8 @@ where
     fn setup_bitvmx_aggregated_dispute_pubkey(&mut self) -> Result<()> {
         debug!("Setting up aggregated dispute key");
 
-        let dispute_key_id = self.get_dispute_aggregated_key_id()?;
+        let committee_uuid = self.ctx().get_committee_data()?.committee_uuid();
+        let dispute_key_id = dispute_aggregated_key_protocol_id(committee_uuid).value();
         self.ctx_mut().agg_dispute_key_req = Some((dispute_key_id, None));
 
         let committee_dispute_keys = self.get_committee_keys_by_type(DISPUTE_KEY_INDEX)?;
@@ -2136,11 +2138,12 @@ where
             };
 
             // Deterministic id: committee_id + ordered indices + tag
-            let aggregation_id = get_dispute_pair_aggregated_key_pid(
+            let aggregation_id = pairwise_aggregated_key_protocol_id(
                 committee_data.committee_uuid(),
                 my_index,
                 partner_index,
-            )?;
+            )
+            .value();
 
             info!(
                 "Creating pairwise key request: aggregation_id={}, indices=({}, {}), participants=[{}, {}]",
@@ -2279,6 +2282,29 @@ where
     }
 }
 
+impl<CG, BC, S> SetupCommitteeFlow<CG, BC, S>
+where
+    CG: RskContractsGatewayApi,
+    BC: BitVmxBrokerClientApi,
+    S: CoordinatorStoreApi,
+{
+    fn write_completion_marker(&self) -> Result<()> {
+        let payload = json!({
+            "stream_id": self.ctx().get_stream_id().ok().map(|stream_id| *stream_id),
+            "committee_id": self
+                .ctx()
+                .committee_pending_ev
+                .as_ref()
+                .map(|event| event.inner.committeeId.to_string()),
+        });
+
+        // signal_done keys completion markers by Uuid; derive a stable one
+        // from the canonical flow id so the marker filename is consistent
+        // across the migration boundary.
+        self.signaling.signal_done("setup", self.store_key_uuid(), &payload)
+    }
+}
+
 pub(crate) struct SetupCommitteeFlowFactory<CG, BC, S>
 where
     CG: RskContractsGatewayApi,
@@ -2334,13 +2360,14 @@ where
     BC: BitVmxBrokerClientApi,
     S: CoordinatorStoreApi,
 {
-    fn create_flow(&self, internal_id: Uuid) -> SetupCommitteeFlow<CG, BC, S> {
+    fn create_flow(&self, flow_id: FlowId, stream_id: u64) -> SetupCommitteeFlow<CG, BC, S> {
         SetupCommitteeFlow::new(
             Rc::clone(&self.contracts_gateway),
             self.rt_sync.clone(),
             Rc::clone(&self.bitvmx_broker),
             self.global_context.clone(),
-            internal_id,
+            flow_id,
+            stream_id,
             self.bitcoin_network,
             Rc::clone(&self.store),
             self.drp_program_definition.clone(),
@@ -2707,7 +2734,8 @@ mod tests {
             RuntimeSync::new().expect("runtime"),
             Rc::new(MockBitVmxBroker::new()),
             GlobalContext::new(),
-            Uuid::new_v4(),
+            FlowId::from_random(),
+            0,
             Network::Regtest,
             Rc::new(MockCoordinatorStoreApi::new()),
             String::new(),
@@ -2787,7 +2815,8 @@ mod tests {
             Rc::new(broker),
             global_context,
             State {
-                internal_id: Uuid::new_v4(),
+                flow_id: FlowId::from_random(),
+                log_id: String::new(),
                 step: Steps::SetupDisputeAggregatedKey,
                 ctx,
                 created_at: None,
@@ -2974,7 +3003,7 @@ mod tests {
 
         assert_eq!(committee_data.committee_uuid(), committee_uuid);
         assert_eq!(
-            committee_data.get_dispute_core_pid_for_key(&member_take_key).unwrap(),
+            committee_data.get_dispute_core_pid_for_key(&member_take_key),
             committee_data.get_dispute_core_pid_for_index(0).unwrap()
         );
         assert!(committee_data.get_dispute_core_pid_for_index(1).is_err());
@@ -3050,7 +3079,8 @@ mod tests {
             RuntimeSync::new().expect("runtime"),
             Rc::new(broker),
             global_context,
-            Uuid::new_v4(),
+            FlowId::from_random(),
+            55,
             Network::Regtest,
             Rc::new(MockCoordinatorStoreApi::new()),
             String::new(),
@@ -3308,15 +3338,16 @@ mod tests {
             Rc::new(Signaling::new("/tmp", "disabled")),
         );
 
-        let internal_id = Uuid::new_v4();
-        let flow = factory.create_flow(internal_id);
-        assert_eq!(flow.internal_id(), internal_id);
+        let flow_id = FlowId::from_random();
+        let flow = factory.create_flow(flow_id, 0);
+        assert_eq!(flow.flow_id(), flow_id);
         assert_eq!(flow.current_step(), Steps::Init);
 
+        let ctx = FlowContext { user_input: Some(test_apply_to_stream(0)), ..Default::default() };
         let saved =
-            State { internal_id, step: Steps::Done, ctx: FlowContext::default(), created_at: None };
+            State { flow_id, log_id: String::new(), step: Steps::Done, ctx, created_at: None };
         let restored = factory.create_flow_from_saved_state(saved);
-        assert_eq!(restored.internal_id(), internal_id);
+        assert_eq!(restored.flow_id(), flow_id);
         assert_eq!(restored.current_step(), Steps::Done);
     }
 
@@ -3358,11 +3389,27 @@ mod tests {
     #[test]
     fn test_validate_state_serialization_accepts_valid_state() {
         let state = State {
-            internal_id: Uuid::new_v4(),
+            flow_id: FlowId::from_random(),
+            log_id: String::new(),
             step: Steps::Init,
             ctx: FlowContext::default(),
             created_at: None,
         };
         assert!(TestFlow::validate_state_serialization(&state).is_ok());
+    }
+
+    /// Pre-rename on-disk entries persisted the field as `internal_id`.
+    /// The `#[serde(alias = "internal_id")]` keeps them readable so no DB
+    /// migration is required at deploy time.
+    #[test]
+    fn test_state_deserializes_legacy_internal_id_field() {
+        let uuid = Uuid::new_v4();
+        let legacy = serde_json::json!({
+            "internal_id": uuid,
+            "step": "Init",
+            "ctx": serde_json::to_value(FlowContext::default()).expect("ctx serializes"),
+        });
+        let state: State = serde_json::from_value(legacy).expect("legacy deserializes");
+        assert_eq!(state.flow_id.value(), uuid);
     }
 }

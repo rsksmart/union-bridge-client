@@ -6,7 +6,7 @@ use bitcoin::PublicKey;
 use common::msg_broker::bitvmx_types::{
     CommsAddress, ForceChallenge, ForceCondition, IncomingBitVMXApiMessages, OP_COSIGN_UTXOS,
     PROGRAM_TYPE_DISPUTE_CHANNEL, PROGRAM_TYPE_DRP, PartialUtxo, ParticipantRole, VariableTypes,
-    WT_INIT_CHALLENGE_UTXOS, WtInitChallengeUtxos,
+    WT_INIT_CHALLENGE_UTXOS, WtInitChallengeUtxos, dispute_channel_protocol_id,
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::msg_broker::config::{ConfigResult, DisputeConfiguration, ForceFailConfiguration};
@@ -14,7 +14,7 @@ use hex::decode;
 use log::{debug, info};
 use uuid::Uuid;
 
-use crate::flows::committee::common::{CommitteeData, get_dispute_channel_pid, send_bitvmx_msg};
+use crate::flows::committee::common::{CommitteeData, send_bitvmx_msg};
 use crate::flows::committee::setup_committee_flow::NO_LEADER_IDX;
 use crate::types::MemberOfCommittee;
 
@@ -135,7 +135,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeChannelSetup<BC> {
         let prover = my_member.role == ParticipantRole::Prover;
 
         // First, request my own DisputeCore data
-        let my_dispute_core_pid = committee_data.get_dispute_core_pid_for_index(my_index)?;
+        let my_dispute_core_pid = committee_data.get_dispute_core_pid_for_index(my_index)?.value();
 
         info!(
             "Requesting my own DisputeCore data (member {my_index}) with pid {my_dispute_core_pid}"
@@ -160,7 +160,8 @@ impl<BC: BitVmxBrokerClientApi> DisputeChannelSetup<BC> {
                 continue;
             }
 
-            let dispute_core_pid = committee_data.get_dispute_core_pid_for_index(partner_index)?;
+            let dispute_core_pid =
+                committee_data.get_dispute_core_pid_for_index(partner_index)?.value();
 
             info!(
                 "Requesting DisputeCore data for member {partner_index} with pid {dispute_core_pid}"
@@ -386,8 +387,8 @@ impl<BC: BitVmxBrokerClientApi> DisputeChannelSetup<BC> {
 
     fn setup_one(&self, i: SetupOneInput<'_>) -> Result<Uuid> {
         let committee_uuid = i.committee_data.committee_uuid();
-        let drp_id = get_dispute_channel_pid(committee_uuid, i.op_index, i.wt_index)?;
-        let dispute_core_pid = i.committee_data.get_dispute_core_pid_for_key(i.wt_takekey)?;
+        let drp_id = dispute_channel_protocol_id(committee_uuid, i.op_index, i.wt_index).value();
+        let dispute_core_pid = i.committee_data.get_dispute_core_pid_for_key(i.wt_takekey).value();
         let participants: Vec<CommsAddress> = vec![i.operator.clone(), i.watchtower.clone()];
 
         info!(
