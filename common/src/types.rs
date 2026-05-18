@@ -196,7 +196,6 @@ impl fmt::Display for BlockNumber {
 ///
 /// This struct ensures type safety when working with block timestamps, preventing
 /// accidental misuse of raw `u64` values in places where a `BlockTimestamp` is expected.
-/// ```
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Copy, Clone)]
 pub struct BlockTimestamp(u64);
 
