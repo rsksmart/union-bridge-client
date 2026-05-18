@@ -1,4 +1,0 @@
-[hooks]
-commit-msg = ".hooks/check_commit_message"
-pre-commit = "bash .hooks/format-code.sh"
-pre-push = ".hooks/check_branch_name && RISC0_SKIP_BUILD=1 cargo clippy --workspace --all-targets --all-features && RISC0_SKIP_BUILD=1 cargo clippy --manifest-path check-fork/zkp/guest/Cargo.toml --all-targets --all-features && cargo test --workspace --locked"

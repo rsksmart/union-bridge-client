@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Installed by cargo-husky from .cargo-husky/hooks/pre-push.
+# Keep this entrypoint thin — the real work lives in .hooks/ scripts so edits
+# there take effect without re-running cargo build.
+
+set -e
+root="$(git rev-parse --show-toplevel)"
+
+bash "$root/.hooks/check-branch-name.sh"
+bash "$root/.hooks/check-lints.sh"
+cargo test --workspace --locked
