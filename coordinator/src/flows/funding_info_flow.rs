@@ -19,7 +19,7 @@ use crate::types::UserRequests;
 // caller times out after ~9s; a 60s ceiling here is enough slack to receive a
 // late reply while guaranteeing the set cannot grow indefinitely if BitVMX
 // never responds.
-const PENDING_REQUEST_TTL: Duration = Duration::from_secs(60);
+const PENDING_REQUEST_TTL: Duration = Duration::from_mins(1);
 
 pub(crate) struct FundingInfoProcessor<BC, CG>
 where

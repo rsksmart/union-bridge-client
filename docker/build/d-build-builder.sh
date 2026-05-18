@@ -3,7 +3,7 @@
 set -e
 
 # Default tag and platform
-UC_TAG="rust-1.91-v1"
+BUILDER_TAG="rust-1.95-v1"
 PLATFORM="linux/amd64"
 
 show_help() {
@@ -15,7 +15,7 @@ Usage:
   $(basename "$0") [options] [docker build arguments...]
 
 Options:
-  --tag=UC_TAG                       Tag for the builder image (default: rust-1.91-v1)
+  --tag=BUILDER_TAG               Tag for the builder image (default: rust-1.95-v1)
   --platform=PLATFORM             Target platform (default: linux/amd64)
   --help, -h                      Show this help message
 
@@ -24,7 +24,7 @@ All arguments are passed directly to 'docker build'.
 
 Examples:
   $(basename "$0")                                              Build with default settings
-  $(basename "$0") --tag=rust-1.91-v1                          Build with custom tag
+  $(basename "$0") --tag=rust-1.95-v1                           Build with custom tag
   $(basename "$0") --platform=linux/arm64                       Build for ARM64 platform
   $(basename "$0") --no-cache                                   Build without cache
   $(basename "$0") --platform=linux/amd64,linux/arm64 --push    Build multi-platform and push
@@ -38,7 +38,7 @@ DOCKER_ARGS=()
 while [[ $# -gt 0 ]]; do
   case $1 in
     --tag=*)
-      UC_TAG="${1#*=}"
+      BUILDER_TAG="${1#*=}"
       shift
       ;;
     --platform=*)
@@ -56,10 +56,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Build builder images
-echo "🔨 Building Union Client Builder images with tag: $UC_TAG and platform: $PLATFORM"
+echo "🔨 Building Union Client Builder images with tag: $BUILDER_TAG and platform: $PLATFORM"
 
 # Build standard builder image
-cmd=(docker build --platform "$PLATFORM" "${DOCKER_ARGS[@]}" -t "ghcr.io/rsksmart/union-client-builder:$UC_TAG" -f Dockerfile_builder .)
+cmd=(docker build --platform "$PLATFORM" "${DOCKER_ARGS[@]}" -t "ghcr.io/rsksmart/union-client-builder:$BUILDER_TAG" -f Dockerfile_builder .)
 echo "🔨 Building Standard Builder image with command: ${cmd[@]}"
 "${cmd[@]}"
 

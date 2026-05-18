@@ -326,7 +326,7 @@ where
         let committee_id = trigger_data.committee_id.clone();
 
         if !self.global_context.my_committees().im_member(&committee_id) {
-            debug!("Skipping OperatorTakeTriggered for committee {committee_id} - not a member",);
+            debug!("Skipping OperatorTakeTriggered for committee {committee_id} - not a member");
             return Ok(());
         }
 
@@ -528,7 +528,7 @@ where
                 self.handle_pegout_registered(pegout_registered)?;
             }
             _ => {
-                trace!("AdvanceFundsFlowProcessor ignoring confirmed event {event:?}",);
+                trace!("AdvanceFundsFlowProcessor ignoring confirmed event {event:?}");
             }
         }
 
@@ -585,7 +585,7 @@ where
 
         for key in confirmed_keys {
             if let Some(event) = self.stop_confirming_event(&key) {
-                debug!("Advance funds RSK event confirmed, removing pending {key}",);
+                debug!("Advance funds RSK event confirmed, removing pending {key}");
                 trace!("Advance funds event data: {:?}", event.get_data());
                 self.process_confirmed_rsk_event(event.get_data())?;
             }
@@ -919,11 +919,11 @@ where
                         );
                     }
                 } else {
-                    trace!("AdvanceFundsFlowProcessor ignoring Variable with name: {var_name}",);
+                    trace!("AdvanceFundsFlowProcessor ignoring Variable with name: {var_name}");
                 }
             }
             _ => {
-                trace!("AdvanceFundsFlowProcessor ignoring BitVMX event {event:?}",);
+                trace!("AdvanceFundsFlowProcessor ignoring BitVMX event {event:?}");
             }
         }
         Ok(())
@@ -994,7 +994,7 @@ where
         if is_removal {
             warn!("Removing pending advance funds event {event:?}");
             if self.stop_confirming_event(&id).is_none() {
-                warn!("Tried to remove non-existing pending advance funds event with id {id}",);
+                warn!("Tried to remove non-existing pending advance funds event with id {id}");
             }
         } else {
             debug!(
