@@ -4,7 +4,7 @@ ARG CRATE
 ARG FEATURES
 # --build-arg to specify just one crate to build in the builder stage
 ARG JUST_CRATE
-ARG BUILDER_IMAGE=ghcr.io/rsksmart/union-client-builder:rust-1.91-v1
+ARG BUILDER_IMAGE=ghcr.io/rsksmart/union-client-builder:rust-1.95-v1
 
 # --- BUILDER STAGE ---
 
