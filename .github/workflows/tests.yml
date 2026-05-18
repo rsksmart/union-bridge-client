@@ -59,3 +59,9 @@ jobs:
       - name: Check All Targets
         run: |
           cargo check --workspace --all-targets --all-features --locked
+
+      - name: Check Rustdoc
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: |
+          cargo doc --workspace --no-deps --all-features --locked
