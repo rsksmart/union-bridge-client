@@ -1040,6 +1040,14 @@ where
         self.register_operator_take_retry_scheduler.clear();
         self.unconfirmed_register_operator_take.clear();
     }
+
+    fn active_flows(&self) -> Vec<crate::event_processor::FlowDetails> {
+        self.flows
+            .values()
+            .filter(|f| !f.is_terminal())
+            .map(AdvanceFundsFlow::get_flow_details)
+            .collect()
+    }
 }
 
 #[cfg(test)]

@@ -1245,6 +1245,14 @@ where
         self.pending_pegin_accepted.clear();
         self.signature_flows.clear();
     }
+
+    fn active_flows(&self) -> Vec<crate::event_processor::FlowDetails> {
+        self.pegin_flows
+            .values()
+            .filter(|f| !f.is_terminal())
+            .map(PeginFlow::get_flow_details)
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -1416,7 +1424,7 @@ mod tests {
                 Rc::clone(&self.contracts),
                 self.rt_sync.clone(),
                 Rc::clone(&self.broker),
-                State { flow_id, ctx },
+                State { flow_id, ctx, created_at: None },
                 Rc::clone(&self.store),
                 Rc::new(Signaling::new("/tmp", "disabled")),
                 NativeBridgeVerifier::Dummy,
@@ -1588,6 +1596,7 @@ mod tests {
                 pegin_accepted: None,
                 op_role: None,
             },
+            created_at: None,
         };
 
         let flow = PeginFlow::from_saved_state(

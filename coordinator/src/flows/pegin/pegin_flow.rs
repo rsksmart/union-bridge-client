@@ -163,6 +163,13 @@ pub struct FlowContext {
 pub struct State {
     pub flow_id: Uuid,
     pub ctx: FlowContext,
+    /// When this flow was first created. `None` for flows persisted before
+    /// this field existed (they pre-date the change and we can't backfill).
+    // TODO: once all v0.4.0 flows have been migrated through this version and
+    // no on-disk record lacks `created_at`, drop both `#[serde(default)]` and
+    // the `Option` wrapper (the field becomes a required `DateTime<Utc>`).
+    #[serde(default)]
+    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// State machine for handling pegin flow
@@ -224,6 +231,7 @@ where
                     pegin_accepted: None,
                     op_role: None,
                 },
+                created_at: Some(chrono::Utc::now()),
             },
             store,
             signaling,
@@ -1029,6 +1037,15 @@ where
         self.state.ctx.step
     }
 
+    pub(crate) fn get_flow_details(&self) -> crate::event_processor::FlowDetails {
+        crate::event_processor::FlowDetails {
+            kind: crate::types::FlowKind::Pegin,
+            id: self.flow_id().to_string(),
+            step: format!("{:?}", self.current_step()),
+            created_at: self.state.created_at,
+        }
+    }
+
     /// Get the state for debugging
     pub fn get_state(&self) -> &State {
         &self.state
@@ -1205,7 +1222,7 @@ mod tests {
         let mock_store = std::rc::Rc::new(MockCoordinatorStoreApi::new());
         let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
 
-        let state = State { flow_id: ctx.flow_id, ctx };
+        let state = State { flow_id: ctx.flow_id, ctx, created_at: None };
 
         let flow = PeginFlow::from_saved_state(
             mock_contracts.clone(),
@@ -1333,7 +1350,7 @@ mod tests {
         mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
         let mock_store = std::rc::Rc::new(mock_store);
         let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
-        let state = State { flow_id: ctx.flow_id, ctx };
+        let state = State { flow_id: ctx.flow_id, ctx, created_at: None };
         let mut flow = PeginFlow::from_saved_state(
             mock_contracts,
             rt_sync,
@@ -1385,7 +1402,7 @@ mod tests {
         mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
         let mock_store = std::rc::Rc::new(mock_store);
         let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
-        let state = State { flow_id: ctx.flow_id, ctx };
+        let state = State { flow_id: ctx.flow_id, ctx, created_at: None };
         let mut flow = PeginFlow::from_saved_state(
             mock_contracts,
             rt_sync,
@@ -1442,7 +1459,7 @@ mod tests {
         mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
         let mock_store = std::rc::Rc::new(mock_store);
         let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
-        let state = State { flow_id: ctx.flow_id, ctx };
+        let state = State { flow_id: ctx.flow_id, ctx, created_at: None };
         let mut flow = PeginFlow::from_saved_state(
             mock_contracts,
             rt_sync,
@@ -1499,7 +1516,7 @@ mod tests {
         mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
         let mock_store = std::rc::Rc::new(mock_store);
         let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
-        let state = State { flow_id: ctx.flow_id, ctx };
+        let state = State { flow_id: ctx.flow_id, ctx, created_at: None };
         let mut flow = PeginFlow::from_saved_state(
             mock_contracts,
             rt_sync,
@@ -1543,7 +1560,7 @@ mod tests {
         mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
         let mock_store = std::rc::Rc::new(mock_store);
         let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
-        let state = State { flow_id: ctx.flow_id, ctx };
+        let state = State { flow_id: ctx.flow_id, ctx, created_at: None };
         let mut flow = PeginFlow::from_saved_state(
             mock_contracts,
             rt_sync,
@@ -1582,7 +1599,7 @@ mod tests {
         mock_store.expect_save_flow::<State>().times(1).returning(|_, _| Ok(()));
         let mock_store = std::rc::Rc::new(mock_store);
         let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
-        let state = State { flow_id: ctx.flow_id, ctx };
+        let state = State { flow_id: ctx.flow_id, ctx, created_at: None };
         let mut flow = PeginFlow::from_saved_state(
             mock_contracts,
             rt_sync,
@@ -1634,7 +1651,7 @@ mod tests {
         let mock_store = std::rc::Rc::new(mock_store);
 
         let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
-        let state = State { flow_id: ctx.flow_id, ctx };
+        let state = State { flow_id: ctx.flow_id, ctx, created_at: None };
         let mut flow = PeginFlow::from_saved_state(
             mock_contracts,
             rt_sync,
@@ -1681,7 +1698,7 @@ mod tests {
             let mock_store = std::rc::Rc::new(mock_store);
 
             let rt_sync = RuntimeSync::new().expect("Failed to create runtime sync");
-            let state = State { flow_id: ctx.flow_id, ctx };
+            let state = State { flow_id: ctx.flow_id, ctx, created_at: None };
             let mut flow = PeginFlow::from_saved_state(
                 mock_contracts,
                 rt_sync,

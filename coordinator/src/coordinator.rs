@@ -55,6 +55,11 @@ fn uses_fake_native_bridge(runtime_environment: &str) -> bool {
     runtime_environment.eq_ignore_ascii_case(RUNTIME_ENV_LOCAL)
 }
 
+/// Log the active-flows summary once every N RSK blocks the coordinator ingests.
+/// Tying cadence to block progress means silence in the log signals stalled ingestion.
+/// At ~30s per RSK block, 10 blocks ≈ 5 minutes.
+const ACTIVE_FLOWS_LOG_EVERY_N_BLOCKS: u32 = 10;
+
 impl<
     M: MonitorApi,
     BC: BitVmxBrokerClientApi + 'static,
@@ -252,6 +257,7 @@ impl<
             Instant::now().checked_sub(self.bitvmx_ping_after_silence).unwrap_or_else(Instant::now);
         let mut bitvmx_ping: Option<Instant> = None;
         let mut bitvmx_liveness = BitvmxLiveness::Unknown;
+        let mut blocks_since_active_flows_log: u32 = 0;
 
         let result = (|| -> Result<()> {
             loop {
@@ -319,6 +325,12 @@ impl<
                             error!("Error processing block {block:?}: {e:?}");
                         }
                     });
+
+                    blocks_since_active_flows_log += 1;
+                    if blocks_since_active_flows_log >= ACTIVE_FLOWS_LOG_EVERY_N_BLOCKS {
+                        self.log_active_flows();
+                        blocks_since_active_flows_log = 0;
+                    }
 
                     // no sleep, try to get new messages asap
                     message_received = true;
@@ -410,6 +422,12 @@ impl<
             warn!("Broker could not deliver user reply; dropping");
         }
         Ok(())
+    }
+
+    fn log_active_flows(&self) {
+        let flows: Vec<_> = self.processors.iter().flat_map(|p| p.active_flows()).collect();
+        let payload = serde_json::json!({ "count": flows.len(), "flows": flows });
+        info!("active_flows {payload}");
     }
 }
 
@@ -602,6 +620,70 @@ pub(crate) mod tests {
         let result = coordinator.run();
 
         assert!(result.is_ok());
+    }
+
+    /// Feeds exactly `ACTIVE_FLOWS_LOG_EVERY_N_BLOCKS` blocks and verifies
+    /// that `active_flows()` is invoked on each processor exactly once —
+    /// guarding against off-by-one drift in the block-counter threshold and
+    /// catching any future regression where the aggregation hook stops being
+    /// called.
+    #[test]
+    fn test_coordinator_logs_active_flows_after_threshold_blocks() {
+        let n_blocks: usize =
+            super::ACTIVE_FLOWS_LOG_EVERY_N_BLOCKS.try_into().expect("threshold fits in usize");
+
+        let mut mock_monitor = MockMonitorApi::new();
+
+        mock_monitor.expect_start_event_monitoring().return_once(|| Ok(()));
+        mock_monitor.expect_start_bitvmx_monitoring().times(..).returning(|| Ok(()));
+        mock_monitor.expect_start_block_monitoring().times(..).returning(|| Ok(()));
+        mock_monitor.expect_start_user_monitoring().times(..).returning(|| Ok(()));
+        mock_monitor.expect_cancel_event_monitoring().return_once(|| Ok(())).once();
+        mock_monitor.expect_cancel_block_monitoring().return_once(|| Ok(())).once();
+        mock_monitor.expect_cancel_bitvmx_monitoring().return_once(|| Ok(())).once();
+        mock_monitor.expect_try_bitvmx_event().returning(|| Ok(None));
+        mock_monitor.expect_try_rsk_event().returning(|| Ok(None));
+        mock_monitor.expect_try_user_request().returning(|| Ok(None));
+
+        let blocks: Vec<_> = (0..n_blocks)
+            .map(|_| RskBlockAndUncles::new_no_uncles(get_first_default_rsk_block()))
+            .collect();
+        expect_try_block(blocks, &mut mock_monitor);
+
+        let shutdown_flag = ShutdownFlag::init();
+        handle_shutdown(shutdown_flag.clone());
+
+        let mut bitvmx_broker =
+            MockBrokerClientApi::<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>::new();
+        bitvmx_broker
+            .expect_send()
+            .with(function(|req: &IncomingBitVMXApiMessages| {
+                matches!(req, IncomingBitVMXApiMessages::Ping(_))
+            }))
+            .returning(|_| Ok(true));
+
+        let mut mock_store = MockCoordinatorStoreApi::new();
+        mock_store.expect_save_context().with(always()).returning(|_| Ok(()));
+        let mock_user_broker = MockBrokerClientApi::<ToServer, FromServer>::new();
+
+        let mut processor = MockEventProcessor::new();
+        processor.expect_process_new_block().returning(|_| Ok(())).times(n_blocks);
+        processor.expect_process_new_bitvmx_event().returning(|_| Ok(())).times(..);
+        processor.expect_process_new_rsk_event().returning(|_| Ok(())).times(..);
+        processor.expect_shutdown().return_once(|| ());
+        // The key assertion: aggregation fires exactly once for `n_blocks`.
+        processor.expect_active_flows().returning(Vec::new).times(1);
+
+        let mut coordinator = Coordinator::new_for_tests(
+            mock_monitor,
+            bitvmx_broker,
+            mock_user_broker,
+            vec![Box::new(processor)],
+            shutdown_flag,
+            mock_store,
+        );
+
+        assert!(coordinator.run().is_ok());
     }
 
     fn handle_shutdown(shutdown_flag: ShutdownFlag) -> JoinHandle<()> {

@@ -1,10 +1,21 @@
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
 use common::types::RskBlockAndUncles;
 #[cfg(test)]
 use mockall::automock;
+use serde::Serialize;
 
-use crate::types::{RskPegManagerEvents, UserRequests};
+use crate::types::{FlowKind, RskPegManagerEvents, UserRequests};
+
+#[derive(Serialize)]
+pub struct FlowDetails {
+    pub kind: FlowKind,
+    pub id: String,
+    pub step: String,
+    /// `None` for flows persisted before the `created_at` field existed.
+    pub created_at: Option<DateTime<Utc>>,
+}
 
 #[cfg_attr(test, automock)]
 pub trait EventProcessor {
@@ -33,4 +44,9 @@ pub trait EventProcessor {
     }
 
     fn shutdown(&mut self);
+
+    fn active_flows(&self) -> Vec<FlowDetails> {
+        // default no flows reported
+        Vec::new()
+    }
 }

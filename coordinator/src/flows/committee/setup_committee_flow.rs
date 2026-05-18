@@ -449,6 +449,13 @@ pub struct State {
     internal_id: Uuid,
     step: Steps,
     ctx: FlowContext,
+    /// When this flow was first created. `None` for flows persisted before
+    /// this field existed (they pre-date the change and we can't backfill).
+    // TODO: once all v0.4.0 flows have been migrated through this version and
+    // no on-disk record lacks `created_at`, drop both `#[serde(default)]` and
+    // the `Option` wrapper (the field becomes a required `DateTime<Utc>`).
+    #[serde(default)]
+    created_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 pub(crate) struct SetupCommitteeFlow<
@@ -551,7 +558,12 @@ where
             contracts,
             rt_sync,
             bitvmx_broker,
-            state: State { internal_id, step: Steps::Init, ctx: FlowContext::default() },
+            state: State {
+                internal_id,
+                step: Steps::Init,
+                ctx: FlowContext::default(),
+                created_at: Some(chrono::Utc::now()),
+            },
             global_context,
             bitcoin_network,
             store,
@@ -569,6 +581,15 @@ where
 
     pub(crate) fn current_step(&self) -> Steps {
         self.state.step
+    }
+
+    pub(crate) fn get_flow_details(&self) -> crate::event_processor::FlowDetails {
+        crate::event_processor::FlowDetails {
+            kind: crate::types::FlowKind::CommitteeSetup,
+            id: self.internal_id().to_string(),
+            step: format!("{:?}", self.current_step()),
+            created_at: self.state.created_at,
+        }
     }
 
     /// Returns true if this flow is waiting for a `BitVMX` response with the given request id.
@@ -1451,6 +1472,19 @@ where
 
         Ok(1)
     }
+
+    fn write_completion_marker(&self) -> Result<()> {
+        let payload = json!({
+            "stream_id": self.ctx().get_stream_id().ok().map(|stream_id| *stream_id),
+            "committee_id": self
+                .ctx()
+                .committee_pending_ev
+                .as_ref()
+                .map(|event| event.inner.committeeId.to_string()),
+        });
+
+        self.signaling.signal_done("setup", self.state.internal_id, &payload)
+    }
 }
 
 impl<CG, BC, S> FailableFlow for SetupCommitteeFlow<CG, BC, S>
@@ -2245,26 +2279,6 @@ where
     }
 }
 
-impl<CG, BC, S> SetupCommitteeFlow<CG, BC, S>
-where
-    CG: RskContractsGatewayApi,
-    BC: BitVmxBrokerClientApi,
-    S: CoordinatorStoreApi,
-{
-    fn write_completion_marker(&self) -> Result<()> {
-        let payload = json!({
-            "stream_id": self.ctx().get_stream_id().ok().map(|stream_id| *stream_id),
-            "committee_id": self
-                .ctx()
-                .committee_pending_ev
-                .as_ref()
-                .map(|event| event.inner.committeeId.to_string()),
-        });
-
-        self.signaling.signal_done("setup", self.state.internal_id, &payload)
-    }
-}
-
 pub(crate) struct SetupCommitteeFlowFactory<CG, BC, S>
 where
     CG: RskContractsGatewayApi,
@@ -2772,7 +2786,12 @@ mod tests {
             RuntimeSync::new().expect("runtime"),
             Rc::new(broker),
             global_context,
-            State { internal_id: Uuid::new_v4(), step: Steps::SetupDisputeAggregatedKey, ctx },
+            State {
+                internal_id: Uuid::new_v4(),
+                step: Steps::SetupDisputeAggregatedKey,
+                ctx,
+                created_at: None,
+            },
             Network::Regtest,
             Rc::new(store),
             String::new(),
@@ -3294,7 +3313,8 @@ mod tests {
         assert_eq!(flow.internal_id(), internal_id);
         assert_eq!(flow.current_step(), Steps::Init);
 
-        let saved = State { internal_id, step: Steps::Done, ctx: FlowContext::default() };
+        let saved =
+            State { internal_id, step: Steps::Done, ctx: FlowContext::default(), created_at: None };
         let restored = factory.create_flow_from_saved_state(saved);
         assert_eq!(restored.internal_id(), internal_id);
         assert_eq!(restored.current_step(), Steps::Done);
@@ -3337,8 +3357,12 @@ mod tests {
 
     #[test]
     fn test_validate_state_serialization_accepts_valid_state() {
-        let state =
-            State { internal_id: Uuid::new_v4(), step: Steps::Init, ctx: FlowContext::default() };
+        let state = State {
+            internal_id: Uuid::new_v4(),
+            step: Steps::Init,
+            ctx: FlowContext::default(),
+            created_at: None,
+        };
         assert!(TestFlow::validate_state_serialization(&state).is_ok());
     }
 }

@@ -137,6 +137,7 @@ pub struct FlowContext {
     pub advance_funds_registered: Option<AdvanceFundsRegistered>,
     pub reimbursement_kickoff_spv: Option<BtcTxSPVProof>,
     pub operator_take_spv: Option<BtcTxSPVProof>,
+    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 pub struct AdvanceFundsFlow<CG, BC>
@@ -182,6 +183,7 @@ where
                 advance_funds_registered: None,
                 reimbursement_kickoff_spv: None,
                 operator_take_spv: None,
+                created_at: Some(chrono::Utc::now()),
             },
         }
     }
@@ -210,6 +212,7 @@ where
                 advance_funds_registered: None,
                 reimbursement_kickoff_spv: None,
                 operator_take_spv: None,
+                created_at: Some(chrono::Utc::now()),
             },
         }
     }
@@ -650,6 +653,15 @@ where
 
     pub fn current_step(&self) -> Steps {
         self.state.step
+    }
+
+    pub(crate) fn get_flow_details(&self) -> crate::event_processor::FlowDetails {
+        crate::event_processor::FlowDetails {
+            kind: crate::types::FlowKind::AdvanceFunds,
+            id: self.flow_id().to_string(),
+            step: format!("{:?}", self.current_step()),
+            created_at: self.state.created_at,
+        }
     }
 
     pub fn is_terminal(&self) -> bool {
