@@ -25,6 +25,16 @@ const CONFIG_DIR_PATH: &str = "config";
 const EXTENSION_TYPE: &str = "toml";
 const LOG_DIR_ENV_VAR: &str = "UB_LOG_DIR";
 const CLIENT_ID_ENV_VAR: &str = "CLIENT_ID";
+const ENVIRONMENT_ENV_VAR: &str = "ENVIRONMENT";
+const LOG_FORMAT_ENV_VAR: &str = "LOG_FORMAT";
+const LOCAL_ENVIRONMENT: &str = "local";
+/// Default per-crate log filters. Noisy third-party crates are pinned to `warn`
+/// so they don't drown out service-level events; see `LOGGING_GUIDELINES.md`.
+const DEFAULT_FILTER: &str = "debug,\
+    tarpc=warn,\
+    alloy_provider=warn,alloy_pubsub=warn,alloy_rpc_client=warn,alloy_json_rpc=warn,\
+    hyper=warn,hyper_util=warn,h2=warn,\
+    reqwest=warn,rustls=warn,tower_http=warn,tungstenite=warn";
 
 /// Wraps an event formatter to prepend `[op-N]` to each stdout line. Used so that
 /// when several services are launched in parallel under the local client launcher
@@ -265,20 +275,26 @@ impl CommonConfig {
         ))
     }
 
-    /// Initializes the tracing subscriber.
+    /// Initializes the tracing subscriber. See `LOGGING_GUIDELINES.md` for the rationale.
     ///
-    /// Always emits to **stdout**. When a log directory is provided via `log_dir_opt` or the
-    /// `UB_LOG_DIR` environment variable, a second layer writes to a file under that directory.
+    /// **Format selection** (`LOG_FORMAT` env var, defaults derived from `ENVIRONMENT`):
+    /// - `pretty` — human-readable colored output. Default when `ENVIRONMENT=local` (or unset).
+    /// - `json`   — one JSON event per line, machine-parseable. Default in any other environment.
     ///
-    /// When the `CLIENT_ID` environment variable is set (the cli/run launcher exports it for
-    /// each operator), the per-operator naming convention is used:
-    /// `<log_dir>/<crate_name>-<CLIENT_ID>.log`, and stdout lines are prefixed with
-    /// `[op-<CLIENT_ID>] ` so that the launcher's interleaved output is disambiguable.
-    /// Otherwise, the file falls back to a per-execution timestamped name:
-    /// `<log_dir>/<crate_name>-YYYYMMDD_HHMMSS.log`.
+    /// **Outputs**:
+    /// - Stdout: always emitted, with the chosen format.
+    /// - File: written when `log_dir_opt` or `UB_LOG_DIR` is set, never with ANSI codes.
     ///
-    /// Log levels follow the `RUST_LOG` env var (standard tracing convention). When unset,
-    /// defaults to `debug` with noisy third-party crates suppressed to `warn`.
+    /// **Operator identification**: when `CLIENT_ID` is set (injected per-operator by the
+    /// cli/run launcher), the file name becomes `<crate_name>-<CLIENT_ID>.log`, and in pretty
+    /// mode each stdout line is prefixed with `[op-<CLIENT_ID>] ` so launcher-interleaved
+    /// output is attributable. Otherwise the file falls back to `<crate_name>-<timestamp>.log`.
+    ///
+    /// **Log level**: controlled by `RUST_LOG`. When unset, defaults to [`DEFAULT_FILTER`] —
+    /// `debug` for service code, `warn` for noisy third-party crates.
+    ///
+    /// Also installs [`tracing_log::LogTracer`] so dependencies still using the `log` crate
+    /// flow through the same subscriber.
     ///
     /// Returns a [`LogGuard`] that must be held alive for the duration of the process; dropping
     /// it flushes and closes the background file-writer thread.
@@ -287,10 +303,12 @@ impl CommonConfig {
     ///
     /// Returns an error only when the log directory cannot be created.
     pub fn init_logger(log_dir_opt: Option<&String>, crate_name: &str) -> Result<LogGuard> {
-        let default_filter = "debug,tarpc=warn,alloy_provider=warn,alloy_pubsub=warn,alloy_rpc_client=warn,alloy_json_rpc=warn";
+        // Bridge dependencies still using `log` macros into the tracing subscriber.
+        // Err means it's already installed; harmless in tests where multiple inits run.
+        let _ = tracing_log::LogTracer::init();
 
         let filter =
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter));
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(DEFAULT_FILTER));
 
         // Resolve log directory: CLI arg → UB_LOG_DIR env var → None (stdout only)
         let log_dir: Option<String> = log_dir_opt
@@ -299,6 +317,17 @@ impl CommonConfig {
 
         // Operator identifier injected by the local client launcher (cli/run).
         let client_id = std::env::var(CLIENT_ID_ENV_VAR).ok().filter(|s| !s.is_empty());
+
+        // Environment + format selection. JSON in deployed environments, pretty in local dev.
+        let environment = std::env::var(ENVIRONMENT_ENV_VAR)
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| LOCAL_ENVIRONMENT.to_string());
+        let json_format =
+            std::env::var(LOG_FORMAT_ENV_VAR).ok().filter(|s| !s.is_empty()).map_or_else(
+                || environment != LOCAL_ENVIRONMENT,
+                |fmt| fmt.eq_ignore_ascii_case("json"),
+            );
 
         // Build the file writer when a directory is configured; otherwise drain to sink.
         // With CLIENT_ID set, the parent directory is already per-execution (logs/YYMMDD/HHMMSS/)
@@ -317,23 +346,45 @@ impl CommonConfig {
         } else {
             tracing_appender::non_blocking(std::io::sink())
         };
-
-        // File layer never carries the prefix — each file is already operator-specific.
-        let file_layer = log_dir.map(|_| fmt::layer().with_writer(file_writer).with_ansi(false));
-
-        // Stdout layer carries `[op-N]` when CLIENT_ID is set, plain otherwise.
-        let stdout_layer = fmt::layer().event_format(PrefixedFormat {
-            prefix: client_id.as_ref().map(|id| format!("op-{id}")),
-            inner: fmt::format(),
-        });
+        let file_present = log_dir.is_some();
 
         // try_init returns Err when a global subscriber is already set (harmless in tests).
-        tracing_subscriber::registry()
-            .with(filter)
-            .with(stdout_layer) // stdout, always (prefixed when CLIENT_ID is set)
-            .with(file_layer) // file, opt-in
-            .try_init()
-            .ok();
+        if json_format {
+            let stdout_layer = fmt::layer()
+                .json()
+                .flatten_event(true)
+                .with_current_span(true)
+                .with_span_list(false);
+            let file_layer = file_present.then(|| {
+                fmt::layer()
+                    .json()
+                    .flatten_event(true)
+                    .with_current_span(true)
+                    .with_span_list(false)
+                    .with_writer(file_writer)
+                    .with_ansi(false)
+            });
+            tracing_subscriber::registry()
+                .with(filter)
+                .with(stdout_layer)
+                .with(file_layer)
+                .try_init()
+                .ok();
+        } else {
+            // Pretty: stdout carries `[op-N]` when CLIENT_ID is set; file is plain.
+            let stdout_layer = fmt::layer().event_format(PrefixedFormat {
+                prefix: client_id.as_ref().map(|id| format!("op-{id}")),
+                inner: fmt::format(),
+            });
+            let file_layer =
+                file_present.then(|| fmt::layer().with_writer(file_writer).with_ansi(false));
+            tracing_subscriber::registry()
+                .with(filter)
+                .with(stdout_layer)
+                .with(file_layer)
+                .try_init()
+                .ok();
+        }
 
         Ok(guard)
     }
