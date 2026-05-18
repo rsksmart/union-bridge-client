@@ -1247,7 +1247,11 @@ where
     }
 
     fn active_flows(&self) -> Vec<crate::event_processor::FlowDetails> {
-        self.pegin_flows.values().map(PeginFlow::get_flow_details).collect()
+        self.pegin_flows
+            .values()
+            .filter(|f| !f.is_terminal())
+            .map(PeginFlow::get_flow_details)
+            .collect()
     }
 }
 

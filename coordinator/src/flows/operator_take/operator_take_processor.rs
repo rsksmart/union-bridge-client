@@ -1042,7 +1042,11 @@ where
     }
 
     fn active_flows(&self) -> Vec<crate::event_processor::FlowDetails> {
-        self.flows.values().map(AdvanceFundsFlow::get_flow_details).collect()
+        self.flows
+            .values()
+            .filter(|f| !f.is_terminal())
+            .map(AdvanceFundsFlow::get_flow_details)
+            .collect()
     }
 }
 

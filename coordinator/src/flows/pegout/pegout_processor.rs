@@ -929,7 +929,11 @@ where
     }
 
     fn active_flows(&self) -> Vec<crate::event_processor::FlowDetails> {
-        self.pegout_flows.values().map(PegoutFlow::get_flow_details).collect()
+        self.pegout_flows
+            .values()
+            .filter(|f| !f.is_terminal())
+            .map(PegoutFlow::get_flow_details)
+            .collect()
     }
 }
 
