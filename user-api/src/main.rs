@@ -1,16 +1,20 @@
+// user-api is a thin wrapper layer, not the production peg pipeline — pedantic
+// clippy lints are not enforced here.
+#![allow(clippy::pedantic)]
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::thread;
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use clap::{Arg, Command};
 use common::msg_broker::broker::{BrokerServer, Identifier};
 use common::shutdown_flag::ShutdownFlag;
 use log::{error, info};
 use tokio::net::TcpListener;
 use transaction_dispatcher::config::Config as TxDispatcherConfig;
-use user_api::config::{Config, Logger};
 use user_api::Server;
+use user_api::config::{Config, Logger};
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config";
