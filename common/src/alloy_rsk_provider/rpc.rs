@@ -7,7 +7,7 @@ use alloy_rpc_types::{Filter, FilterSet, Header, Log};
 use alloy_transport::layers::RetryBackoffLayer;
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::alloy_rsk_provider::sub::AlloySubscription;
 use crate::rsk_provider::{RskProvider, RskSubscriptionFilter};
@@ -35,7 +35,7 @@ impl AlloyProvider {
         // Set up the sync-runtime
         let rt_sync = RuntimeSync::new().context("On AlloyProvider")?;
 
-        println!("Connecting to Rootstock node at {url}");
+        info!(url, "connecting to Rootstock node");
 
         // Prepare the WS transport
         let ws = WsConnect::new(url);
