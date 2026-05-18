@@ -1,16 +1,16 @@
-use alloy_primitives::U256;
-use anyhow::{anyhow, bail, Context, Result};
-use reqwest::Client;
-use rpassword::prompt_password;
-use serde::Deserialize;
 use std::process::Command;
 use std::str::FromStr;
 
+use alloy_primitives::U256;
+use anyhow::{Context, Result, anyhow, bail};
 use op_funding::{derive_stream_funding_profile, required_member_rsk_balance};
 use protocol_params::{committee_member_count, prover_count, slots_per_package};
+use reqwest::Client;
+use rpassword::prompt_password;
+use serde::Deserialize;
 
 use crate::bitcoin_wallet::collect_user_bitcoin_addresses;
-use crate::constants::{operator_ids, LOCAL_ANVIL_ADDRESS};
+use crate::constants::{LOCAL_ANVIL_ADDRESS, operator_ids};
 use crate::environments::*;
 use crate::member_funding_info::CollectedMemberFundingInfo;
 

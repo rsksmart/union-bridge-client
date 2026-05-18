@@ -1,11 +1,9 @@
 use bitcoin::hashes::Hash;
 use bitcoin::key::PrivateKey;
 use bitcoin::network::Network;
-use bitcoin::secp256k1;
 use bitcoin::secp256k1::SecretKey;
-use bitcoin::{OutPoint, Txid};
+use bitcoin::{OutPoint, Txid, secp256k1};
 use tempfile::tempdir;
-
 use ub_wallet::cli::WalletMode;
 use ub_wallet::utxo_store::UtxoStore;
 use ub_wallet::wallet::Wallet;

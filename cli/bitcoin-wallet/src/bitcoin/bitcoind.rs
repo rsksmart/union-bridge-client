@@ -1,8 +1,10 @@
 #![allow(dead_code)]
 
-use anyhow::Result;
 use std::default::Default;
 
+use anyhow::Result;
+use bitcoin::Network;
+use bitcoincore_rpc::{Auth, Client};
 use bollard::Docker;
 use bollard::container::{
     Config, CreateContainerOptions, ListContainersOptions, RemoveContainerOptions,
@@ -11,11 +13,8 @@ use bollard::errors::Error;
 use bollard::image::CreateImageOptions;
 use bollard::models::{ContainerCreateResponse, HostConfig};
 use futures_util::stream::StreamExt;
-use tokio::runtime::Runtime;
-
-use bitcoin::Network;
-use bitcoincore_rpc::{Auth, Client};
 use serde::Deserialize;
+use tokio::runtime::Runtime;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct RpcConfig {
@@ -173,10 +172,10 @@ impl Bitcoind {
             }))
             .await?;
         for container in containers {
-            if let Some(names) = container.names {
-                if names.contains(&format!("/{}", self.container_name)) {
-                    return Ok(true);
-                }
+            if let Some(names) = container.names
+                && names.contains(&format!("/{}", self.container_name))
+            {
+                return Ok(true);
             }
         }
         Ok(false)

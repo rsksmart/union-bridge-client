@@ -2,7 +2,7 @@ use std::fmt;
 use std::str::FromStr;
 use std::time::Duration;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use clap::ValueEnum;
 use op_funding::derive_stream_funding_profile;
 use protocol_params::{committee_member_count, prover_count, slots_per_package};

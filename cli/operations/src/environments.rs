@@ -1,9 +1,8 @@
-use std::fmt;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::{fmt, fs};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 use crate::constants::operator_ids;
 

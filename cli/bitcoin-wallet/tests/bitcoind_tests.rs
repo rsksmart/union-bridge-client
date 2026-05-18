@@ -1,6 +1,5 @@
 use bitcoin::Network;
 use bollard::errors::Error;
-
 use ub_wallet::bitcoin::bitcoind::{Bitcoind, BitcoindFlags, RpcConfig};
 
 #[test]

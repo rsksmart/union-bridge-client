@@ -2,7 +2,7 @@
 name = "run"
 version.workspace = true
 license.workspace = true
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 anyhow = { workspace = true }
@@ -11,3 +11,6 @@ key-manager = { workspace = true }
 nix = { workspace = true }
 sysinfo = "0.32.1"
 tokio = { workspace = true }
+
+[lints]
+workspace = true

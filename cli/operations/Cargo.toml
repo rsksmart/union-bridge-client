@@ -2,7 +2,7 @@
 name = "operations"
 version.workspace = true
 license.workspace = true
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 alloy-primitives = { workspace = true }
@@ -20,3 +20,6 @@ tempfile = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
+
+[lints]
+workspace = true

@@ -1,3 +1,6 @@
+use std::fmt::Formatter;
+use std::sync::{Arc, Mutex};
+
 use bitcoin::hashes::Hash;
 use bitcoin::key::PrivateKey;
 use bitcoin::network::Network;
@@ -6,10 +9,7 @@ use bitcoin::secp256k1::{self, Secp256k1};
 use bitcoin::{Amount, OutPoint, Txid};
 use bitcoincore_rpc::jsonrpc;
 use bitcoincore_rpc::jsonrpc::{Error, Request, Response};
-use std::fmt::Formatter;
-use std::sync::{Arc, Mutex};
 use tempfile::tempdir;
-
 use ub_wallet::cli::WalletMode;
 use ub_wallet::utxo_store::UtxoStore;
 use ub_wallet::wallet::Wallet;
@@ -67,7 +67,7 @@ fn create_transaction_does_not_consume_utxo_and_creates_change_until_broadcasted
     assert_eq!(utxos[0].value_sat, utxo_amount);
     assert_eq!(utxos[0].outpoint.txid, input_txid);
 
-    wallet.broadcast_transaction(&created).expect("broadcast tx");
+    wallet.broadcast_transaction(created).expect("broadcast tx");
 
     // after broadcast, original utxo consumed, change utxo created
     let utxos = wallet.utxos();
@@ -106,7 +106,7 @@ fn dust_change_is_added_to_fee() {
     // before broadcast, original utxo still present, no change utxo created
     assert!(!wallet.utxos().is_empty(), "no change UTXO should remain");
 
-    wallet.broadcast_transaction(&created).expect("broadcast tx");
+    wallet.broadcast_transaction(created).expect("broadcast tx");
 
     // after broadcast, original utxo consumed, no change utxo created
     assert!(wallet.utxos().is_empty(), "no change UTXO should remain");

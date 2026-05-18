@@ -1,19 +1,18 @@
-use std::env;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::{env, fs};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::address::Address as BitcoinAddress;
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{CompressedPublicKey, Network, NetworkKind, PrivateKey};
+use op_funding::derive_stream_funding_profile;
 use protocol_params::{committee_member_count, prover_count, slots_per_package};
 
-use crate::constants::{operator_ids, UNION_BRIDGE_DIR};
+use crate::constants::{UNION_BRIDGE_DIR, operator_ids};
 use crate::environments::*;
 use crate::member_funding_info::CollectedMemberFundingInfo;
 use crate::utils::command_to_string;
-use op_funding::derive_stream_funding_profile;
 
 pub async fn handle_bitcoin_funding(
     environment: Environment,
@@ -23,7 +22,9 @@ pub async fn handle_bitcoin_funding(
     member_funding_info: &CollectedMemberFundingInfo,
 ) -> Result<()> {
     if execute && environment.is_remote() {
-        bail!("--execute flag is only supported for local environments (`local`/`docker`). For remote environments, please run the wallet commands manually.");
+        bail!(
+            "--execute flag is only supported for local environments (`local`/`docker`). For remote environments, please run the wallet commands manually."
+        );
     }
 
     let funding_profile = derive_stream_funding_profile(
@@ -87,7 +88,9 @@ fn collect_addresses(
 
 fn print_instructions(env: &Environment, addresses: &[String], amount: u64, funding_utxo: u64) {
     let joined = addresses.join(",");
-    println!("Note: See the bitcoin-wallet README for how to start and use the CLI: ../cli/bitcoin-wallet/README.md\n");
+    println!(
+        "Note: See the bitcoin-wallet README for how to start and use the CLI: ../cli/bitcoin-wallet/README.md\n"
+    );
 
     match env {
         Environment::Remote(_) => {
@@ -184,11 +187,7 @@ fn collect_remote_user_bitcoin_addresses(
 }
 
 fn selected_local_operator_ids(first_only: bool) -> Vec<u8> {
-    if first_only {
-        vec![1]
-    } else {
-        operator_ids()
-    }
+    if first_only { vec![1] } else { operator_ids() }
 }
 
 fn selected_remote_hosts(

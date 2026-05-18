@@ -687,7 +687,7 @@ fn prompt_for(mode: &WalletMode, network_name: &str) -> String {
 }
 
 fn print_active_address_utxos(wallet: &mut Wallet) -> Result<(), anyhow::Error> {
-    Ok(if let Some(address) = wallet.active_address() {
+    let _: () = if let Some(address) = wallet.active_address() {
         let utxos = wallet.utxos_with_timestamps()?;
         println!("Registered UTXOs for {address}:");
         if utxos.is_empty() {
@@ -697,7 +697,8 @@ fn print_active_address_utxos(wallet: &mut Wallet) -> Result<(), anyhow::Error> 
         }
     } else {
         println!("No active address. Import or switch to an address to list funds.");
-    })
+    };
+    Ok(())
 }
 
 fn print_all_utxos(
@@ -894,8 +895,9 @@ fn format_timestamp(timestamp: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_trusted_balance_sat;
     use serde_json::json;
+
+    use super::parse_trusted_balance_sat;
 
     #[test]
     fn parses_trusted_balance_from_getbalances_response() {

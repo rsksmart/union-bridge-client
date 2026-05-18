@@ -11,7 +11,6 @@ use bitcoincore_rpc::RpcApi;
 use bollard::errors::Error as BollardError;
 use serde_json::json;
 use tempfile::tempdir;
-
 use ub_wallet::bitcoin::bitcoind::{Bitcoind, RpcConfig};
 use ub_wallet::bitcoin::utils::{ensure_wallet, find_vout_for_address, wait_for_ready};
 use ub_wallet::cli::WalletMode;

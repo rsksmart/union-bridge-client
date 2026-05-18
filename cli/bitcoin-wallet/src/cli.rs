@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 
-use clap::{Parser, ValueEnum};
-
 use anyhow::Result;
+use clap::{Parser, ValueEnum};
 use rustyline::completion::{Completer, Pair};
 use rustyline::config::{CompletionType, Config as RustyConfig, EditMode};
 use rustyline::highlight::Highlighter;
@@ -11,8 +10,9 @@ use rustyline::history::DefaultHistory;
 use rustyline::validate::Validator;
 use rustyline::{Context as RustyContext, Editor, Helper, Result as RustyResult};
 
-#[derive(Debug, Clone, ValueEnum, PartialEq)]
+#[derive(Debug, Clone, ValueEnum, PartialEq, Default)]
 pub enum WalletMode {
+    #[default]
     Default,
     User,
     Member,
@@ -25,12 +25,6 @@ impl std::fmt::Display for WalletMode {
             WalletMode::User => write!(f, "user"),
             WalletMode::Member => write!(f, "member"),
         }
-    }
-}
-
-impl Default for WalletMode {
-    fn default() -> Self {
-        WalletMode::Default
     }
 }
 
@@ -170,11 +164,11 @@ pub fn setup_editor(
         .max_history_size(100)?
         .build();
     let mut editor: Editor<CliHelper, DefaultHistory> = Editor::with_config(rl_config)?;
-    editor.set_helper(Some(CliHelper::default()));
-    if history_path.exists() {
-        if let Err(err) = editor.load_history(&history_path) {
-            eprintln!("Failed to load command history: {err}");
-        }
+    editor.set_helper(Some(CliHelper));
+    if history_path.exists()
+        && let Err(err) = editor.load_history(&history_path)
+    {
+        eprintln!("Failed to load command history: {err}");
     }
     Ok(editor)
 }

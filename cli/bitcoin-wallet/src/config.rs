@@ -1,6 +1,5 @@
-use std::env;
-use std::fs;
 use std::path::{Path, PathBuf};
+use std::{env, fs};
 
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::Network;
@@ -54,7 +53,7 @@ impl Config {
         let db_path = cli
             .db_path
             .clone()
-            .or_else(|| Self::build_db_path_from_conf(&mut file_config))
+            .or_else(|| Self::build_db_path_from_conf(&file_config))
             .ok_or_else(|| anyhow!(
                 "Database path must be provided via --db-path (or WALLET_DB_PATH), or set db_path in config together with BASE_STORAGE_PATH env"
             ))?;

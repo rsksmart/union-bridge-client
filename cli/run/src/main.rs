@@ -58,22 +58,21 @@
 //!
 //! subsequent clients use incremental ports (e.g., client 2 uses 50002, 60002, 40002, 30002)
 
-use anyhow::{anyhow, bail, Context, Result};
-use clap::{ArgAction, Parser, ValueEnum};
-use key_manager::key_manager::KeyManager;
-use nix::sys::signal::{kill, Signal};
-use nix::unistd::Pid;
 use std::collections::HashMap;
 use std::fs;
 use std::net::TcpStream;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
-};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+use anyhow::{Context, Result, anyhow, bail};
+use clap::{ArgAction, Parser, ValueEnum};
+use key_manager::key_manager::KeyManager;
+use nix::sys::signal::{Signal, kill};
+use nix::unistd::Pid;
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System};
 use tokio::runtime::Runtime;
 use tokio::signal;
@@ -158,14 +157,14 @@ async fn main() -> Result<()> {
         eprintln!("Attempting to shut down all services...");
 
         // try to get clients from global state
-        if let Ok(mut guard) = ACTIVE_CLIENTS.lock() {
-            if let Some(clients) = guard.take() {
-                eprintln!("Found {} client(s) to shut down", clients.len());
-                // create a runtime for async cleanup since we're in a panic context
-                if let Ok(rt) = Runtime::new() {
-                    rt.block_on(teardown_all(clients));
-                    eprintln!("Emergency shutdown complete");
-                }
+        if let Ok(mut guard) = ACTIVE_CLIENTS.lock()
+            && let Some(clients) = guard.take()
+        {
+            eprintln!("Found {} client(s) to shut down", clients.len());
+            // create a runtime for async cleanup since we're in a panic context
+            if let Ok(rt) = Runtime::new() {
+                rt.block_on(teardown_all(clients));
+                eprintln!("Emergency shutdown complete");
             }
         }
 
@@ -375,10 +374,10 @@ fn detect_and_kill_existing_services() -> Result<()> {
         for (pid, process) in sys.processes() {
             // check if the process name matches the service
             // the actual running process will be "target/debug/<service-name>" or just "<service-name>"
-            if let Some(process_name) = process.name().to_str() {
-                if process_name == service_name {
-                    found_pids.push((service_name.to_string(), pid.as_u32()));
-                }
+            if let Some(process_name) = process.name().to_str()
+                && process_name == service_name
+            {
+                found_pids.push((service_name.to_string(), pid.as_u32()));
             }
         }
     }
@@ -550,13 +549,13 @@ Run `./cli-setup-operators.sh --ops 4` first (expected path from local-committee
         return Ok(Some(("UB__COORDINATOR__BITVMX__PUBKEY_HASH".to_string(), resolved)));
     }
 
-    let (final_key, final_value) = if base_key == "UB__INDEXER__STORAGE__PATH" {
-        (base_key.to_string(), union_bridge_path(base_storage_path, value))
-    } else if base_key == "UB__COORDINATOR__STORAGE_PATH" {
-        (base_key.to_string(), union_bridge_path(base_storage_path, value))
-    } else if base_key == "UB__KEY_STORE__MEMBER_PATH" {
-        (base_key.to_string(), union_bridge_path(base_storage_path, value))
-    } else if base_key == "UB__KEY_STORE__USER_PATH" {
+    let (final_key, final_value) = if matches!(
+        base_key,
+        "UB__INDEXER__STORAGE__PATH"
+            | "UB__COORDINATOR__STORAGE_PATH"
+            | "UB__KEY_STORE__MEMBER_PATH"
+            | "UB__KEY_STORE__USER_PATH"
+    ) {
         (base_key.to_string(), union_bridge_path(base_storage_path, value))
     } else if matches!(
         base_key,
@@ -908,7 +907,7 @@ fn launch_client_services(
     // Verify none exited immediately
     for ms in services.iter() {
         let name = format!("{}:{}", client_id, ms.service);
-        let mut guard = ms.child.lock().expect(format!("Failed to lock {}", name).as_str());
+        let mut guard = ms.child.lock().unwrap_or_else(|_| panic!("Failed to lock {}", name));
         if let Ok(Some(status)) = guard.try_wait() {
             println!("ERROR: {} exited immediately with status {}", name, status);
             let _ = shutdown_tx.send(());
@@ -946,107 +945,6 @@ fn launch_client_services(
     Ok(services)
 }
 
-#[cfg(test)]
-mod tests {
-    use std::sync::Mutex;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    use super::*;
-
-    static TEST_MUTEX: Mutex<()> = Mutex::new(());
-
-    fn make_temp_dir() -> PathBuf {
-        let unique = SystemTime::now().duration_since(UNIX_EPOCH).expect("time").as_nanos();
-        let path = std::env::temp_dir().join(format!("union-bridge-run-test-{unique}"));
-        fs::create_dir_all(&path).expect("create temp dir");
-        path
-    }
-
-    #[test]
-    fn test_build_env_for_client_reads_pubkey_hash_file_references() {
-        let _guard = TEST_MUTEX.lock().expect("lock");
-        let base_storage_path = make_temp_dir();
-        let hash_rel_path = ".union_bridge/op_1/union-client/broker/block-indexer.pubkey_hash";
-        let hash_abs_path = base_storage_path.join(hash_rel_path);
-        fs::create_dir_all(hash_abs_path.parent().expect("parent")).expect("mkdir");
-        fs::write(&hash_abs_path, "abc123\n").expect("write hash file");
-
-        std::env::set_var("BASE_STORAGE_PATH", &base_storage_path);
-
-        let env_map = HashMap::from([
-            (
-                "UB__COORDINATOR__BLOCKS__PUBKEY_HASH_FILE_1".to_string(),
-                ".union_bridge/op_1/union-client/broker/block-indexer.pubkey_hash".to_string(),
-            ),
-            (
-                "UB__BLOCK_INDEXER__BROKER_KEY_PATH_1".to_string(),
-                ".union_bridge/op_1/union-client/broker/block-indexer.pem".to_string(),
-            ),
-        ]);
-
-        let envs = build_env_for_client(1, &env_map, BitvmxMode::Docker).expect("build envs");
-
-        assert!(envs
-            .contains(
-                &("UB__COORDINATOR__BLOCKS__PUBKEY_HASH".to_string(), "abc123".to_string(),)
-            ));
-        assert!(envs.contains(&(
-            "UB__BLOCK_INDEXER__BROKER_KEY_PATH".to_string(),
-            base_storage_path
-                .join(".union_bridge/op_1/union-client/broker/block-indexer.pem")
-                .display()
-                .to_string(),
-        )));
-
-        let _ = fs::remove_dir_all(base_storage_path);
-        std::env::remove_var("BASE_STORAGE_PATH");
-    }
-
-    #[test]
-    fn test_build_env_for_client_ignores_bitvmx_file_in_repo_mode() {
-        let _guard = TEST_MUTEX.lock().expect("lock");
-        let base_storage_path = make_temp_dir();
-
-        std::env::set_var("BASE_STORAGE_PATH", &base_storage_path);
-
-        let env_map = HashMap::from([
-            (
-                "UB__COORDINATOR__BITVMX__PUBKEY_HASH_FILE_1".to_string(),
-                ".union_bridge/op_1/bitvmx/keys/services.pubkey_hash".to_string(),
-            ),
-            ("UB__COORDINATOR__BITVMX__PORT_1".to_string(), "22222".to_string()),
-        ]);
-
-        let envs = build_env_for_client(1, &env_map, BitvmxMode::Repo).expect("build envs");
-
-        assert!(envs.iter().any(|(k, v)| k == "UB__COORDINATOR__BITVMX__PORT" && v == "22222"));
-        assert!(!envs.iter().any(|(k, _)| k == "UB__COORDINATOR__BITVMX__PUBKEY_HASH"));
-
-        let _ = fs::remove_dir_all(base_storage_path);
-        std::env::remove_var("BASE_STORAGE_PATH");
-    }
-
-    #[test]
-    fn test_build_env_for_client_includes_log_dir_when_set() {
-        let _guard = TEST_MUTEX.lock().expect("lock");
-        let base_storage_path = make_temp_dir();
-        let log_dir = base_storage_path.join("logs");
-        let log_dir = log_dir.display().to_string();
-
-        std::env::set_var("BASE_STORAGE_PATH", &base_storage_path);
-        std::env::set_var(LOG_DIR_ENV_VAR, &log_dir);
-
-        let envs =
-            build_env_for_client(1, &HashMap::new(), BitvmxMode::Docker).expect("build envs");
-
-        assert!(envs.contains(&(LOG_DIR_ENV_VAR.to_string(), log_dir)));
-
-        let _ = fs::remove_dir_all(base_storage_path);
-        std::env::remove_var("BASE_STORAGE_PATH");
-        std::env::remove_var(LOG_DIR_ENV_VAR);
-    }
-}
-
 async fn teardown_all(clients: Vec<ManagedClient>) {
     // teardown all clients simultaneously, but within each client, stop services with proper ordering
     let mut handles = Vec::new();
@@ -1067,11 +965,11 @@ async fn teardown_all(clients: Vec<ManagedClient>) {
                 let start = std::time::Instant::now();
                 let coordinator_timeout = Duration::from_secs(10);
                 loop {
-                    if let Ok(mut guard) = coordinator.child.lock() {
-                        if let Ok(Some(_)) = guard.try_wait() {
-                            // coordinator has exited
-                            break;
-                        }
+                    if let Ok(mut guard) = coordinator.child.lock()
+                        && let Ok(Some(_)) = guard.try_wait()
+                    {
+                        // coordinator has exited
+                        break;
                     }
                     if start.elapsed() >= coordinator_timeout {
                         // timeout, force kill
@@ -1146,5 +1044,121 @@ async fn teardown_all(clients: Vec<ManagedClient>) {
     // wait for all client teardowns to complete
     for h in handles {
         let _ = h.await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+
+    static TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+    fn set_env(key: &str, value: impl AsRef<std::ffi::OsStr>) {
+        // SAFETY: All test callers hold TEST_MUTEX, serializing env access
+        // across the tests in this module.
+        unsafe { std::env::set_var(key, value) }
+    }
+
+    fn remove_env(key: &str) {
+        // SAFETY: See set_env — TEST_MUTEX serializes access across tests.
+        unsafe { std::env::remove_var(key) }
+    }
+
+    fn make_temp_dir() -> PathBuf {
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH).expect("time").as_nanos();
+        let path = std::env::temp_dir().join(format!("union-bridge-run-test-{unique}"));
+        fs::create_dir_all(&path).expect("create temp dir");
+        path
+    }
+
+    #[test]
+    fn test_build_env_for_client_reads_pubkey_hash_file_references() {
+        let _guard = TEST_MUTEX.lock().expect("lock");
+        let base_storage_path = make_temp_dir();
+        let hash_rel_path = ".union_bridge/op_1/union-client/broker/block-indexer.pubkey_hash";
+        let hash_abs_path = base_storage_path.join(hash_rel_path);
+        fs::create_dir_all(hash_abs_path.parent().expect("parent")).expect("mkdir");
+        fs::write(&hash_abs_path, "abc123\n").expect("write hash file");
+
+        set_env("BASE_STORAGE_PATH", &base_storage_path);
+
+        let env_map = HashMap::from([
+            (
+                "UB__COORDINATOR__BLOCKS__PUBKEY_HASH_FILE_1".to_string(),
+                ".union_bridge/op_1/union-client/broker/block-indexer.pubkey_hash".to_string(),
+            ),
+            (
+                "UB__BLOCK_INDEXER__BROKER_KEY_PATH_1".to_string(),
+                ".union_bridge/op_1/union-client/broker/block-indexer.pem".to_string(),
+            ),
+        ]);
+
+        let envs = build_env_for_client(1, &env_map, BitvmxMode::Docker).expect("build envs");
+
+        assert!(
+            envs.contains(&(
+                "UB__COORDINATOR__BLOCKS__PUBKEY_HASH".to_string(),
+                "abc123".to_string(),
+            ))
+        );
+        assert!(
+            envs.contains(&(
+                "UB__BLOCK_INDEXER__BROKER_KEY_PATH".to_string(),
+                base_storage_path
+                    .join(".union_bridge/op_1/union-client/broker/block-indexer.pem")
+                    .display()
+                    .to_string(),
+            ))
+        );
+
+        let _ = fs::remove_dir_all(base_storage_path);
+        remove_env("BASE_STORAGE_PATH");
+    }
+
+    #[test]
+    fn test_build_env_for_client_ignores_bitvmx_file_in_repo_mode() {
+        let _guard = TEST_MUTEX.lock().expect("lock");
+        let base_storage_path = make_temp_dir();
+
+        set_env("BASE_STORAGE_PATH", &base_storage_path);
+
+        let env_map = HashMap::from([
+            (
+                "UB__COORDINATOR__BITVMX__PUBKEY_HASH_FILE_1".to_string(),
+                ".union_bridge/op_1/bitvmx/keys/services.pubkey_hash".to_string(),
+            ),
+            ("UB__COORDINATOR__BITVMX__PORT_1".to_string(), "22222".to_string()),
+        ]);
+
+        let envs = build_env_for_client(1, &env_map, BitvmxMode::Repo).expect("build envs");
+
+        assert!(envs.iter().any(|(k, v)| k == "UB__COORDINATOR__BITVMX__PORT" && v == "22222"));
+        assert!(!envs.iter().any(|(k, _)| k == "UB__COORDINATOR__BITVMX__PUBKEY_HASH"));
+
+        let _ = fs::remove_dir_all(base_storage_path);
+        remove_env("BASE_STORAGE_PATH");
+    }
+
+    #[test]
+    fn test_build_env_for_client_includes_log_dir_when_set() {
+        let _guard = TEST_MUTEX.lock().expect("lock");
+        let base_storage_path = make_temp_dir();
+        let log_dir = base_storage_path.join("logs");
+        let log_dir = log_dir.display().to_string();
+
+        set_env("BASE_STORAGE_PATH", &base_storage_path);
+        set_env(LOG_DIR_ENV_VAR, &log_dir);
+
+        let envs =
+            build_env_for_client(1, &HashMap::new(), BitvmxMode::Docker).expect("build envs");
+
+        assert!(envs.contains(&(LOG_DIR_ENV_VAR.to_string(), log_dir)));
+
+        let _ = fs::remove_dir_all(base_storage_path);
+        remove_env("BASE_STORAGE_PATH");
+        remove_env(LOG_DIR_ENV_VAR);
     }
 }
