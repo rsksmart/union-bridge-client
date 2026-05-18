@@ -50,14 +50,14 @@ RUN cargo fetch --locked
 ARG EXCLUDES="--exclude check-fork --exclude check-fork-zkp --exclude key-manager"
 # TODO when the zkp feature is re-enabled, use this to build coordinator in an image with amd64 support (required by Risc0 in Macs with M chips) via Dockerfile_coordinator
 # EXCLUDES="--exclude coordinator--exclude check-fork --exclude check-fork-zkp --exclude key-manager"
-RUN cargo build --workspace --quiet --release ${EXCLUDES}${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES} && \
+RUN cargo build --workspace --quiet --release --locked ${EXCLUDES}${JUST_CRATE:+ -p $JUST_CRATE}${FEATURES:+ --features $FEATURES} && \
     (rm -rf target/release/incremental 2>/dev/null || true) && \
     (find target/release/deps -name "*.rmeta" -delete 2>/dev/null || true) && \
     (find target/release/build -type f -name "*.d" -delete 2>/dev/null || true)
 
 # --- RUNTIME STAGE ---
 
-FROM debian:bookworm-slim AS runtime
+FROM debian:bookworm-slim@sha256:67b30a61dc87758f0caf819646104f29ecbda97d920aaf5edc834128ac8493d3 AS runtime
 ARG CRATE
 
 # install runtime dependencies
