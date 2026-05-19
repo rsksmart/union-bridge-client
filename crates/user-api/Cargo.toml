@@ -8,6 +8,7 @@ edition = "2024"
 [dependencies]
 anyhow = { workspace = true }
 axum = { workspace = true }
+bitcoin = { workspace = true }
 clap = { workspace = true }
 common = { path = "../common" }
 secrecy = { workspace = true }

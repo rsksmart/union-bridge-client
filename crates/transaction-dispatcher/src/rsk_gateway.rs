@@ -23,7 +23,8 @@ use crate::contracts::interactions::get_btc_transaction_confirmations::GetBtcTra
 use crate::contracts::member_registry::{GetMemberPublicKeysCall, MemberRegistryContract};
 use crate::contracts::native_bridge::NativeBridgeContract;
 use crate::contracts::pegin_manager::{
-    AcceptPeginInvoke, GetTemporaryPeginAddressCall, PeginManagerContract, RequestPeginInvoke,
+    AcceptPeginInvoke, GetTemporaryPeginAddressCall, PeginManagerContract, RejectPeginInvoke,
+    RequestPeginInvoke,
 };
 use crate::contracts::pegout_manager::{
     GetAcceptPeginTxidCall, PegoutManagerContract, RegisterAdvanceFundsInvoke,
@@ -48,9 +49,9 @@ use crate::types::{
     RegisterChallengeOutput, RegisterInputRevealedInput, RegisterInputRevealedOutput,
     RegisterOperatorTakeInput, RegisterOperatorTakeOutput, RegisterOperatorWonInput,
     RegisterOperatorWonOutput, RegisterPegoutInput, RegisterPegoutOutput,
-    RegisterReimbursementKickoffInput, RegisterReimbursementKickoffOutput, RequestPeginInput,
-    RequestPeginOutput, RequestPegoutInput, RequestPegoutOutput, TriggerOperatorTakeInput,
-    TriggerOperatorTakeOutput,
+    RegisterReimbursementKickoffInput, RegisterReimbursementKickoffOutput, RejectPeginInput,
+    RejectPeginOutput, RequestPeginInput, RequestPeginOutput, RequestPegoutInput,
+    RequestPegoutOutput, TriggerOperatorTakeInput, TriggerOperatorTakeOutput,
 };
 
 /// Must match the contract name in the config file
@@ -109,6 +110,11 @@ pub trait RskContractsGatewayApi {
         &self,
         input: AcceptPeginInput,
     ) -> impl Future<Output = Result<AcceptPeginOutput, DomainErrors>>;
+
+    fn reject_pegin(
+        &self,
+        input: RejectPeginInput,
+    ) -> impl Future<Output = Result<RejectPeginOutput, DomainErrors>>;
 
     fn add_member_nonce(
         &self,
@@ -222,6 +228,7 @@ pub struct RskContractsGateway<P: Provider + Clone> {
         GetTemporaryPeginAddressCall<PeginManagerContract<P>, StreamManagerContract<P>>,
     request_pegin_invoke: RequestPeginInvoke<PeginManagerContract<P>>,
     accept_pegin_invoke: AcceptPeginInvoke<PeginManagerContract<P>>,
+    reject_pegin_invoke: RejectPeginInvoke<PeginManagerContract<P>>,
     add_member_nonce_invoke: AddMemberNonceInvoke<SignatureManagerContract<P>>,
     add_member_signature_invoke: AddMemberSignatureInvoke<SignatureManagerContract<P>>,
     add_operator_take_tx_hash_invoke: AddOperatorTakeTxHashInvoke<SignatureManagerContract<P>>,
@@ -332,6 +339,10 @@ impl<P: Provider + Clone> RskContractsGateway<P> {
                 tx_config.gas_bumps_t1,
             ),
             accept_pegin_invoke: AcceptPeginInvoke::new(
+                pegin_manager_contract.clone(),
+                tx_config.gas_bumps_t1,
+            ),
+            reject_pegin_invoke: RejectPeginInvoke::new(
                 pegin_manager_contract.clone(),
                 tx_config.gas_bumps_t1,
             ),
@@ -480,6 +491,18 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
 
         self.accept_pegin_invoke.run(input).await.map_err(|err| {
             error!("Error on accept_pegin_invoke: {err}");
+            err
+        })
+    }
+
+    async fn reject_pegin(
+        &self,
+        input: RejectPeginInput,
+    ) -> Result<RejectPeginOutput, DomainErrors> {
+        info!("Interacting with PeginManager#rejectPegin");
+
+        self.reject_pegin_invoke.run(input).await.map_err(|err| {
+            error!("Error on reject_pegin_invoke: {err}");
             err
         })
     }

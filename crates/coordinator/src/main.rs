@@ -185,6 +185,8 @@ fn main() -> Result<()> {
         config.flows.pegout.advance_funds_timeout_secs,
         config.flows.committee.drp_program_definition.clone(),
         config.flows.native_bridge.btc_confirmations_buffer,
+        config.flows.reject_pegin.min_tx_confirmations,
+        config.flows.reject_pegin.blocks_delay_for_tx_check,
         store_path,
     );
     coordinator.run().inspect_err(|e| {

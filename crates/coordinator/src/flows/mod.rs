@@ -6,3 +6,4 @@ pub(crate) mod funding_info_flow;
 pub(crate) mod operator_take;
 pub(crate) mod pegin;
 pub(crate) mod pegout;
+pub(crate) mod reject_pegin;

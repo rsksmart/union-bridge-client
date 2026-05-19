@@ -6,6 +6,7 @@
 #        ./scripts/operations.sh user fund --env local-anvil
 #        ./scripts/operations.sh user pegin -a 0x1234...cdef -v 100000
 #        ./scripts/operations.sh user pegout -v 100000
+#        ./scripts/operations.sh user reject-pegin --committee-id 182376596843486060923694608664362585331 --member-index 1 --request-pegin-txid 0x4e80f8119c7299ae9d85adad5f0a45baa69831069046569ef4ba9574249ee471
 #        ./scripts/operations.sh --help
 
 set -euo pipefail

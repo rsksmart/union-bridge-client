@@ -23,6 +23,8 @@ pub const ACCEPT_PEGIN_TX: &str = "ACCEPT_PEGIN_TX";
 pub const OPERATOR_TAKE_TX: &str = "OPERATOR_TAKE_TX";
 pub const OPERATOR_WON_TX: &str = "OPERATOR_WON_TX";
 pub const RSK_PEGIN_TAG: &[u8] = b"RSK_PEGIN";
+pub const REJECT_PEGIN_TX: &str = "REJECT_PEGIN_TX";
+pub const PROGRAM_TYPE_REJECT_PEGIN: &str = "reject_pegin";
 
 // DisputeChannel related constants and types
 pub const OP_COSIGN_UTXOS: &str = "OP_COSIGN_UTXOS";
@@ -688,6 +690,19 @@ pub struct PeginAcceptedMessage {
     pub operator_take_sighash: Option<Vec<u8>>,
     // Same as above, but for operator_won_txid.
     pub operator_won_sighash: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RejectPeginData {
+    pub committee_id: Uuid,
+    pub member_index: usize,
+    pub txid: Txid,
+}
+
+impl RejectPeginData {
+    pub fn name() -> &'static str {
+        "reject_pegin_data"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -89,6 +89,12 @@ For remote CLI access, copy `cli/.env.sample` to `cli/.env.<profile>` and fill i
 ./scripts/operations.sh user fund --env local-anvil
 ./scripts/operations.sh user pegin --rsk-address 0x742d35... --value 1000000 --btc-pub-key 0x<32-byte-xonly-pubkey> --env local-anvil
 ./scripts/operations.sh user pegout --value 1000000 --usr-pub-key 0x<33-byte-compressed-pubkey> --env local-anvil
+
+# User: Request reject pegin against member endpoint 1
+./scripts/operations.sh user reject-pegin --committee-id 182376596843486060923694608664362585331 --member-index 1 --request-pegin-txid 0x4e80f8119c7299ae9d85adad5f0a45baa69831069046569ef4ba9574249ee471 --env local-anvil
+
+# Request reject pegin on a specific remote operator
+./scripts/operations.sh user reject-pegin --env alphanet --operator-id 1 --committee-id 182376596843486060923694608664362585331 --member-index 1 --request-pegin-txid 0x4e80f8119c7299ae9d85adad5f0a45baa69831069046569ef4ba9574249ee471
 ```
 
 ### Remote CLI Notes
@@ -126,6 +132,7 @@ cli/
 │   │   ├── committee.rs
 │   │   ├── pegin.rs
 │   │   ├── pegout.rs
+│   │   ├── reject_pegin.rs
 │   │   ├── environments.rs
 │   │   ├── member_funding_info.rs
 │   │   ├── constants.rs
@@ -160,7 +167,6 @@ cli/bitcoin-wallet/
 │   └── wallet.rs
 └── tests/
 ```
-
 
 ## Docker Integration
 

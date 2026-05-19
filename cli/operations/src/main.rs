@@ -67,6 +67,11 @@
 //! ```bash
 //! cargo run -- user pegout -v 100000 -k 0x<33-byte-compressed-pubkey> --env local
 //! ```
+//!
+//! reject pegin (member operation):
+//! ```bash
+//! cargo run -- user reject-pegin --committee-id 182376596843486060923694608664362585331 --member-index 1 --request-pegin-txid 0x4e80f8119c7299ae9d85adad5f0a45baa69831069046569ef4ba9574249ee471 --env local-anvil
+//! ```
 
 #![forbid(unsafe_code)]
 
@@ -77,6 +82,7 @@ mod environments;
 mod member_funding_info;
 mod pegin;
 mod pegout;
+mod reject_pegin;
 mod rsk_wallet;
 mod utils;
 
@@ -243,6 +249,35 @@ enum UserCommands {
         #[arg(short = 'k', long = "usr-pub-key", value_name = "USR_PUB_KEY")]
         usr_pub_key: String,
     },
+    /// Request a reject pegin flow on the member endpoint
+    #[command(name = "reject-pegin")]
+    RejectPegin {
+        /// Environment to target (`local-anvil`, `docker-anvil`, `local-rskj`, `docker-rskj`, or a remote profile name such as `alphanet`)
+        #[arg(long = "env", short = 'e', default_value = "local-anvil", env = "UC_ENV")]
+        env: Environment,
+
+        /// Operator ID to target for the member endpoint.
+        /// Required on remote profiles. Optional on local/docker (defaults to operator 1).
+        #[arg(
+            short = 'o',
+            long = "operator-id",
+            value_name = "OPERATOR_ID",
+            env = "UC_OPERATOR_ID"
+        )]
+        operator_id: Option<u8>,
+
+        /// Committee identifier in decimal string format
+        #[arg(long = "committee-id", value_name = "COMMITTEE_ID")]
+        committee_id: String,
+
+        /// Committee member index
+        #[arg(long = "member-index", value_name = "MEMBER_INDEX")]
+        member_index: usize,
+
+        /// Request pegin txid (32-byte hex, with or without 0x prefix)
+        #[arg(long = "request-pegin-txid", value_name = "REQUEST_PEGIN_TXID")]
+        request_pegin_txid: String,
+    },
 }
 
 fn validate_1_10(value: u8, name: &str) -> Result<()> {
@@ -321,6 +356,22 @@ async fn main() -> Result<()> {
             }
             UserCommands::Pegout { env, value, usr_pub_key } => {
                 pegout::request_pegout(env, value, usr_pub_key).await?;
+            }
+            UserCommands::RejectPegin {
+                env,
+                operator_id,
+                committee_id,
+                member_index,
+                request_pegin_txid,
+            } => {
+                reject_pegin::request_reject_pegin(
+                    env,
+                    operator_id,
+                    committee_id,
+                    member_index,
+                    request_pegin_txid,
+                )
+                .await?;
             }
         },
     }

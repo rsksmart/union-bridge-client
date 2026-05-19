@@ -8,10 +8,11 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
+use bitcoin::Txid;
 use common::msg_broker::broker::{BrokerServer, BrokerServerApi, Identifier};
 use common::msg_broker::types::{FromServer, MemberFundingInfo, ToServer};
 use common::shutdown_flag::ShutdownFlag;
-use common::types::Address;
+use common::types::{Address, CommitteeId};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
@@ -180,6 +181,15 @@ pub struct ApplyStreamReq {
     pub apply_to_stream: Value,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RejectPeginInput {
+    #[serde(with = "common::types::committee_id_decimal_string")]
+    pub committee_id: CommitteeId,
+    pub member_index: usize,
+    #[serde(with = "common::types::txid_hex_string_optional_0x")]
+    pub request_pegin_txid: Txid,
+}
+
 pub struct Server {
     listener: TcpListener,
     app: Router,
@@ -228,6 +238,7 @@ impl Server {
             Router::new()
                 .route("/apply-stream", post(Self::apply_stream))
                 .route("/funding-info", get(Self::member_funding_info))
+                .route("/reject-pegin", post(Self::reject_pegin))
                 .layer(Extension(funding_broker.clone())),
         );
 
@@ -336,6 +347,22 @@ impl Server {
     }
 
     #[instrument(skip_all)]
+    async fn reject_pegin(
+        Extension(funding_broker): Extension<Arc<FundingSyncBroker>>,
+        Json(payload): Json<RejectPeginInput>,
+    ) -> impl IntoResponse {
+        info!(
+            "Received reject pegin request for destination: {} with payload: {:?}",
+            funding_broker.destination, payload
+        );
+
+        match funding_broker.send(&FromServer::UserRequest(json!({ "RejectPegin": payload }))).await
+        {
+            Ok(()) => (StatusCode::OK, Json(json!({ "result": "ok" }))),
+            Err((status, body)) => (status, body),
+        }
+    }
+
     async fn pegin_address(
         Extension(contracts): Extension<
             Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi>,

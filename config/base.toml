@@ -103,6 +103,12 @@ btc_confirmations = 1
 # Blocks delay before rechecking BTC transaction status
 btc_status_retry_blocks = 20
 
+[flows.reject_pegin]
+# Minimum BTC transaction confirmations required to reject a pegin
+min_tx_confirmations = 1
+# Blocks delay before rechecking transaction status
+blocks_delay_for_tx_check = 6
+
 [flows.pegout]
 # Timeout for advance funds before triggering operator take (seconds)
 # Test environments: 600 (10 min), Production: 7200 (2 hours)

@@ -7,11 +7,11 @@ use alloy_primitives::{B256, FixedBytes};
 use alloy_sol_types::SolEvent;
 use alloy_sol_types::SolEventInterface;
 use anyhow::{Result, anyhow};
-use bitcoin::PublicKey;
+use bitcoin::{PublicKey, Txid};
 use common::msg_broker::bitvmx_types::{
     PartialUtxo, ParticipantRole, PegOutAccepted, PeginAcceptedMessage,
 };
-use common::types::{Address, BlockHash, BlockNumber, Hash256, RskLog, TxHash};
+use common::types::{Address, BlockHash, BlockNumber, Hash256, RskLog, TxHash, TxIdParser};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, trace, warn};
@@ -39,12 +39,13 @@ use union_contracts::bindings::stream_manager::StreamManager::StreamManagerEvent
 use uuid::Uuid;
 
 use crate::flows::common::FlowId;
-use crate::user_requests::ApplyToStream;
+use crate::user_requests::{ApplyToStream, RejectPeginRequest};
 
 #[derive(Eq, PartialEq, Debug)]
 pub enum RskPegManagerEvents {
     PeginRequested(PeginRequestedEvent),
     PeginAccepted(PeginAcceptedEvent),
+    RejectPeginRegistered(RejectPeginRegisteredEvent),
     PegoutRegistered(PegoutRegisteredEvent),
     PegoutRequested(PegoutRequestedEvent),
     OperatorTakeTriggered(OperatorTakeTriggeredEvent),
@@ -67,6 +68,7 @@ pub enum UserRequests {
     FundingInfo(Uuid),
     ApplyToStream(ApplyToStream),
     Admin(AdminRequest),
+    RejectPegin(RejectPeginRequest),
 }
 
 /// Admin-issued requests carried over the same `UserRequests` channel. Gated by the
@@ -90,6 +92,7 @@ pub enum FlowKind {
 
 pub(crate) type PeginRequestedEvent = EventWithBlock<PeginRequested>;
 pub(crate) type PeginAcceptedEvent = EventWithBlock<PeginAccepted>;
+pub(crate) type RejectPeginRegisteredEvent = EventWithBlock<RejectPeginRegisteredData>;
 pub(crate) type AllNoncesReadyEvent = EventWithBlock<Hash256>;
 pub(crate) type AllSignaturesReadyEvent = EventWithBlock<Hash256>;
 pub(crate) type AllOperatorTakeTxidsAddedEvent = EventWithBlock<AllOperatorTakeTxidsAdded>;
@@ -113,6 +116,16 @@ pub struct EventWithBlock<T> {
     pub block_hash: BlockHash,
     pub removed: EventStatus,
     pub tx_hash: TxHash,
+}
+
+#[derive(Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
+pub struct RejectPeginRegisteredData {
+    pub reject_pegin_txid: Txid,
+    pub request_pegin_txid: Txid,
+    pub stream_id: u64,
+    pub packet_number: u64,
+    pub slot_id: u64,
+    pub peg_status: u8,
 }
 
 pub(crate) struct EventDecoder;
@@ -310,6 +323,22 @@ impl EventDecoder {
             PeginManagerEvents::PeginAccepted(inner) => {
                 RskPegManagerEvents::PeginAccepted(PeginAcceptedEvent {
                     inner,
+                    block_number: block_num,
+                    block_hash,
+                    removed,
+                    tx_hash,
+                })
+            }
+            PeginManagerEvents::RejectPeginRegistered(inner) => {
+                RskPegManagerEvents::RejectPeginRegistered(RejectPeginRegisteredEvent {
+                    inner: RejectPeginRegisteredData {
+                        reject_pegin_txid: TxIdParser::fb_32_to_txid(inner.rejectPeginTxid),
+                        request_pegin_txid: TxIdParser::fb_32_to_txid(inner.requestPeginTxid),
+                        stream_id: inner.streamInfo.streamId,
+                        packet_number: inner.streamInfo.packetNumber,
+                        slot_id: inner.streamInfo.slotId,
+                        peg_status: inner.streamInfo.pegStatus,
+                    },
                     block_number: block_num,
                     block_hash,
                     removed,
@@ -736,7 +765,7 @@ mod tests {
         Committee, CommitteeMember,
     };
     use union_contracts::bindings::pegin_manager::PeginManager::{
-        RequestPeginTempInfo, StreamPosition,
+        RejectPeginRegistered, RequestPeginTempInfo, StreamPosition,
     };
     use uuid::Uuid;
 
@@ -1028,6 +1057,56 @@ mod tests {
                 assert_eq!(data.tx_hash, expected_tx_hash);
             }
             _ => panic!("Expected PeginAccepted event"),
+        }
+    }
+
+    #[test]
+    fn test_decode_reject_pegin_registered_event() {
+        let expected_block_hash = H256::from_low_u64_be(321);
+        let expected_block_num = 654;
+
+        let expected_event = RejectPeginRegistered {
+            rejectPeginTxid: FixedBytes::<32>::from_slice(H256::from_low_u64_be(4).as_bytes()),
+            requestPeginTxid: FixedBytes::<32>::from_slice(H256::from_low_u64_be(5).as_bytes()),
+            streamInfo: StreamPosition {
+                streamId: 42,
+                packetNumber: 33,
+                slotId: 7,
+                pegStatus: 2u8,
+            },
+        };
+
+        let removed = false;
+        let (expected_tx_hash, rsk_log) = create_rsk_log_from_event(
+            &expected_event,
+            expected_block_hash,
+            expected_block_num,
+            removed,
+        );
+        let result = EventDecoder::decode(&rsk_log);
+        match result {
+            RskPegManagerEvents::RejectPeginRegistered(data) => {
+                assert_eq!(
+                    data.inner,
+                    RejectPeginRegisteredData {
+                        reject_pegin_txid: TxIdParser::fb_32_to_txid(
+                            expected_event.rejectPeginTxid
+                        ),
+                        request_pegin_txid: TxIdParser::fb_32_to_txid(
+                            expected_event.requestPeginTxid
+                        ),
+                        stream_id: expected_event.streamInfo.streamId,
+                        packet_number: expected_event.streamInfo.packetNumber,
+                        slot_id: expected_event.streamInfo.slotId,
+                        peg_status: expected_event.streamInfo.pegStatus,
+                    }
+                );
+                assert_eq!(data.block_number, expected_block_num);
+                assert_eq!(data.block_hash, expected_block_hash.into());
+                assert_eq!(data.removed, removed);
+                assert_eq!(data.tx_hash, expected_tx_hash);
+            }
+            _ => panic!("Expected RejectPeginRegistered event"),
         }
     }
 

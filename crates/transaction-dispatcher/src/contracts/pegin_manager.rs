@@ -13,6 +13,7 @@ use crate::contracts::bitcoin_manager::ParseFieldError;
 use crate::contracts::common::send_tx_with_gas_bump;
 pub(crate) use crate::contracts::interactions::accept_pegin::AcceptPeginInvoke;
 pub(crate) use crate::contracts::interactions::get_temporary_pegin_address::GetTemporaryPeginAddressCall;
+pub(crate) use crate::contracts::interactions::reject_pegin::RejectPeginInvoke;
 pub(crate) use crate::contracts::interactions::request_pegin::RequestPeginInvoke;
 use crate::rsk_gateway::DomainErrors;
 use crate::types::BtcTxSPVProofInput;
@@ -41,6 +42,13 @@ pub(crate) trait PeginManagerContractApi {
     ) -> alloy_contract::Result<TxHash>;
 
     async fn invoke_accept_pegin(
+        &self,
+        input: BtcTxSPVProof,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TxHash>;
+
+    #[allow(dead_code)]
+    async fn invoke_reject_pegin(
         &self,
         input: BtcTxSPVProof,
         gas_bumps: u8,
@@ -100,6 +108,19 @@ impl<P: Provider> PeginManagerContractApi for PeginManagerContract<P> {
         send_tx_with_gas_bump(
             &self.contract_instance.provider(),
             || self.contract_instance.acceptPegin(input.clone()),
+            gas_bumps,
+        )
+        .await
+    }
+
+    async fn invoke_reject_pegin(
+        &self,
+        input: BtcTxSPVProof,
+        gas_bumps: u8,
+    ) -> alloy_contract::Result<TxHash> {
+        send_tx_with_gas_bump(
+            &self.contract_instance.provider(),
+            || self.contract_instance.rejectPegin(input.clone()),
             gas_bumps,
         )
         .await

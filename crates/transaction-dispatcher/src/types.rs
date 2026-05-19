@@ -122,6 +122,8 @@ pub struct RegisterInputRevealedInput {
 pub type RequestPeginInput = BtcTxSPVProofInput;
 pub type RegisterPegInInput = BtcTxSPVProofInput;
 pub type AcceptPeginInput = BtcTxSPVProofInput;
+pub type RejectPeginInput = BtcTxSPVProofInput;
+pub type RejectPeginOutput = TxSentOutput;
 pub type RegisterPegoutInput = BtcTxSPVProofInput;
 pub type RegisterOperatorTakeInput = BtcTxSPVProofInput;
 pub type RegisterOperatorWonInput = BtcTxSPVProofInput;

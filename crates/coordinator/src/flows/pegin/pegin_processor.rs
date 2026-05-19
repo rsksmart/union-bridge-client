@@ -33,8 +33,8 @@ use crate::flows::pegin::pegin_flow::{
 use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix, restore_flows};
 use crate::types::{
     AdminRequest, AllOperatorTakeTxidsAddedEvent, EventStatus, FlowKind, PeginAcceptedEvent,
-    PeginRequestedEvent, RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler,
-    UserRequests,
+    PeginRequestedEvent, RegisterSignaturesBitVmxData, RejectPeginRegisteredEvent,
+    RskPegManagerEvents, TickScheduler, UserRequests,
 };
 
 const PEGIN_ACCEPTED_INPUT_MSG: &str = "pegin_accepted";
@@ -281,6 +281,28 @@ where
         Ok(())
     }
 
+    fn handle_reject_pegin_registered(&mut self, event: &RejectPeginRegisteredEvent) -> Result<()> {
+        let request_pegin_txid = event.inner.request_pegin_txid;
+
+        let Some(flow) = self
+            .pegin_flows
+            .values_mut()
+            .find(|flow| !flow.is_done() && flow.request_pegin_btc_tx_id() == request_pegin_txid)
+        else {
+            trace!(
+                "PeginFlowProcessor ignoring RejectPeginRegistered for request_pegin_txid {request_pegin_txid} - no matching flow",
+            );
+            return Ok(());
+        };
+
+        info!(
+            "RejectPeginRegistered confirmed for request_pegin_txid {request_pegin_txid}; closing pegin flow {}",
+            flow.flow_id()
+        );
+        flow.complete_step(&StepData::RejectPeginRegistered(event.inner.clone()))?;
+        Ok(())
+    }
+
     /// Process confirmed RSK events
     fn process_confirmed_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         info!("Processing confirmed RSK event: {event:?}");
@@ -313,6 +335,9 @@ where
             }
             RskPegManagerEvents::PeginAccepted(pa) => {
                 self.handle_pegin_accepted(pa)?;
+            }
+            RskPegManagerEvents::RejectPeginRegistered(reject_pegin_registered) => {
+                self.handle_reject_pegin_registered(reject_pegin_registered)?;
             }
             RskPegManagerEvents::AllOperatorTakeTxidsAdded(aottah) => {
                 self.handle_all_operator_take_tx_hashes_added(aottah)?;
@@ -438,6 +463,25 @@ where
             event.block_number,
             RskPegManagerEvents::AllOperatorTakeTxidsAdded(event.clone()),
         )
+    }
+
+    fn build_reject_pegin_registered_event_info(
+        event: &RejectPeginRegisteredEvent,
+    ) -> (String, EventStatus, BlockNumber, RskPegManagerEvents) {
+        (
+            format!("reject-pegin-registered-{}", event.tx_hash),
+            event.removed,
+            event.block_number,
+            RskPegManagerEvents::RejectPeginRegistered(event.clone()),
+        )
+    }
+
+    fn has_flow_for_reject_pegin_registered(&self, event: &RejectPeginRegisteredEvent) -> bool {
+        let request_pegin_txid = event.inner.request_pegin_txid;
+
+        self.pegin_flows
+            .values()
+            .any(|flow| !flow.is_done() && flow.request_pegin_btc_tx_id() == request_pegin_txid)
     }
 
     fn process_unhandled_confirmed_sig_flow_events(
@@ -1174,6 +1218,16 @@ where
         let (id, is_removal, block_num, managed_event) = match event {
             RskPegManagerEvents::PeginRequested(e) => Self::build_pegin_requested_event_info(e),
             RskPegManagerEvents::PeginAccepted(e) => Self::build_pegin_accepted_event_info(e),
+            RskPegManagerEvents::RejectPeginRegistered(e) => {
+                if !self.has_flow_for_reject_pegin_registered(e) {
+                    trace!(
+                        "Ignoring RejectPeginRegistered for request_pegin_txid {} - no matching flow",
+                        e.inner.request_pegin_txid
+                    );
+                    return Ok(());
+                }
+                Self::build_reject_pegin_registered_event_info(e)
+            }
             RskPegManagerEvents::AllOperatorTakeTxidsAdded(e) => {
                 Self::build_all_operator_take_tx_hashes_added_event_info(e)
             }
@@ -1410,6 +1464,7 @@ mod tests {
                 accept_pegin_tx_status: None,
                 pegin_accepted: None,
                 op_role: Some(ParticipantRole::Prover),
+                completion: None,
             };
 
             PeginFlow::from_saved_state(
@@ -1589,6 +1644,7 @@ mod tests {
                 accept_pegin_tx_status: None,
                 pegin_accepted: None,
                 op_role: None,
+                completion: None,
             },
             created_at: None,
         };

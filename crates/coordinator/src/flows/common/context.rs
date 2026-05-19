@@ -68,6 +68,7 @@ pub(crate) const DISPUTE_KEY_INDEX: usize = 1;
 pub(crate) const COMM_KEY_INDEX: usize = 2;
 
 #[derive(Default, Debug, Clone)]
+#[allow(clippy::struct_field_names)]
 pub struct GlobalContext {
     my_committees: MyCommittees,
     my_keys: MyKeys,

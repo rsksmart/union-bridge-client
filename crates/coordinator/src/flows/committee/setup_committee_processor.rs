@@ -367,6 +367,9 @@ where
             {
                 self.fail_flow(*flow_id, reason)?;
             }
+            UserRequests::RejectPegin(_) => {
+                trace!("Ignoring user request: {req:?}");
+            }
             _ => {}
         }
         Ok(())

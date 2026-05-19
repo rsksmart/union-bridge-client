@@ -1009,6 +1009,123 @@ pub struct RskRpcLog {
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Hash, Clone)]
 pub struct CommitteeId(u128);
 
+pub mod committee_id_decimal_string {
+    use std::fmt;
+
+    use serde::de::{self, Visitor};
+    use serde::{Deserializer, Serializer};
+
+    use crate::types::CommitteeId;
+
+    /// Serializes a [`CommitteeId`] as a decimal string.
+    ///
+    /// # Errors
+    ///
+    /// Returns any error produced by the provided serializer.
+    pub fn serialize<S>(value: &CommitteeId, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&value.to_string())
+    }
+
+    /// Deserializes a [`CommitteeId`] from a decimal string.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the input is not a valid decimal `u128` string or if deserialization fails.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<CommitteeId, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct CommitteeIdVisitor;
+
+        impl Visitor<'_> for CommitteeIdVisitor {
+            type Value = CommitteeId;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a decimal string committee id")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                value.parse::<u128>().map(CommitteeId::from).map_err(E::custom)
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_str(&value)
+            }
+        }
+
+        deserializer.deserialize_str(CommitteeIdVisitor)
+    }
+}
+
+pub mod txid_hex_string_optional_0x {
+    use std::fmt;
+    use std::str::FromStr;
+
+    use bitcoin::Txid;
+    use serde::de::{self, Visitor};
+    use serde::{Deserializer, Serializer};
+
+    /// Serializes a [`Txid`] as a lowercase hex string without a prefix.
+    ///
+    /// # Errors
+    ///
+    /// Returns any error produced by the provided serializer.
+    pub fn serialize<S>(value: &Txid, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&value.to_string())
+    }
+
+    /// Deserializes a [`Txid`] from a hex string with an optional `0x` prefix.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the input is not a valid transaction id string or if deserialization fails.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Txid, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct TxidVisitor;
+
+        impl Visitor<'_> for TxidVisitor {
+            type Value = Txid;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a hex txid string with optional 0x prefix")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let trimmed =
+                    value.strip_prefix("0x").or_else(|| value.strip_prefix("0X")).unwrap_or(value);
+
+                Txid::from_str(trimmed).map_err(E::custom)
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_str(&value)
+            }
+        }
+
+        deserializer.deserialize_str(TxidVisitor)
+    }
+}
+
 impl std::fmt::Display for CommitteeId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)

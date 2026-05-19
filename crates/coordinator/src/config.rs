@@ -95,6 +95,9 @@ pub struct BitVmxBrokerConfig {
 pub struct FlowsConfig {
     /// Common flow settings (required — no Rust-side default).
     pub common: CommonFlowConfig,
+    /// Reject pegin flow settings.
+    #[serde(default)]
+    pub reject_pegin: RejectPeginConfig,
     /// Pegout flow settings.
     #[serde(default)]
     pub pegout: PegoutConfig,
@@ -117,6 +120,22 @@ pub struct CommonFlowConfig {
     pub btc_confirmations: u32,
     /// Blocks delay before rechecking BTC transaction status.
     pub btc_status_retry_blocks: u32,
+}
+
+/// Reject pegin flow configuration.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct RejectPeginConfig {
+    /// Minimum BTC transaction confirmations for reject pegin.
+    pub min_tx_confirmations: u32,
+    /// Blocks delay before rechecking transaction status.
+    pub blocks_delay_for_tx_check: u32,
+}
+
+impl Default for RejectPeginConfig {
+    fn default() -> Self {
+        Self { min_tx_confirmations: 1, blocks_delay_for_tx_check: 20 }
+    }
 }
 
 /// Pegout flow configuration
