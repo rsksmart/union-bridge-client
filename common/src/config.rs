@@ -29,7 +29,7 @@ const ENVIRONMENT_ENV_VAR: &str = "ENVIRONMENT";
 const LOG_FORMAT_ENV_VAR: &str = "LOG_FORMAT";
 const LOCAL_ENVIRONMENT: &str = "local";
 /// Default per-crate log filters. Noisy third-party crates are pinned to `warn`
-/// so they don't drown out service-level events; see `LOGGING_GUIDELINES.md`.
+/// so they don't drown out service-level events; see `docs/LOGGING.md`.
 const DEFAULT_FILTER: &str = "debug,\
     tarpc=warn,\
     alloy_provider=warn,alloy_pubsub=warn,alloy_rpc_client=warn,alloy_json_rpc=warn,\
@@ -275,7 +275,7 @@ impl CommonConfig {
         ))
     }
 
-    /// Initializes the tracing subscriber. See `LOGGING_GUIDELINES.md` for the rationale.
+    /// Initializes the tracing subscriber. See `docs/LOGGING.md` for the rationale.
     ///
     /// **Format selection** (`LOG_FORMAT` env var, defaults derived from `ENVIRONMENT`):
     /// - `pretty` — human-readable colored output. Default when `ENVIRONMENT=local` (or unset).
