@@ -41,7 +41,10 @@ impl CommitteeData {
 
     /// Gets the dispute core protocol ID for a member by their index.
     /// This is a common operation that's repeated multiple times across the codebase.
-    pub(super) fn get_dispute_core_pid_for_index(&self, member_index: usize) -> Result<BitVmxProtocolId> {
+    pub(super) fn get_dispute_core_pid_for_index(
+        &self,
+        member_index: usize,
+    ) -> Result<BitVmxProtocolId> {
         let member = self
             .members
             .get(member_index)
