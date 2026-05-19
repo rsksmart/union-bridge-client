@@ -19,6 +19,11 @@ baseline expected of new code.
 ## Table of contents
 
 - [Scope and classification](#scope-and-classification)
+- [Build reproducibility](#build-reproducibility)
+- [Format and lint](#format-and-lint)
+- [Coverage](#coverage)
+- [Documentation build](#documentation-build)
+- [Static analysis](#static-analysis)
 - [Workspace and crate boundaries](#workspace-and-crate-boundaries)
 - [Dependencies](#dependencies)
 - [Error handling](#error-handling)
@@ -59,6 +64,45 @@ The relaxed bar means `clippy::pedantic` is allowed (not denied) in these crates
 
 Any crate not listed above as non-production is production by default.
 
+## Build reproducibility
+
+- The toolchain is pinned via `rust-toolchain.toml`. CI and contributor checkouts use the same channel and
+  components.
+- `Cargo.lock` is committed. CI builds and contributor verifications use `cargo … --locked`.
+- The minimum supported Rust version is declared as `rust-version` in the workspace `Cargo.toml` and matches
+  the channel pinned in `rust-toolchain.toml`.
+- Crate `edition` is consistent across the workspace.
+- Dockerfile base images are pinned by digest, not a floating tag.
+
+## Format and lint
+
+- `cargo fmt --all -- --check`, `cargo sort --workspace --check`, and
+  `cargo clippy --workspace --all-targets --all-features --locked -D warnings` must pass on every PR, for every
+  Cargo workspace in the repository.
+- Workspace lint configuration in each `Cargo.toml` (`clippy::all`, `clippy::pedantic`, `clippy::cargo` at deny)
+  is preserved. Loosening a group requires reviewer justification recorded in the relevant `Cargo.toml`.
+- The helper scripts under [`.hooks/`](.hooks/) are the single source of truth for these commands; CI and local
+  hooks both shell out to them, so the surfaces cannot drift.
+
+## Coverage
+
+- **Aiming for:**
+    - Line coverage of **75%** workspace-wide for library crates, measured by `cargo-llvm-cov` on every PR and
+      tag. Binary entrypoints (`*/src/main.rs`) are excluded from the measurement.
+    - A drop greater than 5 percentage points relative to the previous tag triggers a reviewer question, not an
+      automatic fail.
+
+## Documentation build
+
+- `cargo doc --workspace --no-deps --all-features` succeeds with `RUSTDOCFLAGS=-D warnings` on every PR. Dead
+  doc links, stale references, and broken intra-doc paths are build failures, not warnings.
+
+## Static analysis
+
+- Semgrep runs in CI on every PR. New high-severity findings fail the build; false positives are flagged and
+  discussed in the PR rather than silenced.
+- CodeQL (Rust and GitHub Actions analysis) runs in CI on every PR and must pass before merge.
+
 ## Workspace and crate boundaries
 
 - Library crates expose a stable public surface. Internal-only items are `pub(crate)` or behind a private module.
@@ -74,7 +118,9 @@ Any crate not listed above as non-production is production by default.
 - `cargo audit` runs in CI. Crates with open advisories at medium severity or above are not introduced;
   existing usages migrate off them when a replacement lands or an explicit ignore is recorded with a tracking
   item.
-- Git dependencies are pinned to an immutable reference (tag or commit hash), never a branch.
+- Git dependencies are pinned by commit hash, never a branch or tag.
+- Dependency sources are restricted to `crates.io` and the known git remotes (`github.com/rsksmart/*`,
+  `github.com/FairgateLabs/*`). New remotes require an explicit reviewer note in the PR description.
 
 ## Error handling
 
@@ -117,6 +163,10 @@ Any crate not listed above as non-production is production by default.
   mocked external boundaries.
 
 - **E2E tests evolve in sync** with protocol changes, taking the design document for the change as input.
+- `cargo test --workspace --locked --all-features` must pass before merge. Tests must not require manual setup
+  beyond what `tests/README.md` documents.
+- `#[ignore]` is added only with an inline comment naming the reason, and a linked tracking item if the ignore
+  is temporary.
 - **Aiming for:** property-based tests for consensus-sensitive logic, fuzz targets for wire-format parsing, and
   benchmarks for performance-sensitive paths. Concrete per-area commitments live in
   [Domain-specific expectations](#domain-specific-expectations).
@@ -124,10 +174,11 @@ Any crate not listed above as non-production is production by default.
 ## Unsafe code policy
 
 - `#![forbid(unsafe_code)]` at every crate root that does not require it.
-- Where `unsafe` is unavoidable (FFI, platform APIs that are unsafe by design), each `unsafe` block carries a
-  `// SAFETY:` comment explaining the invariant being upheld.
-- Any new `unsafe` block in production code requires explicit reviewer sign-off on the PR that introduces it, with the
-  justification recorded in the PR description.
+- Where `unsafe` is unavoidable (foreign-function calls, platform APIs that are unsafe by design), each
+  `unsafe` block carries a `// SAFETY:` comment explaining the invariant being upheld.
+- Any new `unsafe` block in production code requires explicit reviewer sign-off on the PR that introduces it,
+  regardless of how minor the rest of the diff is. The review focuses on the `// SAFETY:` comment and the invariant
+  it claims; the justification is also recorded in the PR description.
 
 ## Concurrency
 
