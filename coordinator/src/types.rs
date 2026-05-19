@@ -88,22 +88,23 @@ pub enum FlowKind {
     CommitteeSetup,
 }
 
-pub type PeginRequestedEvent = EventWithBlock<PeginRequested>;
-pub type PeginAcceptedEvent = EventWithBlock<PeginAccepted>;
-pub type AllNoncesReadyEvent = EventWithBlock<Hash256>;
-pub type AllSignaturesReadyEvent = EventWithBlock<Hash256>;
-pub type AllOperatorTakeTxidsAddedEvent = EventWithBlock<AllOperatorTakeTxidsAdded>;
-pub type PegoutRequestedEvent = EventWithBlock<PegoutRequested>;
-pub type PegoutRegisteredEvent = EventWithBlock<PegoutRegistered>;
-pub type OperatorTakeTriggeredEvent = EventWithBlock<OperatorTakeTriggered>;
-pub type AdvanceFundsRegisteredEvent = EventWithBlock<AdvanceFundsRegistered>;
-pub type ReimbursementKickoffRegisteredEvent = EventWithBlock<ReimbursementKickoffRegistered>;
-pub type NewCommitteePendingEvent = EventWithBlock<NewPendingCommittee>;
-pub type NewCommitteeReadyEvent = EventWithBlock<NewCommittee>;
-pub type AllCommunicationDataReadyEvent = EventWithBlock<AllCommunicationDataReady>;
-pub type MemberInfoDepositedEvent = EventWithBlock<MemberInfoDeposited>;
+pub(crate) type PeginRequestedEvent = EventWithBlock<PeginRequested>;
+pub(crate) type PeginAcceptedEvent = EventWithBlock<PeginAccepted>;
+pub(crate) type AllNoncesReadyEvent = EventWithBlock<Hash256>;
+pub(crate) type AllSignaturesReadyEvent = EventWithBlock<Hash256>;
+pub(crate) type AllOperatorTakeTxidsAddedEvent = EventWithBlock<AllOperatorTakeTxidsAdded>;
+pub(crate) type PegoutRequestedEvent = EventWithBlock<PegoutRequested>;
+pub(crate) type PegoutRegisteredEvent = EventWithBlock<PegoutRegistered>;
+pub(crate) type OperatorTakeTriggeredEvent = EventWithBlock<OperatorTakeTriggered>;
+pub(crate) type AdvanceFundsRegisteredEvent = EventWithBlock<AdvanceFundsRegistered>;
+pub(crate) type ReimbursementKickoffRegisteredEvent =
+    EventWithBlock<ReimbursementKickoffRegistered>;
+pub(crate) type NewCommitteePendingEvent = EventWithBlock<NewPendingCommittee>;
+pub(crate) type NewCommitteeReadyEvent = EventWithBlock<NewCommittee>;
+pub(crate) type AllCommunicationDataReadyEvent = EventWithBlock<AllCommunicationDataReady>;
+pub(crate) type MemberInfoDepositedEvent = EventWithBlock<MemberInfoDeposited>;
 
-pub type EventStatus = bool;
+pub(crate) type EventStatus = bool;
 
 #[derive(Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct EventWithBlock<T> {
@@ -114,10 +115,10 @@ pub struct EventWithBlock<T> {
     pub tx_hash: TxHash,
 }
 
-pub struct EventDecoder;
+pub(crate) struct EventDecoder;
 
 impl EventDecoder {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self
     }
 
@@ -137,7 +138,7 @@ impl EventDecoder {
     /// - `RskPegManagerEvents::UnknownEvent` for logs that don't match any known contract event types
     /// - `RskPegManagerEvents::UnknownEvent` for events that match contract types but have no handler
     /// - Specific event variant for successfully decoded and handled events
-    pub fn decode(log: &RskLog) -> RskPegManagerEvents {
+    pub(crate) fn decode(log: &RskLog) -> RskPegManagerEvents {
         let parsed_topics: Vec<B256> =
             log.event().topics().iter().map(|topic| B256::from(*topic)).collect();
 
@@ -510,7 +511,7 @@ impl EventDecoder {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RegisterSignaturesBitVmxData {
+pub(crate) struct RegisterSignaturesBitVmxData {
     pub hash_to_sign: Hash256,
     pub nonce: PubNonce,
     pub signature: PartialSignature,
@@ -552,23 +553,23 @@ pub(crate) struct TickScheduler<K: Eq + Hash + Clone> {
 }
 
 impl<K: Eq + Hash + Clone> TickScheduler<K> {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { pending: HashMap::new() }
     }
 
-    pub fn schedule(&mut self, id: K, delay_ticks: u32) {
+    pub(crate) fn schedule(&mut self, id: K, delay_ticks: u32) {
         self.pending.insert(id, delay_ticks);
     }
 
-    pub fn cancel(&mut self, id: &K) {
+    pub(crate) fn cancel(&mut self, id: &K) {
         self.pending.remove(id);
     }
 
-    pub fn is_scheduled(&self, id: &K) -> bool {
+    pub(crate) fn is_scheduled(&self, id: &K) -> bool {
         self.pending.contains_key(id)
     }
 
-    pub fn tick(&mut self) -> Vec<K> {
+    pub(crate) fn tick(&mut self) -> Vec<K> {
         let mut ready: Vec<K> = Vec::new();
         for (id, ticks) in &mut self.pending {
             if *ticks > 0 {
@@ -584,11 +585,11 @@ impl<K: Eq + Hash + Clone> TickScheduler<K> {
         ready
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.pending.is_empty()
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.pending.clear();
     }
 }
@@ -599,28 +600,28 @@ pub(crate) struct TimeBasedScheduler<K: Eq + Hash + Clone> {
 }
 
 impl<K: Eq + Hash + Clone> TimeBasedScheduler<K> {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { pending: HashMap::new() }
     }
 
     /// Schedule a timeout for the given id, expiring after the specified duration in seconds
     /// from the current block timestamp
-    pub fn schedule(&mut self, id: K, current_timestamp: u64, timeout_seconds: u64) {
+    pub(crate) fn schedule(&mut self, id: K, current_timestamp: u64, timeout_seconds: u64) {
         let expiration_timestamp = current_timestamp + timeout_seconds;
         self.pending.insert(id, expiration_timestamp);
     }
 
-    pub fn cancel(&mut self, id: &K) {
+    pub(crate) fn cancel(&mut self, id: &K) {
         self.pending.remove(id);
     }
 
-    pub fn is_scheduled(&self, id: &K) -> bool {
+    pub(crate) fn is_scheduled(&self, id: &K) -> bool {
         self.pending.contains_key(id)
     }
 
     /// Check for expired timeouts based on the current block timestamp
     /// Returns a vector of expired ids
-    pub fn check_expired(&mut self, current_timestamp: u64) -> Vec<K> {
+    pub(crate) fn check_expired(&mut self, current_timestamp: u64) -> Vec<K> {
         let mut expired: Vec<K> = Vec::new();
         let mut to_remove: Vec<K> = Vec::new();
 
@@ -638,11 +639,11 @@ impl<K: Eq + Hash + Clone> TimeBasedScheduler<K> {
         expired
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.pending.is_empty()
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.pending.clear();
     }
 }
@@ -652,7 +653,7 @@ pub struct Utxo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemberOfCommittee {
+pub(crate) struct MemberOfCommittee {
     pub address: Address,
     pub role: ParticipantRole,
     pub take_key: PublicKey,

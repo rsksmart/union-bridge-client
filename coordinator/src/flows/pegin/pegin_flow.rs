@@ -34,13 +34,13 @@ const PROGRAM_TYPE_ACCEPT_PEGIN: &str = "accept_pegin";
 
 /// Derive the pegin flow id from the request-pegin BTC txid.
 #[must_use]
-pub fn flow_id_from_request_pegin_txid(request_pegin_txid: Txid) -> FlowId {
+pub(crate) fn flow_id_from_request_pegin_txid(request_pegin_txid: Txid) -> FlowId {
     FlowId::from_tx("pegin_flow", request_pegin_txid.to_byte_array().as_slice())
 }
 
 /// Steps for the pegin state machine flow
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum Steps {
+pub(crate) enum Steps {
     // Initial state when Bitcoin pegin transaction is found
     #[default]
     PeginTransactionFound,
@@ -92,7 +92,7 @@ impl Steps {
 
 /// Data passed between steps in the pegin flow
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum StepData {
+pub(crate) enum StepData {
     // Initial Bitcoin transaction found
     PeginTransactionFound,
     // SPV proof for request pegin
@@ -127,7 +127,7 @@ pub enum StepData {
 
 /// Data structure used to send pegin request information to `BitVMX`
 #[derive(Debug, Clone, Serialize)]
-pub struct PeginRequestMessage {
+pub(crate) struct PeginRequestMessage {
     pub txid: Txid,
     pub amount: u64,
     pub accept_pegin_sighash: Vec<u8>,
@@ -141,7 +141,7 @@ pub struct PeginRequestMessage {
 
 /// Context for the pegin flow state machine
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FlowContext {
+pub(crate) struct FlowContext {
     pub flow_id: FlowId,
     /// Canonical on-chain identifier this flow tracks. Set at flow
     /// creation from the `PeginTransactionFound` event.
@@ -172,7 +172,7 @@ pub struct FlowContext {
 
 /// Serializable state for persistence
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct State {
+pub(crate) struct State {
     pub flow_id: FlowId,
     /// Pre-formatted display id `{flow_id} ({request_pegin_btc_tx_id})`
     /// for log lines. Not persisted — re-computed at construction and on
@@ -196,7 +196,7 @@ impl State {
 }
 
 /// State machine for handling pegin flow
-pub struct PeginFlow<CG, BC, S>
+pub(crate) struct PeginFlow<CG, BC, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
@@ -218,7 +218,7 @@ where
     S: CoordinatorStoreApi,
 {
     /// Create a new pegin flow from `PeginTransactionFound`
-    pub fn new(
+    pub(crate) fn new(
         contracts: Rc<CG>,
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
@@ -257,7 +257,7 @@ where
         Self { contracts, rt_sync, bitvmx_broker, state, store, signaling, native_bridge_verifier }
     }
 
-    pub fn from_saved_state(
+    pub(crate) fn from_saved_state(
         contracts: Rc<CG>,
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
@@ -279,7 +279,7 @@ where
     }
 
     /// Start the next step and log the transition
-    pub fn start_step(&mut self, next_step: Steps) -> Result<()> {
+    pub(crate) fn start_step(&mut self, next_step: Steps) -> Result<()> {
         let previous_step = self.state.ctx.step;
         self.state.ctx.step = next_step;
 
@@ -386,7 +386,7 @@ where
     }
 
     /// Complete the current step with data and advance to the next
-    pub fn complete_step(&mut self, data: &StepData) -> Result<()> {
+    pub(crate) fn complete_step(&mut self, data: &StepData) -> Result<()> {
         let current_step = self.state.ctx.step;
 
         info!(
@@ -879,7 +879,7 @@ where
         Ok(())
     }
 
-    pub fn request_transaction_status(&self) -> Result<()> {
+    pub(crate) fn request_transaction_status(&self) -> Result<()> {
         let tx_id = self
             .get_accept_pegin_txid_from_bitvmx_var()
             .ok_or_else(|| anyhow!("Expected accept pegin tx_id not found"))?;
@@ -894,7 +894,7 @@ where
         Ok(())
     }
 
-    pub fn request_spv_proof(&self) -> Result<()> {
+    pub(crate) fn request_spv_proof(&self) -> Result<()> {
         let tx_id = self
             .get_accept_pegin_txid_from_bitvmx_var()
             .ok_or_else(|| anyhow!("Expected accept pegin tx_id not found"))?;
@@ -903,7 +903,7 @@ where
     }
 
     /// Calculates the operator role based on the committee members and its own address
-    pub fn calc_op_role(&self) -> Result<ParticipantRole> {
+    pub(crate) fn calc_op_role(&self) -> Result<ParticipantRole> {
         let Some(get_committee_output) = &self.state.ctx.committee_output else {
             bail!("Committee output not found");
         };
@@ -1012,7 +1012,7 @@ where
         Ok(Steps::RequestAcceptPeginSpvProof)
     }
 
-    pub fn get_accept_pegin_txid_from_bitvmx_var(&self) -> Option<Txid> {
+    pub(crate) fn get_accept_pegin_txid_from_bitvmx_var(&self) -> Option<Txid> {
         self.state.ctx.bitvmx_pegin_accepted.as_ref().map(|accepted| accepted.accept_pegin_txid)
     }
 
@@ -1030,36 +1030,36 @@ where
     }
 
     /// Convenience for callers that need to handle the not-yet-set state.
-    pub fn bitvmx_protocol_id_opt(&self) -> Option<BitVmxProtocolId> {
+    pub(crate) fn bitvmx_protocol_id_opt(&self) -> Option<BitVmxProtocolId> {
         self.state.ctx.bitvmx_protocol_id
     }
 
-    pub fn is_terminal(&self) -> bool {
+    pub(crate) fn is_terminal(&self) -> bool {
         matches!(self.state.ctx.step, Steps::Done | Steps::Failed)
     }
 
-    pub fn mark_failed(&mut self, reason: &str) -> Result<()> {
+    pub(crate) fn mark_failed(&mut self, reason: &str) -> Result<()> {
         info!("Marking pegin flow {} as failed: {reason}", self.state.log_id);
         self.start_step(Steps::Failed)
     }
 
     /// Get the flow id (a `Uuid` derived from `request_pegin_btc_tx_id`).
-    pub fn flow_id(&self) -> FlowId {
+    pub(crate) fn flow_id(&self) -> FlowId {
         self.state.flow_id
     }
 
     /// Pre-formatted display id for log lines.
-    pub fn log_id(&self) -> &str {
+    pub(crate) fn log_id(&self) -> &str {
         &self.state.log_id
     }
 
     /// Get the canonical on-chain identifier (the request-pegin BTC txid).
-    pub fn request_pegin_btc_tx_id(&self) -> Txid {
+    pub(crate) fn request_pegin_btc_tx_id(&self) -> Txid {
         self.state.ctx.request_pegin_btc_tx_id
     }
 
     /// Get the current step
-    pub fn current_step(&self) -> Steps {
+    pub(crate) fn current_step(&self) -> Steps {
         self.state.ctx.step
     }
 
@@ -1073,17 +1073,17 @@ where
     }
 
     /// Get the state for debugging
-    pub fn get_state(&self) -> &State {
+    pub(crate) fn get_state(&self) -> &State {
         &self.state
     }
 
     #[cfg(test)]
-    pub fn get_state_mut(&mut self) -> &mut State {
+    pub(crate) fn get_state_mut(&mut self) -> &mut State {
         &mut self.state
     }
 
     /// Get the `BitVMX` pegin accepted message if available
-    pub fn get_bitvmx_pegin_accepted(&self) -> Option<&PeginAcceptedMessage> {
+    pub(crate) fn get_bitvmx_pegin_accepted(&self) -> Option<&PeginAcceptedMessage> {
         self.state.ctx.bitvmx_pegin_accepted.as_ref()
     }
 }

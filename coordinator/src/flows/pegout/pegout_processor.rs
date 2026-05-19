@@ -42,10 +42,10 @@ fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
     })
 }
 
-pub const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
+pub(crate) const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
 
 /// Processor that manages multiple pegout flow state machines
-pub struct PegoutFlowProcessor<CG, BC, BSF, FactoryBSF, S>
+pub(crate) struct PegoutFlowProcessor<CG, BC, BSF, FactoryBSF, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
@@ -97,7 +97,7 @@ where
     S: CoordinatorStoreApi,
 {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub(crate) fn new(
         contracts_gateway: Rc<CG>,
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
@@ -143,7 +143,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn restore_or_new(
+    pub(crate) fn restore_or_new(
         contracts_gateway: Rc<CG>,
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
@@ -205,7 +205,7 @@ where
     }
 
     /// Create a new flow for a `PegoutRequested` event
-    pub fn create_flow_for_pegout_requested(
+    pub(crate) fn create_flow_for_pegout_requested(
         &mut self,
         event: &crate::types::PegoutRequestedEvent,
     ) -> Result<()> {

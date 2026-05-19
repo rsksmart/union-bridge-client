@@ -1,7 +1,3 @@
-// TODO: tighten the public surface of this crate and remove this allow. The
-// workspace enforces `unreachable_pub`; common has not yet been audited.
-#![allow(unreachable_pub)]
-
 pub mod alloy_rsk_provider;
 pub mod anvil_mocks;
 pub mod cache;

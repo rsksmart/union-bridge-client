@@ -17,29 +17,29 @@ use crate::flows::committee::setup_committee_flow::NO_LEADER_IDX;
 const PROGRAM_TYPE_DISPUTE_CORE: &str = "dispute_core";
 
 #[derive(Clone, Copy)]
-pub struct AggregatedKeys {
+pub(super) struct AggregatedKeys {
     pub take: PublicKey,
     pub dispute: PublicKey,
 }
 
 #[derive(Clone, Copy)]
-pub struct CommitteeConfirmations {
+pub(super) struct CommitteeConfirmations {
     pub pegin: u32,
     pub pegout: u32,
     pub reject_pegin: u32,
 }
 
-pub struct DisputeCoreSetup<BC: BitVmxBrokerClientApi> {
+pub(super) struct DisputeCoreSetup<BC: BitVmxBrokerClientApi> {
     broker_client: Rc<BC>,
 }
 
 impl<BC: BitVmxBrokerClientApi> DisputeCoreSetup<BC> {
-    pub fn new(broker_client: Rc<BC>) -> Self {
+    pub(super) fn new(broker_client: Rc<BC>) -> Self {
         Self { broker_client }
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn setup(
+    pub(super) fn setup(
         &self,
         committee_data: &CommitteeData,
         p2p_addresses: &[CommsAddress],

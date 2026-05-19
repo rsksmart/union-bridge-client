@@ -442,7 +442,7 @@ impl StepData {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct State {
+pub(crate) struct State {
     /// `internal_id` is the legacy on-disk field name; the alias keeps
     /// pre-rename entries readable while new writes use `flow_id`.
     /// TODO can drop the alias when all v0.4.0 entries have been migrated.
@@ -503,7 +503,7 @@ where
         &mut self.state.ctx
     }
 
-    pub fn is_terminal(&self) -> bool {
+    pub(crate) fn is_terminal(&self) -> bool {
         self.state.step == Steps::Done || self.state.step == Steps::Failed
     }
 
@@ -1106,7 +1106,7 @@ where
             .map_err(|e| anyhow::anyhow!("Failed to get member public keys: {e}"))
     }
 
-    pub fn fund_protocol(&mut self) -> Result<()> {
+    pub(crate) fn fund_protocol(&mut self) -> Result<()> {
         let req_id = Uuid::new_v4();
         let fee_rate = if self.bitcoin_network == Network::Regtest {
             REGTEST_FEE_RATE
@@ -2459,7 +2459,7 @@ const PAIRWISE_DISPUTE_KEY: &str = "PAIRWISE_DISPUTE_KEY";
 
 /// Generates a deterministic name for a pairwise dispute key variable.
 /// Both members will derive the same name regardless of who initiates.
-pub fn get_dispute_pair_key_name(idx_a: usize, idx_b: usize) -> String {
+pub(crate) fn get_dispute_pair_key_name(idx_a: usize, idx_b: usize) -> String {
     // Ensure canonical ordering (min, max) so both parties derive the same name.
     let (min_i, max_i) = if idx_a <= idx_b { (idx_a, idx_b) } else { (idx_b, idx_a) };
 

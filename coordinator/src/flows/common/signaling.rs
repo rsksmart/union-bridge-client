@@ -9,23 +9,28 @@ use uuid::Uuid;
 const COMPLETION_MARKER_DIR_NAME: &str = "union-bridge-flow-completion-markers";
 
 #[derive(Debug, Clone, Default)]
-pub struct DisabledSignal;
+pub(crate) struct DisabledSignal;
 
 impl DisabledSignal {
-    pub fn signal_done(_flow_kind: &str, _flow_id: Uuid, _payload: &Value) {}
+    pub(crate) fn signal_done(_flow_kind: &str, _flow_id: Uuid, _payload: &Value) {}
 }
 
 #[derive(Debug, Clone)]
-pub struct FileSignal {
+pub(crate) struct FileSignal {
     directory: PathBuf,
 }
 
 impl FileSignal {
-    pub fn new(storage_root: impl AsRef<Path>) -> Self {
+    pub(crate) fn new(storage_root: impl AsRef<Path>) -> Self {
         Self { directory: storage_root.as_ref().join(COMPLETION_MARKER_DIR_NAME) }
     }
 
-    pub fn signal_done(&self, flow_kind: &str, flow_id: Uuid, payload: &Value) -> Result<()> {
+    pub(crate) fn signal_done(
+        &self,
+        flow_kind: &str,
+        flow_id: Uuid,
+        payload: &Value,
+    ) -> Result<()> {
         fs::create_dir_all(&self.directory).with_context(|| {
             format!("Failed to create completion marker dir {}", self.directory.display())
         })?;
@@ -55,7 +60,7 @@ impl FileSignal {
 }
 
 #[derive(Debug, Clone)]
-pub enum Signaling {
+pub(crate) enum Signaling {
     Disabled(DisabledSignal),
     File(FileSignal),
     // Additional backends can be added here over time, for example Prometheus-
@@ -63,7 +68,7 @@ pub enum Signaling {
 }
 
 impl Signaling {
-    pub fn new(storage_root: impl AsRef<Path>, runtime_environment: &str) -> Self {
+    pub(crate) fn new(storage_root: impl AsRef<Path>, runtime_environment: &str) -> Self {
         if runtime_environment.eq_ignore_ascii_case("local")
             || runtime_environment.eq_ignore_ascii_case("docker")
         {
@@ -78,7 +83,12 @@ impl Signaling {
     // operational signals such as too many open flows, repeated failures, or
     // other coordinator health conditions.
 
-    pub fn signal_done(&self, flow_kind: &str, flow_id: Uuid, payload: &Value) -> Result<()> {
+    pub(crate) fn signal_done(
+        &self,
+        flow_kind: &str,
+        flow_id: Uuid,
+        payload: &Value,
+    ) -> Result<()> {
         match self {
             Self::Disabled(_) => {
                 DisabledSignal::signal_done(flow_kind, flow_id, payload);

@@ -52,7 +52,7 @@ fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
 }
 
 /// Processor that manages multiple pegin flow state machines
-pub struct PeginFlowProcessor<CG, BC, BSF, FactoryBSF, S>
+pub(crate) struct PeginFlowProcessor<CG, BC, BSF, FactoryBSF, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
@@ -105,7 +105,7 @@ where
     S: CoordinatorStoreApi + 'static,
 {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub(crate) fn new(
         contracts_gateway: Rc<CG>,
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
