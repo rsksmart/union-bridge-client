@@ -401,7 +401,7 @@ mod tests {
 
         assert_eq!(IndexerStartFrom::Best, config.indexer.start_from);
         assert_eq!("local-regtest", config.environment);
-        assert_eq!("ws://127.0.0.1:4445", config.provider.rootstock.url);
+        assert_eq!("ws://127.0.0.1:8546", config.provider.rootstock.url);
         assert_eq!("regtest", config.bitcoin_network);
         assert_eq!(10, config.contracts.len());
     }
@@ -417,7 +417,7 @@ mod tests {
         assert_eq!(IndexerStartFrom::Best, config.indexer.start_from);
         assert_eq!("/app/db/", config.indexer.storage.path);
         assert_eq!("local-regtest", config.environment);
-        assert_eq!("ws://host.docker.internal:4445", config.provider.rootstock.url);
+        assert_eq!("ws://host.docker.internal:8546", config.provider.rootstock.url);
         assert_eq!("regtest", config.bitcoin_network);
         assert_eq!(10, config.contracts.len());
     }

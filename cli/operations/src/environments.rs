@@ -87,7 +87,7 @@ impl Environment {
     pub(crate) fn rpc_url(&self) -> Result<String> {
         match self {
             Environment::Local | Environment::Docker => Ok("http://localhost:8545".to_string()),
-            Environment::LocalRegtest => Ok("http://localhost:4444".to_string()),
+            Environment::LocalRegtest => Ok("http://localhost:8545".to_string()),
             Environment::Remote(_) => required_remote_value(self, "UC_REMOTE_RPC_URL"),
         }
     }
@@ -233,7 +233,7 @@ mod tests {
         assert_eq!("local-regtest", env.get_name());
         assert!(!env.is_remote());
         assert!(env.is_local_regtest());
-        assert_eq!("http://localhost:4444", env.rpc_url().unwrap());
+        assert_eq!("http://localhost:8545", env.rpc_url().unwrap());
     }
 
     #[test]

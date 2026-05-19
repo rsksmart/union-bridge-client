@@ -4,7 +4,7 @@
 #
 # prerequisites:
 #   - union bridge clients running (via: cargo run -- run)
-#   - Anvil running on localhost:8545, or Rootstock regtest running on localhost:4444 for local-regtest
+#   - Anvil running on localhost:8545, or Rootstock regtest HTTP running on localhost:8545 for local-regtest
 #   - bitcoin regtest node running with RPC enabled
 #   - USER_BITCOIN_WIF environment variable set (for bitcoin-wallet operations)
 #   - MEMBER_BITCOIN_WIF environment variable set (for member operations)
@@ -257,7 +257,7 @@ is_docker_mode_env() {
 
 rootstock_rpc_url() {
     if [[ "$SCRIPT_ENV" == "local-regtest" ]]; then
-        echo "http://localhost:4444"
+        echo "http://localhost:8545"
     else
         echo "http://localhost:8545"
     fi

@@ -199,7 +199,8 @@ Ensure these ports are free before starting:
 | Service | Ports |
 | --- | --- |
 | Bitcoind | 18443 |
-| Anvil | 8545 |
+| Anvil / RSKj HTTP | 8545 |
+| RSKj WS | 8546 |
 | BitVMX P2P | 22222, 33333, 44444, 55554 |
 | BitVMX broker | 61180-61183 |
 | User API | 40001-40004 |

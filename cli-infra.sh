@@ -110,7 +110,7 @@ pid_is_running() {
 
 rootstock_rpc_url() {
     if [[ "$ENVIRONMENT" == "local-regtest" ]]; then
-        echo "http://localhost:4444"
+        echo "http://localhost:8545"
     else
         echo "http://localhost:8545"
     fi

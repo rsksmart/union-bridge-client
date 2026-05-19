@@ -1,6 +1,6 @@
 # Local Rootstock regtest profile for Docker operator containers.
 
-provider.rootstock.url = "ws://host.docker.internal:4445"
+provider.rootstock.url = "ws://host.docker.internal:8546"
 environment = "local-regtest"
 bitcoin_network = "regtest"
 

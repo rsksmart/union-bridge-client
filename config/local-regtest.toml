@@ -1,6 +1,6 @@
 # Local Rootstock regtest profile for host-side tools.
 
-provider.rootstock.url = "ws://127.0.0.1:4445"
+provider.rootstock.url = "ws://127.0.0.1:8546"
 environment = "local-regtest"
 bitcoin_network = "regtest"
 

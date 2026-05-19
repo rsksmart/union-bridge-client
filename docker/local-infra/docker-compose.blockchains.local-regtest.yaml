@@ -45,8 +45,8 @@ services:
       RSKJ_CLASS: "co.rsk.Start"
       RSKJ_OPTS: ""
     ports:
-      - "4444:4444"
-      - "4445:4445"
+      - "8545:4444"
+      - "8546:4445"
     volumes:
       - ./rskj.node.conf:/etc/rsk/node.conf:ro
     healthcheck:
