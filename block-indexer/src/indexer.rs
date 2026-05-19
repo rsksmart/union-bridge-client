@@ -6,7 +6,8 @@ use common::rsk_indexer::RskIndexer;
 use common::rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::{BlockHash, BlockNumber, RskBlock, RskBlockAndUncles};
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, error, info, info_span, instrument, warn};
+use uuid::Uuid;
 
 use crate::store::BlockStore;
 
@@ -174,6 +175,20 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 }
             };
 
+            // Per-block correlation id: every log line emitted while this span
+            // is entered (including from process_uncle_blocks/backward_sync)
+            // carries `trace_id`, and the same id is stamped into the
+            // RskBlockAndUncles sent over the notifier channel so consumers
+            // can join their logs to ours.
+            let trace_id = Uuid::new_v4();
+            let _span = info_span!(
+                "on_block",
+                trace_id = %trace_id,
+                height = %new_block.number(),
+                hash = %new_block.hash(),
+            )
+            .entered();
+
             // no need to keep track of it between iters as it is cached and can be re-fetched
             let local_best_block = self
                 .store
@@ -207,7 +222,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 // once save_as_best_block is called, the block won't be re-queried again (unless reorgs)
                 let uncles = self.process_uncle_blocks(&new_block).context("On Backward Sync")?;
                 // consumer should be resilient to re-notifications
-                self.notify_block(new_block.clone(), uncles);
+                self.notify_block(new_block.clone(), uncles, trace_id);
                 self.save_as_best_block(&new_block).context("On Block subscription")?;
             } else if needs_catch_up {
                 info!(
@@ -233,10 +248,12 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         Ok(())
     }
 
-    fn notify_block(&self, block: RskBlock, uncles: Vec<RskBlock>) {
+    fn notify_block(&self, block: RskBlock, uncles: Vec<RskBlock>, trace_id: Uuid) {
         #[allow(clippy::collapsible_if)]
         if let Some(channel) = &self.new_block_sender {
-            if let Err(e) = channel.send(RskBlockAndUncles::new(block, uncles)) {
+            if let Err(e) =
+                channel.send(RskBlockAndUncles::new_with_trace_id(block, uncles, trace_id))
+            {
                 error!("[notify_block] Failed to send best block through channel: {e:?}");
             }
         }
@@ -262,10 +279,22 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             store_best_block.hash(),
         );
 
-        let mut blocks_to_notify = Vec::new();
+        // Each tuple keeps the trace_id we minted while processing that block,
+        // so when we finally notify (in ascending order) the channel carries
+        // the same id that was active in this loop's logs.
+        let mut blocks_to_notify: Vec<(RskBlock, Vec<RskBlock>, Uuid)> = Vec::new();
 
         let mut new_block = starting_block.clone();
         loop {
+            let trace_id = Uuid::new_v4();
+            let _span = info_span!(
+                "backward_sync_block",
+                trace_id = %trace_id,
+                height = %new_block.number(),
+                hash = %new_block.hash(),
+            )
+            .entered();
+
             let store_block =
                 self.store.get_canonical_block(new_block.number()).context("On Backward Sync")?;
 
@@ -284,7 +313,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 // once save_as_canonical is called, the block won't be re-queried again (unless reorgs)
                 let uncles = self.process_uncle_blocks(&new_block).context("On Backward Sync")?;
                 // consumer should be resilient to re-notifications
-                blocks_to_notify.push((new_block.clone(), uncles.clone()));
+                blocks_to_notify.push((new_block.clone(), uncles.clone(), trace_id));
                 self.save_as_canonical(&new_block).context("On Backward Sync")?;
             } else if !reached_connection_height {
                 debug!(
@@ -305,8 +334,8 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 self.store.set_best_block(starting_block).context("On Backward Sync")?;
 
                 // notify the consumer about the new chain in ascending order
-                for (block, uncles) in blocks_to_notify.into_iter().rev() {
-                    self.notify_block(block, uncles);
+                for (block, uncles, tid) in blocks_to_notify.into_iter().rev() {
+                    self.notify_block(block, uncles, tid);
                 }
 
                 break;

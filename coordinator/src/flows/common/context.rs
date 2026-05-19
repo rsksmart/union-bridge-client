@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-
 /// Identifier for a flow.
 ///
 /// Uniform across all flow types (pegin, pegout, operator-take, committee

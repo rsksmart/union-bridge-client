@@ -19,6 +19,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 storage-backend = { workspace = true }
 tracing = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 primitive-types = { workspace = true }

@@ -9,7 +9,7 @@ use common::msg_broker::broker::{Identifier, UnionBrokerServerApi};
 pub use common::msg_broker::types::{FromServer, ToServer};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::RskBlockAndUncles;
-use tracing::{info, instrument, trace, warn};
+use tracing::{info, info_span, instrument, trace, warn};
 
 pub struct Notifier<BS: UnionBrokerServerApi> {
     new_block_channel: mpsc::Receiver<RskBlockAndUncles>,
@@ -122,6 +122,15 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
     fn notify_consumers(&mut self, new_block: RskBlockAndUncles) -> Result<()> {
         let hash = new_block.hash();
         let number = new_block.number();
+        // Reuse the trace_id stamped by the indexer so notifier-side log lines
+        // about this block correlate with the producer's logs.
+        let _span = info_span!(
+            "notify_block",
+            trace_id = %new_block.trace_id(),
+            height = %number,
+            hash = %hash,
+        )
+        .entered();
         let response = FromServer::Block(new_block);
 
         for c_id in &self.consumers {

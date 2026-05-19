@@ -10,7 +10,7 @@ use common::msg_broker::broker::{BitVmxBrokerClientApi, UnionBrokerClientApi};
 use common::msg_broker::types::ToServer;
 use common::runtime_sync::RuntimeSync;
 use common::shutdown_flag::ShutdownFlag;
-use tracing::{error, info, instrument, trace, warn};
+use tracing::{error, info, info_span, instrument, trace, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 
 use crate::RUNTIME_ENV_LOCAL;
@@ -321,6 +321,17 @@ impl<
                 }
 
                 if let Some(block) = self.monitor.try_block().context("Error getting block")? {
+                    // Reuse the trace_id minted by the block-indexer so every
+                    // log line a processor emits while handling this block
+                    // joins the producer's logs for the same height/hash.
+                    let _span = info_span!(
+                        "process_block",
+                        trace_id = %block.trace_id(),
+                        height = %block.number(),
+                        hash = %block.hash(),
+                    )
+                    .entered();
+
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_new_block(&block) {
                             error!("Error processing block {block:?}: {e:?}");

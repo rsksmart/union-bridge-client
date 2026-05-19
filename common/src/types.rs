@@ -16,6 +16,7 @@ use musig2::PubNonce;
 use primitive_types::{H160, H256, U256};
 use serde::{Deserialize, Deserializer, Serialize, de};
 use tracing::error;
+use uuid::Uuid;
 
 /// A trait for types that can be converted into a hexadecimal string.
 ///
@@ -1312,21 +1313,38 @@ mod tests {
     }
 }
 
-#[derive(Eq, PartialEq, Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RskBlockAndUncles {
     block: RskBlock,
     uncles: Vec<RskBlock>,
+    // Correlation id stamped at the producer (block-indexer) and propagated
+    // through the channel + broker so every log line about this block — across
+    // crates — can be tied together. Not part of value identity.
+    trace_id: Uuid,
 }
+
+impl PartialEq for RskBlockAndUncles {
+    fn eq(&self, other: &Self) -> bool {
+        self.block == other.block && self.uncles == other.uncles
+    }
+}
+
+impl Eq for RskBlockAndUncles {}
 
 impl RskBlockAndUncles {
     #[must_use]
     pub fn new(block: RskBlock, uncles: Vec<RskBlock>) -> Self {
-        Self { block, uncles }
+        Self { block, uncles, trace_id: Uuid::new_v4() }
     }
 
     #[must_use]
     pub fn new_no_uncles(block: RskBlock) -> Self {
-        Self { block, uncles: vec![] }
+        Self { block, uncles: vec![], trace_id: Uuid::new_v4() }
+    }
+
+    #[must_use]
+    pub fn new_with_trace_id(block: RskBlock, uncles: Vec<RskBlock>, trace_id: Uuid) -> Self {
+        Self { block, uncles, trace_id }
     }
 
     #[must_use]
@@ -1352,6 +1370,11 @@ impl RskBlockAndUncles {
     #[must_use]
     pub fn uncles(&self) -> &[RskBlock] {
         &self.uncles
+    }
+
+    #[must_use]
+    pub fn trace_id(&self) -> Uuid {
+        self.trace_id
     }
 }
 
