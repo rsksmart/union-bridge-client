@@ -19,6 +19,11 @@
 - Use `?` operator for error propagation instead of manual unwrap/match when appropriate
 - Prefer Rc, RefCell, Arc... etc. wrapping in inner fields rather than in parent struct
 
+## Visibility
+- Prefer the minimum visibility that satisfies actual callers. Use no visibility marker for items used only within their own module; `pub(crate)` only when the item is used across modules of the same crate; `pub` only when the item is reached from another crate.
+- The `unreachable_pub` lint is enforced workspace-wide and catches `pub` items that could be `pub(crate)`. The `pub(crate) → private` direction has no automated check; verify introduced or modified items by hand at review time.
+- Existing items in the codebase may be over-visible. When you touch a file, tighten the visibility of the items you modify rather than carrying their previous visibility forward.
+
 ## Refactoring
 - Never remove code comments when refactoring and moving code around
 
