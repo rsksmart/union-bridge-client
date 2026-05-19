@@ -1,8 +1,8 @@
 # General
 
-> Rust coding patterns and codebase-specific guidance. For formal quality criteria (Quality Gate, scope and classification, sign-off bullets) see [`QUALITY_GATE.md`](QUALITY_GATE.md). For developer setup, environment, and workflow see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+> Rust coding patterns and codebase-specific guidance. For formal quality criteria (Quality Gate, scope and classification, sign-off bullets) see [`CONTRIBUTING.md`](CONTRIBUTING.md). For developer setup, environment, and workflow see [`LOCAL_SETUP.md`](LOCAL_SETUP.md).
 >
-> Not all crates run the same Quality Gate. [`QUALITY_GATE.md` › Scope and classification](QUALITY_GATE.md#scope-and-classification) classifies each crate as production or non-production and describes the relaxed bar that applies to the latter.
+> Not all crates run the same Quality Gate. [`CONTRIBUTING.md` › Scope and classification](CONTRIBUTING.md#scope-and-classification) classifies each crate as production or non-production and describes the relaxed bar that applies to the latter.
 
 ## Agent Style
 - Use brief and direct responses
@@ -25,7 +25,7 @@
 
 ## Visibility
 
-> See [`QUALITY_GATE.md` › Workspace and crate boundaries](QUALITY_GATE.md#workspace-and-crate-boundaries) for
+> See [`CONTRIBUTING.md` › Workspace and crate boundaries](CONTRIBUTING.md#workspace-and-crate-boundaries) for
 > the rule. The bullets below are the concrete checks reviewers run when verifying compliance.
 
 - Prefer the minimum visibility that satisfies actual callers. Use no visibility marker for items used only within their own module; `pub(crate)` only when the item is used across modules of the same crate; `pub` only when the item is reached from another crate.
@@ -44,7 +44,7 @@
 
 ## Unsafe Code Review
 
-> See [`QUALITY_GATE.md` › Unsafe code policy](QUALITY_GATE.md#unsafe-code-policy) for the rule. The bullets
+> See [`CONTRIBUTING.md` › Unsafe code policy](CONTRIBUTING.md#unsafe-code-policy) for the rule. The bullets
 > below are the concrete checks reviewers run when verifying compliance.
 
 - **Critical**: All `unsafe` blocks must have detailed comments explaining safety contracts
@@ -57,13 +57,13 @@
 - Validate all user inputs using proper parsing (avoid `.parse().unwrap()`)
 - Use parameterized queries or prepared statements for database operations
 - Implement proper authentication and authorization checks
-- Review sensitive data handling - ensure secrets aren't logged or exposed (the "Sensitive data" bullet in [`QUALITY_GATE.md` › Observability](QUALITY_GATE.md#observability) is the rule; this is the review check)
+- Review sensitive data handling - ensure secrets aren't logged or exposed (the "Sensitive data" bullet in [`CONTRIBUTING.md` › Observability](CONTRIBUTING.md#observability) is the rule; this is the review check)
 - Check for integer overflow in arithmetic operations (use checked arithmetic where needed)
 - Audit dependencies regularly with `cargo audit`
 
 ## Secrets in Types
 
-> See [`QUALITY_GATE.md` › Configuration and secrets](QUALITY_GATE.md#configuration-and-secrets) for the rule.
+> See [`CONTRIBUTING.md` › Configuration and secrets](CONTRIBUTING.md#configuration-and-secrets) for the rule.
 > The bullets below are the concrete pattern reviewers expect new code to follow.
 
 - When a new type holds a secret value (private key, WIF, password, mnemonic, token), wrap the field with `secrecy::SecretString` (or `secrecy::SecretBox<T>` for non-string secrets) rather than using a plain `String` or byte slice. The wrapper redacts the value from `Debug` so accidental `{:?}` formatting cannot leak it.
@@ -91,12 +91,12 @@
 - Validate that trait implementations are necessary - avoid over-abstraction
 - Use `match` expressions instead of complex `if let` chains when appropriate
 - Prefer `impl Trait` over `Box<dyn Trait>` when possible for better performance
-- Review error types — [`QUALITY_GATE.md` › Error handling](QUALITY_GATE.md#error-handling) specifies when `thiserror` is required (typed enum where callers branch) versus when `anyhow::Result` + `.context(...)` is the default
+- Review error types — [`CONTRIBUTING.md` › Error handling](CONTRIBUTING.md#error-handling) specifies when `thiserror` is required (typed enum where callers branch) versus when `anyhow::Result` + `.context(...)` is the default
 - Ensure comprehensive test coverage, especially for error paths and edge cases
 
 ## Concurrency & Async Review
 
-> See [`QUALITY_GATE.md` › Concurrency](QUALITY_GATE.md#concurrency) for the rule (tokio-only, cancellation,
+> See [`CONTRIBUTING.md` › Concurrency](CONTRIBUTING.md#concurrency) for the rule (tokio-only, cancellation,
 > `JoinHandle` retention, lock ordering). The bullets below are the concrete checks reviewers run when
 > verifying compliance.
 

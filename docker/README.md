@@ -2,12 +2,12 @@
 
 This is the Docker router for this repository.
 
-For the full local development procedure, start with the [Contributing Guide](../CONTRIBUTING.md). Use the docs here only
+For the full local development procedure, start with the [Local Setup Guide](../LOCAL_SETUP.md). Use the docs here only
 for Docker-specific details.
 
 ## Related Docs
 
-- [Contributing Guide](../CONTRIBUTING.md): canonical local setup, shared env rules, and runtime-mode map
+- [Local Setup Guide](../LOCAL_SETUP.md): canonical local setup, shared env rules, and runtime-mode map
 - [Local Infra Guide](local-infra/README.md): local blockchains + BitVMX in Docker
 - [Operator Docker Runtime Guide](operator/README.md): local operator Docker runtime
 - [Docker Build Guide](build/README.md): image build and registry operations

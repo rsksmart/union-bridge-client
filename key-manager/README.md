@@ -1,7 +1,7 @@
 # Key Manager
 
 For repository-level setup and workflow context, start with the [Repository README](../README.md) and the
-[Contributing Guide](../CONTRIBUTING.md). This README only covers the crate-specific commands below.
+[Local Setup Guide](../LOCAL_SETUP.md). This README only covers the crate-specific commands below.
 
 Run these commands from the repository root:
 

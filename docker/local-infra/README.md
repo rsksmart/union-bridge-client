@@ -3,7 +3,7 @@
 This doc owns the Docker-backed local infrastructure used when Union Bridge runs locally with `cargo`.
 
 For the full startup order, shared env rules, and the recommended local workflow, start with the
-[Contributing Guide](../../CONTRIBUTING.md).
+[Local Setup Guide](../../LOCAL_SETUP.md).
 
 Environment note:
 
@@ -13,7 +13,7 @@ Environment note:
 ## Related Docs
 
 - [Docker Guide](../README.md): Docker flow selection
-- [Contributing Guide](../../CONTRIBUTING.md): canonical local workflow
+- [Local Setup Guide](../../LOCAL_SETUP.md): canonical local workflow
 - [Operator Docker Runtime Guide](../operator/README.md): local operator Docker runtime
 
 ## `cli-infra.sh`
@@ -126,7 +126,7 @@ The documented local infra flow is still a 4-client BitVMX setup:
 - `op_3` -> `localhost:44444`
 - `op_4` -> `localhost:55554`
 
-If you need the full run sequence, do not rebuild it here. Use the [Contributing Guide](../../CONTRIBUTING.md) and come
+If you need the full run sequence, do not rebuild it here. Use the [Local Setup Guide](../../LOCAL_SETUP.md) and come
 back to this doc for flags, ports, and troubleshooting.
 
 ## Useful Commands
