@@ -1,7 +1,11 @@
 # Contributing
 
 This is the canonical contributor runbook for this repository. Use it for setup order, shared configuration, the
-recommended local workflow, and troubleshooting. 
+recommended local workflow, and troubleshooting.
+
+> Developer setup, environment, and workflow live here. For formal quality criteria (Quality Gate, classification, sign-off bullets) see the Quality Gate document. For Rust coding patterns and codebase-specific guidance see `AGENTS.md`.
+>
+> Not all crates run the same Quality Gate. The Quality Gate document classifies each crate as production or non-production; a relaxed bar applies to the latter (`cli/*` and `user-api`).
 
 ## First-Time Setup
 

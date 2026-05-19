@@ -1,5 +1,9 @@
 # General
 
+> Rust coding patterns and codebase-specific guidance. For formal quality criteria (Quality Gate, scope and classification, sign-off bullets) see the Quality Gate document. For developer setup, environment, and workflow see `CONTRIBUTING.md`.
+>
+> Not all crates run the same Quality Gate. The Quality Gate document classifies each crate as production or non-production and describes the relaxed bar that applies to the latter.
+
 ## Agent Style
 - Use brief and direct responses
 - If you don't know the response, state it
