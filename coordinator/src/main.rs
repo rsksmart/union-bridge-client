@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use std::rc::Rc;
 
 use anyhow::{Context, Result, ensure};

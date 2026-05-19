@@ -1,3 +1,5 @@
+#![cfg_attr(not(test), forbid(unsafe_code))]
+
 pub mod alloy_rsk_provider;
 pub mod anvil_mocks;
 pub mod cache;

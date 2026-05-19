@@ -58,6 +58,8 @@
 //!
 //! subsequent clients use incremental ports (e.g., client 2 uses 50002, 60002, 40002, 30002)
 
+#![cfg_attr(not(test), forbid(unsafe_code))]
+
 use std::collections::HashMap;
 use std::fs;
 use std::net::TcpStream;

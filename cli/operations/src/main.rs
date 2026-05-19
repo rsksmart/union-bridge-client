@@ -68,6 +68,8 @@
 //! cargo run -- user pegout -v 100000 -k 0x<33-byte-compressed-pubkey> --env local
 //! ```
 
+#![forbid(unsafe_code)]
+
 mod bitcoin_wallet;
 mod committee;
 mod constants;

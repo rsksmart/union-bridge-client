@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 pub mod block_header;
 pub mod rlp;
 

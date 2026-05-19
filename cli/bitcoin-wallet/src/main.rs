@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use std::borrow::Cow;
 use std::convert::TryFrom;
 use std::str::FromStr;
