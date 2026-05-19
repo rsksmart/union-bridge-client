@@ -9,6 +9,7 @@ use rustyline::hint::Hinter;
 use rustyline::history::DefaultHistory;
 use rustyline::validate::Validator;
 use rustyline::{Context as RustyContext, Editor, Helper, Result as RustyResult};
+use secrecy::SecretString;
 
 #[derive(Debug, Clone, ValueEnum, PartialEq, Default)]
 pub enum WalletMode {
@@ -46,7 +47,7 @@ pub struct CliOpts {
     #[arg(long, env = "WALLET_RPC_USER", value_name = "USER")]
     pub rpc_user: Option<String>,
     #[arg(long, env = "WALLET_RPC_PASSWORD", value_name = "PASS")]
-    pub rpc_password: Option<String>,
+    pub rpc_password: Option<SecretString>,
     #[arg(long, env = "WALLET_ENABLER_AMOUNT", value_name = "SATS")]
     pub enabler_amount: Option<u64>,
     /// Command to execute in non-interactive mode (e.g., "mine_block", "send_to_address <addr> <amount>")

@@ -14,6 +14,7 @@ op-funding = { path = "../../op-funding" }
 protocol-params = { path = "../../protocol-params" }
 reqwest = { workspace = true }
 rpassword = { workspace = true }
+secrecy = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }

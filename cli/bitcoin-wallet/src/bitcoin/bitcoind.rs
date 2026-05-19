@@ -13,6 +13,7 @@ use bollard::errors::Error;
 use bollard::image::CreateImageOptions;
 use bollard::models::{ContainerCreateResponse, HostConfig};
 use futures_util::stream::StreamExt;
+use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use tokio::runtime::Runtime;
 
@@ -21,7 +22,7 @@ pub struct RpcConfig {
     pub network: Network,
     pub url: String,
     pub username: String,
-    pub password: String,
+    pub password: SecretString,
     pub wallet: String,
 }
 
@@ -30,7 +31,7 @@ impl RpcConfig {
         network: Network,
         url: String,
         username: String,
-        password: String,
+        password: SecretString,
         wallet: String,
     ) -> Self {
         Self { network, url, username, password, wallet }
@@ -127,7 +128,10 @@ impl Bitcoind {
     pub fn rpc_client(&self) -> bitcoincore_rpc::Result<Client> {
         Client::new(
             &self.rpc_config.url,
-            Auth::UserPass(self.rpc_config.username.clone(), self.rpc_config.password.clone()),
+            Auth::UserPass(
+                self.rpc_config.username.clone(),
+                self.rpc_config.password.expose_secret().to_string(),
+            ),
         )
     }
 
@@ -135,7 +139,10 @@ impl Bitcoind {
         let wallet_url = format!("{}/wallet/{}", self.rpc_config.url, self.rpc_config.wallet);
         Client::new(
             &wallet_url,
-            Auth::UserPass(self.rpc_config.username.clone(), self.rpc_config.password.clone()),
+            Auth::UserPass(
+                self.rpc_config.username.clone(),
+                self.rpc_config.password.expose_secret().to_string(),
+            ),
         )
     }
 
@@ -237,7 +244,7 @@ impl Bitcoind {
                 "-rpcallowip=0.0.0.0/0".to_string(),
                 "-rpcbind=0.0.0.0".to_string(),
                 format!("-rpcuser={}", self.rpc_config.username).to_string(),
-                format!("-rpcpassword={}", self.rpc_config.password).to_string(),
+                format!("-rpcpassword={}", self.rpc_config.password.expose_secret()).to_string(),
                 "-server=1".to_string(),
                 "-txindex=1".to_string(),
                 debug,

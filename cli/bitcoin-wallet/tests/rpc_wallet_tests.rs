@@ -47,7 +47,7 @@ fn wallet_end_to_end_over_regtest_rpc() -> Result<()> {
         Network::Regtest,
         RPC_URL.to_string(),
         RPC_USER.to_string(),
-        RPC_PASS.to_string(),
+        secrecy::SecretString::from(RPC_PASS),
         wallet_name,
     );
 

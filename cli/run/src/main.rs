@@ -75,6 +75,7 @@ use clap::{ArgAction, Parser, ValueEnum};
 use key_manager::key_manager::KeyManager;
 use nix::sys::signal::{Signal, kill};
 use nix::unistd::Pid;
+use secrecy::SecretString;
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System};
 use tokio::runtime::Runtime;
 use tokio::signal;
@@ -634,8 +635,10 @@ fn build_env_for_client(
 fn validate_local_keystores(ids: &[u8]) -> Result<()> {
     let base_storage_path = std::env::var("BASE_STORAGE_PATH")
         .context("BASE_STORAGE_PATH environment variable is required")?;
-    std::env::var("KEY_STORE_PASSWORD")
-        .context("KEY_STORE_PASSWORD environment variable is required for local client runs")?;
+    let keystore_password = SecretString::from(
+        std::env::var("KEY_STORE_PASSWORD")
+            .context("KEY_STORE_PASSWORD environment variable is required for local client runs")?,
+    );
 
     for id in ids {
         let keystore_dir = Path::new(&base_storage_path)
@@ -653,7 +656,7 @@ fn validate_local_keystores(ids: &[u8]) -> Result<()> {
                 );
             }
 
-            KeyManager::get_signer(&key_path).with_context(|| {
+            KeyManager::get_signer(&key_path, &keystore_password).with_context(|| {
                 format!(
                     "Failed to decrypt local {key_name} keystore {}. \
 Check KEY_STORE_PASSWORD or rerun `./cli-setup-operators.sh --ops 4` if the keystore was created with a different password.",

@@ -53,6 +53,12 @@
 - Check for integer overflow in arithmetic operations (use checked arithmetic where needed)
 - Audit dependencies regularly with `cargo audit`
 
+## Secrets in Types
+- When a new type holds a secret value (private key, WIF, password, mnemonic, token), wrap the field with `secrecy::SecretString` (or `secrecy::SecretBox<T>` for non-string secrets) rather than using a plain `String` or byte slice. The wrapper redacts the value from `Debug` so accidental `{:?}` formatting cannot leak it.
+- Use `.expose_secret()` only at the boundary where the underlying value is consumed (e.g. building HTTP auth headers, signing a transaction). Avoid holding the exposed value in a local for longer than the consuming call.
+- Existing transient handling (a function parameter taking `password: &str` and discarding it after use) is acceptable as long as the parameter is not stored in a Debug-deriving struct. Prefer `&SecretString` parameters when the value crosses module boundaries.
+- External secret types without a redacted `Debug` (notably `bitcoin::PrivateKey`) must be wrapped before being stored in a workspace type that derives `Debug`.
+
 ## Bitcoin-Specific Considerations
 - **Critical**: Avoid `TxId::from_slice`, `TxId::from_byte_array`, or any other method that relies on `hashes::hash_newtype!` - these reverse the byte order
 - Any calls to those methods should be encapsulated in `common::types::TxIdParser` struct so it handles the reversal properly

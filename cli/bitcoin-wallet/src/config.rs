@@ -3,6 +3,7 @@ use std::{env, fs};
 
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::Network;
+use secrecy::SecretString;
 use serde::Deserialize;
 
 use crate::cli::{CliOpts, WalletMode};
@@ -15,10 +16,10 @@ pub struct Config {
     pub sats_per_byte: Option<u64>,
     pub network: Option<Network>,
     pub mode: WalletMode,
-    pub private_key_wif: Option<String>,
+    pub private_key_wif: Option<SecretString>,
     pub rpc_url: Option<String>,
     pub rpc_user: Option<String>,
-    pub rpc_password: Option<String>,
+    pub rpc_password: Option<SecretString>,
     pub enabler_amount: Option<u64>,
 }
 
@@ -27,10 +28,10 @@ pub struct Config {
 struct FileConfig {
     network: Option<String>,
     sats_per_byte: Option<u64>,
-    private_key_wif: Option<String>,
+    private_key_wif: Option<SecretString>,
     rpc_url: Option<String>,
     rpc_user: Option<String>,
-    rpc_password: Option<String>,
+    rpc_password: Option<SecretString>,
     db_path: Option<PathBuf>,
     enabler_amount: Option<u64>,
 }
@@ -73,6 +74,7 @@ impl Config {
                 env::var("USER_BITCOIN_WIF")
                     .or_else(|_| env::var("MEMBER_BITCOIN_WIF"))
                     .ok()
+                    .map(SecretString::from)
                     .or_else(|| file_config.private_key_wif.take())
             }
             WalletMode::User | WalletMode::Member => {
@@ -83,6 +85,7 @@ impl Config {
                 };
                 Some(
                     env::var(wif_env_var)
+                        .map(SecretString::from)
                         .or_else(|_| file_config.private_key_wif.take().ok_or_else(|| anyhow!("Not found in config")))
                         .with_context(|| format!(
                             "Private key WIF is required: set {} environment variable or define private_key_wif in config file",

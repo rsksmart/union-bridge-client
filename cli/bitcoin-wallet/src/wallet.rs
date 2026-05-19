@@ -21,6 +21,7 @@ use bitcoin::{
     ecdsa,
 };
 use bitcoincore_rpc::{Client, RpcApi, jsonrpc};
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::bitcoin::reqwest_https::ReqwestHttpsTransport;
 use crate::bitcoin::utils::fetch_utxo_amount;
@@ -55,7 +56,7 @@ pub struct CreatedTransaction {
 #[derive(Debug, Clone)]
 pub struct GeneratedAddress {
     pub address: Address,
-    pub private_key_wif: String,
+    pub private_key_wif: SecretString,
     pub public_key_hex: String,
 }
 
@@ -126,7 +127,7 @@ impl Wallet {
         }
 
         if let Some(ref wif) = config.private_key_wif {
-            let address = wallet.import_private_key(wif)?;
+            let address = wallet.import_private_key(wif.expose_secret())?;
             wallet.active_address = Some(address.clone());
             wallet.reload_active_utxos()?;
             println!("Loaded private key. Default P2WPKH address: {address}");
@@ -136,7 +137,7 @@ impl Wallet {
             wallet.configure_rpc(
                 url,
                 config.rpc_user.as_deref(),
-                config.rpc_password.as_deref(),
+                config.rpc_password.as_ref().map(|p| p.expose_secret()),
             )?;
             println!("RPC client configured (URL: {url}).");
         } else if config.rpc_user.is_some() || config.rpc_password.is_some() {
@@ -570,7 +571,7 @@ impl Wallet {
 
         Ok(GeneratedAddress {
             address,
-            private_key_wif: wif,
+            private_key_wif: SecretString::from(wif),
             public_key_hex: public_key.to_string(),
         })
     }
@@ -1026,7 +1027,7 @@ mod tests {
         );
 
         let private_key = wallet.private_key().expect("generated key should be available");
-        assert_eq!(private_key.to_wif(), generated.private_key_wif);
+        assert_eq!(private_key.to_wif().to_string(), generated.private_key_wif.expose_secret());
         assert_eq!(private_key.public_key(&wallet.secp).to_string(), generated.public_key_hex);
 
         Ok(())
@@ -1042,7 +1043,7 @@ mod tests {
         let second = wallet.generate_address()?;
 
         assert_ne!(first.address, second.address);
-        assert_ne!(first.private_key_wif, second.private_key_wif);
+        assert_ne!(first.private_key_wif.expose_secret(), second.private_key_wif.expose_secret());
 
         let addresses = wallet.imported_addresses();
         assert!(addresses.contains(&first.address.to_string()));

@@ -99,9 +99,15 @@ async fn main() -> Result<()> {
     let tx_dispatcher_config: TxDispatcherConfig = TxDispatcherConfig::load(config_file)
         .expect("Failed to load transaction dispatcher config");
 
+    let keystore_password = secrecy::SecretString::from(
+        std::env::var("KEY_STORE_PASSWORD")
+            .context("KEY_STORE_PASSWORD environment variable not found")?,
+    );
+
     let user_contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib(
         tx_dispatcher_config.clone(),
         transaction_dispatcher::GatewayRole::User,
+        keystore_password,
     )
     .await?;
 

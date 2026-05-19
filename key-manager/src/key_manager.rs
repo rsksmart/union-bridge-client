@@ -3,9 +3,10 @@ use std::path::Path;
 use alloy_primitives::hex;
 use alloy_signer::k256::ecdsa::{SigningKey, VerifyingKey};
 use alloy_signer_local::LocalSigner;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Result, anyhow};
 use rand::rngs::OsRng;
 use rand::thread_rng;
+use secrecy::{ExposeSecret, SecretString};
 
 pub struct KeyManager {}
 
@@ -43,18 +44,14 @@ impl KeyManager {
 
     /// Retrieves a signer by decrypting the keystore at the specified location.
     ///
-    /// This function depends on the `KEY_STORE_PASSWORD` environment variable
-    /// to retrieve the password required for decryption. Ensure that this
-    /// environment variable is set before calling this function.
+    /// The password must be loaded at startup by the caller and passed in;
+    /// this function performs no environment-variable lookup itself.
     ///
     /// # Errors
     ///
-    /// Returns an error if the `KEY_STORE_PASSWORD` environment variable is not set,
-    /// or if keystore decryption fails
-    pub fn get_signer(location: &Path) -> Result<LocalSigner<SigningKey>> {
-        let password = std::env::var("KEY_STORE_PASSWORD")
-            .context("KEY_STORE_PASSWORD environment variable not found")?;
-        LocalSigner::decrypt_keystore(location, password)
+    /// Returns an error if keystore decryption fails.
+    pub fn get_signer(location: &Path, password: &SecretString) -> Result<LocalSigner<SigningKey>> {
+        LocalSigner::decrypt_keystore(location, password.expose_secret())
             .map_err(|e| anyhow!("Failed to decrypt keystore: {e}"))
     }
 

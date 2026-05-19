@@ -15,6 +15,7 @@ use bitcoincore_rpc::RpcApi;
 use chrono::{DateTime, Utc};
 use clap::Parser;
 use rustyline::error::ReadlineError;
+use secrecy::ExposeSecret;
 use serde_json::{Value, json};
 use ub_wallet::bitcoin::utils::find_vout_for_address;
 use ub_wallet::cli::{CliOpts, WalletMode, setup_editor};
@@ -227,7 +228,7 @@ fn handle_command(wallet: &mut Wallet, line: &str, mode: &WalletMode) -> Result<
             let generated = wallet.generate_address()?;
             let address_str = generated.address.to_string();
             println!("Generated P2WPKH address: {}", address_str);
-            println!("  Private key (WIF): {}", generated.private_key_wif);
+            println!("  Private key (WIF): {}", generated.private_key_wif.expose_secret());
             println!("  Public key: {}", generated.public_key_hex);
             let is_active = wallet
                 .active_address()
