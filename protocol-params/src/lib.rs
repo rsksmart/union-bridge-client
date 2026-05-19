@@ -5,6 +5,8 @@
 //! and for local/dev
 //! testing.
 
+#![warn(unreachable_pub)]
+
 use anyhow::{Context, Result};
 
 /// Returns the committee member count from the temporary env override or the default.

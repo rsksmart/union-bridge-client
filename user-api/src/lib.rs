@@ -1,6 +1,7 @@
 // user-api is a thin wrapper layer, not the production peg pipeline — pedantic
 // clippy lints are not enforced here.
 #![allow(clippy::pedantic)]
+#![warn(unreachable_pub)]
 
 pub mod config;
 pub mod errors;
