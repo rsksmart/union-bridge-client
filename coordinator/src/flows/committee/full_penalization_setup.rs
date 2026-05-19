@@ -2,12 +2,11 @@ use std::rc::Rc;
 
 use anyhow::{Context, Result};
 use common::msg_broker::bitvmx_types::{
-    CommsAddress, FullPenalizationData, IncomingBitVMXApiMessages, PROGRAM_TYPE_FULL_PENALIZATION,
-    VariableTypes,
+    BitVmxProtocolId, CommsAddress, FullPenalizationData, IncomingBitVMXApiMessages,
+    PROGRAM_TYPE_FULL_PENALIZATION, VariableTypes, full_penalization_protocol_id,
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use log::{debug, info};
-use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::flows::committee::common::send_bitvmx_msg;
@@ -26,8 +25,8 @@ impl<BC: BitVmxBrokerClientApi> FullPenalizationSetup<BC> {
         committee_id: Uuid,
         my_id: usize,
         addresses: &[CommsAddress],
-    ) -> Result<Uuid> {
-        let protocol_id = Self::get_full_penalization_pid(committee_id);
+    ) -> Result<BitVmxProtocolId> {
+        let protocol_id = full_penalization_protocol_id(committee_id);
 
         info!("Setting up the FullPenalization protocol handler {protocol_id} for {my_id}");
 
@@ -40,7 +39,7 @@ impl<BC: BitVmxBrokerClientApi> FullPenalizationSetup<BC> {
         send_bitvmx_msg(
             self.broker_client.as_ref(),
             IncomingBitVMXApiMessages::SetVar(
-                protocol_id,
+                protocol_id.value(),
                 FullPenalizationData::name().clone(),
                 VariableTypes::String(payload),
             ),
@@ -53,7 +52,7 @@ impl<BC: BitVmxBrokerClientApi> FullPenalizationSetup<BC> {
         send_bitvmx_msg(
             self.broker_client.as_ref(),
             IncomingBitVMXApiMessages::Setup(
-                protocol_id,
+                protocol_id.value(),
                 PROGRAM_TYPE_FULL_PENALIZATION.to_string(),
                 addresses.to_vec(),
                 0,
@@ -62,17 +61,5 @@ impl<BC: BitVmxBrokerClientApi> FullPenalizationSetup<BC> {
         .context("Failed to send Setup(FullPenalization) to BitVMX")?;
 
         Ok(protocol_id)
-    }
-
-    fn get_full_penalization_pid(committee_id: Uuid) -> Uuid {
-        let mut hasher = Sha256::new();
-        hasher.update(committee_id.as_bytes());
-        hasher.update("full_penalization");
-
-        let hash = hasher.finalize();
-        // SHA-256 always produces 32 bytes, so the 16-byte prefix is guaranteed.
-        let prefix: &[u8; 16] =
-            hash.first_chunk().expect("SHA-256 output is always at least 16 bytes");
-        Uuid::from_bytes(*prefix)
     }
 }

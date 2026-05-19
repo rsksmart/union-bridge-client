@@ -24,9 +24,9 @@ use super::setup_committee_flow::{
 };
 use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
 use crate::event_processor::EventProcessor;
-use crate::flows::common::GlobalContext;
+use crate::flows::common::{FlowId, GlobalContext};
 use crate::flows::errors::{FailableFlow, FlowError};
-use crate::store::{CoordinatorStoreApi, StorePrefix, cleanup_flows_matching, restore_flows};
+use crate::store::{CoordinatorStoreApi, StorePrefix, restore_flows};
 use crate::types::{
     AdminRequest, AllCommunicationDataReadyEvent, EventStatus, FlowKind, NewCommitteePendingEvent,
     NewCommitteeReadyEvent, RskPegManagerEvents, UserRequests,
@@ -40,7 +40,7 @@ where
     S: CoordinatorStoreApi,
 {
     flow_factory: FactoryBSF,
-    flows: HashMap<Uuid, SetupCommitteeFlow<CG, BC, S>>,
+    flows: HashMap<FlowId, SetupCommitteeFlow<CG, BC, S>>,
     global_context: GlobalContext,
     blockchain_view: BlockchainView,
     events_confirming: HashMap<String, ConfirmableEventWithData>,
@@ -80,9 +80,12 @@ where
         let flow_factory =
             |saved_state: State| processor.flow_factory.create_flow_from_saved_state(saved_state);
 
-        processor.flows =
+        // restore_flows returns HashMap<Uuid, _> keyed by the opaque
+        // store uuid; re-index by the canonical FlowId.
+        let restored: HashMap<Uuid, SetupCommitteeFlow<CG, BC, S>> =
             restore_flows(store.as_ref(), StorePrefix::SetupCommitteeFlow, flow_factory)
                 .expect("Failed to load flows from store");
+        processor.flows = restored.into_values().map(|flow| (flow.flow_id(), flow)).collect();
         processor
     }
 
@@ -100,16 +103,26 @@ where
     }
 
     fn cleanup_terminal_flows(&mut self) {
-        cleanup_flows_matching(
-            self.store.as_ref(),
-            StorePrefix::SetupCommitteeFlow,
-            &mut self.flows,
-            SetupCommitteeFlow::is_terminal,
-        );
+        let terminal: Vec<FlowId> =
+            self.flows.iter().filter(|(_, flow)| flow.is_terminal()).map(|(key, _)| *key).collect();
+        for flow_id in terminal {
+            debug!("Removing {:?} flow: {flow_id}", StorePrefix::SetupCommitteeFlow);
+            // Storage uses an opaque uuid derived from the canonical flow id;
+            // ask the flow itself for its store key to keep that detail
+            // owned by `setup_committee_flow`.
+            if let Some(flow) = self.flows.remove(&flow_id)
+                && let Err(err) = self.store.delete_flow(&flow.store_key())
+            {
+                error!(
+                    "Failed to remove {:?} flow {flow_id} from persistence: {err}",
+                    StorePrefix::SetupCommitteeFlow
+                );
+            }
+        }
     }
 
     /// Mark a setup committee flow as failed and stop pending local work for it.
-    fn fail_flow(&mut self, flow_id: Uuid, reason: &str) -> Result<()> {
+    fn fail_flow(&mut self, flow_id: FlowId, reason: &str) -> Result<()> {
         if let Some(flow) = self.flows.get_mut(&flow_id) {
             flow.mark_failed(reason)?;
             warn!("Admin marked setup committee flow {flow_id} as failed: {reason}");
@@ -150,27 +163,37 @@ where
     }
 
     fn continue_flow(flow: &mut SetupCommitteeFlow<CG, BC, S>, data: StepData) {
-        let internal_id = flow.internal_id();
         let current_step = flow.current_step();
-        trace!("Continuing flow {internal_id} at step {current_step:?} with data: {data:?}");
+        trace!("Continuing flow {} at step {current_step:?} with data: {data:?}", flow.flow_id());
         match flow.complete_step(data) {
             Ok(()) => {
                 trace!(
                     "Step {:?} completed successfully for flow {}",
                     flow.current_step(),
-                    flow.internal_id()
+                    flow.flow_id()
                 );
             }
             Err(FlowError::Fatal { message, source }) => {
-                error!("Fatal error in flow {internal_id} at step {current_step:?}: {message}");
-                Self::log_flow_error_source("Fatal", internal_id, current_step, source.as_ref());
+                error!(
+                    "Fatal error in flow {} at step {current_step:?}: {message}",
+                    flow.flow_id()
+                );
+                Self::log_flow_error_source(
+                    "Fatal",
+                    &flow.flow_id(),
+                    current_step,
+                    source.as_ref(),
+                );
                 flow.fail();
             }
             Err(FlowError::Transient { message, source }) => {
-                error!("Transient error in flow {internal_id} at step {current_step:?}: {message}");
+                error!(
+                    "Transient error in flow {} at step {current_step:?}: {message}",
+                    flow.flow_id()
+                );
                 Self::log_flow_error_source(
                     "Transient",
-                    internal_id,
+                    &flow.flow_id(),
                     current_step,
                     source.as_ref(),
                 );
@@ -179,20 +202,20 @@ where
         debug!(
             "Completed continue_flow at step {:?} for flow {}",
             flow.current_step(),
-            flow.internal_id()
+            flow.flow_id()
         );
     }
 
     fn log_flow_error_source(
         kind: &str,
-        internal_id: Uuid,
+        flow_id: &FlowId,
         step: Steps,
         source: Option<&anyhow::Error>,
     ) {
         if let Some(err) = source {
             let chain =
                 err.chain().map(std::string::ToString::to_string).collect::<Vec<_>>().join(" | ");
-            error!("{kind} error source chain for flow {internal_id} at step {step:?}: {chain}");
+            error!("{kind} error source chain for flow {flow_id} at step {step:?}: {chain}");
         }
     }
 
@@ -332,12 +355,12 @@ where
         info!("Processing user request: {req:?}");
         match req {
             UserRequests::ApplyToStream(input) => {
-                let internal_id = Uuid::new_v4();
-                let mut flow = self.flow_factory.create_flow(internal_id);
+                let flow_id = FlowId::from_random();
+                let mut flow = self.flow_factory.create_flow(flow_id, *input.stream_id);
 
                 Self::continue_flow(&mut flow, StepData::UserRequest(input.clone()));
 
-                self.flows.insert(internal_id, flow);
+                self.flows.insert(flow_id, flow);
             }
             UserRequests::Admin(AdminRequest::FailFlow { kind, flow_id, reason })
                 if *kind == FlowKind::CommitteeSetup =>
@@ -360,7 +383,7 @@ where
                     debug!(
                         "Routing BitVMX CommInfo req_id {} to setup committee flow {}",
                         req_id,
-                        flow.internal_id()
+                        flow.flow_id()
                     );
                     Self::continue_flow(flow, StepData::CommInfo(comm_info.clone()));
                 } else {
@@ -436,7 +459,6 @@ where
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         self.cleanup_terminal_flows();
 
-        debug!("Processing new rsk event: {event:?}");
         if self.required_confirmations == 0 {
             self.process_confirmed_rsk_event(event);
             return Ok(());
@@ -577,7 +599,8 @@ mod tests {
     {
         fn create_flow(
             &self,
-            _internal_id: Uuid,
+            _flow_id: FlowId,
+            _stream_id: u64,
         ) -> SetupCommitteeFlow<MockRskContractsGatewayApi, MockBitVmxBroker, MockCoordinatorStoreApi>
         {
             panic!("create_flow should not be called in this test");
@@ -693,7 +716,7 @@ mod tests {
     }
 
     fn flow_waiting_for_comm_info(
-        internal_id: Uuid,
+        flow_id: FlowId,
         stream_id: u64,
     ) -> (
         SetupCommitteeFlow<MockRskContractsGatewayApi, MockBitVmxBroker, MockCoordinatorStoreApi>,
@@ -737,7 +760,7 @@ mod tests {
             Rc::new(crate::flows::common::Signaling::new("/tmp", "disabled")),
         );
 
-        let mut flow = factory.create_flow(internal_id);
+        let mut flow = factory.create_flow(flow_id, stream_id);
         flow.complete_step(StepData::UserRequest(test_apply_to_stream(stream_id)))
             .expect("init should advance to ValidateBalances");
         let min_funding_balance = derive_stream_funding_profile(stream_id, true, 100, 4, 2)
@@ -854,10 +877,12 @@ mod tests {
 
     #[test]
     fn test_process_new_bitvmx_event_comm_info_routes_to_matching_flow() {
-        let (flow_a, req_a) = flow_waiting_for_comm_info(Uuid::new_v4(), 0);
-        let (flow_b, req_b) = flow_waiting_for_comm_info(Uuid::new_v4(), 1);
-        let first_flow_id = flow_a.internal_id();
-        let second_flow_id = flow_b.internal_id();
+        let id_a = FlowId::from_random();
+        let id_b = FlowId::from_random();
+        let (flow_a, req_a) = flow_waiting_for_comm_info(id_a, 0);
+        let (flow_b, req_b) = flow_waiting_for_comm_info(id_b, 1);
+        let first_flow_id = flow_a.flow_id();
+        let second_flow_id = flow_b.flow_id();
         assert_ne!(req_a, req_b);
         assert!(!flow_a.is_waiting_for_bitvmx_request(&req_b));
         assert!(!flow_b.is_waiting_for_bitvmx_request(&req_a));
@@ -881,7 +906,7 @@ mod tests {
 
     #[test]
     fn admin_fail_flow_marks_setup_committee_failed_and_leaves_confirming_events() {
-        let flow_id = Uuid::new_v4();
+        let flow_id = FlowId::from_random();
         let (flow, _) = flow_waiting_for_comm_info(flow_id, 1);
         let pending_event =
             RskPegManagerEvents::NewCommitteePending(test_pending_event(123, false));

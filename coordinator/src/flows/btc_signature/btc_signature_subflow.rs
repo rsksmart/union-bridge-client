@@ -26,13 +26,17 @@ pub(crate) trait BtcSignatureSubFlowApi {
 
 #[cfg_attr(test, automock)]
 pub(crate) trait BtcSignatureSubFlowFactoryApi<BSF: BtcSignatureSubFlowApi> {
-    fn create_flow(&self, flow_id: Uuid) -> BSF;
+    fn create_flow(&self, flow_id: Uuid, parent_log_id: String) -> BSF;
 }
 
 pub(crate) struct BaseBtcSignatureSubFlow<BSF: BtcSignatureLifecycleApi> {
     lifecycle: BSF,
     is_done: bool,
     is_nonces_step_done: bool,
+    /// Pre-formatted `log_id` of the parent flow (pegin/pegout). Combined
+    /// with the current phase to produce `{parent_log_id} ({phase})` for
+    /// log lines.
+    parent_log_id: String,
 }
 
 impl<CG> BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>>
@@ -43,6 +47,7 @@ where
         contracts_gateway: &Rc<CG>,
         rt_sync: &RuntimeSync,
         flow_id: Uuid,
+        parent_log_id: String,
         required_confirmations: u32,
     ) -> Self {
         let lifecycle = BtcSignatureLifeCycle::new(
@@ -52,7 +57,7 @@ where
             required_confirmations,
         );
 
-        Self { lifecycle, is_done: false, is_nonces_step_done: false }
+        Self { lifecycle, is_done: false, is_nonces_step_done: false, parent_log_id }
     }
 
     #[cfg(test)]
@@ -60,6 +65,7 @@ where
         contracts_gateway: &Rc<CG>,
         rt_sync: &RuntimeSync,
         flow_id: Uuid,
+        parent_log_id: String,
         required_confirmations: u32,
     ) -> Self {
         let lifecycle = BtcSignatureLifeCycle::new(
@@ -68,7 +74,19 @@ where
             flow_id,
             required_confirmations,
         );
-        Self { lifecycle, is_done: true, is_nonces_step_done: true }
+        Self { lifecycle, is_done: true, is_nonces_step_done: true, parent_log_id }
+    }
+}
+
+impl<BSF> BaseBtcSignatureSubFlow<BSF>
+where
+    BSF: BtcSignatureLifecycleApi,
+{
+    /// `{parent_log_id} ({phase})` — `phase` flips from `nonces` to
+    /// `signatures` once `is_nonces_step_done` is set in `delegate_block`.
+    fn log_id(&self) -> String {
+        let phase = if self.is_nonces_step_done { "signatures" } else { "nonces" };
+        format!("{} ({phase})", self.parent_log_id)
     }
 }
 
@@ -94,7 +112,7 @@ where
             return Ok(()); // not mine
         }
 
-        debug!("Processing delegated event for flow_id={flow_id}");
+        debug!("Processing delegated event for {}", self.log_id());
 
         match event {
             RskPegManagerEvents::AllNoncesReady(event) => {
@@ -132,7 +150,7 @@ where
         self.lifecycle.blockchain_view().update(block);
 
         if !self.lifecycle.blockchain_view().has_observers() {
-            trace!("No observers added");
+            trace!("No observers added for {}", self.log_id());
             return Ok(());
         }
 
@@ -179,11 +197,16 @@ impl<CG: RskContractsGatewayApi>
     BtcSignatureSubFlowFactoryApi<BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>>>
     for BtcSignatureSubFlowFactory<CG>
 {
-    fn create_flow(&self, flow_id: Uuid) -> BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>> {
+    fn create_flow(
+        &self,
+        flow_id: Uuid,
+        parent_log_id: String,
+    ) -> BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>> {
         BaseBtcSignatureSubFlow::<BtcSignatureLifeCycle<CG>>::new(
             &self.contracts_gateway,
             &self.rt_sync,
             flow_id,
+            parent_log_id,
             self.required_confirmations,
         )
     }
@@ -207,7 +230,12 @@ mod tests {
 
     impl BaseBtcSignatureSubFlow<MockBtcSignatureLifecycleApi> {
         pub(crate) fn new(mock: MockBtcSignatureLifecycleApi) -> Self {
-            Self { lifecycle: mock, is_done: false, is_nonces_step_done: false }
+            Self {
+                lifecycle: mock,
+                is_done: false,
+                is_nonces_step_done: false,
+                parent_log_id: String::new(),
+            }
         }
     }
 

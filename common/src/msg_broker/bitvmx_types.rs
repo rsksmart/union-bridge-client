@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 
-use anyhow::bail;
+use anyhow::{Result, bail};
 use bitcoin::address::NetworkUnchecked;
 use bitcoin::{
     Address, Amount, BlockHash, PrivateKey, PublicKey, ScriptBuf, Transaction, Txid, XOnlyPublicKey,
@@ -12,9 +12,11 @@ pub use bitvmx_emulator::decision::challenge::{ForceChallenge, ForceCondition};
 pub use bitvmx_emulator::executor::utils::{
     FailConfiguration, FailExecute, FailOpcode, FailRead, FailReads, FailSelectionBits, FailWrite,
 };
+use log::info;
 use musig2::PubNonce;
 use musig2::secp::MaybeScalar;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 pub const ACCEPT_PEGIN_TX: &str = "ACCEPT_PEGIN_TX";
@@ -32,6 +34,151 @@ pub const PROGRAM_TYPE_DRP: &str = "drp";
 pub const PROGRAM_TYPE_FULL_PENALIZATION: &str = "full_penalization";
 
 type ProgramId = Uuid;
+
+/// Identifier for a BitVMX program — what `Setup` registers, what BitVMX
+/// events route by, and what `dispute_core` on the BitVMX side re-derives
+/// from on-chain inputs.
+///
+/// Wraps a `Uuid` to keep these values distinct in the type system from
+/// other UUIDs floating through the codebase. Convert to/from a raw `Uuid`
+/// with `From`/`Into` or `value()` only at the BitVMX message boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct BitVmxProtocolId(Uuid);
+
+impl BitVmxProtocolId {
+    pub fn new(uuid: Uuid) -> Self {
+        Self(uuid)
+    }
+
+    pub fn value(&self) -> Uuid {
+        self.0
+    }
+}
+
+impl From<Uuid> for BitVmxProtocolId {
+    fn from(uuid: Uuid) -> Self {
+        Self(uuid)
+    }
+}
+
+impl From<BitVmxProtocolId> for Uuid {
+    fn from(id: BitVmxProtocolId) -> Self {
+        id.0
+    }
+}
+
+impl std::fmt::Display for BitVmxProtocolId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+
+/// `BitVMX` program id for the accept-pegin program, derived from the
+/// committee and slot. Must match `get_accept_pegin_pid` in the `BitVMX`
+/// client, which uses the same derivation when looking up the program
+/// (e.g. in `dispute_core` cancellation paths).
+pub fn accept_pegin_protocol_id(committee_id: Uuid, slot_index: usize) -> BitVmxProtocolId {
+    derive_protocol_id(committee_id, slot_index, "accept_pegin")
+}
+
+/// `BitVMX` program id for the user-take program, derived from the
+/// committee and slot. Mirrors `get_user_take_pid` in the `BitVMX` client
+/// so the two sides agree on the program id even if BitVMX-side dispute
+/// logic ever starts re-deriving it independently (today only examples/ do).
+pub fn user_take_protocol_id(committee_id: Uuid, slot_index: usize) -> BitVmxProtocolId {
+    derive_protocol_id(committee_id, slot_index, "user_take")
+}
+
+/// `BitVMX` program id for the advance-funds program, derived from the
+/// committee and slot. Mirrors `get_advance_funds_pid` in the `BitVMX`
+/// client so the two sides agree on the program id even if BitVMX-side
+/// dispute logic ever starts re-deriving it independently.
+pub fn advance_funds_protocol_id(committee_id: Uuid, slot_index: usize) -> BitVmxProtocolId {
+    derive_protocol_id(committee_id, slot_index, "advance_funds")
+}
+
+fn derive_protocol_id(committee_id: Uuid, slot_index: usize, salt: &str) -> BitVmxProtocolId {
+    let mut hasher = Sha256::new();
+    hasher.update(committee_id.as_bytes());
+    hasher.update(slot_index.to_be_bytes());
+    hasher.update(salt);
+    finalize_protocol_id(hasher)
+}
+
+/// `BitVMX` program id for a `DisputeCore` instance, derived from the
+/// committee and a member's take key.
+pub fn dispute_core_protocol_id(committee_id: Uuid, pubkey: &PublicKey) -> BitVmxProtocolId {
+    let mut hasher = Sha256::new();
+    hasher.update(committee_id.as_bytes());
+    hasher.update(pubkey.to_bytes());
+    hasher.update("dispute_core");
+    finalize_protocol_id(hasher)
+}
+
+/// `BitVMX` program id for a `DisputeChannel` instance, derived from the
+/// committee and the operator/watchtower index pair. Order-sensitive.
+pub fn dispute_channel_protocol_id(
+    committee_id: Uuid,
+    op_index: usize,
+    wt_index: usize,
+) -> BitVmxProtocolId {
+    let mut hasher = Sha256::new();
+    hasher.update(committee_id.as_bytes());
+    hasher.update(op_index.to_be_bytes());
+    hasher.update(wt_index.to_be_bytes());
+    hasher.update("dispute_channel");
+    finalize_protocol_id(hasher)
+}
+
+/// `BitVMX` program id for a pairwise aggregated key between two committee
+/// members. Symmetric: both members derive the same id regardless of
+/// which side initiates.
+pub fn pairwise_aggregated_key_protocol_id(
+    committee_id: Uuid,
+    idx_a: usize,
+    idx_b: usize,
+) -> BitVmxProtocolId {
+    let (min_i, max_i) = if idx_a <= idx_b { (idx_a, idx_b) } else { (idx_b, idx_a) };
+    let mut hasher = Sha256::new();
+    hasher.update(committee_id.as_bytes());
+    hasher.update(min_i.to_be_bytes());
+    hasher.update(max_i.to_be_bytes());
+    hasher.update("pairwise_aggregated_key");
+    finalize_protocol_id(hasher)
+}
+
+/// `BitVMX` program id for the full-penalization program, derived from
+/// the committee.
+pub fn full_penalization_protocol_id(committee_id: Uuid) -> BitVmxProtocolId {
+    let mut hasher = Sha256::new();
+    hasher.update(committee_id.as_bytes());
+    hasher.update("full_penalization");
+    finalize_protocol_id(hasher)
+}
+
+/// `BitVMX` program id for the take-aggregated-key program, derived from
+/// the committee.
+pub fn take_aggregated_key_protocol_id(committee_id: Uuid) -> BitVmxProtocolId {
+    let mut hasher = Sha256::new();
+    hasher.update(committee_id.as_bytes());
+    hasher.update("take_aggregated_key");
+    finalize_protocol_id(hasher)
+}
+
+/// `BitVMX` program id for the dispute-aggregated-key program, derived
+/// from the committee.
+pub fn dispute_aggregated_key_protocol_id(committee_id: Uuid) -> BitVmxProtocolId {
+    let mut hasher = Sha256::new();
+    hasher.update(committee_id.as_bytes());
+    hasher.update("dispute_aggregated_key");
+    finalize_protocol_id(hasher)
+}
+
+fn finalize_protocol_id(hasher: Sha256) -> BitVmxProtocolId {
+    let hash = hasher.finalize();
+    let uuid_bytes: [u8; 16] = hash[..16].try_into().expect("SHA256 is always 32 bytes");
+    BitVmxProtocolId::new(Uuid::from_bytes(uuid_bytes))
+}
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum IncomingBitVMXApiMessages {
@@ -321,6 +468,53 @@ pub type PubKeyHash = String;
 pub struct CommsAddress {
     pub address: SocketAddr,
     pub pubkey_hash: PubKeyHash,
+}
+
+/// Builds the communication data for the operator from the committee data
+/// and the operator's p2p address.
+///
+/// `BitVMX` and the contracts agreed on:
+/// - storing `pubkey_hash` as the communication key on `applyToStream`
+/// - storing only the address as the communication data on `depositCommunicationData`
+///   therefore `get_communication_data` does not bring everything we need, just
+///   the address — this was agreed with Fairgate.
+///
+/// # Errors
+/// Returns an error if the committee data is inconsistent or contains an
+/// invalid address.
+pub fn build_communication_data(
+    my_p2p_address: &str,
+    committee_addresses: &[String],
+    committee_pubkey_hashes: &[PubKeyHash],
+) -> Result<Vec<CommsAddress>> {
+    if committee_addresses.len() != committee_pubkey_hashes.len() {
+        bail!(
+            "Inconsistent committee size: {} vs {}",
+            committee_addresses.len(),
+            committee_pubkey_hashes.len()
+        );
+    }
+
+    let mut comms_addresses = vec![];
+    for (committee_address, committee_pubkey_hash) in
+        committee_addresses.iter().zip(committee_pubkey_hashes.iter())
+    {
+        let mut addr = committee_address.clone();
+        // contracts require zeroed communication data for my own address on deposit,
+        // so we have to tweak it here.
+        if addr.is_empty() {
+            addr = my_p2p_address.to_string();
+        }
+
+        comms_addresses.push(CommsAddress {
+            address: addr.parse().map_err(|e| anyhow::anyhow!("Invalid address: {e}"))?,
+            pubkey_hash: committee_pubkey_hash.clone(),
+        });
+    }
+
+    info!("Built communication data: {comms_addresses:?}");
+
+    Ok(comms_addresses)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

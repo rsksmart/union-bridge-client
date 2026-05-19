@@ -12,7 +12,11 @@ use storage_backend::storage_config::StorageConfig;
 use uuid::Uuid;
 
 use crate::flows::common::GlobalContext;
-/// Key used to persist Coordinator data
+/// Key used to persist Coordinator data.
+///
+/// Flow variants hold opaque `Uuid`s so the storage layer stays uniform.
+/// Pass `flow_id.value()` (see `crate::flows::common::FlowId`) to the
+/// variant constructor.
 pub enum StoreKey {
     GlobalContext,
     SetupCommitteeFlow(Uuid),

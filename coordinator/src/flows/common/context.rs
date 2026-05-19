@@ -1,13 +1,66 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt;
 use std::rc::Rc;
 
-use anyhow::{Result, bail};
-use common::msg_broker::bitvmx_types::{
-    CommsAddress, ParticipantRole, PubKeyHash, SignedPublicKey,
-};
+use common::msg_broker::bitvmx_types::{ParticipantRole, SignedPublicKey};
 use common::types::CommitteeId;
-use log::info;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use uuid::Uuid;
+
+/// Identifier for a flow.
+///
+/// Uniform across all flow types (pegin, pegout, operator-take, committee
+/// setup). Each flow decides how to generate its uuid — randomly
+/// (committee setup) via `FlowId::from_random`, or deterministically from
+/// a canonical on-chain input (pegin/pegout/operator-take) via
+/// `FlowId::from_tx`.
+///
+/// `Display` renders just the uuid, which is grep-friendly and uniform.
+/// For richer log lines that include the per-flow canonical identifier
+/// (`txid`, `tx_hash`, `stream_id`), use the `log_id` field on each flow's
+/// `State` — pre-formatted at construction so log sites can write
+/// `{state.log_id}` without indirection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct FlowId(Uuid);
+
+impl FlowId {
+    /// Random uuid. Use when no canonical input exists at flow creation
+    /// (committee setup at `ApplyToStream`).
+    #[must_use]
+    pub fn from_random() -> Self {
+        FlowId(Uuid::new_v4())
+    }
+
+    /// Deterministically derive a flow id from canonical bytes and a salt.
+    /// The salt namespaces the derivation per flow type so collisions
+    /// across flow types are impossible by construction.
+    ///
+    /// # Panics
+    /// Panics only if SHA-256 produces fewer than 32 bytes, which is impossible.
+    #[must_use]
+    pub fn from_tx(salt: &str, tx_id_or_hash: &[u8]) -> Self {
+        let mut hasher = Sha256::new();
+        hasher.update(tx_id_or_hash);
+        hasher.update(salt);
+        let hash = hasher.finalize();
+        let bytes: [u8; 16] = hash[..16].try_into().expect("SHA256 is always 32 bytes");
+        FlowId(Uuid::from_bytes(bytes))
+    }
+
+    #[must_use]
+    pub fn value(&self) -> Uuid {
+        self.0
+    }
+}
+
+impl fmt::Display for FlowId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.0, f)
+    }
+}
 
 // Key indices for committee member public keys
 pub const TAKE_KEY_INDEX: usize = 0;
@@ -119,43 +172,4 @@ impl GlobalContext {
     pub fn my_keys(&self) -> &MyKeys {
         &self.my_keys
     }
-}
-
-/// We need this function because we are temporarily:
-/// - storing `pubkey_hash` as the communication key on applyToStream
-/// - storing only the address as the communication data on depositCommunicationData
-///   therefore `get_communication_data` does not bring everything we need, just the address
-///   this was agreed with Fairgate
-pub fn build_communication_data(
-    my_p2p_address: &str,
-    committee_addresses: &[String],
-    committee_pubkey_hashes: &[PubKeyHash],
-) -> Result<Vec<CommsAddress>> {
-    if committee_addresses.len() != committee_pubkey_hashes.len() {
-        bail!(
-            "Inconsistent committee size: {} vs {}",
-            committee_addresses.len(),
-            committee_pubkey_hashes.len()
-        );
-    }
-
-    let mut comms_addresses = vec![];
-    for (committee_address, committee_pubkey_hash) in
-        committee_addresses.iter().zip(committee_pubkey_hashes.iter())
-    {
-        let mut addr = committee_address.clone();
-        // contracts require zeroed communication data for my own address on deposit, so we have to tweak it here
-        if addr.is_empty() {
-            addr = my_p2p_address.to_string();
-        }
-
-        comms_addresses.push(CommsAddress {
-            address: addr.parse().map_err(|e| anyhow::anyhow!("Invalid address: {e}"))?,
-            pubkey_hash: committee_pubkey_hash.clone(),
-        });
-    }
-
-    info!("Built communication data: {comms_addresses:?}");
-
-    Ok(comms_addresses)
 }

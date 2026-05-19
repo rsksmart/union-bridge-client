@@ -5,13 +5,12 @@ use std::rc::Rc;
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::Txid;
 use common::msg_broker::bitvmx_types::{
-    OutgoingBitVMXApiMessages, PegOutAccepted, TransactionStatus, VariableTypes,
+    BitVmxProtocolId, OutgoingBitVMXApiMessages, PegOutAccepted, TransactionStatus, VariableTypes,
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles, TxIdParser};
 use log::{debug, error, info, trace, warn};
-use sha2::{Digest, Sha256};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use union_contracts::bindings::pegout_manager::PegoutManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
@@ -24,9 +23,9 @@ use crate::flows::btc_signature::btc_signature_subflow::{
     BtcSignatureSubFlowFactoryApi,
 };
 use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
-use crate::flows::common::{GlobalContext, Signaling};
+use crate::flows::common::{FlowId, GlobalContext, Signaling};
 use crate::flows::pegout::pegout_flow::{PegoutFlow, State, StepData, Steps};
-use crate::store::{CoordinatorStoreApi, StorePrefix, cleanup_flows_matching, restore_flows};
+use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix, restore_flows};
 use crate::types::{
     AdminRequest, EventStatus, FlowKind, RegisterSignaturesBitVmxData, RskPegManagerEvents,
     TickScheduler, TimeBasedScheduler, UserRequests,
@@ -58,17 +57,21 @@ where
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
     btc_sig_subflow_factory: FactoryBSF,
-    pegout_flows: HashMap<Uuid, PegoutFlow<CG, BC, S>>,
+    /// Pegout flows are keyed by their canonical id (`FlowId`).
+    pegout_flows: HashMap<FlowId, PegoutFlow<CG, BC, S>>,
+    /// BTC signature subflows are keyed by the `BitVMX` protocol id — what the
+    /// subflow API consumes and what `BitVMX` events for the signature program
+    /// carry.
     signature_flows: HashMap<Uuid, BSF>,
     global_context: GlobalContext,
     blockchain_view: BlockchainView,
     events_confirming: HashMap<String, ConfirmableEventWithData>,
-    tx_status_scheduler: TickScheduler<Uuid>,
-    advance_funds_timeout_scheduler: TimeBasedScheduler<Uuid>,
-    flows_pending_timeout: HashSet<Uuid>, // Flows that need timeout scheduled on next block
+    tx_status_scheduler: TickScheduler<FlowId>,
+    advance_funds_timeout_scheduler: TimeBasedScheduler<FlowId>,
+    flows_pending_timeout: HashSet<FlowId>, // Flows that need timeout scheduled on next block
     // For retry logic when native bridge lacks confirmations for register_pegout
-    unconfirmed_register_pegout: HashMap<Uuid, i16>,
-    register_pegout_retry_scheduler: TickScheduler<Uuid>,
+    unconfirmed_register_pegout: HashMap<FlowId, i16>,
+    register_pegout_retry_scheduler: TickScheduler<FlowId>,
     store: Rc<S>,
     native_bridge_verifier: NativeBridgeVerifier<CG>,
     advance_funds_timeout_secs: u64,
@@ -181,27 +184,24 @@ where
             )
         };
 
-        processor.pegout_flows =
+        let restored: HashMap<Uuid, PegoutFlow<CG, BC, S>> =
             restore_flows(store.as_ref(), StorePrefix::PegoutFlow, flow_factory)?;
+        processor.pegout_flows =
+            restored.into_values().map(|flow| (flow.flow_id(), flow)).collect();
 
         Ok(processor)
     }
 
-    pub fn get_user_take_pid(committee_id: Uuid, slot_index: usize) -> Result<Uuid> {
-        let mut hasher = Sha256::new();
-        hasher.update(committee_id.as_bytes());
-        hasher.update(slot_index.to_be_bytes());
-        hasher.update("user_take");
-
-        // Get the result as a byte array
-        let hash = hasher.finalize();
-        let slice = hash
-            .as_slice()
-            .get(..16)
-            .ok_or_else(|| anyhow!("SHA256 hash too short for UUID generation"))?;
-        let uuid_bytes: [u8; 16] =
-            slice.try_into().context("Failed to convert hash slice to UUID bytes")?;
-        Ok(Uuid::from_bytes(uuid_bytes))
+    /// Find a pegout flow by the `BitVMX` protocol id `BitVMX` events carry.
+    /// O(n) over the in-memory map, but n is small.
+    /// Look up by the raw `Uuid` `BitVMX` events carry.
+    fn pegout_flow_by_protocol_id(
+        &mut self,
+        protocol_id: &Uuid,
+    ) -> Option<&mut PegoutFlow<CG, BC, S>> {
+        self.pegout_flows
+            .values_mut()
+            .find(|flow| flow.bitvmx_protocol_id().value() == *protocol_id)
     }
 
     /// Create a new flow for a `PegoutRequested` event
@@ -220,23 +220,29 @@ where
             "Handling PegoutRequested event with committee id {committee_id}, as member I should respond"
         );
 
-        let slot_index = usize::try_from(event.inner.slotId)
-            .map_err(|_| anyhow!("slotId {} too large for usize", event.inner.slotId))?;
-        let committee_uuid: Uuid = Uuid::from_u128(event.inner.committeeId.try_into()?);
-        let flow_id = Self::get_user_take_pid(committee_uuid, slot_index)?;
-
         let mut flow = PegoutFlow::new(
             Rc::clone(&self.contracts_gateway),
             self.rt_sync.clone(),
             Rc::clone(&self.bitvmx_broker),
-            flow_id,
             event,
             Rc::clone(&self.store),
             self.signaling.clone(),
             self.native_bridge_verifier.clone(),
-        );
+        )?;
 
-        // Initialize the flow with the PegoutRequested event
+        let flow_id = flow.flow_id();
+        let protocol_id = flow.bitvmx_protocol_id();
+
+        // Protocol id should be unique; if it isn't, that's an upstream bug we are flagging here.
+        if let Some(existing) =
+            self.pegout_flows.values().find(|f| f.bitvmx_protocol_id() == protocol_id)
+        {
+            bail!(
+                "PegoutFlow {flow_id}: another flow ({}) already holds BitVMX protocol id {protocol_id}; refusing to create duplicate",
+                existing.flow_id()
+            );
+        }
+
         flow.complete_step(&StepData::PegoutRequested)?;
 
         self.pegout_flows.insert(flow_id, flow);
@@ -333,11 +339,14 @@ where
             }
         }
 
-        for flow_id in &flows_to_dispatch {
+        for protocol_id in &flows_to_dispatch {
             // Always remove the signature flow when it's done
-            self.signature_flows.remove(flow_id);
+            self.signature_flows.remove(protocol_id);
 
-            if let Some(flow) = self.pegout_flows.get_mut(flow_id) {
+            if let Some(flow) = self.pegout_flow_by_protocol_id(protocol_id) {
+                let flow_id = flow.flow_id();
+                let txid_key = flow_id;
+
                 // Only complete the step if the flow is still waiting for signatures
                 if flow.current_step() != Steps::WaitUserTakeSignaturesReady {
                     warn!(
@@ -351,15 +360,15 @@ where
                 flow.complete_step(&StepData::UserTakeSignaturesReady)?;
 
                 // Cancel advance funds timeout since signatures completed successfully
-                if self.advance_funds_timeout_scheduler.is_scheduled(flow_id) {
+                if self.advance_funds_timeout_scheduler.is_scheduled(&txid_key) {
                     debug!(
                         "Cancelling advance funds timeout for flow_id: {flow_id} - signatures completed",
                     );
-                    self.advance_funds_timeout_scheduler.cancel(flow_id);
+                    self.advance_funds_timeout_scheduler.cancel(&txid_key);
                 }
             } else {
                 warn!(
-                    "Signature flow done for unknown pegout flow_id: {flow_id}. Skipping dispatch step"
+                    "Signature flow done for unknown pegout protocol_id: {protocol_id}. Skipping dispatch step"
                 );
             }
         }
@@ -369,16 +378,19 @@ where
 
     fn handle_transaction_status_received(
         &mut self,
-        flow_id: &Uuid,
+        protocol_id: &Uuid,
         tx_status: TransactionStatus,
     ) -> Result<()> {
-        let Some(flow) = self.pegout_flows.get_mut(flow_id) else {
-            trace!("Ignoring BitVMX Transaction event for unknown flow_id: {flow_id}");
+        let btc_confirmations = self.btc_confirmations;
+        let btc_status_retry_blocks = self.btc_status_retry_blocks;
+        let Some(flow) = self.pegout_flow_by_protocol_id(protocol_id) else {
+            trace!("Ignoring BitVMX Transaction event for unknown protocol_id: {protocol_id}");
             return Ok(());
         };
 
         let TransactionStatus { tx_id, confirmations, .. } = tx_status;
         let flow_id = flow.flow_id();
+        let txid_key = flow_id;
         let expected_txid = flow
             .get_user_take_txid()
             .ok_or_else(|| anyhow!("Expected user take tx_id not found"))?;
@@ -397,18 +409,17 @@ where
             );
         }
 
-        if confirmations >= self.btc_confirmations {
+        if confirmations >= btc_confirmations {
             debug!("Transaction confirmed with sufficient confirmations for flow_id: {flow_id}");
             flow.complete_step(&StepData::TransactionConfirmed(tx_status))?;
-            if self.tx_status_scheduler.is_scheduled(&flow_id) {
-                self.tx_status_scheduler.cancel(&flow_id);
+            if self.tx_status_scheduler.is_scheduled(&txid_key) {
+                self.tx_status_scheduler.cancel(&txid_key);
             }
         } else {
-            let min_conf = self.btc_confirmations;
             debug!(
-                "Bitcoin transaction {tx_id} missing confirmations ({confirmations}/{min_conf}) for flow_id {flow_id}, rescheduling"
+                "Bitcoin transaction {tx_id} missing confirmations ({confirmations}/{btc_confirmations}) for flow_id {flow_id}, rescheduling"
             );
-            self.tx_status_scheduler.schedule(flow_id, self.btc_status_retry_blocks);
+            self.tx_status_scheduler.schedule(txid_key, btc_status_retry_blocks);
         }
         Ok(())
     }
@@ -419,22 +430,24 @@ where
         }
 
         let ready = self.tx_status_scheduler.tick();
-        for flow_id in ready {
-            match self.pegout_flows.get_mut(&flow_id) {
+        for txid_key in ready {
+            match self.pegout_flows.get_mut(&txid_key) {
                 Some(flow) => {
                     if flow.current_step() == Steps::ConfirmUserTakeTransaction {
                         flow.request_transaction_status()?;
                     } else {
                         warn!(
                             "Mismatch current step for flow {} expected {:?} having {:?}",
-                            flow_id,
+                            flow.flow_id(),
                             Steps::ConfirmUserTakeTransaction,
                             flow.current_step()
                         );
                     }
                 }
                 None => {
-                    warn!("Skipping delayed transaction status request for unknown flow {flow_id}");
+                    warn!(
+                        "Skipping delayed transaction status request for unknown flow {txid_key}"
+                    );
                 }
             }
         }
@@ -489,7 +502,7 @@ where
         }
 
         let current_timestamp = block.block().timestamp().value();
-        let pending_flows: Vec<Uuid> = self.flows_pending_timeout.iter().copied().collect();
+        let pending_flows: Vec<FlowId> = self.flows_pending_timeout.iter().copied().collect();
 
         for flow_id in pending_flows {
             if let Some(flow) = self.pegout_flows.get(&flow_id) {
@@ -523,7 +536,7 @@ where
 
         for flow_id in expired_flows {
             info!(
-                "Advance funds timeout expired for flow_id: {flow_id} at timestamp: {current_timestamp}",
+                "Advance funds timeout expired for flow {flow_id} at timestamp: {current_timestamp}",
             );
             self.trigger_operator_take_for_flow(flow_id)?;
         }
@@ -533,11 +546,12 @@ where
 
     /// Trigger operator take for a flow when timeout expires
     /// This completes the `WaitUserTakeSignaturesReady` step with `TriggerOperatorTakeTimeout` data
-    fn trigger_operator_take_for_flow(&mut self, flow_id: Uuid) -> Result<()> {
+    fn trigger_operator_take_for_flow(&mut self, flow_id: FlowId) -> Result<()> {
         let flow = self
             .pegout_flows
             .get_mut(&flow_id)
             .ok_or_else(|| anyhow!("Flow not found for flow_id: {flow_id}"))?;
+        let protocol_id = flow.bitvmx_protocol_id();
 
         // Verify flow is still in the expected state
         if flow.current_step() != Steps::WaitUserTakeSignaturesReady {
@@ -555,7 +569,7 @@ where
         );
 
         // Remove the signature flow since we're bypassing it via timeout
-        if self.signature_flows.remove(&flow_id).is_some() {
+        if self.signature_flows.remove(&protocol_id.value()).is_some() {
             debug!("Removed signature flow for flow_id: {flow_id} due to timeout");
         }
 
@@ -573,7 +587,7 @@ where
     }
 
     /// Mark a pegout flow as failed and stop pending local work for it.
-    fn fail_flow(&mut self, flow_id: Uuid, reason: &str) -> Result<()> {
+    fn fail_flow(&mut self, flow_id: FlowId, reason: &str) -> Result<()> {
         if let Some(flow) = self.pegout_flows.get_mut(&flow_id) {
             flow.mark_failed(reason)?;
             warn!("Admin marked pegout flow {flow_id} as failed: {reason}");
@@ -586,10 +600,11 @@ where
         Ok(())
     }
 
-    fn schedule_register_pegout_retry(&mut self, flow_id: Uuid, attempt: i16, reason: &str) {
+    fn schedule_register_pegout_retry(&mut self, flow_id: FlowId, attempt: i16, reason: &str) {
         info!("{reason} for flow {flow_id} (attempt {attempt})");
-        self.unconfirmed_register_pegout.insert(flow_id, attempt);
-        self.register_pegout_retry_scheduler.schedule(flow_id, self.btc_status_retry_blocks);
+        let txid_key = flow_id;
+        self.unconfirmed_register_pegout.insert(txid_key, attempt);
+        self.register_pegout_retry_scheduler.schedule(txid_key, self.btc_status_retry_blocks);
     }
 
     fn handle_register_pegout_retry_tick(&mut self) {
@@ -597,16 +612,18 @@ where
             return;
         }
 
-        for flow_id in self.register_pegout_retry_scheduler.tick() {
-            let Some(attempt) = self.unconfirmed_register_pegout.remove(&flow_id) else {
-                warn!("No register_pegout retry state found for flow {flow_id}");
+        for txid_key in self.register_pegout_retry_scheduler.tick() {
+            let Some(attempt) = self.unconfirmed_register_pegout.remove(&txid_key) else {
+                warn!("No register_pegout retry state found for flow {txid_key}");
                 continue;
             };
 
-            let Some(flow) = self.pegout_flows.get_mut(&flow_id) else {
-                warn!("No pegout flow found for register_pegout retry: {flow_id}");
+            let Some(flow) = self.pegout_flows.get_mut(&txid_key) else {
+                warn!("No pegout flow found for register_pegout retry: {txid_key}");
                 continue;
             };
+
+            let flow_id = flow.flow_id();
 
             if flow.current_step() != Steps::RegisterPegout {
                 debug!(
@@ -636,15 +653,15 @@ where
     }
 
     fn cleanup_terminal_flow_state(&mut self) {
-        let terminal_flow_ids: Vec<_> = self
+        let terminal: Vec<(FlowId, BitVmxProtocolId)> = self
             .pegout_flows
-            .iter()
-            .filter(|(_, flow)| flow.is_terminal())
-            .flat_map(|(map_flow_id, flow)| [*map_flow_id, flow.flow_id()])
+            .values()
+            .filter(|flow| flow.is_terminal())
+            .map(|flow| (flow.flow_id(), flow.bitvmx_protocol_id()))
             .collect();
 
-        for flow_id in terminal_flow_ids {
-            self.signature_flows.remove(&flow_id);
+        for (flow_id, protocol_id) in terminal {
+            self.signature_flows.remove(&protocol_id.value());
             self.tx_status_scheduler.cancel(&flow_id);
             self.advance_funds_timeout_scheduler.cancel(&flow_id);
             self.register_pegout_retry_scheduler.cancel(&flow_id);
@@ -655,12 +672,20 @@ where
 
     fn cleanup_terminal_flows(&mut self) {
         self.cleanup_terminal_flow_state();
-        cleanup_flows_matching(
-            self.store.as_ref(),
-            StorePrefix::PegoutFlow,
-            &mut self.pegout_flows,
-            PegoutFlow::is_terminal,
-        );
+        // Delete terminal entries from the store directly via the typed
+        // constructor in `StoreKey`.
+        let terminal_flow_ids: Vec<FlowId> = self
+            .pegout_flows
+            .values()
+            .filter(|flow| flow.is_terminal())
+            .map(PegoutFlow::flow_id)
+            .collect();
+        for flow_id in terminal_flow_ids {
+            if let Err(err) = self.store.delete_flow(&StoreKey::PegoutFlow(flow_id.value())) {
+                error!("Failed to remove pegout flow {flow_id} from persistence: {err}");
+            }
+        }
+        self.pegout_flows.retain(|_, flow| !flow.is_terminal());
     }
 }
 
@@ -710,20 +735,23 @@ where
                     }
                 }
             }
-            OutgoingBitVMXApiMessages::Variable(flow_id, method, VariableTypes::String(data))
-                if matches!(method.as_str(), PEGOUT_ACCEPTED_NAME) =>
-            {
-                info!("Received PegOutAccepted variable from BitVMX for flow_id: {flow_id}");
+            OutgoingBitVMXApiMessages::Variable(
+                protocol_id,
+                method,
+                VariableTypes::String(data),
+            ) if matches!(method.as_str(), PEGOUT_ACCEPTED_NAME) => {
+                info!(
+                    "Received PegOutAccepted variable from BitVMX for protocol_id: {protocol_id}"
+                );
                 debug!("PegOutAccepted data: {data}");
                 let input: PegOutAccepted = serde_json::from_str::<PegOutAccepted>(data)?;
                 let flow = self
-                    .pegout_flows
-                    .get_mut(flow_id)
-                    .ok_or_else(|| anyhow!("Flow not found for flow_id: {flow_id}"))?;
+                    .pegout_flow_by_protocol_id(protocol_id)
+                    .ok_or_else(|| anyhow!("Flow not found for protocol_id: {protocol_id}"))?;
                 if flow.current_step() != Steps::PrepareUserTakeSetup {
                     bail!(
                         "Mismatch current step for flow {} expected {:?} having {:?}",
-                        flow_id,
+                        flow.flow_id(),
                         Steps::PrepareUserTakeSetup,
                         flow.current_step()
                     );
@@ -736,6 +764,8 @@ where
                     nonce: input.user_take_nonce.clone(),
                     signature: input.user_take_signature,
                 };
+                let pegout_flow_id = flow.flow_id();
+                let pegout_log_id = flow.log_id().to_string();
                 flow.complete_step(&StepData::PegoutAccepted(input))?;
 
                 // FORCE_ADVANCE: If this operator's address matches the targeted address,
@@ -749,7 +779,7 @@ where
                                 == force_addr.trim().to_lowercase();
                             if matches {
                                 warn!(
-                                    "[FORCE_ADVANCE] Skipping signature flow for flow_id: {flow_id} - \
+                                    "[FORCE_ADVANCE] Skipping signature flow for flow_id: {pegout_flow_id} - \
                                      operator {my_addr} will not sign, timeout will trigger advance funds",
                                 );
                             }
@@ -757,21 +787,22 @@ where
                         });
 
                 if !skip_signatures {
-                    let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(*flow_id);
-                    btc_sig_subflow.start_signature_flow(*flow_id, &register_input)?;
-                    self.signature_flows.insert(*flow_id, btc_sig_subflow);
+                    let mut btc_sig_subflow =
+                        self.btc_sig_subflow_factory.create_flow(*protocol_id, pegout_log_id);
+                    btc_sig_subflow.start_signature_flow(*protocol_id, &register_input)?;
+                    self.signature_flows.insert(*protocol_id, btc_sig_subflow);
                 }
 
                 // Schedule advance funds timeout: 2 hours from now
                 // We'll schedule it when we process the next block with its timestamp
                 info!(
-                    "Pegout accepted for flow_id: {flow_id}, will schedule advance funds timeout on next block",
+                    "Pegout accepted for flow_id: {pegout_flow_id}, will schedule advance funds timeout on next block",
                 );
-                self.flows_pending_timeout.insert(*flow_id);
+                self.flows_pending_timeout.insert(pegout_flow_id);
             }
             OutgoingBitVMXApiMessages::SetupCompleted(program_id) => {
-                if self.pegout_flows.contains_key(program_id) {
-                    info!("Pegout setup was completed: flow_id={program_id}");
+                if self.pegout_flow_by_protocol_id(program_id).is_some() {
+                    info!("Pegout setup was completed: protocol_id={program_id}");
                 } else {
                     trace!("Ignoring BitVMX SetupCompleted for unknown program_id: {program_id}");
                 }
@@ -781,20 +812,20 @@ where
                     anyhow!("Received SPVProof event for tx_id {tx_id} without proof")
                 })?;
 
-                // First pass: find flow_id and verify step (immutable borrow)
-                let Some(flow_id) = self.pegout_flows.iter().find_map(|(flow_id, flow)| {
-                    (flow.get_user_take_txid() == Some(*tx_id)).then_some(*flow_id)
+                // First pass: find flow and verify step (immutable borrow)
+                let Some((txid_key, flow_id)) = self.pegout_flows.iter().find_map(|(key, flow)| {
+                    (flow.get_user_take_txid() == Some(*tx_id)).then_some((*key, flow.flow_id()))
                 }) else {
                     trace!("Ignoring SPV proof for tx_id {tx_id} without matching flow");
                     return Ok(());
                 };
 
                 // Verify step before proceeding
-                let current_step = self
-                    .pegout_flows
-                    .get(&flow_id)
-                    .map(PegoutFlow::current_step)
-                    .ok_or_else(|| anyhow!("Flow not found for flow_id {flow_id}"))?;
+                let current_step =
+                    self.pegout_flows
+                        .get(&txid_key)
+                        .map(PegoutFlow::current_step)
+                        .ok_or_else(|| anyhow!("Flow not found for flow_id {flow_id}"))?;
 
                 if current_step != Steps::RequestUserTakeSpvProof {
                     bail!(
@@ -809,14 +840,14 @@ where
                 // which calls invoke_contract_safe to verify Native Bridge confirmations
                 let flow = self
                     .pegout_flows
-                    .get_mut(&flow_id)
+                    .get_mut(&txid_key)
                     .ok_or_else(|| anyhow!("Flow not found for flow_id {flow_id}"))?;
 
                 if let Err(err) = flow.complete_step(&StepData::SpvProof(spv_proof)) {
                     if is_missing_native_bridge_confirmations(&err) {
                         let attempt = self
                             .unconfirmed_register_pegout
-                            .get(&flow_id)
+                            .get(&txid_key)
                             .copied()
                             .unwrap_or(0)
                             .saturating_add(1);
@@ -959,7 +990,7 @@ mod tests {
 
     use super::*;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
-    use crate::flows::pegout::pegout_flow::FlowContext;
+    use crate::flows::pegout::pegout_flow::{FlowContext, flow_id_from_pegout_requested_tx_hash};
     use crate::store::MockCoordinatorStoreApi;
 
     type MockBitVmxBroker =
@@ -1025,15 +1056,18 @@ mod tests {
             Self { processor, contracts, broker, store, rt_sync }
         }
 
-        fn create_flow_at_done(&self, flow_id: Uuid) -> TestPegoutFlow {
+        fn create_flow_at_done(&self, flow_id: FlowId) -> TestPegoutFlow {
             let state = State {
                 flow_id,
+                log_id: String::new(),
                 step: Steps::Done,
                 ctx: FlowContext {
                     pegout_requested: create_fake_pegout_requested(),
-                    request_pegout_tx_hash:
-                        "0xfeedfacecafebeef000000000000000000000000000000000000000000000000"
-                            .to_string(),
+                    pegout_requested_tx_hash: TxHash::from(H256::zero()),
+                    bitvmx_protocol_id: common::msg_broker::bitvmx_types::user_take_protocol_id(
+                        Uuid::nil(),
+                        0,
+                    ),
                     my_p2p_address: None,
                     committee_output: None,
                     peg_out_accepted: Some(fake_pegout_accepted(test_txid([3u8; 32]))),
@@ -1056,15 +1090,18 @@ mod tests {
             )
         }
 
-        fn create_flow_at_step(&self, flow_id: Uuid, step: Steps) -> TestPegoutFlow {
+        fn create_flow_at_step(&self, flow_id: FlowId, step: Steps) -> TestPegoutFlow {
             let state = State {
                 flow_id,
+                log_id: String::new(),
                 step,
                 ctx: FlowContext {
                     pegout_requested: create_fake_pegout_requested(),
-                    request_pegout_tx_hash:
-                        "0xfeedfacecafebeef000000000000000000000000000000000000000000000000"
-                            .to_string(),
+                    pegout_requested_tx_hash: TxHash::from(H256::zero()),
+                    bitvmx_protocol_id: common::msg_broker::bitvmx_types::user_take_protocol_id(
+                        Uuid::nil(),
+                        0,
+                    ),
                     my_p2p_address: None,
                     committee_output: None,
                     peg_out_accepted: Some(fake_pegout_accepted(test_txid([3u8; 32]))),
@@ -1092,6 +1129,7 @@ mod tests {
                 &self.contracts,
                 &self.rt_sync,
                 flow_id,
+                String::new(),
                 5, // required_confirmations for tests
             )
         }
@@ -1171,12 +1209,14 @@ mod tests {
     #[test]
     fn test_signature_completion_after_timeout_does_not_crash() {
         let mut harness = TestHarness::new();
-        let flow_id = Uuid::new_v4();
+        let flow_id = flow_id_from_pegout_requested_tx_hash(TxHash::from(H256::random()));
 
+        let protocol_uuid =
+            common::msg_broker::bitvmx_types::user_take_protocol_id(Uuid::nil(), 0).value();
         let pegout_flow = harness.create_flow_at_done(flow_id);
         harness.processor.pegout_flows.insert(flow_id, pegout_flow);
-        let signature_flow = harness.create_completed_sig_flow(flow_id);
-        harness.processor.signature_flows.insert(flow_id, signature_flow);
+        let signature_flow = harness.create_completed_sig_flow(protocol_uuid);
+        harness.processor.signature_flows.insert(protocol_uuid, signature_flow);
 
         let block_generator = FakeBlockGenerator::new(None, Arc::new(AtomicBool::new(false)), None);
         let block = RskBlockAndUncles::new_no_uncles(
@@ -1188,18 +1228,18 @@ mod tests {
         let result = harness.processor.process_unhandled_confirmed_sig_flow_events(&block);
         assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
         assert_eq!(harness.processor.pegout_flows[&flow_id].current_step(), Steps::Done);
-        assert!(!harness.processor.signature_flows.contains_key(&flow_id));
+        assert!(!harness.processor.signature_flows.contains_key(&protocol_uuid));
 
         // Idempotency: a second pass must also succeed and not reintroduce state
         let result = harness.processor.process_unhandled_confirmed_sig_flow_events(&block);
         assert!(result.is_ok(), "second call expected Ok, got: {:?}", result.err());
-        assert!(!harness.processor.signature_flows.contains_key(&flow_id));
+        assert!(!harness.processor.signature_flows.contains_key(&protocol_uuid));
     }
 
     #[test]
     fn handle_pegout_registered_delivers_to_confirm_user_take_transaction() {
         let mut harness = TestHarness::new();
-        let flow_id = Uuid::new_v4();
+        let flow_id = flow_id_from_pegout_requested_tx_hash(TxHash::from(H256::random()));
         harness.processor.pegout_flows.insert(
             flow_id,
             harness.create_flow_at_step(flow_id, Steps::ConfirmUserTakeTransaction),
@@ -1223,7 +1263,7 @@ mod tests {
     #[test]
     fn handle_pegout_registered_delivers_to_request_user_take_spv_proof() {
         let mut harness = TestHarness::new();
-        let flow_id = Uuid::new_v4();
+        let flow_id = flow_id_from_pegout_requested_tx_hash(TxHash::from(H256::random()));
         harness
             .processor
             .pegout_flows
@@ -1247,12 +1287,14 @@ mod tests {
     #[test]
     fn cleanup_terminal_flows_removes_pegout_flow_and_side_state() {
         let mut harness = TestHarness::new();
-        let flow_id = Uuid::new_v4();
+        let flow_id = flow_id_from_pegout_requested_tx_hash(TxHash::from(H256::from_low_u64_be(1)));
+        let protocol_uuid =
+            common::msg_broker::bitvmx_types::user_take_protocol_id(Uuid::nil(), 0).value();
         harness.processor.pegout_flows.insert(flow_id, harness.create_flow_at_done(flow_id));
         harness
             .processor
             .signature_flows
-            .insert(flow_id, harness.create_completed_sig_flow(flow_id));
+            .insert(protocol_uuid, harness.create_completed_sig_flow(protocol_uuid));
         harness.processor.tx_status_scheduler.schedule(flow_id, 1);
         harness.processor.advance_funds_timeout_scheduler.schedule(flow_id, 100, 600);
         harness.processor.register_pegout_retry_scheduler.schedule(flow_id, 1);
@@ -1262,7 +1304,7 @@ mod tests {
         harness.processor.cleanup_terminal_flows();
 
         assert!(!harness.processor.pegout_flows.contains_key(&flow_id));
-        assert!(!harness.processor.signature_flows.contains_key(&flow_id));
+        assert!(!harness.processor.signature_flows.contains_key(&protocol_uuid));
         assert!(!harness.processor.tx_status_scheduler.is_scheduled(&flow_id));
         assert!(!harness.processor.advance_funds_timeout_scheduler.is_scheduled(&flow_id));
         assert!(!harness.processor.register_pegout_retry_scheduler.is_scheduled(&flow_id));

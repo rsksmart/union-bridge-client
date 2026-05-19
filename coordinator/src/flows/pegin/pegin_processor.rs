@@ -6,8 +6,9 @@ use alloy_primitives::FixedBytes;
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::Txid;
 use common::msg_broker::bitvmx_types::{
-    BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PeginAcceptedMessage,
-    RSK_PEGIN_TAG, TransactionStatus, VariableTypes,
+    BitVmxProtocolId, BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages,
+    PeginAcceptedMessage, RSK_PEGIN_TAG, TransactionStatus, VariableTypes,
+    accept_pegin_protocol_id,
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
@@ -25,12 +26,11 @@ use crate::flows::btc_signature::btc_signature_subflow::{
     BtcSignatureSubFlowFactoryApi,
 };
 use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
-use crate::flows::common::{GlobalContext, Signaling};
-use crate::flows::pegin::pegin_flow::{PeginFlow, State, StepData, Steps};
-use crate::flows::pegin::utils::get_temp_pegin_pid;
-use crate::store::{
-    CoordinatorStoreApi, StoreKey, StorePrefix, cleanup_flows_matching, restore_flows,
+use crate::flows::common::{FlowId, GlobalContext, Signaling};
+use crate::flows::pegin::pegin_flow::{
+    PeginFlow, State, StepData, Steps, flow_id_from_request_pegin_txid,
 };
+use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix, restore_flows};
 use crate::types::{
     AdminRequest, AllOperatorTakeTxidsAddedEvent, EventStatus, FlowKind, PeginAcceptedEvent,
     PeginRequestedEvent, RegisterSignaturesBitVmxData, RskPegManagerEvents, TickScheduler,
@@ -64,12 +64,16 @@ where
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
     btc_sig_subflow_factory: FactoryBSF,
-    pegin_flows: HashMap<Uuid, PeginFlow<CG, BC, S>>,
+    /// Pegin flows are keyed by their canonical id (`FlowId`).
+    pegin_flows: HashMap<FlowId, PeginFlow<CG, BC, S>>,
+    /// BTC signature subflows are keyed by the `BitVMX` protocol id — that's
+    /// what the subflow API consumes and what `BitVMX` events for the
+    /// signature program carry.
     signature_flows: HashMap<Uuid, BSF>,
     global_context: GlobalContext,
     blockchain_view: BlockchainView,
     events_confirming: HashMap<String, ConfirmableEventWithData>,
-    tx_status_scheduler: TickScheduler<Uuid>,
+    tx_status_scheduler: TickScheduler<FlowId>,
     pegin_request_tracker: HashSet<Txid>,
     pending_pegin_requested: HashMap<Txid, PeginRequestedEvent>,
     pending_all_operator_take_txids_added: HashMap<Txid, AllOperatorTakeTxidsAddedEvent>,
@@ -77,8 +81,8 @@ where
     // For retry logic when native bridge lacks confirmations
     unconfirmed_pegin_requests: HashMap<String, (BtcTxSPVProof, i16)>,
     pegin_retry_scheduler: TickScheduler<String>,
-    unconfirmed_accept_pegin: HashMap<Uuid, i16>,
-    accept_pegin_retry_scheduler: TickScheduler<Uuid>,
+    unconfirmed_accept_pegin: HashMap<FlowId, i16>,
+    accept_pegin_retry_scheduler: TickScheduler<FlowId>,
     store: Rc<S>,
     signaling: Rc<Signaling>,
     native_bridge_verifier: NativeBridgeVerifier<CG>,
@@ -164,10 +168,35 @@ where
             )
         };
 
-        processor.pegin_flows = restore_flows(store.as_ref(), StorePrefix::PeginFlow, flow_factory)
-            .expect("Failed to load flows from store");
+        // restore_flows returns HashMap<Uuid, _> keyed by the opaque store
+        // uuid; re-index by the canonical pegin id (request-pegin BTC txid).
+        let restored: HashMap<Uuid, PeginFlow<CG, BC, S>> =
+            restore_flows(store.as_ref(), StorePrefix::PeginFlow, flow_factory)
+                .expect("Failed to load flows from store");
+        processor.pegin_flows = restored.into_values().map(|flow| (flow.flow_id(), flow)).collect();
 
         processor
+    }
+
+    /// Find a pegin flow by the `BitVMX` protocol id `BitVMX` events carry.
+    /// O(n) over the in-memory map, but n is small (concurrent pegins per
+    /// committee) and `BitVMX` events are infrequent.
+    /// Look up by the raw `Uuid` `BitVMX` events carry. The argument is the
+    /// raw uuid because `BitVMX` event payloads use the plain type; the
+    /// comparison unwraps the typed protocol id internally.
+    fn pegin_flow_by_protocol_id(
+        &mut self,
+        protocol_id: &Uuid,
+    ) -> Option<&mut PeginFlow<CG, BC, S>> {
+        self.pegin_flows
+            .values_mut()
+            .find(|flow| flow.bitvmx_protocol_id_opt().map(|p| p.value()) == Some(*protocol_id))
+    }
+
+    fn pegin_flow_by_protocol_id_ref(&self, protocol_id: &Uuid) -> Option<&PeginFlow<CG, BC, S>> {
+        self.pegin_flows
+            .values()
+            .find(|flow| flow.bitvmx_protocol_id_opt().map(|p| p.value()) == Some(*protocol_id))
     }
 
     /// Handle `PeginRequested` event by finding and updating existing flow.
@@ -183,41 +212,30 @@ where
             "Handling PeginRequested event with committee id {committee_id}, as member I should respond"
         );
 
-        // Get the Bitcoin tx_id to find existing flow
         let btc_tx_id = TxIdParser::fb_32_to_txid(event.requestPeginTxid);
-        let temp_flow_id = get_temp_pegin_pid(btc_tx_id);
+        let flow_id = flow_id_from_request_pegin_txid(btc_tx_id);
 
-        // Find the existing flow that should have been created from PeginTransactionFound
-        if let Some(existing_flow) = self.pegin_flows.get_mut(&temp_flow_id) {
-            info!(
-                "Found existing pegin flow {temp_flow_id} for Bitcoin tx: {btc_tx_id}, completing PeginRequested step"
+        // Protocol id should be unique; if it isn't, that's an upstream bug we are flagging here.
+        let committee_uuid = Uuid::from_u128(*committee_id);
+        let slot_index = usize::try_from(event.streamPosition.slotId)
+            .map_err(|_| anyhow!("Slot ID too large for usize"))?;
+        let expected_pid = accept_pegin_protocol_id(committee_uuid, slot_index);
+        if let Some((other_id, _)) = self.pegin_flows.iter().find(|(fid, flow)| {
+            **fid != flow_id && flow.bitvmx_protocol_id_opt() == Some(expected_pid)
+        }) {
+            bail!(
+                "PeginFlow {flow_id}: another flow ({other_id}) already holds BitVMX protocol id {expected_pid}; refusing PeginRequested"
             );
+        }
 
-            // Complete the step - this will trigger ID migration inside the flow and persist with new ID
+        if let Some(existing_flow) = self.pegin_flows.get_mut(&flow_id) {
+            info!("Completing PeginRequested step for pegin flow {}", existing_flow.flow_id());
+
             let step_data = StepData::PeginRequested(event.clone());
             existing_flow.complete_step(&step_data)?;
-
-            // Get the new official flow ID after migration
-            let official_flow_id = existing_flow.flow_id();
-
-            // Move the flow to the new key in our map
-            let flow = self
-                .pegin_flows
-                .remove(&temp_flow_id)
-                .expect("Flow must exist as we just accessed it via get_mut");
-            self.pegin_flows.insert(official_flow_id, flow);
-
-            // Clean up the old temp entry from storage
-            if let Err(e) = self.store.delete_flow(&StoreKey::PeginFlow(temp_flow_id)) {
-                error!("Failed to delete temp flow state {temp_flow_id}: {e}");
-            }
-
-            info!(
-                "Successfully migrated flow from temp ID {temp_flow_id} to official ID {official_flow_id}"
-            );
         } else {
             warn!(
-                "No existing temp flow found for Bitcoin tx: {btc_tx_id} (temp_id: {temp_flow_id}). This should not happen if PeginTransactionFound was processed."
+                "No existing pegin flow found for Bitcoin tx: {btc_tx_id}. This should not happen if PeginTransactionFound was processed."
             );
         }
 
@@ -278,10 +296,10 @@ where
                 }
                 info!("Processing confirmed PeginRequested event: {pr:?}");
                 let btc_tx_id = TxIdParser::fb_32_to_txid(pr.inner.requestPeginTxid);
-                let temp_flow_id = get_temp_pegin_pid(btc_tx_id);
+                let flow_id = flow_id_from_request_pegin_txid(btc_tx_id);
                 let should_buffer = self
                     .pegin_flows
-                    .get(&temp_flow_id)
+                    .get(&flow_id)
                     .is_none_or(|flow| flow.current_step() != Steps::WaitPeginRequested);
 
                 if should_buffer {
@@ -326,9 +344,13 @@ where
 
         if let Some(flow) = flow_with_bitvmx_accept_pegin {
             let flow_id = flow.flow_id();
+            let protocol_id = flow
+                .bitvmx_protocol_id_opt()
+                .ok_or_else(|| anyhow!("bitvmx_protocol_id not set for flow {flow_id}"))?;
+            let protocol_uuid = protocol_id.value();
 
             // Start the BTC signature flow if not already started
-            if self.signature_flows.contains_key(&flow_id) {
+            if self.signature_flows.contains_key(&protocol_uuid) {
                 error!("BTC signature flow already started: flow_id={flow_id}");
             } else {
                 info!("Starting BTC signature flow: flow_id={flow_id}");
@@ -337,8 +359,6 @@ where
                     anyhow!("PeginAcceptedMessage not found for flow_id: {flow_id}.")
                 })?;
 
-                // Note: v0.2.0 contracts - initSignatures is called with acceptPeginTxid (the transaction ID),
-                // not the signatureHash. So we must use acceptPeginTxid for addMemberNonce.
                 let hash_to_sign =
                     Hash256::from(TxIdParser::txid_to_fb_32(event_accept_pegin_txid));
                 let register_input = RegisterSignaturesBitVmxData {
@@ -347,10 +367,12 @@ where
                     signature: pegin_accepted.accept_pegin_signature,
                 };
 
-                let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(flow_id);
-                btc_sig_subflow.start_signature_flow(flow_id, &register_input)?;
+                let mut btc_sig_subflow = self
+                    .btc_sig_subflow_factory
+                    .create_flow(protocol_uuid, flow.log_id().to_string());
+                btc_sig_subflow.start_signature_flow(protocol_uuid, &register_input)?;
 
-                self.signature_flows.insert(flow_id, btc_sig_subflow);
+                self.signature_flows.insert(protocol_uuid, btc_sig_subflow);
 
                 // Complete the wait step to move to the next state
                 let step_data = StepData::AllOperatorTakeTxidsAdded;
@@ -430,13 +452,13 @@ where
             }
         }
 
-        for flow_id in &flows_to_dispatch {
+        for protocol_id in &flows_to_dispatch {
             // Always remove the signature flow when it's done
-            self.signature_flows.remove(flow_id);
+            self.signature_flows.remove(protocol_id);
 
-            let Some(flow) = self.pegin_flows.get(flow_id) else {
+            let Some(flow) = self.pegin_flow_by_protocol_id_ref(protocol_id) else {
                 warn!(
-                    "Signature flow done for unknown pegin flow_id: {flow_id}. Skipping dispatch step"
+                    "Signature flow done for unknown pegin protocol_id: {protocol_id}. Skipping dispatch step"
                 );
                 continue;
             };
@@ -444,7 +466,8 @@ where
             // Only complete the step if the flow is still waiting for signatures
             if flow.current_step() != Steps::WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint {
                 warn!(
-                    "Signature flow completed for flow_id: {flow_id} but flow is at step {:?}, expected {:?}. Skipping dispatch step.",
+                    "Signature flow completed for flow_id: {} but flow is at step {:?}, expected {:?}. Skipping dispatch step.",
+                    flow.flow_id(),
                     flow.current_step(),
                     Steps::WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint
                 );
@@ -453,9 +476,9 @@ where
 
             let accept_pegin_txid = flow.get_accept_pegin_txid_from_bitvmx_var();
 
-            let Some(flow) = self.pegin_flows.get_mut(flow_id) else {
+            let Some(flow) = self.pegin_flow_by_protocol_id(protocol_id) else {
                 warn!(
-                    "Signature flow done for unknown pegin flow_id: {flow_id}. Skipping dispatch step"
+                    "Signature flow done for unknown pegin protocol_id: {protocol_id}. Skipping dispatch step"
                 );
                 continue;
             };
@@ -473,11 +496,13 @@ where
 
     fn handle_transaction_status_received(
         &mut self,
-        flow_id: &Uuid,
+        protocol_id: &Uuid,
         tx_status: TransactionStatus,
     ) -> Result<()> {
-        let Some(flow) = self.pegin_flows.get_mut(flow_id) else {
-            trace!("Ignoring BitVMX Transaction event for unknown flow_id: {flow_id}");
+        let btc_confirmations = self.btc_confirmations;
+        let btc_status_retry_blocks = self.btc_status_retry_blocks;
+        let Some(flow) = self.pegin_flow_by_protocol_id(protocol_id) else {
+            trace!("Ignoring BitVMX Transaction event for unknown protocol_id: {protocol_id}");
             return Ok(());
         };
 
@@ -502,7 +527,7 @@ where
             ));
         }
 
-        if confirmations >= self.btc_confirmations {
+        if confirmations >= btc_confirmations {
             debug!("Transaction confirmed with sufficient confirmations for flow_id: {flow_id}");
             let step_data = StepData::AcceptPeginTransactionConfirmed(tx_status);
             flow.complete_step(&step_data)?;
@@ -510,11 +535,10 @@ where
                 self.tx_status_scheduler.cancel(&flow_id);
             }
         } else {
-            let min_conf = self.btc_confirmations;
             debug!(
-                "Bitcoin transaction {tx_id} missing confirmations ({confirmations}/{min_conf}) for flow_id {flow_id}, rescheduling"
+                "Bitcoin transaction {tx_id} missing confirmations ({confirmations}/{btc_confirmations}) for flow_id {flow_id}, rescheduling"
             );
-            self.tx_status_scheduler.schedule(flow_id, self.btc_status_retry_blocks);
+            self.tx_status_scheduler.schedule(flow_id, btc_status_retry_blocks);
         }
 
         Ok(())
@@ -549,41 +573,12 @@ where
         Ok(())
     }
 
-    /// Resolve the temp and official ids that can point to the same pegin flow.
-    /// If the relationship is not in memory, fall back to the supplied id.
-    fn linked_pegin_flow_ids(&self, flow_id: Uuid) -> Vec<Uuid> {
-        let mut ids = vec![flow_id];
-        let flow = self.pegin_flows.get(&flow_id).or_else(|| {
-            self.pegin_flows.values().find(|flow| {
-                let ctx = &flow.get_state().ctx;
-                ctx.temp_flow_id == Some(flow_id) || ctx.official_flow_id == Some(flow_id)
-            })
-        });
-
-        if let Some(flow) = flow {
-            let ctx = &flow.get_state().ctx;
-            for id in [ctx.temp_flow_id, ctx.official_flow_id].into_iter().flatten() {
-                if !ids.contains(&id) {
-                    ids.push(id);
-                }
-            }
-        }
-        ids
-    }
-
     /// Mark a pegin flow as failed and stop pending local work for it.
-    fn fail_flow(&mut self, flow_id: Uuid, reason: &str) -> Result<()> {
-        let flow_ids_to_fail = self.linked_pegin_flow_ids(flow_id);
-
-        let mut marked = false;
-        for id in &flow_ids_to_fail {
-            if let Some(flow) = self.pegin_flows.get_mut(id) {
-                flow.mark_failed(reason)?;
-                marked = true;
-            }
-        }
-
-        if marked {
+    ///
+    /// Reachable at any step, including before Setup.
+    fn fail_flow(&mut self, flow_id: FlowId, reason: &str) -> Result<()> {
+        if let Some(flow) = self.pegin_flows.get_mut(&flow_id) {
+            flow.mark_failed(reason)?;
             warn!("Admin marked pegin flow {flow_id} as failed: {reason}");
         } else {
             warn!("Admin requested fail for unknown pegin flow {flow_id}: {reason}");
@@ -606,7 +601,7 @@ where
         self.pegin_retry_scheduler.schedule(block_hash, self.btc_status_retry_blocks);
     }
 
-    fn schedule_accept_pegin_retry(&mut self, flow_id: Uuid, attempt: i16, reason: &str) {
+    fn schedule_accept_pegin_retry(&mut self, flow_id: FlowId, attempt: i16, reason: &str) {
         info!("{reason} for flow {flow_id} (attempt {attempt})");
         self.unconfirmed_accept_pegin.insert(flow_id, attempt);
         self.accept_pegin_retry_scheduler.schedule(flow_id, self.btc_status_retry_blocks);
@@ -794,15 +789,12 @@ where
     }
 
     fn handle_pegin_transaction_found(&mut self, tx_id: Txid) -> Result<()> {
-        let temp_flow_id = get_temp_pegin_pid(tx_id);
-        if self.pegin_request_tracker.contains(&tx_id)
-            || self.pegin_flows.contains_key(&temp_flow_id)
-        {
+        let flow_id = flow_id_from_request_pegin_txid(tx_id);
+        if self.pegin_request_tracker.contains(&tx_id) || self.pegin_flows.contains_key(&flow_id) {
             debug!("Ignoring duplicate BitVMX pegin event for tx_id={tx_id}");
             return Ok(());
         }
 
-        // Create a new pegin flow from Bitcoin transaction
         let mut flow = PeginFlow::new(
             Rc::clone(&self.contracts_gateway),
             self.rt_sync.clone(),
@@ -813,28 +805,25 @@ where
             self.native_bridge_verifier.clone(),
         );
 
-        info!("Created new pegin flow {temp_flow_id} from Bitcoin transaction: {tx_id}");
+        info!("Created new pegin flow {flow_id} from Bitcoin transaction: {tx_id}");
 
-        // Advance the flow from PeginTransactionFound to RequestPeginSpvProof
         let step_data = StepData::PeginTransactionFound;
         flow.complete_step(&step_data)?;
 
-        self.pegin_flows.insert(temp_flow_id, flow);
+        self.pegin_flows.insert(flow_id, flow);
         self.pegin_request_tracker.insert(tx_id);
 
         Ok(())
     }
 
-    fn request_pegin_flow_id(&self, tx_id: &Txid) -> Option<Uuid> {
-        self.pegin_flows.iter().find_map(|(flow_id, flow)| {
-            if flow.current_step() == Steps::RequestPeginSpvProof
-                && flow.get_state().ctx.request_pegin_btc_tx_id == Some(*tx_id)
-            {
-                Some(*flow_id)
-            } else {
-                None
-            }
-        })
+    /// Look up a pegin flow that's currently in
+    /// `RequestPeginSpvProof`. The argument is the request-pegin BTC txid,
+    /// which is also the flow's `HashMap` key — so this is just a guarded
+    /// `get`.
+    fn request_pegin_flow_id(&self, tx_id: &Txid) -> Option<FlowId> {
+        let flow_id = flow_id_from_request_pegin_txid(*tx_id);
+        let flow = self.pegin_flows.get(&flow_id)?;
+        (flow.current_step() == Steps::RequestPeginSpvProof).then_some(flow_id)
     }
 
     fn handle_spv_proof_for_request_pegin(
@@ -890,8 +879,8 @@ where
             .find(|flow| flow.get_accept_pegin_txid_from_bitvmx_var() == Some(*tx_id));
 
         if let Some(flow) = flow_opt {
-            info!("Handling accept pegin SPV proof: flow_id={}, tx_id={}", flow.flow_id(), tx_id);
             let flow_id = flow.flow_id();
+            info!("Handling accept pegin SPV proof: flow_id={flow_id}, tx_id={tx_id}");
             let step_data = StepData::AcceptPeginSpvProof(spv_proof);
             if let Err(err) = flow.complete_step(&step_data) {
                 if is_missing_native_bridge_confirmations(&err) {
@@ -922,61 +911,59 @@ where
     }
 
     fn cleanup_terminal_flow_state(&mut self) {
-        let terminal_flows: Vec<_> = self
+        let terminal: Vec<(FlowId, Option<BitVmxProtocolId>, Txid)> = self
             .pegin_flows
-            .iter()
-            .filter(|(_, flow)| flow.is_terminal())
-            .map(|(map_flow_id, flow)| {
-                let state = flow.get_state();
-                let mut flow_ids = vec![*map_flow_id, flow.flow_id()];
-
-                for flow_id in
-                    [state.ctx.temp_flow_id, state.ctx.official_flow_id].into_iter().flatten()
-                {
-                    if !flow_ids.contains(&flow_id) {
-                        flow_ids.push(flow_id);
-                    }
-                }
-
-                (flow_ids, state.ctx.request_pegin_btc_tx_id)
+            .values()
+            .filter(|flow| flow.is_terminal())
+            .map(|flow| {
+                (flow.flow_id(), flow.bitvmx_protocol_id_opt(), flow.request_pegin_btc_tx_id())
             })
             .collect();
 
-        for (flow_ids, request_pegin_btc_tx_id) in terminal_flows {
-            for flow_id in flow_ids {
-                self.signature_flows.remove(&flow_id);
-                self.tx_status_scheduler.cancel(&flow_id);
-                self.accept_pegin_retry_scheduler.cancel(&flow_id);
-                self.unconfirmed_accept_pegin.remove(&flow_id);
+        for (flow_id, protocol_id, request_pegin_btc_tx_id) in terminal {
+            if let Some(protocol_id) = protocol_id {
+                self.signature_flows.remove(&protocol_id.value());
             }
+            self.tx_status_scheduler.cancel(&flow_id);
+            self.accept_pegin_retry_scheduler.cancel(&flow_id);
+            self.unconfirmed_accept_pegin.remove(&flow_id);
 
-            if let Some(tx_id) = request_pegin_btc_tx_id {
-                self.pegin_request_tracker.remove(&tx_id);
-                self.pending_pegin_requested.remove(&tx_id);
+            self.pegin_request_tracker.remove(&request_pegin_btc_tx_id);
+            self.pending_pegin_requested.remove(&request_pegin_btc_tx_id);
 
-                let retry_keys: Vec<_> = self
-                    .unconfirmed_pegin_requests
-                    .iter()
-                    .filter(|(_, (spv_proof, _))| spv_proof.tx.compute_txid() == tx_id)
-                    .map(|(key, _)| key.clone())
-                    .collect();
+            let retry_keys: Vec<_> = self
+                .unconfirmed_pegin_requests
+                .iter()
+                .filter(|(_, (spv_proof, _))| {
+                    spv_proof.tx.compute_txid() == request_pegin_btc_tx_id
+                })
+                .map(|(key, _)| key.clone())
+                .collect();
 
-                for key in retry_keys {
-                    self.pegin_retry_scheduler.cancel(&key);
-                    self.unconfirmed_pegin_requests.remove(&key);
-                }
+            for key in retry_keys {
+                self.pegin_retry_scheduler.cancel(&key);
+                self.unconfirmed_pegin_requests.remove(&key);
             }
         }
     }
 
     fn cleanup_terminal_flows(&mut self) {
         self.cleanup_terminal_flow_state();
-        cleanup_flows_matching(
-            self.store.as_ref(),
-            StorePrefix::PeginFlow,
-            &mut self.pegin_flows,
-            PeginFlow::is_terminal,
-        );
+        // FlowId is a Uuid derived from the request-pegin txid and is also the
+        // store key. Delete terminal entries directly via the flow id.
+        let terminal_flow_ids: Vec<FlowId> = self
+            .pegin_flows
+            .values()
+            .filter(|flow| flow.is_terminal())
+            .map(PeginFlow::flow_id)
+            .collect();
+        for flow_id in terminal_flow_ids {
+            if let Err(err) = self.store.delete_flow(&StoreKey::PeginFlow(flow_id.value())) {
+                error!("Failed to remove pegin flow {flow_id} from persistence: {err}");
+            }
+        }
+        // Drop terminal entries from the in-memory map.
+        self.pegin_flows.retain(|_, flow| !flow.is_terminal());
     }
 }
 
@@ -1070,22 +1057,23 @@ where
                 }
             }
             // Handle PeginAccepted variable from BitVMX
-            OutgoingBitVMXApiMessages::Variable(flow_id, method, VariableTypes::String(data))
-                if matches!(method.as_str(), PEGIN_ACCEPTED_INPUT_MSG) =>
-            {
-                info!("Received PeginAccepted variable from BitVMX for flow_id: {flow_id}");
+            OutgoingBitVMXApiMessages::Variable(
+                protocol_id,
+                method,
+                VariableTypes::String(data),
+            ) if matches!(method.as_str(), PEGIN_ACCEPTED_INPUT_MSG) => {
+                info!("Received PeginAccepted variable from BitVMX for protocol_id: {protocol_id}");
                 debug!("PeginAccepted data: {data}");
                 let pegin_accepted: PeginAcceptedMessage = serde_json::from_str(data)?;
                 let accept_pegin_txid = {
                     let flow = self
-                        .pegin_flows
-                        .get_mut(flow_id)
-                        .ok_or_else(|| anyhow!("Flow not found for flow_id: {flow_id}"))?;
+                        .pegin_flow_by_protocol_id(protocol_id)
+                        .ok_or_else(|| anyhow!("Flow not found for protocol_id: {protocol_id}"))?;
 
                     if flow.current_step() != Steps::PreparePeginSetup {
                         return Err(anyhow!(
                             "Mismatch current step for flow {} expected {:?} having {:?}",
-                            flow_id,
+                            flow.flow_id(),
                             Steps::PreparePeginSetup,
                             flow.current_step()
                         ));
@@ -1100,13 +1088,16 @@ where
                     self.replay_pending_all_operator_take_txids_added(&accept_pegin_txid)?;
                 }
             }
-            OutgoingBitVMXApiMessages::TransactionInfo(flow_id, tx_name, transaction) => {
+            OutgoingBitVMXApiMessages::TransactionInfo(protocol_id, tx_name, transaction) => {
                 let txid = transaction.compute_txid();
-                let Some(flow) = self.pegin_flows.get_mut(flow_id) else {
-                    trace!("Ignoring BitVMX TransactionInfo for unknown flow_id: {flow_id}");
+                let Some(flow) = self.pegin_flow_by_protocol_id(protocol_id) else {
+                    trace!(
+                        "Ignoring BitVMX TransactionInfo for unknown protocol_id: {protocol_id}"
+                    );
                     return Ok(());
                 };
 
+                let flow_id = flow.flow_id();
                 debug!(
                     "Received BitVMX TransactionInfo for flow_id: {flow_id}, tx_name: {tx_name}, txid: {txid}"
                 );
@@ -1140,8 +1131,8 @@ where
             }
             // Handle SetupCompleted from BitVMX
             OutgoingBitVMXApiMessages::SetupCompleted(program_id) => {
-                if self.pegin_flows.contains_key(program_id) {
-                    info!("Pegin setup was completed: flow_id={program_id}");
+                if self.pegin_flow_by_protocol_id_ref(program_id).is_some() {
+                    info!("Pegin setup was completed: protocol_id={program_id}");
                 } else {
                     trace!("Ignoring BitVMX SetupCompleted for unknown program_id: {program_id}");
                 }
@@ -1368,7 +1359,7 @@ mod tests {
 
         fn create_flow_at_step(
             &self,
-            flow_id: Uuid,
+            flow_id: FlowId,
             step: Steps,
             accept_pegin_txid: Txid,
         ) -> TestPeginFlow {
@@ -1382,17 +1373,18 @@ mod tests {
 
         fn create_flow_at_step_with_bitvmx_pegin_accepted(
             &self,
-            flow_id: Uuid,
+            flow_id: FlowId,
             step: Steps,
             accept_pegin_txid: Txid,
             bitvmx_pegin_accepted: Option<PeginAcceptedMessage>,
         ) -> TestPeginFlow {
             let ctx = FlowContext {
                 flow_id,
+                request_pegin_btc_tx_id: test_txid([1u8; 32]),
                 step,
-                temp_flow_id: Some(flow_id),
-                official_flow_id: Some(flow_id),
-                request_pegin_btc_tx_id: None,
+                bitvmx_protocol_id: Some(
+                    common::msg_broker::bitvmx_types::accept_pegin_protocol_id(Uuid::nil(), 0),
+                ),
                 request_pegin_btc_tx_status: None,
                 request_pegin_spv_proof: None,
                 pegin_requested: Some(test_pegin_requested(accept_pegin_txid)),
@@ -1424,7 +1416,7 @@ mod tests {
                 Rc::clone(&self.contracts),
                 self.rt_sync.clone(),
                 Rc::clone(&self.broker),
-                State { flow_id, ctx, created_at: None },
+                State { flow_id, log_id: String::new(), ctx, created_at: None },
                 Rc::clone(&self.store),
                 Rc::new(Signaling::new("/tmp", "disabled")),
                 NativeBridgeVerifier::Dummy,
@@ -1436,6 +1428,7 @@ mod tests {
                 &self.contracts,
                 &self.rt_sync,
                 flow_id,
+                String::new(),
                 5,
             )
         }
@@ -1572,17 +1565,18 @@ mod tests {
 
         let spv_proof = test_spv_proof();
         let request_tx_id = spv_proof.tx.compute_txid();
-        let temp_flow_id = get_temp_pegin_pid(request_tx_id);
-        let official_flow_id = Uuid::new_v4();
+        let flow_id = flow_id_from_request_pegin_txid(request_tx_id);
 
+        let protocol_id =
+            common::msg_broker::bitvmx_types::accept_pegin_protocol_id(Uuid::nil(), 0);
         let state = State {
-            flow_id: official_flow_id,
+            flow_id,
+            log_id: String::new(),
             ctx: FlowContext {
-                flow_id: official_flow_id,
+                flow_id,
+                request_pegin_btc_tx_id: request_tx_id,
                 step: Steps::Failed,
-                temp_flow_id: Some(temp_flow_id),
-                official_flow_id: Some(official_flow_id),
-                request_pegin_btc_tx_id: Some(request_tx_id),
+                bitvmx_protocol_id: Some(protocol_id),
                 request_pegin_btc_tx_status: None,
                 request_pegin_spv_proof: None,
                 pegin_requested: None,
@@ -1609,10 +1603,10 @@ mod tests {
             NativeBridgeVerifier::Dummy,
         );
 
-        harness.processor.pegin_flows.insert(temp_flow_id, flow);
-        harness.processor.tx_status_scheduler.schedule(official_flow_id, 1);
-        harness.processor.accept_pegin_retry_scheduler.schedule(official_flow_id, 1);
-        harness.processor.unconfirmed_accept_pegin.insert(official_flow_id, 1);
+        harness.processor.pegin_flows.insert(flow_id, flow);
+        harness.processor.tx_status_scheduler.schedule(flow_id, 1);
+        harness.processor.accept_pegin_retry_scheduler.schedule(flow_id, 1);
+        harness.processor.unconfirmed_accept_pegin.insert(flow_id, 1);
         harness.processor.pegin_request_tracker.insert(request_tx_id);
         harness
             .processor
@@ -1626,10 +1620,10 @@ mod tests {
 
         harness.processor.cleanup_terminal_flows();
 
-        assert!(!harness.processor.pegin_flows.contains_key(&temp_flow_id));
-        assert!(!harness.processor.tx_status_scheduler.is_scheduled(&official_flow_id));
-        assert!(!harness.processor.accept_pegin_retry_scheduler.is_scheduled(&official_flow_id));
-        assert!(!harness.processor.unconfirmed_accept_pegin.contains_key(&official_flow_id));
+        assert!(!harness.processor.pegin_flows.contains_key(&flow_id));
+        assert!(!harness.processor.tx_status_scheduler.is_scheduled(&flow_id));
+        assert!(!harness.processor.accept_pegin_retry_scheduler.is_scheduled(&flow_id));
+        assert!(!harness.processor.unconfirmed_accept_pegin.contains_key(&flow_id));
         assert!(!harness.processor.pegin_request_tracker.contains(&request_tx_id));
         assert!(!harness.processor.pending_pegin_requested.contains_key(&request_tx_id));
         assert!(!harness.processor.unconfirmed_pegin_requests.contains_key(&spv_proof.block_hash));
@@ -1639,7 +1633,7 @@ mod tests {
     #[test]
     fn signature_completion_advances_before_replaying_buffered_pegin_accepted() {
         let mut harness = TestHarness::new();
-        let flow_id = Uuid::new_v4();
+        let flow_id = flow_id_from_request_pegin_txid(test_txid([1u8; 32]));
         let accept_pegin_txid = test_txid([8u8; 32]);
 
         let flow = harness.create_flow_at_step(
@@ -1647,28 +1641,31 @@ mod tests {
             Steps::WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint,
             accept_pegin_txid,
         );
+        let protocol_id =
+            common::msg_broker::bitvmx_types::accept_pegin_protocol_id(Uuid::nil(), 0);
         harness.processor.pegin_flows.insert(flow_id, flow);
         harness
             .processor
             .pending_pegin_accepted
             .insert(accept_pegin_txid, test_pegin_accepted_event(accept_pegin_txid));
+        let protocol_uuid = protocol_id.value();
         harness
             .processor
             .signature_flows
-            .insert(flow_id, harness.create_completed_sig_flow(flow_id));
+            .insert(protocol_uuid, harness.create_completed_sig_flow(protocol_uuid));
 
         let result = harness.processor.process_unhandled_confirmed_sig_flow_events(&test_block());
 
         assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
         assert!(!harness.processor.pegin_flows.contains_key(&flow_id));
-        assert!(!harness.processor.signature_flows.contains_key(&flow_id));
+        assert!(!harness.processor.signature_flows.contains_key(&protocol_uuid));
         assert!(!harness.processor.pending_pegin_accepted.contains_key(&accept_pegin_txid));
     }
 
     #[test]
     fn all_operator_take_txids_added_stays_buffered_until_bitvmx_pegin_accepted() {
         let mut harness = TestHarness::new();
-        let flow_id = Uuid::new_v4();
+        let flow_id = flow_id_from_request_pegin_txid(test_txid([1u8; 32]));
         let accept_pegin_txid = test_txid([9u8; 32]);
 
         let flow = harness.create_flow_at_step_with_bitvmx_pegin_accepted(

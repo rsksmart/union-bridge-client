@@ -38,6 +38,7 @@ use union_contracts::bindings::signature_manager::SignatureManager::{
 use union_contracts::bindings::stream_manager::StreamManager::StreamManagerEvents;
 use uuid::Uuid;
 
+use crate::flows::common::FlowId;
 use crate::user_requests::ApplyToStream;
 
 #[derive(Eq, PartialEq, Debug)]
@@ -73,7 +74,7 @@ pub enum UserRequests {
 #[derive(Debug, Deserialize)]
 pub enum AdminRequest {
     /// Mark a flow as failed using the flow's regular state machine.
-    FailFlow { kind: FlowKind, flow_id: Uuid, reason: String },
+    FailFlow { kind: FlowKind, flow_id: FlowId, reason: String },
 }
 
 /// Discriminator for the family of flows admin operations target. Serialized as
@@ -1355,7 +1356,7 @@ mod tests {
         match parsed {
             UserRequests::Admin(AdminRequest::FailFlow { kind, flow_id, reason }) => {
                 assert_eq!(kind, FlowKind::AdvanceFunds);
-                assert_eq!(flow_id, id);
+                assert_eq!(flow_id.value(), id);
                 assert_eq!(reason, "manual");
             }
             other => panic!("expected Admin(FailFlow), got {other:?}"),
