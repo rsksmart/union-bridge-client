@@ -21,7 +21,7 @@ use crate::contracts::types::Address;
 use crate::rsk_gateway::DomainErrors;
 
 #[cfg_attr(test, automock)]
-pub trait CommitteeRegistryContractApi {
+pub(crate) trait CommitteeRegistryContractApi {
     async fn call_get_member_communication_data(
         &self,
         committee_id: CommitteeId,
@@ -61,12 +61,12 @@ pub trait CommitteeRegistryContractApi {
 }
 
 #[derive(Clone)]
-pub struct CommitteeRegistryContract<P: Provider> {
+pub(crate) struct CommitteeRegistryContract<P: Provider> {
     contract_instance: CommitteeRegistryInstance<P>,
 }
 
 impl<P: Provider> CommitteeRegistryContract<P> {
-    pub fn new(provider: P, contract_address: Address) -> Self {
+    pub(crate) fn new(provider: P, contract_address: Address) -> Self {
         info!("Connecting to CommitteeRegistry Contract @ {contract_address}");
         let contract_instance = CommitteeRegistry::new(contract_address, provider);
         CommitteeRegistryContract { contract_instance }

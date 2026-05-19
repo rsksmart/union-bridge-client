@@ -5,7 +5,7 @@ use reqwest::Request;
 
 /// Prompts the user for confirmation before executing a remote operation.
 /// Shows the specific command or endpoint that will be executed.
-pub fn confirm_operation(description: &str) -> Result<bool> {
+pub(crate) fn confirm_operation(description: &str) -> Result<bool> {
     println!("\n⚠️  REMOTE OPERATION ⚠️");
     println!("{}", description);
     print!("\nProceed? (yes/no): ");
@@ -19,7 +19,7 @@ pub fn confirm_operation(description: &str) -> Result<bool> {
 }
 
 /// Converts a Command to a string representation for display
-pub fn command_to_string(cmd: &Command) -> String {
+pub(crate) fn command_to_string(cmd: &Command) -> String {
     let program = cmd.get_program().to_string_lossy();
     let args: Vec<String> = cmd.get_args().map(|arg| arg.to_string_lossy().to_string()).collect();
 
@@ -27,7 +27,7 @@ pub fn command_to_string(cmd: &Command) -> String {
 }
 
 /// Converts an HTTP Request to a string representation for display
-pub fn request_to_string(request: &Request) -> String {
+pub(crate) fn request_to_string(request: &Request) -> String {
     let method = request.method();
     let url = request.url();
 

@@ -11,7 +11,7 @@ use crate::contracts::types::Address;
 use crate::rsk_gateway::DomainErrors;
 
 #[cfg_attr(test, automock)]
-pub trait MemberRegistryContractApi {
+pub(crate) trait MemberRegistryContractApi {
     async fn call_get_member_public_keys(
         &self,
         member_address: Address,
@@ -19,12 +19,12 @@ pub trait MemberRegistryContractApi {
 }
 
 #[derive(Clone)]
-pub struct MemberRegistryContract<P: Provider> {
+pub(crate) struct MemberRegistryContract<P: Provider> {
     contract_instance: MemberRegistryInstance<P>,
 }
 
 impl<P: Provider> MemberRegistryContract<P> {
-    pub fn new(provider: P, contract_address: Address) -> Self {
+    pub(crate) fn new(provider: P, contract_address: Address) -> Self {
         info!("Connecting to MemberRegistry Contract @ {contract_address}");
         let contract_instance = MemberRegistry::new(contract_address, provider);
         MemberRegistryContract { contract_instance }

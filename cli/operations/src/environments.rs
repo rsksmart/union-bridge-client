@@ -8,7 +8,7 @@ use crate::constants::operator_ids;
 
 /// unified environment enum for all cli commands
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum Environment {
+pub(crate) enum Environment {
     /// local cargo-run services (no docker)
     #[default]
     Local,
@@ -46,7 +46,7 @@ impl fmt::Display for Environment {
 
 impl Environment {
     /// returns the name of the environment as a string
-    pub fn get_name(&self) -> String {
+    pub(crate) fn get_name(&self) -> String {
         match self {
             Environment::Local => "local".to_string(),
             Environment::Docker => "docker".to_string(),
@@ -55,17 +55,17 @@ impl Environment {
     }
 
     /// returns true if this is a remote environment
-    pub fn is_remote(&self) -> bool {
+    pub(crate) fn is_remote(&self) -> bool {
         matches!(self, Environment::Remote(_))
     }
 
     /// returns the remote ssh user for remote environments
-    pub fn remote_ssh_user(&self) -> Result<String> {
+    pub(crate) fn remote_ssh_user(&self) -> Result<String> {
         required_remote_value(self, "UC_REMOTE_SSH_USER")
     }
 
     /// returns the remote hosts for remote environments
-    pub fn hosts(&self) -> Result<Vec<String>> {
+    pub(crate) fn hosts(&self) -> Result<Vec<String>> {
         match self {
             Environment::Remote(_) => read_csv_remote_value(self, "UC_REMOTE_HOSTS"),
             Environment::Local | Environment::Docker => {
@@ -75,7 +75,7 @@ impl Environment {
     }
 
     /// returns the RPC URL for this environment
-    pub fn rpc_url(&self) -> Result<String> {
+    pub(crate) fn rpc_url(&self) -> Result<String> {
         match self {
             Environment::Local | Environment::Docker => Ok("http://localhost:8545".to_string()),
             Environment::Remote(_) => required_remote_value(self, "UC_REMOTE_RPC_URL"),
@@ -83,7 +83,7 @@ impl Environment {
     }
 
     /// returns the bitvmx endpoints for this environment
-    pub fn user_api_endpoints(&self) -> Result<Vec<String>> {
+    pub(crate) fn user_api_endpoints(&self) -> Result<Vec<String>> {
         let ports = user_api_ports();
         match self {
             Environment::Local | Environment::Docker => {

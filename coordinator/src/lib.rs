@@ -1,3 +1,7 @@
+// TODO: tighten the public surface of this crate and remove this allow. The
+// workspace enforces `unreachable_pub`; coordinator has not yet been audited.
+#![allow(unreachable_pub)]
+
 pub mod blockchain_tracker;
 pub mod config;
 pub mod coordinator;

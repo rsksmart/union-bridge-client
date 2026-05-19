@@ -14,7 +14,7 @@ use crate::environments::*;
 use crate::member_funding_info::CollectedMemberFundingInfo;
 use crate::utils::command_to_string;
 
-pub async fn handle_bitcoin_funding(
+pub(crate) async fn handle_bitcoin_funding(
     environment: Environment,
     stream_id: u64,
     execute: bool,
@@ -140,7 +140,7 @@ fn execute_wallet_command(addresses: &[String], amount: u64) -> Result<()> {
     Ok(())
 }
 
-pub fn collect_user_bitcoin_addresses(
+pub(crate) fn collect_user_bitcoin_addresses(
     env: &Environment,
     first_only: bool,
 ) -> Result<Vec<(String, String)>> {

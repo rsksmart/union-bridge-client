@@ -8,7 +8,7 @@ use log::info;
 use mockall::automock;
 
 #[cfg_attr(test, automock)]
-pub trait NativeBridgeContractApi {
+pub(crate) trait NativeBridgeContractApi {
     async fn call_get_btc_transaction_confirmations(
         &self,
         tx_hash: TxHash,
@@ -27,13 +27,13 @@ const NATIVE_BRIDGE_ADDRESS: &str = "0x0000000000000000000000000000000001000006"
 const GET_BTC_TX_CONFIRMATIONS_SELECTOR: [u8; 4] = [0x5b, 0x64, 0x45, 0x87];
 
 #[derive(Clone)]
-pub struct NativeBridgeContract<P: Provider> {
+pub(crate) struct NativeBridgeContract<P: Provider> {
     provider: P,
     contract_address: Address,
 }
 
 impl<P: Provider> NativeBridgeContract<P> {
-    pub fn new(provider: P, contract_address: Address) -> Self {
+    pub(crate) fn new(provider: P, contract_address: Address) -> Self {
         info!("Connecting to Native Bridge precompiled contract @ {contract_address}");
         NativeBridgeContract { provider, contract_address }
     }

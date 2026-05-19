@@ -21,7 +21,7 @@ struct PeginAddressResponse {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub async fn create_pegin_tx(
+pub(crate) async fn create_pegin_tx(
     environment: Environment,
     rsk_address: String,
     value: u64,

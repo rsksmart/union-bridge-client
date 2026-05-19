@@ -9,11 +9,11 @@ use union_contracts::bindings::committee_registry::CommitteeRegistry::{
 
 use crate::rsk_gateway::DomainErrors;
 use crate::types::{CommitteeECDSA, P2PAddressParser};
-pub type FixedBytes32 = FixedBytes<32>;
-pub type Bytes = alloy_sol_types::private::Bytes;
-pub type Address = alloy_primitives::Address;
+pub(super) type FixedBytes32 = FixedBytes<32>;
+pub(super) type Bytes = alloy_sol_types::private::Bytes;
+pub(super) type Address = alloy_primitives::Address;
 
-pub fn convert_to_member_registration_keys(
+pub(super) fn convert_to_member_registration_keys(
     take_key_data: &CommitteeECDSA,
     dispute_key_data: &CommitteeECDSA,
     pubkey_hash: &PubKeyHash,

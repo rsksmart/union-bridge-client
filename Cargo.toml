@@ -27,6 +27,9 @@ cargo = { level = "deny", priority = -1 }
 multiple-crate-versions = "allow"
 cargo-common-metadata = "allow"
 
+[workspace.lints.rust]
+unreachable_pub = "warn"
+
 [workspace.dependencies]
 # alloy
 alloy-contract = "1.0.42"

@@ -30,7 +30,7 @@ struct AddressResponse {
 /// whitelists member RSK addresses on the CommitteeRegistry contract.
 /// collects member signer addresses from staged keystores, then calls
 /// `whitelistAddresses(address[])` via `cast send`.
-pub async fn handle_whitelist(
+pub(crate) async fn handle_whitelist(
     env: Environment,
     contract_address: &str,
     from_address: Option<&str>,
@@ -188,7 +188,7 @@ fn has_prefixed_hex_len(value: &str, hex_len: usize) -> bool {
 }
 
 /// handles funding rootstock wallets for operator stacks
-pub async fn handle_operator_funding(
+pub(crate) async fn handle_operator_funding(
     env: Environment,
     stream_id: u64,
     stream_manager_address: Option<&str>,
@@ -211,7 +211,7 @@ pub async fn handle_operator_funding(
 }
 
 /// displays user addresses and funding instructions
-pub async fn handle_user_funding(env: Environment) -> Result<()> {
+pub(crate) async fn handle_user_funding(env: Environment) -> Result<()> {
     println!("\n=== User Funding Information ===\n");
 
     let user_addresses = collect_user_rsk_addresses(&env, false).await?;
@@ -280,7 +280,10 @@ pub async fn handle_user_funding(env: Environment) -> Result<()> {
 
 /// returns the first user RSK address exposed by user-api for the current environment.
 /// when `first_only` is true, only resolves the first configured endpoint (used for pegout)
-pub async fn get_user_rsk_address(env: &Environment, first_only: bool) -> Result<Option<String>> {
+pub(crate) async fn get_user_rsk_address(
+    env: &Environment,
+    first_only: bool,
+) -> Result<Option<String>> {
     let addresses = collect_user_rsk_addresses(env, first_only).await?;
     Ok(addresses.into_iter().next().map(|(_, addr)| addr))
 }

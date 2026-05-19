@@ -42,7 +42,7 @@ enum StoreKey {
 }
 
 impl StoreKey {
-    pub fn value(&self) -> String {
+    pub(crate) fn value(&self) -> String {
         match self {
             StoreKey::LogId(address, tx_hash, log_index) => {
                 format!("{LOG_PREFIX}{address}/{tx_hash}/{log_index}")

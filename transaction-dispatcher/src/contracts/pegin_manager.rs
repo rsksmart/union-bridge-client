@@ -18,7 +18,7 @@ use crate::rsk_gateway::DomainErrors;
 use crate::types::BtcTxSPVProofInput;
 
 #[derive(Clone, Debug)]
-pub struct RequestPeginData {
+pub(crate) struct RequestPeginData {
     pub bitcoin_deposit_address: String,
     pub packet_number: u64,
     pub _member_dispute_keys: Vec<FixedBytes<32>>,
@@ -26,7 +26,7 @@ pub struct RequestPeginData {
 }
 
 #[cfg_attr(test, automock)]
-pub trait PeginManagerContractApi {
+pub(crate) trait PeginManagerContractApi {
     async fn call_get_request_pegin_data(
         &self,
         rootstock_deposit_address: Address,
@@ -48,12 +48,12 @@ pub trait PeginManagerContractApi {
 }
 
 #[derive(Clone)]
-pub struct PeginManagerContract<P: Provider> {
+pub(crate) struct PeginManagerContract<P: Provider> {
     contract_instance: PeginManagerInstance<P>,
 }
 
 impl<P: Provider> PeginManagerContract<P> {
-    pub fn new(provider: P, contract_address: Address) -> Self {
+    pub(crate) fn new(provider: P, contract_address: Address) -> Self {
         info!("Connecting to PeginManagerContract @ {contract_address}");
         let contract_instance = PeginManager::new(contract_address, provider);
         PeginManagerContract { contract_instance }

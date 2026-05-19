@@ -1,5 +1,3 @@
-#![warn(unreachable_pub)]
-
 use std::fmt;
 
 use alloy_primitives::U256;

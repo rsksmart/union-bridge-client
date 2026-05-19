@@ -23,7 +23,7 @@ use crate::rsk_gateway::DomainErrors;
 use crate::types::BtcTxSPVProofInput;
 
 #[cfg_attr(test, automock)]
-pub trait PegoutManagerContractApi {
+pub(crate) trait PegoutManagerContractApi {
     async fn invoke_try_pegout(
         &self,
         msg_value: u64,
@@ -76,12 +76,12 @@ pub trait PegoutManagerContractApi {
 }
 
 #[derive(Clone)]
-pub struct PegoutManagerContract<P: Provider> {
+pub(crate) struct PegoutManagerContract<P: Provider> {
     contract_instance: PegoutManagerInstance<P>,
 }
 
 impl<P: Provider> PegoutManagerContract<P> {
-    pub fn new(provider: P, contract_address: Address) -> Self {
+    pub(crate) fn new(provider: P, contract_address: Address) -> Self {
         info!("Connecting to PegoutManagerContract @ {contract_address}");
         let contract_instance = PegoutManager::new(contract_address, provider);
         PegoutManagerContract { contract_instance }
