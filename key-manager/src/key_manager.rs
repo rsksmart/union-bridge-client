@@ -4,7 +4,7 @@ use alloy_primitives::hex;
 use alloy_signer::k256::ecdsa::{SigningKey, VerifyingKey};
 use alloy_signer::k256::elliptic_curve::rand_core::OsRng;
 use alloy_signer_local::LocalSigner;
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result};
 use secrecy::{ExposeSecret, SecretString};
 
 pub struct KeyManager {}
@@ -49,7 +49,7 @@ impl KeyManager {
     /// Returns an error if keystore decryption fails.
     pub fn get_signer(location: &Path, password: &SecretString) -> Result<LocalSigner<SigningKey>> {
         LocalSigner::decrypt_keystore(location, password.expose_secret())
-            .map_err(|e| anyhow!("Failed to decrypt keystore: {e}"))
+            .with_context(|| format!("Failed to decrypt keystore at {}", location.display()))
     }
 
     /// Derive public key and address from a keystore file
