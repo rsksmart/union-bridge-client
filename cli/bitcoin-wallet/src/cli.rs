@@ -50,7 +50,7 @@ pub struct CliOpts {
     pub rpc_password: Option<SecretString>,
     #[arg(long, env = "WALLET_ENABLER_AMOUNT", value_name = "SATS")]
     pub enabler_amount: Option<u64>,
-    /// Command to execute in non-interactive mode (e.g., "mine_block", "send_to_address <addr> <amount>")
+    /// Command to execute in non-interactive mode (e.g., `mine_block`, `send_to_address <addr> <amount>`).
     #[arg(trailing_var_arg = true)]
     pub command: Vec<String>,
 }
