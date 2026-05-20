@@ -1,8 +1,14 @@
+use std::fs;
 use std::net::{IpAddr, Ipv4Addr, ToSocketAddrs};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+use anyhow::Context;
+use broker_storage_backend::storage::Storage;
+use broker_storage_backend::storage_config::StorageConfig;
 use log::{debug, trace};
 use message_broker::broker_memstorage::MemStorage;
+use message_broker::broker_storage::BrokerStorage;
 use message_broker::channel::channel::{DualChannel, LocalChannel};
 // Re-export for convenience - these are used in the public API
 pub use message_broker::identification::allow_list::AllowList;
@@ -51,7 +57,34 @@ pub trait BrokerClientApi<S: Serialize, C: DeserializeOwned> {
 /// Union-specific broker server implementation
 pub struct BrokerServer {
     broker: BrokerSync,
-    channel: LocalChannel<MemStorage>,
+    channel: BrokerChannel,
+}
+
+enum BrokerChannel {
+    InMemory(LocalChannel<MemStorage>),
+    Persistent(LocalChannel<BrokerStorage>),
+}
+
+impl BrokerChannel {
+    fn recv(
+        &self,
+    ) -> Result<Option<(String, Identifier)>, message_broker::rpc::errors::BrokerError> {
+        match self {
+            Self::InMemory(channel) => channel.recv(),
+            Self::Persistent(channel) => channel.recv(),
+        }
+    }
+
+    fn send(
+        &self,
+        dst: &Identifier,
+        msg: String,
+    ) -> Result<bool, message_broker::rpc::errors::BrokerError> {
+        match self {
+            Self::InMemory(channel) => channel.send(dst, msg),
+            Self::Persistent(channel) => channel.send(dst, msg),
+        }
+    }
 }
 
 /// "Alias" for `BrokerServerApi<ToServer, FromServer>`
@@ -88,21 +121,87 @@ impl BrokerServer {
     pub fn new(port: u16, key_path: &str) -> Result<Self, BrokerError> {
         debug!("Starting BrokerServer on port {port}");
 
-        let cert = Cert::from_key_file(key_path)?;
-        let pubk_hash = cert.get_pubk_hash()?;
-
+        let (cert, pubk_hash, broker_config) = broker_server_config(port, key_path)?;
         debug!("BrokerServer identity: pubkey_hash={pubk_hash}");
 
         let broker_storage = Arc::new(Mutex::new(MemStorage::new()));
-        let broker_config =
-            BrokerConfig::new(port, Some(IpAddr::from(Ipv4Addr::UNSPECIFIED)), pubk_hash.clone());
         let broker = BrokerSync::new_simple(&broker_config, broker_storage.clone(), cert)?;
 
         let server_identifier = Identifier::new(pubk_hash, BROKER_SERVER_ID);
         let broker_channel = LocalChannel::new(server_identifier, broker_storage.clone());
 
-        Ok(Self { broker, channel: broker_channel })
+        Ok(Self { broker, channel: BrokerChannel::InMemory(broker_channel) })
     }
+
+    /// Create a new `BrokerServer` with disk-backed broker queue storage.
+    /// Uses a deterministic identity from the provided key file.
+    ///
+    /// # Arguments
+    /// * `port` - Port to listen on
+    /// * `key_path` - Path to PEM file containing the private key for deterministic identity
+    /// * `storage_path` - Path to the broker queue storage directory
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if certificate loading, storage initialization, or broker initialization
+    /// fails.
+    pub fn new_with_storage_path(
+        port: u16,
+        key_path: &str,
+        storage_path: &str,
+    ) -> Result<Self, BrokerError> {
+        debug!("Starting persistent BrokerServer on port {port}");
+
+        let (cert, pubk_hash, broker_config) = broker_server_config(port, key_path)?;
+        debug!("Persistent BrokerServer identity: pubkey_hash={pubk_hash}");
+
+        let broker_storage = persistent_broker_storage(storage_path)?;
+        let broker = BrokerSync::new_simple(&broker_config, broker_storage.clone(), cert)?;
+
+        let server_identifier = Identifier::new(pubk_hash, BROKER_SERVER_ID);
+        let broker_channel = LocalChannel::new(server_identifier, broker_storage.clone());
+
+        Ok(Self { broker, channel: BrokerChannel::Persistent(broker_channel) })
+    }
+}
+
+fn broker_server_config(
+    port: u16,
+    key_path: &str,
+) -> Result<(Cert, String, BrokerConfig), BrokerError> {
+    let cert = Cert::from_key_file(key_path)?;
+    let pubk_hash = cert.get_pubk_hash()?;
+    let broker_config =
+        BrokerConfig::new(port, Some(IpAddr::from(Ipv4Addr::UNSPECIFIED)), pubk_hash.clone());
+
+    Ok((cert, pubk_hash, broker_config))
+}
+
+/// Derive a broker queue storage path from the indexer storage root and service name.
+#[must_use]
+pub fn broker_queue_storage_path(
+    indexer_storage_path: impl AsRef<Path>,
+    service_name: &str,
+) -> String {
+    indexer_storage_path.as_ref().join("broker").join(service_name).to_string_lossy().into_owned()
+}
+
+fn persistent_broker_storage(storage_path: &str) -> Result<Arc<Mutex<BrokerStorage>>, BrokerError> {
+    let storage_path = Path::new(storage_path);
+    fs::create_dir_all(storage_path).with_context(|| {
+        format!("Failed to create broker queue storage directory at {}", storage_path.display())
+    })?;
+
+    let storage_config = StorageConfig::new(storage_path.to_string_lossy().into_owned(), None);
+    let broker_backend = Storage::new(&storage_config).map_err(|error| {
+        BrokerError::UnknownError(anyhow::anyhow!(
+            "Failed to initialize broker queue storage at {}: {error}",
+            storage_path.display()
+        ))
+    })?;
+    let broker_backend = Arc::new(Mutex::new(broker_backend));
+
+    Ok(Arc::new(Mutex::new(BrokerStorage::new(broker_backend))))
 }
 
 impl BrokerServerApi<ToServer, FromServer> for BrokerServer {
@@ -378,4 +477,76 @@ fn resolve_ip(name: String, port: u16) -> std::io::Result<IpAddr> {
         .find(std::net::SocketAddr::is_ipv4) // pick IPv4 if you need IpAddr::V4
         .map(|a| a.ip())
         .ok_or_else(|| std::io::Error::other("no A record"))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::TcpListener;
+
+    use tempfile::TempDir;
+
+    use super::*;
+
+    const DUMMY_RSA_PRIVATE_KEY: &str = r"-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDhzkbFynswfys/
+VNbM4hzYNKCdAuxYI/jysOPkRHGhlJe+71EE9F2CpAZnjevBsUWxi3+LatfMZjwi
+Uz/l3iC6ow8Dsar0BO6RmWQR8Uf/1sx+WNjBk2woISPb60oXbXYj8AVUqYUUSo/Q
+RF5kuGT7dsMvUAx8Irn93w4A5VXx+FLn3r38Tymv7qOMT5cO1xrNStsluBD1RdPj
+z+B6b+7woAKqkrNFR+ZH0HUUKldA+A+pGElQLODyLB7OwxHgKtEsFdyiiDuKW2mP
+sk2dsab9HCNdo9cViA9UbeykDXq7h0/7gYg9XBH8LqqXYpSk/LE6T8k1RVa9EBxV
+RpYqlvFPAgMBAAECggEAV64pfRQq0aIPwP/IiLYkTS/iThWcgH03ZcWaOED7fqqc
+Yd+7rhjVVq0qb3uEWCnlzhNE63YJZa0tHIcHANNIEjDO27hZkXd4y8CsQutV8doO
+feEyCbic/tgffH3Yv1AZ18qTx1QsAL0TKuPhY2rWi26KTAzhTDKP1iyO23ox7Uqs
+wWChuHWyw7SmECRmjKOjTLs1Axea3fos6ERgEv/KZiTi+a9he5JuHOXO6aKTvHI7
+lTAMdloy1CnK6G3Ql7LfBeX20hIwDSZNgp5naB6NjJiDTbxxlGj7apW6hquzJpRP
+1Tn2YLvVKl5bdAOHh44wHBhZR9COjxUT+uASYRb5wQKBgQD7FTe3VPrsi6ejo7db
+9SwTUjsTQKoxrfoNc0xPzGGwKyyArGM++NQI1CZuQQDXVoYl+JC1JOcTLjjW/TYu
+wVGAr63bjtYjU0e8NZzum3nIZ7rpyHJpnbCLBc678KNCvblD4u/Vl1bx/9vRiCTx
+9S0r/LJ54Jr3Ohx9feYERc4K/QKBgQDmOlWNHwFlC2pkYI/0biXWybQZWvz+C5x3
+JO6tf0ykRk2sBEcp07JMhJsE+r4B+lHNSWalkX409Fn6x2ch/6tLP0X+viM5nr+2
+RpGHLpUBeq4+RKMmUS/NgY2DoRV1DRnfk4Vt0BZy5Voc4OVQz0zohwFzYhY60ThR
+V3UJ9HbdOwKBgQCcBS8+CNxzqMRe9xi1V8AvsWVsLT6U6Fr9iKve2k3JvspEmtqB
+AvYfFlVbJaF0Lhvl9HNXXLsKPCqtzWKh4xbWNFSAnl2KTfHBjj8aNhqS4YJQS3Jt
+FsPhX5Z7SqjojCRXfukxfH1Wm3ro1QTAJW4Qa1IsUdl5zu5tPJJ2DTpfsQKBgCii
+XR0mPsnFxQZoYKAEnNsXCJl9DLAN/pSsyQ+IK0/HNMhKjQDd41dMBExRsR2KP8va
+y6onTr4r7oGrlhFTHbmPNlxq1K7DzRRvyhmw6A21yHEnDiCiLay40/BKiw34vPtP
+/znNg1jOECSOsQqdO/bCdUgXJNNGwAjjRb33Ds+nAoGAW76wLk1lwD2tZ8KgMRUU
+i0BkY7eDXPskxCP6BjFq10J/1dC/dsLO9mZfwl2BJ2D+gGmcIzdSb5p1LkuniGuv
+V+/lSa8bdUKwtd5l+CZ0OMqmHryQZICqGeG5uREYv5eqs4mDiuM8QkZdOZUKWzPc
+wWJXrp5cQtvgjS/HyjHB69o=
+-----END PRIVATE KEY-----";
+
+    #[test]
+    fn test_broker_queue_storage_path() {
+        assert_eq!(
+            "/tmp/indexer/broker/block-indexer",
+            broker_queue_storage_path("/tmp/indexer", "block-indexer")
+        );
+    }
+
+    #[test]
+    fn test_new_with_storage_path_initializes_storage_directory() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let key_path = temp_dir.path().join("broker.pem");
+        let storage_path = temp_dir.path().join("broker").join("block-indexer");
+        std::fs::write(&key_path, DUMMY_RSA_PRIVATE_KEY).expect("Failed to write key");
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to reserve port");
+        let port = listener.local_addr().expect("Failed to read local addr").port();
+        drop(listener);
+
+        let mut broker = BrokerServer::new_with_storage_path(
+            port,
+            key_path.to_str().expect("Key path is not valid UTF-8"),
+            storage_path.to_str().expect("Storage path is not valid UTF-8"),
+        )
+        .expect("Failed to create persistent BrokerServer");
+
+        assert!(storage_path.is_dir());
+        assert!(
+            std::fs::read_dir(&storage_path).expect("Failed to read storage dir").next().is_some()
+        );
+
+        broker.close();
+    }
 }
