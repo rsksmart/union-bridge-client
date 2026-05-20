@@ -2,10 +2,9 @@ use std::path::Path;
 
 use alloy_primitives::hex;
 use alloy_signer::k256::ecdsa::{SigningKey, VerifyingKey};
+use alloy_signer::k256::elliptic_curve::rand_core::OsRng;
 use alloy_signer_local::LocalSigner;
 use anyhow::{Result, anyhow};
-use rand::rngs::OsRng;
-use rand::thread_rng;
 use secrecy::{ExposeSecret, SecretString};
 
 pub struct KeyManager {}
@@ -26,11 +25,9 @@ impl KeyManager {
         let public_key = &verifying_key.to_sec1_bytes();
         let private_key_bytes = signing_key.to_bytes().to_vec();
 
-        let mut rng = thread_rng();
-
         let (wallet, file_name) = LocalSigner::encrypt_keystore(
             destination,
-            &mut rng,
+            &mut OsRng,
             private_key_bytes,
             password,
             None,

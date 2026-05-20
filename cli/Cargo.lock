@@ -2666,7 +2666,6 @@ dependencies = [
  "alloy-signer-local",
  "anyhow",
  "clap",
- "rand 0.8.5",
  "secrecy",
 ]
 
