@@ -7,7 +7,7 @@ edition = "2024"
 [workspace]
 
 [dependencies]
-bincode = "1.3.3" # intentional older version
+bincode = "1.3.3" # intentional older version for Risc0 compatibility (re-evaluate when Risc0 updates)
 check-fork = { path = "../../../check-fork" }
 risc0-zkvm = { version = "3.0.5", default-features = false, features = ['std'] }
 
