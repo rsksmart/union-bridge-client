@@ -268,42 +268,10 @@ exception, not the default.
 
 ## Team conventions and hooks
 
-This repository follows [Conventional Commits](https://www.conventionalcommits.org/en/about/#tooling-for-conventional-commits)
-and uses local git hooks for formatting, linting, branch-name and commit-message checks. See the
-[Hooks Guide](.hooks/README.md) for the per-hook detail.
+This repository follows [Conventional Commits](https://www.conventionalcommits.org/en/about/#tooling-for-conventional-commits).
+Local git hooks enforce `fmt` / `sort` / `clippy` on commit, branch-name shape on push, and commit-message shape on
+the message itself. They shell out to the helper scripts in [`.hooks/`](.hooks/), which is the single source of truth
+and is also invoked by CI — so the bar is identical locally and on PRs.
 
-Hook installation is automatic: [cargo-husky](https://github.com/rhysd/cargo-husky) is declared as a dev-dependency of
-the `common` crate and copies the hook entrypoints in [`.cargo-husky/hooks/`](.cargo-husky/hooks/) into `.git/hooks/`
-the first time you run `cargo test` (or any cargo command that compiles dev-dependencies). No `git config` step or
-extra tool install is needed.
-
-The hooks shell out to the helper scripts in [`.hooks/`](.hooks/), which is the single source of truth for fmt + sort
-+ clippy invocations across all workspaces — CI calls the same helpers.
-
-One-time tooling that the hooks rely on:
-
-```bash
-# Nightly rustfmt for the formatting hook
-rustup component add rustfmt --toolchain nightly
-
-# cargo-sort for Cargo.toml normalisation
-cargo install cargo-sort
-```
-
-If you ever need to reinstall the hooks manually (e.g. you wiped `.git/hooks/`), bump cargo-husky's version pin in
-`common/Cargo.toml` or run `cargo clean -p cargo-husky` and then `cargo test --no-run`.
-
-### Migrating from the previous `rusty-hook` setup
-
-If you cloned the repo before this migration, your `.git/hooks/` directory still contains `rusty-hook` stubs for hook
-events the new setup does not use (`post-commit`, `post-merge`, etc.). They will try to auto-install `rusty-hook` on
-every commit. To clean up:
-
-```bash
-# Remove every hook file installed by either runner so the next cargo test
-# triggers a clean reinstall via cargo-husky.
-find .git/hooks -type f ! -name '*.sample' -delete
-cargo test --no-run -p common
-```
-
-Once the new hooks are in place you can also `cargo uninstall rusty-hook` if you previously installed it globally.
+Hook installation and the reinstall recipe live in [`LOCAL_SETUP.md` › Install Git Hooks](LOCAL_SETUP.md#install-git-hooks).
+See the [Hooks Guide](.hooks/README.md) for the per-hook detail.

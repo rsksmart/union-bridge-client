@@ -72,20 +72,32 @@ git clone https://github.com/rsksmart/union-bridge-contracts.git
 
 ### Install Git Hooks
 
-After cloning, run one cargo command that compiles dev-dependencies so
-[cargo-husky](https://github.com/rhysd/cargo-husky) installs the git hooks
-from [`.cargo-husky/hooks/`](.cargo-husky/hooks/) into `.git/hooks/`:
+Hook installation is automatic on a clean checkout. [cargo-husky](https://github.com/rhysd/cargo-husky) is declared as
+a dev-dependency of the `common` crate; the first time it compiles, its `build.rs` copies the hook entrypoints in
+[`.cargo-husky/hooks/`](.cargo-husky/hooks/) into `.git/hooks/`. Trigger it with:
 
 ```bash
 cargo test --no-run
 ```
 
-`--no-run` skips test execution — we only need the compile step, which is what
-fires cargo-husky's `build.rs`. A plain `cargo build` will not do it, because
-cargo skips dev-dependencies for that command. See
-[CONTRIBUTING.md › Team conventions and hooks](CONTRIBUTING.md#team-conventions-and-hooks)
-for the full picture and the one-time tooling the hooks rely on
-(nightly `rustfmt`, `cargo-sort`).
+`--no-run` skips test execution — we only need the compile step. A plain `cargo build` does **not** trigger it, because
+cargo skips dev-dependencies for that command.
+
+**cargo-husky will not overwrite existing files in `.git/hooks/`.** If the directory is already populated — e.g. you
+cloned the repo before the cargo-husky migration and still have `rusty-hook` stubs, or any other hook manager was
+previously installed — the automatic install silently skips. In that case, use the
+[Reinstalling hooks](#reinstalling-hooks) recipe further down.
+
+The hooks shell out to the helper scripts in [`.hooks/`](.hooks/) (CI calls the same scripts) and rely on two
+one-time tools:
+
+```bash
+# Nightly rustfmt for the formatting hook
+rustup component add rustfmt --toolchain nightly
+
+# cargo-sort for Cargo.toml normalisation
+cargo install cargo-sort
+```
 
 ## Shared Configuration Model
 
@@ -384,6 +396,36 @@ Common local issues:
 - wrong keystore password: export the intended `KEY_STORE_PASSWORD`, then rerun `./cli-setup-operators.sh --ops 4`
 - stale local databases: use `./cli-run.sh --fresh`
 - BitVMX or blockchain containers out of sync: use `./cli-infra.sh --start --fresh`
+- git hooks not running on commit/push (you can commit/push without `fmt` / `sort` / `clippy` / branch-name /
+  commit-message checks firing): see [Reinstalling hooks](#reinstalling-hooks) below.
+
+### Reinstalling hooks
+
+Use this recipe when:
+
+- you cloned the repo before the cargo-husky migration and still have `rusty-hook` stubs in `.git/hooks/`;
+- you wiped `.git/hooks/` for any reason;
+- you can `git commit` or `git push` without the format / lint / branch-name / commit-message checks running, which
+  means cargo-husky's hooks aren't installed.
+
+```bash
+# 1. Remove every existing hook file (deletes rusty-hook stubs and anything else
+#    blocking cargo-husky from writing the new hooks).
+find .git/hooks -type f ! -name '*.sample' -delete
+
+# 2. Force cargo-husky's build.rs to re-run on the next compile. Without this,
+#    cargo uses its cached compilation of cargo-husky and the install step is
+#    silently skipped.
+cargo clean -p cargo-husky
+
+# 3. Trigger a compile of `common`'s dev-deps. cargo-husky's build.rs runs and
+#    writes pre-commit / pre-push / commit-msg into .git/hooks/.
+cargo test --no-run -p common
+```
+
+After this, `.git/hooks/` should contain exactly three files: `pre-commit`, `pre-push`, `commit-msg`. If you previously
+installed `rusty-hook` globally, you can also `cargo uninstall rusty-hook` to stop the obsolete warning from appearing
+on every commit.
 
 ## Advanced Appendix
 
