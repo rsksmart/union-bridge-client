@@ -32,16 +32,25 @@ jobs:
         with:
           tool: cargo-audit
 
-      - name: Run cargo-audit
+      - name: Run cargo-audit (root workspace)
         run: cargo audit --color never 2>&1 | tee audit.txt && exit ${PIPESTATUS[0]}
+
+      - name: Run cargo-audit (cli workspace)
+        run: cargo audit --file cli/Cargo.lock --color never 2>&1 | tee audit-cli.txt && exit ${PIPESTATUS[0]}
 
       - name: Publish audit summary
         if: always()
         run: |
           {
-            echo "## cargo audit"
+            echo "## cargo audit — root workspace"
             echo ""
             echo '```'
             cat audit.txt
+            echo '```'
+            echo ""
+            echo "## cargo audit — cli workspace"
+            echo ""
+            echo '```'
+            cat audit-cli.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

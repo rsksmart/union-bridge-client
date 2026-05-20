@@ -73,3 +73,9 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: |
           cargo doc --workspace --no-deps --all-features --locked
+
+      - name: Check Rustdoc (cli workspace)
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: |
+          cargo doc --manifest-path cli/Cargo.toml --workspace --no-deps --all-features --locked
