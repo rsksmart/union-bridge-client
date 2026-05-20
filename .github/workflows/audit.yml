@@ -33,7 +33,15 @@ jobs:
           tool: cargo-audit
 
       - name: Run cargo-audit
-        # RUSTSEC-2023-0071 (rsa Marvin Attack): no upstream fix available
-        # since 2023-11. Tracking at
-        # https://rustsec.org/advisories/RUSTSEC-2023-0071
-        run: cargo audit --ignore RUSTSEC-2023-0071
+        run: cargo audit --color never 2>&1 | tee audit.txt && exit ${PIPESTATUS[0]}
+
+      - name: Publish audit summary
+        if: always()
+        run: |
+          {
+            echo "## cargo audit"
+            echo ""
+            echo '```'
+            cat audit.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

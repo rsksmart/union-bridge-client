@@ -1,0 +1,19 @@
+# cargo-audit configuration.
+#
+# Loaded automatically by `cargo audit` when run from the workspace root.
+# CI invokes `cargo audit` without `--ignore` flags — every ignore lives
+# here so it carries a reason and is reviewable in git history.
+#
+# Adding an ignore is a real decision: the advisory still applies to the
+# code, we are just choosing not to fail the build on it. Each entry
+# names the advisory, why it is tolerated, and how the gap is tracked.
+
+[advisories]
+ignore = [
+    # RUSTSEC-2023-0071 (rsa Marvin Attack).
+    # No upstream fix available since 2023-11. The `rsa` crate is pulled in
+    # transitively via `bitvmx-broker` and we have no path off it short of
+    # an upstream migration. Re-evaluate when `rsa` ships a patched release.
+    # https://rustsec.org/advisories/RUSTSEC-2023-0071
+    "RUSTSEC-2023-0071",
+]
