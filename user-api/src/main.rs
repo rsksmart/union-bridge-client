@@ -1,5 +1,3 @@
-// user-api is a thin wrapper layer, not the production peg pipeline — pedantic
-// clippy lints are not enforced here.
 #![allow(clippy::pedantic)]
 #![forbid(unsafe_code)]
 

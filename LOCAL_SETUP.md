@@ -14,8 +14,9 @@ recommended local workflow, and troubleshooting.
 1. Clone this repository.
 2. Install the required tooling.
 3. Clone the required sibling repositories.
-4. Export the shared environment variables.
-5. Follow the recommended local development path in this document.
+4. Install the git hooks.
+5. Export the shared environment variables.
+6. Follow the recommended local development path in this document.
 
 ### Clone the Repository
 
@@ -68,6 +69,23 @@ needed for full workspace builds, Docker image builds, local tests, and CI repro
 git clone https://github.com/FairgateLabs/rust-bitvmx-client.git
 git clone https://github.com/rsksmart/union-bridge-contracts.git
 ```
+
+### Install Git Hooks
+
+After cloning, run one cargo command that compiles dev-dependencies so
+[cargo-husky](https://github.com/rhysd/cargo-husky) installs the git hooks
+from [`.cargo-husky/hooks/`](.cargo-husky/hooks/) into `.git/hooks/`:
+
+```bash
+cargo test --no-run
+```
+
+`--no-run` skips test execution — we only need the compile step, which is what
+fires cargo-husky's `build.rs`. A plain `cargo build` will not do it, because
+cargo skips dev-dependencies for that command. See
+[CONTRIBUTING.md › Team conventions and hooks](CONTRIBUTING.md#team-conventions-and-hooks)
+for the full picture and the one-time tooling the hooks rely on
+(nightly `rustfmt`, `cargo-sort`).
 
 ## Shared Configuration Model
 
