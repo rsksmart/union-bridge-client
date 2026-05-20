@@ -18,6 +18,7 @@ baseline expected of new code.
 
 ## Table of contents
 
+- [PR readiness](#pr-readiness)
 - [Scope and classification](#scope-and-classification)
 - [Build reproducibility](#build-reproducibility)
 - [Format and lint](#format-and-lint)
@@ -36,6 +37,15 @@ baseline expected of new code.
 - [Protocol compatibility](#protocol-compatibility)
 - [Domain-specific expectations](#domain-specific-expectations)
 - [Team conventions and hooks](#team-conventions-and-hooks)
+
+## PR readiness
+
+Before requesting review, run the required checks for the touched area. The detailed standards live in the
+sections below; [`.hooks/`](.hooks/) owns the `fmt` / `sort` / `clippy` commands, and the CI workflow files
+in [`.github/workflows/`](.github/workflows/) are the source of truth for the GitHub checks that must pass.
+
+Items under **Aiming for** subsections are quality goals, not merge blockers — unless the PR explicitly
+commits to them in its description.
 
 ## Scope and classification
 
@@ -144,10 +154,11 @@ Any crate not listed above as non-production is production by default.
   it are treated as wire-format changes.
 - **Panics are reserved for genuinely unrecoverable invariants.** The panicking APIs — `panic!`, `unreachable!`,
   `todo!`, `assert!`, `assert_eq!`, `debug_assert!`, `unwrap()`, `expect()` — are never reached from untrusted
-  input or across FFI boundaries. Any `unwrap()`/`expect()` on a non-test path carries either an inline comment
-  naming the invariant (`// INVARIANT: bytes.len() checked above`) or a descriptive `expect` message that names
-  the invariant in place of a comment. Startup-time `.expect("failed to load X")` is acceptable: the message
-  names what failed and there is no recovery path.
+  input or across FFI boundaries, and are generally forbidden on non-test paths. The exceptional cases that
+  are allowed (e.g., startup-time configuration loading) use `expect("...")` — not `unwrap()` — with a message
+  that names the invariant being asserted: `expect("config file exists at startup")`,
+  `expect("bytes.len() checked above")`. The `expect` message documents the invariant at the call site and
+  surfaces in the panic output if it ever fails, making the failure self-diagnosing.
 - **Don't reach for `thiserror` as decoration.** A typed enum that exists only to be `?`propagated to `main` and printed
   adds boilerplate without buying anything. If you can't name a caller that branches, a wire consumer that deserializes,
   or a metric that keys off the variant, `anyhow` is the right tool.
