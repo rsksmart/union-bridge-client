@@ -9,3 +9,4 @@ root="$(git rev-parse --show-toplevel)"
 bash "$root/.hooks/check-branch-name.sh"
 bash "$root/.hooks/check-lints.sh"
 cargo test --workspace --locked
+cargo test --manifest-path cli/Cargo.toml --workspace --locked

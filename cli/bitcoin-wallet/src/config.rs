@@ -122,14 +122,13 @@ impl Config {
         Ok((config, config_path))
     }
 
-    // read db_path from config file and resolve under BASE_STORAGE_PATH env var
+    // Resolve `db_path` from the config file under `BASE_STORAGE_PATH`.
+    // Returns `None` if either is missing; the caller surfaces a unified
+    // error in `Self::load` rather than panicking here.
     fn build_db_path_from_conf(file_config: &FileConfig) -> Option<PathBuf> {
-        file_config.db_path.as_ref().map(|rel_from_config| {
-            let base = env::var("BASE_STORAGE_PATH").with_context(||
-                "BASE_STORAGE_PATH environment variable must be set when using db_path from config file"
-            ).unwrap();
-            PathBuf::from(base).join(rel_from_config)
-        })
+        let rel_from_config = file_config.db_path.as_ref()?;
+        let base = env::var("BASE_STORAGE_PATH").ok()?;
+        Some(PathBuf::from(base).join(rel_from_config))
     }
 }
 
