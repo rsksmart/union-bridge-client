@@ -30,7 +30,7 @@ jobs:
           - language: actions
             build-mode: none
           - language: rust
-            build-mode: none
+            build-mode: manual
 
     steps:
       - name: Checkout repository
@@ -41,25 +41,20 @@ jobs:
         with:
           cache-build: false
 
-      # required due to check-fork/zkp/build.rs
-      - name: Build with Cargo
-        if: matrix.language == 'rust'
-        run: |
-          cd check-fork/zkp
-          cargo build
-
-      # initialize CodeQL pointing at the real root of client code
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@5c8a8a642e79153f5d047b10ec1cba1d1cc65699 # v3.35.1
+        uses: github/codeql-action/init@9e0d7b8d25671d64c341c19c0152d693099fb5ba # v4.35.5
         with:
           languages: ${{ matrix.language }}
-          build-mode: ${{ matrix.build-mode }}
-          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Build with Cargo (root workspace)
+        if: matrix.language == 'rust'
+        run: cargo build --workspace --all-features --all-targets --locked
+
+      - name: Build with Cargo (cli workspace)
+        if: matrix.language == 'rust'
+        run: cargo build --manifest-path cli/Cargo.toml --workspace --all-features --all-targets --locked
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@5c8a8a642e79153f5d047b10ec1cba1d1cc65699 # v3.35.1
-        # enable for debugging
-        # env:
-          # CODEQL_EXTRACTOR_RUST_OPTION_LOGGING_VERBOSITY: debug
+        uses: github/codeql-action/analyze@9e0d7b8d25671d64c341c19c0152d693099fb5ba # v4.35.5
         with:
           category: "/language:${{ matrix.language }}"

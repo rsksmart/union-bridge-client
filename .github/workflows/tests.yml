@@ -38,6 +38,14 @@ jobs:
         run: |
           cargo test --workspace --all-features --locked
 
+      - name: Test cli workspace (Prod)
+        run: |
+          cargo test --manifest-path cli/Cargo.toml --workspace --locked
+
+      - name: Test cli workspace (Features)
+        run: |
+          cargo test --manifest-path cli/Cargo.toml --workspace --all-features --locked
+
   check-all-targets:
     runs-on: ubuntu-latest
     env:

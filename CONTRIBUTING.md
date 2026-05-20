@@ -27,6 +27,7 @@ baseline expected of new code.
 - [Workspace and crate boundaries](#workspace-and-crate-boundaries)
 - [Dependencies](#dependencies)
 - [Error handling](#error-handling)
+- [Defensive coding](#defensive-coding)
 - [Observability](#observability)
 - [Testing approach](#testing-approach)
 - [Unsafe code policy](#unsafe-code-policy)
@@ -115,10 +116,16 @@ Any crate not listed above as non-production is production by default.
 - A net-new external dependency needs a one-line justification in the PR description: what existing workspace
   crate or `std` capability was insufficient, and why this crate over alternatives.
 - Prefer existing workspace dependencies and `std` over introducing a new external crate.
+- Feature flags enabled on a dependency are kept to the minimum the consuming crate actually needs. Enabling
+  "defaults plus a couple just in case" is a defect; each enabled feature is reviewable in the PR diff and
+  carries weight (more code surface, more transitive deps, more attack surface).
 - `cargo audit` runs in CI. Crates with open advisories at medium severity or above are not introduced;
   existing usages migrate off them when a replacement lands or an explicit ignore is recorded with a tracking
   item.
 - Git dependencies are pinned by commit hash, never a branch or tag.
+- GitHub Actions in workflow files (`.github/workflows/*.yml`) are pinned by commit hash, with a version
+  comment for human readability. Floating refs (`@v4`, `@main`) are not allowed; the pin guarantees the
+  action's behaviour can't silently change between runs.
 - Dependency sources are restricted to `crates.io` and the known git remotes (`github.com/rsksmart/*`,
   `github.com/FairgateLabs/*`). New remotes require an explicit reviewer note in the PR description.
 
@@ -135,13 +142,38 @@ Any crate not listed above as non-production is production by default.
   any cross-service message carry an explicit enum or code — never `format!("{:?}", err)`, never a free-form `String`
   field that happens to hold an error message. The boundary type is documented (variant list, JSON shape) and changes to
   it are treated as wire-format changes.
-- **Panics are reserved for genuinely unrecoverable invariants.** Any `unwrap()`/`expect()` on a non-test path carries
-  either an inline comment naming the invariant (`// INVARIANT: bytes.len() checked above`) or a descriptive `expect`
-  message that names the invariant in place of a comment. Startup-time `.expect("failed to load X")` is acceptable: the
-  message names what failed and there is no recovery path.
+- **Panics are reserved for genuinely unrecoverable invariants.** The panicking APIs — `panic!`, `unreachable!`,
+  `todo!`, `assert!`, `assert_eq!`, `debug_assert!`, `unwrap()`, `expect()` — are never reached from untrusted
+  input or across FFI boundaries. Any `unwrap()`/`expect()` on a non-test path carries either an inline comment
+  naming the invariant (`// INVARIANT: bytes.len() checked above`) or a descriptive `expect` message that names
+  the invariant in place of a comment. Startup-time `.expect("failed to load X")` is acceptable: the message
+  names what failed and there is no recovery path.
 - **Don't reach for `thiserror` as decoration.** A typed enum that exists only to be `?`propagated to `main` and printed
   adds boilerplate without buying anything. If you can't name a caller that branches, a wire consumer that deserializes,
   or a metric that keys off the variant, `anyhow` is the right tool.
+
+## Defensive coding
+
+These rules apply to any path that handles external or untrusted input — HTTP/RPC bodies, broker messages, on-chain
+event payloads, file contents, CLI arguments. Trusted-internal paths can relax some of these, but relaxation is the
+exception, not the default.
+
+- **Arithmetic on untrusted values is checked.** Use `checked_*` for fallible math that should refuse on overflow,
+  `saturating_*` for clamping, `try_into` for narrowing conversions. Bare `+ - * /` on external values is a defect.
+  Truncating `as` casts (e.g., `usize as u32`, `i64 as u32`) require an inline justification or migration to
+  `try_into`. Division and remainder operators check the divisor; never `a / b` where `b` could be zero from input.
+  `wrapping_*` / `overflowing_*` are reserved for cases where wraparound is the algorithm (e.g., modular arithmetic
+  in cryptography) and the choice is commented at the call site.
+- **Resource consumption from external input is bounded.** Anything that accumulates from a stream — `read_to_end`,
+  `read_to_string`, `collect::<Vec<_>>()`, `format!` over attacker-sized data, `Vec::reserve`/`with_capacity` from
+  a length field — is bounded by `take(N)`, a streaming parser, or an explicit cap. Channels and queues are
+  bounded. Recursive parsing uses a depth/iteration cap. HTTP / RPC / broker boundaries enforce request-size limits
+  and timeouts at the edge; rejecting an oversized request early is preferred to letting it drain the system.
+- **Indexing on untrusted offsets uses checked accessors.** `slice[i]` / `vec[i]` panic on out-of-bounds; use
+  `get(i)` / `get_mut(i)` when the index comes from external input or is otherwise not provably in range. String
+  slicing must respect UTF-8 boundaries — operate on `chars()` / `char_indices()` for user-visible text, not byte
+  offsets. `*_unchecked` variants (`get_unchecked`, `from_utf8_unchecked`, `slice::from_raw_parts`) are `unsafe`
+  and follow the [Unsafe code policy](#unsafe-code-policy) — never on attacker-controlled offsets.
 
 ## Observability
 
@@ -176,9 +208,15 @@ Any crate not listed above as non-production is production by default.
 - `#![forbid(unsafe_code)]` at every crate root that does not require it.
 - Where `unsafe` is unavoidable (foreign-function calls, platform APIs that are unsafe by design), each
   `unsafe` block carries a `// SAFETY:` comment explaining the invariant being upheld.
+- Patterns that earn extra scrutiny inside an `unsafe` block: `std::mem::transmute`, raw-pointer dereferences
+  and `std::ptr::*` reads/writes, `slice::from_raw_parts(_mut)`, `str::from_utf8_unchecked`,
+  `get_unchecked(_mut)`, `MaybeUninit::assume_init`, `ManuallyDrop`, and `extern "C"` / `libc` FFI calls.
+  These appear only in the smallest possible `unsafe` block, with inputs validated at the boundary above.
 - Any new `unsafe` block in production code requires explicit reviewer sign-off on the PR that introduces it,
   regardless of how minor the rest of the diff is. The review focuses on the `// SAFETY:` comment and the invariant
   it claims; the justification is also recorded in the PR description.
+- FFI surfaces and `unsafe` code paths are covered by fuzz targets or explicit edge-case tests when the input
+  space is adversarial.
 
 ## Concurrency
 
