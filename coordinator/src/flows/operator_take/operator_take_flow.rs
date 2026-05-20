@@ -19,8 +19,8 @@ use transaction_dispatcher::types::{
 use union_contracts::bindings::pegout_manager::PegoutManager::PegoutRegistered;
 use uuid::Uuid;
 
-use crate::flows::common::{FlowId, Signaling};
 use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
+use crate::flows::common::{FlowId, Signaling};
 use crate::flows::operator_take::types::OperatorTakeTriggerData;
 
 pub(crate) const PROGRAM_TYPE_ADVANCE_FUNDS: &str = "advance_funds";
@@ -205,8 +205,7 @@ where
         trigger_data: OperatorTakeTriggerData,
     ) -> Self {
         let committee_uuid = Uuid::from_u128(*trigger_data.committee_id);
-        let bitvmx_protocol_id =
-            advance_funds_protocol_id(committee_uuid, trigger_data.slot_index);
+        let bitvmx_protocol_id = advance_funds_protocol_id(committee_uuid, trigger_data.slot_index);
         Self {
             contracts,
             rt_sync,
@@ -240,8 +239,7 @@ where
         step: Steps,
     ) -> Self {
         let committee_uuid = Uuid::from_u128(*trigger_data.committee_id);
-        let bitvmx_protocol_id =
-            advance_funds_protocol_id(committee_uuid, trigger_data.slot_index);
+        let bitvmx_protocol_id = advance_funds_protocol_id(committee_uuid, trigger_data.slot_index);
         Self {
             contracts,
             rt_sync: RuntimeSync::new().expect("Failed to create runtime sync for test flow"),
@@ -888,6 +886,19 @@ where
 
     pub(crate) fn is_terminal(&self) -> bool {
         matches!(self.state.step, Steps::Done | Steps::Failed)
+    }
+
+    /// Snapshot used by `Coordinator::log_active_flows` for periodic
+    /// observability of in-flight flows.
+    pub(crate) fn get_flow_details(&self) -> crate::event_processor::FlowDetails {
+        crate::event_processor::FlowDetails {
+            kind: crate::types::FlowKind::AdvanceFunds,
+            id: self.flow_id().to_string(),
+            step: format!("{:?}", self.state.step),
+            // `created_at` is not currently tracked on advance-funds flows;
+            // `None` is acceptable per the field's docstring.
+            created_at: None,
+        }
     }
 
     pub(crate) fn mark_failed(&mut self, reason: &str) -> Result<()> {

@@ -768,6 +768,14 @@ where
         self.blockchain_view.clear();
         self.retries.clear();
     }
+
+    fn active_flows(&self) -> Vec<crate::event_processor::FlowDetails> {
+        self.flows
+            .values()
+            .filter(|f| !f.is_terminal())
+            .map(AdvanceFundsFlow::get_flow_details)
+            .collect()
+    }
 }
 
 #[cfg(test)]
