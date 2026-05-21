@@ -25,7 +25,7 @@ fn main() -> Result<()> {
                 .short('l')
                 .long(LOG_DIR_CLI_FLAG)
                 .value_name("DIR")
-                .help("Directory for log files (also set via UB_LOG_DIR). Omit for stdout only."),
+                .help("Directory for log files (also set via UB_LOG_DIR). Defaults to ./logs/ when unset."),
         )
         .arg(
             Arg::new(CONFIG_CLI_FLAG)

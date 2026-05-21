@@ -17,7 +17,7 @@ flushes and closes the background file-writer thread.
 | Change verbosity             | `RUST_LOG=...`                                     |
 | Force JSON output            | `LOG_FORMAT=json`                                  |
 | Force human-readable output  | `LOG_FORMAT=pretty`                                |
-| Log to a file                | `--log-dir <DIR>` or `UB_LOG_DIR=<DIR>`            |
+| Customize file location      | `--log-dir <DIR>` or `UB_LOG_DIR=<DIR>` (default: `./logs/`) |
 | Tag stdout per operator      | `CLIENT_ID=<N>` (set automatically by `cli-run.sh`)|
 | Switch default format        | `ENVIRONMENT=local` (pretty) vs anything else (json) |
 
@@ -33,10 +33,12 @@ Selection precedence:
 
 ### Pretty
 
-Human-readable, ANSI-colored, single line per event. Default for local dev.
+Human-readable, ANSI-colored, single line per event with a bracketed level so
+log scrapers can match `[ERROR]` / `[WARN]` / `[INFO]` / `[DEBUG]` / `[TRACE]`.
+Default for local dev.
 
 ```
-2026-05-19T10:14:22.041Z  INFO block_indexer::sync: caught up height=8421
+2026-05-19 10:14:22.041 [ INFO] [block_indexer::sync] caught up height=8421
 ```
 
 When `CLIENT_ID` is set, each stdout line is prefixed with `[op-<id>] ` so that
@@ -44,8 +46,8 @@ interleaved output from the multi-operator launcher (`cli-run.sh`) stays
 attributable:
 
 ```
-[op-1] 2026-05-19T10:14:22.041Z  INFO block_indexer::sync: caught up height=8421
-[op-2] 2026-05-19T10:14:22.103Z  INFO block_indexer::sync: caught up height=8421
+[op-1] 2026-05-19 10:14:22.041 [ INFO] [block_indexer::sync] caught up height=8421
+[op-2] 2026-05-19 10:14:22.103 [ INFO] [block_indexer::sync] caught up height=8421
 ```
 
 ### JSON
@@ -121,12 +123,11 @@ and obey the same `RUST_LOG` filter.
 
 ## File output
 
-A log file is written when **either**:
+A log file is always written. The directory is resolved in this order:
 
-- the binary is started with `--log-dir <DIR>`, or
-- the `UB_LOG_DIR` environment variable is set (CLI flag takes precedence).
-
-If neither is set, logs go to stdout only.
+1. `--log-dir <DIR>` CLI flag, then
+2. `UB_LOG_DIR` environment variable, then
+3. `./logs/` (relative to the process's current working directory).
 
 File naming:
 
@@ -145,12 +146,12 @@ owns the worker thread. Drop it on shutdown to flush.
 | `RUST_LOG`    | `EnvFilter` directives — overall and per-module level  | `DEFAULT_FILTER` |
 | `LOG_FORMAT`  | `json` or `pretty` — overrides environment-based default | (unset)        |
 | `ENVIRONMENT` | Selects default format: `local` → pretty, else → JSON  | `local`          |
-| `UB_LOG_DIR`  | Directory for the per-crate log file                   | (unset → stdout only) |
+| `UB_LOG_DIR`  | Directory for the per-crate log file                   | `./logs/`        |
 | `CLIENT_ID`   | Operator id; tags stdout (`[op-N]`) and file name      | (unset)          |
 
 ## Common recipes
 
-**Local dev, just stdout, more verbose:**
+**Local dev, more verbose (file written under `./logs/`):**
 ```bash
 RUST_LOG=trace ./cli-run.sh
 ```
