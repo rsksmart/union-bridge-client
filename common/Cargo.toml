@@ -19,11 +19,13 @@ alloy-transport = { workspace = true }
 anyhow = { workspace = true }
 bitcoin = { workspace = true }
 bitvmx-emulator = { git = "https://github.com/FairgateLabs/BitVMX-CPU.git", tag = "v0.5.11", package = "emulator" }
+# Corresponds to tag v0.6.1.
+broker-storage-backend = { package = "rust-bitvmx-storage-backend", git = "https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git", rev = "eb01167404c20564fcee9db2d641bf88fb4df927" }
 chrono = { workspace = true }
 config = { workspace = true }
 hex = { workspace = true }
 lru = "0.16"
-message-broker = { workspace = true }
+message-broker = { workspace = true, features = ["storagebackend"] }
 mockall = { workspace = true }
 musig2 = { workspace = true }
 primitive-types = { workspace = true }
@@ -47,6 +49,7 @@ uuid = { version = "1.23.1", features = ["v4", "serde"] }
 # `user-hooks` disables its built-in default hooks; we use our own scripts.
 [dev-dependencies]
 cargo-husky = { version = "1", default-features = false, features = ["user-hooks"] }
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

@@ -1565,6 +1565,7 @@ dependencies = [
  "rcgen",
  "ring",
  "rsa",
+ "rust-bitvmx-storage-backend 0.6.1 (git+https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git?tag=v0.6.1)",
  "rustls",
  "rustls-pemfile",
  "serde",
@@ -1677,7 +1678,7 @@ dependencies = [
  "common",
  "mockall",
  "primitive-types 0.13.1",
- "rust-bitvmx-storage-backend",
+ "rust-bitvmx-storage-backend 0.1.1",
  "serde",
  "serde_json",
  "tempfile",
@@ -2111,12 +2112,14 @@ dependencies = [
  "mockall",
  "musig2",
  "primitive-types 0.13.1",
+ "rust-bitvmx-storage-backend 0.6.1 (git+https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git?rev=eb01167404c20564fcee9db2d641bf88fb4df927)",
  "serde",
  "serde_json",
  "serde_yaml",
  "sha2 0.10.9",
  "sha3 0.11.0",
  "signal-hook",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -2276,7 +2279,7 @@ dependencies = [
  "op-funding",
  "primitive-types 0.13.1",
  "protocol-params",
- "rust-bitvmx-storage-backend",
+ "rust-bitvmx-storage-backend 0.1.1",
  "secrecy",
  "serde",
  "serde_json",
@@ -4226,7 +4229,7 @@ dependencies = [
  "mockall",
  "primitive-types 0.13.1",
  "rand 0.10.1",
- "rust-bitvmx-storage-backend",
+ "rust-bitvmx-storage-backend 0.1.1",
  "serde",
  "tempfile",
  "tracing",
@@ -5336,6 +5339,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "redact"
+version = "0.1.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dcecefd225c2fb69914585a7a6f8878929feb316a7ecb61c07d79e361d46d8ac"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5674,6 +5686,42 @@ dependencies = [
  "clap",
  "cocoon",
  "hex",
+ "rocksdb",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid 1.23.1",
+]
+
+[[package]]
+name = "rust-bitvmx-storage-backend"
+version = "0.6.1"
+source = "git+https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git?tag=v0.6.1#eb01167404c20564fcee9db2d641bf88fb4df927"
+dependencies = [
+ "age",
+ "clap",
+ "cocoon",
+ "hex",
+ "rand 0.9.4",
+ "redact",
+ "rocksdb",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid 1.23.1",
+]
+
+[[package]]
+name = "rust-bitvmx-storage-backend"
+version = "0.6.1"
+source = "git+https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git?rev=eb01167404c20564fcee9db2d641bf88fb4df927#eb01167404c20564fcee9db2d641bf88fb4df927"
+dependencies = [
+ "age",
+ "clap",
+ "cocoon",
+ "hex",
+ "rand 0.9.4",
+ "redact",
  "rocksdb",
  "serde",
  "serde_json",
