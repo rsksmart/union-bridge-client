@@ -170,6 +170,12 @@ UB__BLOCK_BROKER__IP=127.0.0.1
 UB__BLOCK_BROKER__PORT=5672
 ```
 
+### Secrets hygiene
+
+- `.envrc` is your local override file — copy from `.envrc.sample` and fill in real values. **Never commit `.envrc`** (it is gitignored, but verify before staging).
+- Never paste `KEY_STORE_PASSWORD`, `USER_BITCOIN_WIF`, `MEMBER_BITCOIN_WIF`, or the contents of broker `.pem` files into issues, PRs, chat, or commit messages. Use placeholders (`<your-password>`) when reproducing commands.
+- For code-side handling of secrets (wrapping in `secrecy::SecretString`, redacting `Debug`), see [`AGENTS.md` › Secrets in Types](AGENTS.md#secrets-in-types).
+
 ## Local Development Modes
 
 There are three supported local modes:
@@ -380,6 +386,25 @@ bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword \
   jq -r '.descriptor' | \
   sed -E 's/^wpkh\(([0-9a-fA-F]+)\)#.*/0x\1/'
 ```
+
+## Minimal verification
+
+When the full Docker stack isn't up, run scoped checks without spinning everything. For exact CI parity (all three workspaces, with the flags pre-push and CI use), call the hook scripts:
+
+```bash
+.hooks/format-code.sh --check
+.hooks/check-lints.sh
+```
+
+For faster checks scoped to a single crate (no infra needed):
+
+```bash
+cargo build -p <crate> --locked
+RISC0_SKIP_BUILD=1 cargo clippy -p <crate> --all-targets --all-features --locked -- -D warnings
+cargo test -p <crate> --locked
+```
+
+Full workspace tests and end-to-end flow tests still require the [Recommended Path](#local-development---recommended-path) or [`tests/run-flows.sh`](#automated-happy-path).
 
 ## Troubleshooting Index
 
