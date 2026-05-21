@@ -9,6 +9,7 @@ alloy-primitives = { workspace = true }
 anyhow = { workspace = true }
 bitcoin = { workspace = true }
 clap = { workspace = true, features = ["env"] }
+hex = { workspace = true }
 key-manager = { workspace = true }
 op-funding = { path = "../../op-funding" }
 protocol-params = { path = "../../protocol-params" }

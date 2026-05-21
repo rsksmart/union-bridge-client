@@ -410,6 +410,20 @@ impl Wallet {
         Ok(())
     }
 
+    pub fn clear_active_address_utxos(&mut self) -> Result<usize> {
+        let Some(address) = self.active_address.clone() else {
+            return Ok(0);
+        };
+
+        let entries = self.utxo_store.load_by_address(&address)?;
+        for (outpoint, _) in &entries {
+            self.utxo_store.remove(outpoint)?;
+        }
+
+        self.reload_active_utxos()?;
+        Ok(entries.len())
+    }
+
     fn reload_active_utxos(&mut self) -> Result<()> {
         if let Some(address) = &self.active_address {
             let entries = self.utxo_store.load_by_address(address)?;
@@ -1302,6 +1316,46 @@ mod tests {
             let pending_ids = wallet.pending_transaction_ids();
             assert_ne!(pending_ids[0], txid);
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn clear_active_address_utxos_returns_zero_when_no_active_address() -> Result<()> {
+        let temp = tempdir()?;
+        let root = temp.path().join("utxo-db");
+        let mut wallet = Wallet::new(root, crate::cli::WalletMode::User)?;
+
+        assert!(wallet.active_address().is_none());
+        assert_eq!(wallet.clear_active_address_utxos()?, 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn clear_active_address_utxos_removes_in_memory_and_persisted_entries() -> Result<()> {
+        use bitcoin::hashes::Hash;
+
+        let temp = tempdir()?;
+        let root = temp.path().join("utxo-db");
+        let mut wallet = Wallet::new(root, crate::cli::WalletMode::User)?;
+
+        let secret = secp256k1::SecretKey::from_slice(&[7u8; 32]).expect("secret");
+        let private_key = PrivateKey::new(secret, Network::Regtest);
+        let active = wallet.import_private_key(&private_key.to_wif())?;
+
+        for i in 1..=3u8 {
+            let txid = Txid::from_byte_array([i; 32]);
+            wallet.register_utxo(OutPoint::new(txid, 0), 50_000)?;
+        }
+        assert_eq!(wallet.utxos().len(), 3);
+        assert_eq!(wallet.utxo_store.load_by_address(&active)?.len(), 3);
+
+        let removed = wallet.clear_active_address_utxos()?;
+
+        assert_eq!(removed, 3);
+        assert!(wallet.utxos().is_empty());
+        assert!(wallet.utxo_store.load_by_address(&active)?.is_empty());
 
         Ok(())
     }

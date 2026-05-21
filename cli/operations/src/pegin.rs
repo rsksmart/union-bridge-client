@@ -1,10 +1,11 @@
-use std::process::Command;
-
 use anyhow::{Context, Result, anyhow, bail};
+use bitcoin::PrivateKey;
+use bitcoin::secp256k1::Secp256k1;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use crate::environments::Environment;
+use crate::utils::{confirm_operation, run_wallet_command};
 
 #[derive(Debug, Serialize)]
 struct PeginAddressRequest {
@@ -20,12 +21,10 @@ struct PeginAddressResponse {
     enabler_script_pubkey: Option<String>,
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn create_pegin_tx(
     environment: Environment,
     rsk_address: String,
     value: u64,
-    btc_pub_key: String,
     execute: bool,
 ) -> Result<()> {
     if execute && environment.is_remote() {
@@ -35,13 +34,30 @@ pub(crate) async fn create_pegin_tx(
     }
 
     validate_rsk_address(&rsk_address)?;
-    validate_btc_pub_key(&btc_pub_key)?;
+
+    let env_name = environment.get_name();
+    println!("Environment: {}", env_name);
+    println!();
+
+    if environment.is_remote() {
+        let description = format!(
+            "Pegin summary:\n  RSK address: {}\n  Value:       {} sats",
+            rsk_address, value
+        );
+        if !confirm_operation(&description)? {
+            println!("Aborted.");
+            return Ok(());
+        }
+        println!();
+    }
+
     println!("Getting pegin data for {rsk_address}...");
 
+    let btc_reimbursement_pub_key = derive_reimbursement_xonly_pub_key()?;
     let payload = PeginAddressRequest {
         rootstock_deposit_address: rsk_address.clone(),
         value,
-        btc_reimbursement_pub_key: btc_pub_key.clone(),
+        btc_reimbursement_pub_key,
     };
 
     let user_api_base = environment
@@ -84,7 +100,6 @@ pub(crate) async fn create_pegin_tx(
         .ok_or_else(|| anyhow!("user-api response did not contain enabler_script_pubkey"))?;
 
     println!("Requesting pegin: {} sats", value);
-    println!("  Source:      Bitcoin (public key: {})", btc_pub_key);
     println!("  Destination: RSK {}", rsk_address);
     println!();
     println!("Parameters:");
@@ -97,13 +112,16 @@ pub(crate) async fn create_pegin_tx(
     if execute {
         println!("Executing wallet command programmatically...");
         println!();
-        execute_wallet_command(
-            value,
-            packet_number,
+        let stdout = run_wallet_command(&[
+            "user",
+            "create_pegin_tx",
+            &value.to_string(),
+            &packet_number.to_string(),
             &pegin_address,
             &rsk_address,
             &enabler_script_pubkey,
-        )?;
+        ])?;
+        println!("{}", stdout);
     } else {
         println!("Now run the following command in bitcoin-wallet CLI (user mode):");
         println!();
@@ -116,51 +134,14 @@ pub(crate) async fn create_pegin_tx(
     Ok(())
 }
 
-fn execute_wallet_command(
-    stream_amount: u64,
-    packet_number: u64,
-    pegin_address: &str,
-    rsk_address: &str,
-    enabler_script_pubkey: &str,
-) -> Result<()> {
-    let wallet_script = "./cli-bitcoin-wallet.sh";
-
-    let mut cmd = Command::new(wallet_script);
-    cmd.arg("user")
-        .arg("create_pegin_tx")
-        .arg(stream_amount.to_string())
-        .arg(packet_number.to_string())
-        .arg(pegin_address)
-        .arg(rsk_address)
-        .arg(enabler_script_pubkey);
-
-    println!(
-        "Running: {} user create_pegin_tx {} {} {} {} {}",
-        wallet_script,
-        stream_amount,
-        packet_number,
-        pegin_address,
-        rsk_address,
-        enabler_script_pubkey
-    );
-
-    let output = cmd.output().context("failed to execute cli-bitcoin-wallet.sh")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        bail!(
-            "wallet command failed with status {}:\nstdout: {}\nstderr: {}",
-            output.status,
-            stdout.trim(),
-            stderr.trim()
-        );
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    println!("{}", stdout);
-
-    Ok(())
+fn derive_reimbursement_xonly_pub_key() -> Result<String> {
+    let wif = std::env::var("USER_BITCOIN_WIF")
+        .context("USER_BITCOIN_WIF environment variable not set")?;
+    let private_key =
+        PrivateKey::from_wif(&wif).context("failed to parse USER_BITCOIN_WIF as WIF")?;
+    let public_key = private_key.public_key(&Secp256k1::new());
+    let (xonly, _) = public_key.inner.x_only_public_key();
+    Ok(format!("0x{}", hex::encode(xonly.serialize())))
 }
 
 fn validate_rsk_address(address: &str) -> Result<()> {
@@ -175,23 +156,6 @@ fn validate_rsk_address(address: &str) -> Result<()> {
 
     if !stripped.chars().all(|c| c.is_ascii_hexdigit()) {
         bail!("RSK address must contain only hexadecimal characters");
-    }
-
-    Ok(())
-}
-
-fn validate_btc_pub_key(key: &str) -> Result<()> {
-    let stripped = key
-        .strip_prefix("0x")
-        .or_else(|| key.strip_prefix("0X"))
-        .ok_or_else(|| anyhow!("BTC public key must start with 0x"))?;
-
-    if stripped.len() != 64 {
-        bail!("BTC public key must be a 32-byte x-only pubkey (64 hex characters after 0x prefix)");
-    }
-
-    if !stripped.chars().all(|c| c.is_ascii_hexdigit()) {
-        bail!("BTC public key must contain only hexadecimal characters");
     }
 
     Ok(())

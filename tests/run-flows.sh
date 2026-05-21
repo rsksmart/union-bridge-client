@@ -528,30 +528,6 @@ wait_for_test_prereqs() {
     fi
 }
 
-# derive x-only public key (32 bytes) from USER_BITCOIN_WIF
-# returns the key with 0x prefix (66 chars total)
-user_xonly_pubkey_from_wif() {
-    if [[ -z "${USER_BITCOIN_WIF:-}" ]]; then
-        echo "Error: USER_BITCOIN_WIF not set" >&2
-        return 1
-    fi
-    local desc pubkey xonly
-    desc=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getdescriptorinfo "wpkh(${USER_BITCOIN_WIF})" 2>/dev/null | jq -r '.descriptor')
-    if [[ -z "$desc" || "$desc" == "null" ]]; then
-        echo "Error: Failed to derive descriptor from USER_BITCOIN_WIF" >&2
-        return 1
-    fi
-    # Extract pubkey from wpkh(PUBKEY)#checksum format
-    pubkey=$(echo "$desc" | sed -E 's/^wpkh\(([0-9a-fA-F]+)\)#.*/\1/')
-    if [[ ${#pubkey} -ne 66 ]]; then
-        echo "Error: Unexpected pubkey length: ${#pubkey}" >&2
-        return 1
-    fi
-    # Remove first 2 chars (02/03 prefix) to get x-only key
-    xonly="${pubkey:2}"
-    echo "0x${xonly}"
-}
-
 # derive compressed public key (33 bytes) from USER_BITCOIN_WIF
 # returns the key with 0x prefix (68 chars total)
 user_compressed_pubkey_from_wif() {
@@ -845,10 +821,9 @@ extract_pegout_request_tx_hash_from_output() {
 run_user_pegin_and_capture_txid() {
     local rsk_address="$1"
     local value="$2"
-    local user_xonly_pubkey="$3"
     local output=""
 
-    if ! output=$(bash cli-operations.sh user pegin -a "$rsk_address" -v "$value" -k "$user_xonly_pubkey" --env "$SCRIPT_ENV" --execute 2>&1); then
+    if ! output=$(bash cli-operations.sh user pegin -a "$rsk_address" -v "$value" --env "$SCRIPT_ENV" --execute 2>&1); then
         echo -e "${YELLOW}[!]${NC} Command failed!" >&2
         printf '%s\n' "$output" >&2
         return 1
@@ -1558,19 +1533,11 @@ run_pegin_phase() {
     local user_btc_balance_before_sat
     user_btc_balance_before_sat=$(user_btc_balance_sat)
 
-    local user_xonly_pubkey
-    user_xonly_pubkey=$(user_xonly_pubkey_from_wif)
-    if [[ -z "$user_xonly_pubkey" ]]; then
-        warn "Failed to derive user x-only public key from WIF"
-        return 1
-    fi
-
     log "RSK Address: $RSK_ADDRESS"
     log "Amount: $VALUE sats"
-    log "BTC Pub Key: $user_xonly_pubkey"
-    log "Command: bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE -k $user_xonly_pubkey --env $SCRIPT_ENV --execute"
+    log "Command: bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE --env $SCRIPT_ENV --execute"
     echo ""
-    if ! EXPECTED_PEGIN_TXID=$(run_user_pegin_and_capture_txid "$RSK_ADDRESS" "$VALUE" "$user_xonly_pubkey"); then
+    if ! EXPECTED_PEGIN_TXID=$(run_user_pegin_and_capture_txid "$RSK_ADDRESS" "$VALUE"); then
         return 1
     fi
     success "Pegin transaction created"

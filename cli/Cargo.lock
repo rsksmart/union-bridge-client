@@ -3016,6 +3016,7 @@ dependencies = [
  "anyhow",
  "bitcoin 0.32.6",
  "clap",
+ "hex",
  "key-manager",
  "op-funding",
  "protocol-params",

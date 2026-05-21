@@ -14,8 +14,6 @@ NUM_OPERATORS=""
 AUTO_CONFIRM=false
 BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
 OPERATORS_TO_RUN=()
-NEW_USER_BITCOIN_WIF="${USER_BITCOIN_WIF:-}"
-USED_EXPORTED_USER_BITCOIN_WIF=false
 NEW_KEY_STORE_PASSWORD="${KEY_STORE_PASSWORD:-}"
 USED_EXPORTED_KEY_STORE_PASSWORD=false
 NEW_BITVMX_MNEMONIC_SENTENCE="${BITVMX_MNEMONIC_SENTENCE:-}"
@@ -26,7 +24,6 @@ if [[ "${BITVMX_MNEMONIC_PASSPHRASE+x}" == x ]]; then
   HAS_EXPORTED_BITVMX_MNEMONIC_PASSPHRASE=true
 fi
 BROKER_SERVICES=("block-indexer" "log-indexer" "user-api" "coordinator")
-RESOLVED_USER_BITCOIN_WIF=""
 RESOLVED_BITVMX_BROKER_PUBKEY_HASH=""
 RESOLVED_KEY_STORE_PASSWORD=""
 RESOLVED_BITVMX_MNEMONIC_SENTENCE=""
@@ -41,7 +38,7 @@ print_help() {
   echo "  - host-side Rootstock keystores under ${BASE_STORAGE_PATH}/.union_bridge/op_N/union-client/keystore/{member,user}"
   echo "    used by local cargo mode and docker/operator"
   echo "  Existing selected operator folders are removed before setup starts."
-  echo "  Current KEY_STORE_PASSWORD and USER_BITCOIN_WIF must be exported or entered when prompted."
+  echo "  Current KEY_STORE_PASSWORD must be exported or entered when prompted."
   echo ""
   echo "Options:"
   echo "  --ops <N>                  Number of operators to prepare (1-10)"
@@ -581,25 +578,6 @@ resolve_key_store_password() {
   RESOLVED_KEY_STORE_PASSWORD="${NEW_KEY_STORE_PASSWORD}"
 }
 
-resolve_user_bitcoin_wif() {
-  local op_num="$1"
-
-  if [[ -z "${NEW_USER_BITCOIN_WIF}" ]]; then
-    while [[ -z "${NEW_USER_BITCOIN_WIF}" ]]; do
-      read -r -s -p "Please enter USER_BITCOIN_WIF for op_${op_num}: " NEW_USER_BITCOIN_WIF
-      echo ""
-      if [[ -z "${NEW_USER_BITCOIN_WIF}" ]]; then
-        echo "Error: USER_BITCOIN_WIF is required."
-      fi
-    done
-  elif [[ "${USED_EXPORTED_USER_BITCOIN_WIF}" != true ]]; then
-    echo "Using exported USER_BITCOIN_WIF for new operator env files." >&2
-    USED_EXPORTED_USER_BITCOIN_WIF=true
-  fi
-
-  RESOLVED_USER_BITCOIN_WIF="${NEW_USER_BITCOIN_WIF}"
-}
-
 write_operator_compose_env_file() {
   local env_file_path="$1"
   local op_num="$2"
@@ -625,9 +603,8 @@ EOF
 write_operator_runtime_env_file() {
   local env_file_path="$1"
   local op_num="$2"
-  local user_bitcoin_wif="$3"
-  local key_store_password="$4"
-  local bitvmx_pubkey_hash="$5"
+  local key_store_password="$3"
+  local bitvmx_pubkey_hash="$4"
 
   mkdir -p "$(dirname "${env_file_path}")"
 
@@ -639,7 +616,6 @@ UB__COORDINATOR__BITVMX__PUBKEY_HASH=${bitvmx_pubkey_hash}
 UB__COORDINATOR__BITVMX__PORT=$(operator_bitvmx_port "${op_num}")
 UB__USER_API__COORDINATOR__PUBKEY_HASH=$(read_broker_pubkey_hash "coordinator" "${op_num}")
 KEY_STORE_PASSWORD=${key_store_password}
-USER_BITCOIN_WIF=${user_bitcoin_wif}
 EOF
 
   chmod 600 "${env_file_path}"
@@ -786,8 +762,6 @@ for op_num in "${OPERATORS_TO_RUN[@]}"; do
   runtime_env_file_path="$(operator_runtime_env_file_path "${op_num}")"
   resolve_key_store_password "${op_num}"
   key_store_password_value="${RESOLVED_KEY_STORE_PASSWORD}"
-  resolve_user_bitcoin_wif "${op_num}"
-  user_bitcoin_wif_value="${RESOLVED_USER_BITCOIN_WIF}"
 
   echo "=== op_${op_num} ==="
   provision_operator_broker_identities "${op_num}"
@@ -802,7 +776,7 @@ for op_num in "${OPERATORS_TO_RUN[@]}"; do
     env_file_action="Created"
   fi
   write_operator_compose_env_file "${compose_env_file_path}" "${op_num}"
-  write_operator_runtime_env_file "${runtime_env_file_path}" "${op_num}" "${user_bitcoin_wif_value}" "${key_store_password_value}" "${bitvmx_pubkey_hash}"
+  write_operator_runtime_env_file "${runtime_env_file_path}" "${op_num}" "${key_store_password_value}" "${bitvmx_pubkey_hash}"
   echo "- ${env_file_action} operator env files ${compose_env_file_path} and ${runtime_env_file_path}"
 
   echo ""

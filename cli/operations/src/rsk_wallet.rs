@@ -9,7 +9,7 @@ use reqwest::Client;
 use rpassword::prompt_password;
 use serde::Deserialize;
 
-use crate::bitcoin_wallet::collect_user_bitcoin_addresses;
+use crate::bitcoin_wallet::derive_user_bitcoin_address_from_env;
 use crate::constants::{LOCAL_ANVIL_ADDRESS, operator_ids};
 use crate::environments::*;
 use crate::member_funding_info::CollectedMemberFundingInfo;
@@ -257,22 +257,19 @@ pub(crate) async fn handle_user_funding(env: Environment) -> Result<()> {
 
     // print Bitcoin funding instructions
     println!("\n--- Bitcoin ---");
-    let user_bitcoin_addresses = collect_user_bitcoin_addresses(&env, false)?;
-    if user_bitcoin_addresses.is_empty() {
-        println!("No user Bitcoin addresses found in staged operator env files.");
-        println!(
-            "Ensure USER_BITCOIN_WIF is available under ~/.union_bridge/op_N/docker-service.env."
-        );
-    } else {
-        println!("User Bitcoin addresses to fund:");
-        for (source, address) in &user_bitcoin_addresses {
-            println!("  {} -> {}", source, address);
+    match derive_user_bitcoin_address_from_env(&env) {
+        Ok(address) => {
+            println!("User Bitcoin address to fund: {}", address);
+            println!();
+            println!("Use your bitcoin-wallet CLI:");
+            println!("  send_to_address <user_btc_address> [amount]");
+            println!();
+            println!("Note: Use the address of a Bitcoin private key you control");
         }
-        println!();
-        println!("Use your bitcoin-wallet CLI:");
-        println!("  send_to_address <user_btc_address> [amount]");
-        println!();
-        println!("Note: Use the address of a Bitcoin private key you control");
+        Err(e) => {
+            println!("Could not derive user Bitcoin address: {}", e);
+            println!("Ensure USER_BITCOIN_WIF is exported in your shell.");
+        }
     }
 
     Ok(())

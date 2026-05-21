@@ -8,10 +8,8 @@ edition = "2024"
 [dependencies]
 anyhow = { workspace = true }
 axum = { workspace = true }
-bitcoin = { workspace = true, features = ["std", "rand-std", "serde"] }
 clap = { workspace = true }
 common = { path = "../common" }
-hex = "0.4.3"
 log = { workspace = true }
 secrecy = { workspace = true }
 serde = { version = "1.0.228", features = ["derive"] }

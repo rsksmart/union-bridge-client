@@ -31,6 +31,13 @@ pub struct RequestPeginInput {
     pub packet_number: Option<u64>,
 }
 
+#[derive(Deserialize, Debug)]
+struct PeginAddressHttpRequest {
+    rootstock_deposit_address: String,
+    value: u64,
+    btc_reimbursement_pub_key: String,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct UserRequestPegoutInput {
     pub amount_in_wei: u64,
@@ -328,27 +335,24 @@ impl Server {
         Extension(contracts): Extension<
             Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi>,
         >,
-        Json(payload): Json<PeginAddressInput>,
+        Json(req): Json<PeginAddressHttpRequest>,
     ) -> impl IntoResponse {
-        info!("Received pegin-address request: {payload:?}");
+        info!("Received pegin-address request: {req:?}");
 
-        // Validate btc_reimbursement_pub_key is provided
-        if payload.btc_reimbursement_pub_key.is_empty() {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": "btc_reimbursement_pub_key is required" })),
-            );
-        }
-
-        // Validate format: must be 0x + 64 hex chars (32 bytes x-only pubkey)
-        if !is_valid_xonly_pubkey(&payload.btc_reimbursement_pub_key) {
+        if !is_valid_xonly_pubkey(&req.btc_reimbursement_pub_key) {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(
-                    json!({ "error": "btc_reimbursement_pub_key must be a valid 32-byte hex string with 0x prefix (66 chars total)" }),
+                    json!({ "error": "btc_reimbursement_pub_key must be a valid 32-byte x-only public key hex string with 0x prefix (66 chars total)" }),
                 ),
             );
         }
+
+        let payload = PeginAddressInput {
+            rootstock_deposit_address: req.rootstock_deposit_address,
+            value: req.value,
+            btc_reimbursement_pub_key: req.btc_reimbursement_pub_key,
+        };
 
         match contracts.get_temporary_pegin_address(payload) {
             Ok(data) => (StatusCode::OK, Json(json!(data))),
@@ -459,14 +463,14 @@ fn build_apply_stream_payload(body: &ApplyStreamReq) -> Value {
     json!({ "ApplyToStream": &body.apply_to_stream })
 }
 
-/// Validates a 32-byte X-only public key with 0x prefix
-fn is_valid_xonly_pubkey(key: &str) -> bool {
-    key.len() == 66 && key.starts_with("0x") && key[2..].chars().all(|c| c.is_ascii_hexdigit())
-}
-
 /// Validates a 33-byte compressed public key with 0x prefix
 fn is_valid_compressed_pubkey(key: &str) -> bool {
     key.len() == 68 && key.starts_with("0x") && key[2..].chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Validates a 32-byte x-only public key with 0x prefix
+fn is_valid_xonly_pubkey(key: &str) -> bool {
+    key.len() == 66 && key.starts_with("0x") && key[2..].chars().all(|c| c.is_ascii_hexdigit())
 }
 
 #[cfg(test)]

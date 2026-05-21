@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 use std::convert::TryFrom;
 use std::str::FromStr;
+use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use bitcoin::address::{Address, NetworkUnchecked};
@@ -14,8 +15,10 @@ use bitcoin::{OutPoint, ScriptBuf, Txid};
 use bitcoincore_rpc::RpcApi;
 use chrono::{DateTime, Utc};
 use clap::Parser;
+use reqwest::blocking::Client;
 use rustyline::error::ReadlineError;
 use secrecy::ExposeSecret;
+use serde::Deserialize;
 use serde_json::{Value, json};
 use ub_wallet::bitcoin::utils::find_vout_for_address;
 use ub_wallet::cli::{CliOpts, WalletMode, setup_editor};
@@ -533,6 +536,56 @@ fn handle_command(wallet: &mut Wallet, line: &str, mode: &WalletMode) -> Result<
             println!("Cleared UTXO database for regtest.");
             Ok(CommandOutcome::Continue)
         }
+        "clear_funds" => {
+            require_operational_mode(mode, command)?;
+            if wallet.active_address().is_none() {
+                bail!("import or switch to an address before clearing UTXOs");
+            }
+            let removed = wallet.clear_active_address_utxos()?;
+            println!("Removed {} registered UTXO(s) for active address", removed);
+            Ok(CommandOutcome::Continue)
+        }
+        "register_utxos_auto" => {
+            require_operational_mode(mode, command)?;
+            if wallet.network() != Network::Testnet {
+                bail!(
+                    "register_utxos_auto is only available on testnet (current: {:?})",
+                    wallet.network()
+                );
+            }
+            let active_address = wallet
+                .active_address()
+                .cloned()
+                .context("import or switch to an address before auto-registering UTXOs")?;
+            let active_address_str = active_address.to_string();
+            println!(
+                "Auto-registering testnet UTXOs for active wallet address: {}",
+                active_address_str
+            );
+
+            let fetched = fetch_testnet_utxos(&active_address_str)?;
+            let confirmed_utxos = filter_confirmed_utxos(fetched);
+
+            let removed = wallet.clear_active_address_utxos()?;
+            println!("Removed {} registered UTXO(s) for active address", removed);
+
+            for utxo in &confirmed_utxos {
+                let block_hash = utxo.status.block_hash.as_ref().context("missing block hash")?;
+                let txid = Txid::from_str(&utxo.txid).context("invalid txid from Blockstream")?;
+                // validate block_hash format before registering the UTXO
+                bitcoincore_rpc::bitcoin::BlockHash::from_str(block_hash)
+                    .context("invalid block hash from Blockstream")?;
+                let outpoint = OutPoint::new(txid, utxo.vout);
+                wallet.register_utxo(outpoint, utxo.value)?;
+            }
+
+            println!(
+                "Registered {} confirmed UTXO(s) for {}",
+                confirmed_utxos.len(),
+                active_address_str
+            );
+            Ok(CommandOutcome::Continue)
+        }
         "create_pegin_tx" => {
             require_operational_mode(mode, command)?;
             // Syntax: create_pegin_tx <stream_value> <packet_number> <dest_addr> <rsk_address> <enabler_script_pubkey>
@@ -870,7 +923,13 @@ fn print_help(sats_per_byte: u64, mode: &WalletMode) {
             "  clear_db                              - Regtest only: clear the UTXO database for the current network"
         );
         println!(
-            "  create_pegin_tx <value> <packet> <addr> <rsk>  - Create RSK pegin transaction (value in sats, packet number, dest address, RSK address hex)"
+            "  clear_funds                           - Clear registered UTXOs for the active address"
+        );
+        println!(
+            "  register_utxos_auto                   - Testnet only: refresh active-address UTXOs from Blockstream"
+        );
+        println!(
+            "  create_pegin_tx <value> <packet> <addr> <rsk> <enabler>  - Create RSK pegin transaction"
         );
         println!();
         println!("RBF (Replace-By-Fee) commands:");
@@ -896,11 +955,48 @@ fn format_timestamp(timestamp: u64) -> String {
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct BlockstreamUtxo {
+    txid: String,
+    vout: u32,
+    value: u64,
+    status: BlockstreamUtxoStatus,
+}
+
+#[derive(Debug, Deserialize)]
+struct BlockstreamUtxoStatus {
+    confirmed: bool,
+    block_hash: Option<String>,
+}
+
+fn filter_confirmed_utxos(utxos: Vec<BlockstreamUtxo>) -> Vec<BlockstreamUtxo> {
+    utxos
+        .into_iter()
+        .filter(|utxo| utxo.status.confirmed && utxo.status.block_hash.is_some())
+        .collect()
+}
+
+fn fetch_testnet_utxos(address: &str) -> Result<Vec<BlockstreamUtxo>> {
+    let url = format!("https://blockstream.info/testnet/api/address/{address}/utxo");
+    let client = Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(30))
+        .build()
+        .context("failed to build HTTP client")?;
+    let response = client.get(&url).send().with_context(|| format!("failed to call {url}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().unwrap_or_else(|_| String::from("<failed to read body>"));
+        bail!("blockstream API returned {}: {}", status, body);
+    }
+    response.json::<Vec<BlockstreamUtxo>>().context("failed to parse blockstream UTXO response")
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
 
-    use super::parse_trusted_balance_sat;
+    use super::{BlockstreamUtxo, filter_confirmed_utxos, parse_trusted_balance_sat};
 
     #[test]
     fn parses_trusted_balance_from_getbalances_response() {
@@ -920,5 +1016,54 @@ mod tests {
         let balances = json!({ "mine": { "immature": 50.0 } });
 
         assert!(parse_trusted_balance_sat(&balances).is_err());
+    }
+
+    fn utxo(txid: &str, confirmed: bool, block_hash: Option<&str>) -> BlockstreamUtxo {
+        serde_json::from_value(json!({
+            "txid": txid,
+            "vout": 0,
+            "value": 1000,
+            "status": {
+                "confirmed": confirmed,
+                "block_hash": block_hash,
+            },
+        }))
+        .expect("valid BlockstreamUtxo JSON")
+    }
+
+    #[test]
+    fn filter_confirmed_utxos_keeps_confirmed_with_block_hash() {
+        let kept = filter_confirmed_utxos(vec![utxo("aa", true, Some("bb"))]);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].txid, "aa");
+    }
+
+    #[test]
+    fn filter_confirmed_utxos_drops_unconfirmed() {
+        let kept = filter_confirmed_utxos(vec![utxo("aa", false, Some("bb"))]);
+        assert!(kept.is_empty());
+    }
+
+    #[test]
+    fn filter_confirmed_utxos_drops_missing_block_hash() {
+        let kept = filter_confirmed_utxos(vec![utxo("aa", true, None)]);
+        assert!(kept.is_empty());
+    }
+
+    #[test]
+    fn filter_confirmed_utxos_handles_empty_input() {
+        assert!(filter_confirmed_utxos(Vec::new()).is_empty());
+    }
+
+    #[test]
+    fn filter_confirmed_utxos_keeps_only_confirmed_with_block_hash() {
+        let kept = filter_confirmed_utxos(vec![
+            utxo("aa", true, Some("hash-a")),
+            utxo("bb", false, Some("hash-b")),
+            utxo("cc", true, None),
+            utxo("dd", true, Some("hash-d")),
+        ]);
+        let txids: Vec<&str> = kept.iter().map(|u| u.txid.as_str()).collect();
+        assert_eq!(txids, vec!["aa", "dd"]);
     }
 }
