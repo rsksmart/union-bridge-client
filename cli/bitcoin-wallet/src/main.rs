@@ -564,10 +564,7 @@ fn handle_command(wallet: &mut Wallet, line: &str, mode: &WalletMode) -> Result<
             );
 
             let fetched = fetch_testnet_utxos(&active_address_str)?;
-            let confirmed_utxos: Vec<BlockstreamUtxo> = fetched
-                .into_iter()
-                .filter(|utxo| utxo.status.confirmed && utxo.status.block_hash.is_some())
-                .collect();
+            let confirmed_utxos = filter_confirmed_utxos(fetched);
 
             let removed = wallet.clear_active_address_utxos()?;
             println!("Removed {} registered UTXO(s) for active address", removed);
@@ -972,6 +969,13 @@ struct BlockstreamUtxoStatus {
     block_hash: Option<String>,
 }
 
+fn filter_confirmed_utxos(utxos: Vec<BlockstreamUtxo>) -> Vec<BlockstreamUtxo> {
+    utxos
+        .into_iter()
+        .filter(|utxo| utxo.status.confirmed && utxo.status.block_hash.is_some())
+        .collect()
+}
+
 fn fetch_testnet_utxos(address: &str) -> Result<Vec<BlockstreamUtxo>> {
     let url = format!("https://blockstream.info/testnet/api/address/{address}/utxo");
     let client = Client::builder()
@@ -992,7 +996,7 @@ fn fetch_testnet_utxos(address: &str) -> Result<Vec<BlockstreamUtxo>> {
 mod tests {
     use serde_json::json;
 
-    use super::parse_trusted_balance_sat;
+    use super::{BlockstreamUtxo, filter_confirmed_utxos, parse_trusted_balance_sat};
 
     #[test]
     fn parses_trusted_balance_from_getbalances_response() {
@@ -1012,5 +1016,54 @@ mod tests {
         let balances = json!({ "mine": { "immature": 50.0 } });
 
         assert!(parse_trusted_balance_sat(&balances).is_err());
+    }
+
+    fn utxo(txid: &str, confirmed: bool, block_hash: Option<&str>) -> BlockstreamUtxo {
+        serde_json::from_value(json!({
+            "txid": txid,
+            "vout": 0,
+            "value": 1000,
+            "status": {
+                "confirmed": confirmed,
+                "block_hash": block_hash,
+            },
+        }))
+        .expect("valid BlockstreamUtxo JSON")
+    }
+
+    #[test]
+    fn filter_confirmed_utxos_keeps_confirmed_with_block_hash() {
+        let kept = filter_confirmed_utxos(vec![utxo("aa", true, Some("bb"))]);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].txid, "aa");
+    }
+
+    #[test]
+    fn filter_confirmed_utxos_drops_unconfirmed() {
+        let kept = filter_confirmed_utxos(vec![utxo("aa", false, Some("bb"))]);
+        assert!(kept.is_empty());
+    }
+
+    #[test]
+    fn filter_confirmed_utxos_drops_missing_block_hash() {
+        let kept = filter_confirmed_utxos(vec![utxo("aa", true, None)]);
+        assert!(kept.is_empty());
+    }
+
+    #[test]
+    fn filter_confirmed_utxos_handles_empty_input() {
+        assert!(filter_confirmed_utxos(Vec::new()).is_empty());
+    }
+
+    #[test]
+    fn filter_confirmed_utxos_keeps_only_confirmed_with_block_hash() {
+        let kept = filter_confirmed_utxos(vec![
+            utxo("aa", true, Some("hash-a")),
+            utxo("bb", false, Some("hash-b")),
+            utxo("cc", true, None),
+            utxo("dd", true, Some("hash-d")),
+        ]);
+        let txids: Vec<&str> = kept.iter().map(|u| u.txid.as_str()).collect();
+        assert_eq!(txids, vec!["aa", "dd"]);
     }
 }
