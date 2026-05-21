@@ -28,12 +28,14 @@ This repo owns:
 # Shared env used by local setup
 export BITCOIND_URL=http://user:password@localhost:18443
 export KEY_STORE_PASSWORD=<your-password>
-export USER_BITCOIN_WIF=<your-user-wif>
 
 # Prepare fresh staged operator payloads from the repository root.
 # Add -y to skip the removal confirmation for existing op_N folders.
 ./cli-setup-operators.sh --ops 4
 ```
+
+`USER_BITCOIN_WIF` is read directly from your shell by the user-facing CLIs at run
+time and is not written into the staged operator env files.
 
 The generated files include:
 
@@ -49,12 +51,12 @@ The generated files include:
 by hand.
 
 The setup flow also patches the generated local BitVMX YAMLs with the current `BITCOIND_URL`, the keystore password,
-and the required broker pubkey hashes. `KEY_STORE_PASSWORD` and `USER_BITCOIN_WIF` are written into each operator's
-`docker-service.env` from the current environment or interactive prompts.
+and the required broker pubkey hashes. `KEY_STORE_PASSWORD` is written into each operator's `docker-service.env`
+from the current environment or interactive prompts.
 
 If selected operator folders already exist, `cli-setup-operators.sh` lists them and asks before removing them. Use
 `./cli-setup-operators.sh --ops 4 -y` for non-interactive reset and setup. Setup does not reuse secrets from a previous
-`docker-service.env`; export the intended `KEY_STORE_PASSWORD` and `USER_BITCOIN_WIF` before running non-interactively.
+`docker-service.env`; export the intended `KEY_STORE_PASSWORD` before running non-interactively.
 
 The coordinator and user-api containers bind-mount
 `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/keystore/` as `/keystore`. The same keystores serve local

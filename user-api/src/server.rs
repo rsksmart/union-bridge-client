@@ -1,4 +1,4 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -8,8 +8,6 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
-use bitcoin::key::PrivateKey;
-use bitcoin::secp256k1::Secp256k1;
 use common::msg_broker::broker::{BrokerServer, BrokerServerApi, Identifier};
 use common::msg_broker::types::{FromServer, MemberFundingInfo, ToServer};
 use common::shutdown_flag::ShutdownFlag;
@@ -37,6 +35,7 @@ pub struct RequestPeginInput {
 struct PeginAddressHttpRequest {
     rootstock_deposit_address: String,
     value: u64,
+    btc_reimbursement_pub_key: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -340,18 +339,10 @@ impl Server {
     ) -> impl IntoResponse {
         info!("Received pegin-address request: {req:?}");
 
-        let btc_reimbursement_pub_key = match derive_xonly_pubkey_from_env() {
-            Ok(k) => k,
-            Err(e) => {
-                error!("Failed to derive btc_reimbursement_pub_key: {e}");
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e })));
-            }
-        };
-
         let payload = PeginAddressInput {
             rootstock_deposit_address: req.rootstock_deposit_address,
             value: req.value,
-            btc_reimbursement_pub_key,
+            btc_reimbursement_pub_key: req.btc_reimbursement_pub_key,
         };
 
         match contracts.get_temporary_pegin_address(payload) {
@@ -461,21 +452,6 @@ fn build_fail_flow_payload(body: &FailFlowReq) -> Result<Value, ApiError> {
 /// Rebuild the only coordinator request shape accepted by `/member/apply-stream`.
 fn build_apply_stream_payload(body: &ApplyStreamReq) -> Value {
     json!({ "ApplyToStream": &body.apply_to_stream })
-}
-
-static SECP: OnceLock<Secp256k1<bitcoin::secp256k1::All>> = OnceLock::new();
-
-/// Derives the user's Bitcoin x-only public key from the USER_BITCOIN_WIF environment variable.
-/// Returns a hex string with 0x prefix (66 chars: "0x" + 64 hex chars = 32 bytes).
-fn derive_xonly_pubkey_from_env() -> Result<String, String> {
-    let wif = std::env::var("USER_BITCOIN_WIF")
-        .map_err(|_| "USER_BITCOIN_WIF environment variable not set".to_string())?;
-    let secp = SECP.get_or_init(Secp256k1::new);
-    let private_key = PrivateKey::from_wif(&wif)
-        .map_err(|e| format!("Failed to parse USER_BITCOIN_WIF as WIF: {e}"))?;
-    let public_key = private_key.public_key(secp);
-    let (xonly, _) = public_key.inner.x_only_public_key();
-    Ok(format!("0x{}", hex::encode(xonly.serialize())))
 }
 
 /// Validates a 33-byte compressed public key with 0x prefix

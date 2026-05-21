@@ -18,14 +18,6 @@ pub(crate) fn confirm_operation(description: &str) -> Result<bool> {
     Ok(answer == "yes" || answer == "y")
 }
 
-/// Converts a Command to a string representation for display
-pub(crate) fn command_to_string(cmd: &Command) -> String {
-    let program = cmd.get_program().to_string_lossy();
-    let args: Vec<String> = cmd.get_args().map(|arg| arg.to_string_lossy().to_string()).collect();
-
-    if args.is_empty() { program.to_string() } else { format!("{} {}", program, args.join(" ")) }
-}
-
 /// Runs a bitcoin-wallet CLI command and returns its stdout.
 pub(crate) fn run_wallet_command(args: &[&str]) -> Result<String> {
     let wallet_script = "./cli-bitcoin-wallet.sh";

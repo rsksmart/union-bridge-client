@@ -13,5 +13,3 @@ pub(crate) fn operator_ids() -> Vec<u8> {
 
 // local anvil default address
 pub(crate) const LOCAL_ANVIL_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
-
-pub(crate) const UNION_BRIDGE_DIR: &str = ".union_bridge";

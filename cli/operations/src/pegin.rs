@@ -1,4 +1,6 @@
 use anyhow::{Context, Result, anyhow, bail};
+use bitcoin::PrivateKey;
+use bitcoin::secp256k1::Secp256k1;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
@@ -9,6 +11,7 @@ use crate::utils::{confirm_operation, run_wallet_command};
 struct PeginAddressRequest {
     rootstock_deposit_address: String,
     value: u64,
+    btc_reimbursement_pub_key: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -50,7 +53,12 @@ pub(crate) async fn create_pegin_tx(
 
     println!("Getting pegin data for {rsk_address}...");
 
-    let payload = PeginAddressRequest { rootstock_deposit_address: rsk_address.clone(), value };
+    let btc_reimbursement_pub_key = derive_reimbursement_xonly_pub_key()?;
+    let payload = PeginAddressRequest {
+        rootstock_deposit_address: rsk_address.clone(),
+        value,
+        btc_reimbursement_pub_key,
+    };
 
     let user_api_base = environment
         .user_api_endpoints()?
@@ -124,6 +132,16 @@ pub(crate) async fn create_pegin_tx(
     }
 
     Ok(())
+}
+
+fn derive_reimbursement_xonly_pub_key() -> Result<String> {
+    let wif = std::env::var("USER_BITCOIN_WIF")
+        .context("USER_BITCOIN_WIF environment variable not set")?;
+    let private_key =
+        PrivateKey::from_wif(&wif).context("failed to parse USER_BITCOIN_WIF as WIF")?;
+    let public_key = private_key.public_key(&Secp256k1::new());
+    let (xonly, _) = public_key.inner.x_only_public_key();
+    Ok(format!("0x{}", hex::encode(xonly.serialize())))
 }
 
 fn validate_rsk_address(address: &str) -> Result<()> {

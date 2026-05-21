@@ -1,7 +1,0 @@
-Issues with docker images, I had to build it myslef
-
-could be related with linux/amr64 instead of linux/amd64
-
-also I had problems with the geenrated config, missing bitciond config
-
-happy path not working

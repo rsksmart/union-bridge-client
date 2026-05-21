@@ -50,8 +50,7 @@ Address sources now differ by flow:
 - member Bitcoin and member RSK addresses come from `/member/funding-info`, exposed by `user-api`
   and backed by coordinator runtime state
 - user RSK address comes from `/user/rsk-address`, exposed by `user-api`
-- user Bitcoin address is still derived locally from `USER_BITCOIN_WIF` in the generated
-  `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-service.env`
+- user Bitcoin address is derived locally from your shell's `USER_BITCOIN_WIF`
 
 ### Supported Environments
 

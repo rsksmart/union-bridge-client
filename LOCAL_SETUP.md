@@ -117,7 +117,7 @@ Configuration ownership is:
 | `.envrc` | repo root, usually copied from `.envrc.sample` | your shell via `direnv` | recommended place for local developer env vars |
 | `BASE_STORAGE_PATH` | shell or `.envrc` | `./cli-run.sh`, `./cli-operations.sh`, `./cli-bitcoin-wallet.sh`, some local scripts | required for local cargo workflows and wallet DB resolution |
 | `KEY_STORE_PASSWORD` | shell or `.envrc`; written into generated `docker-service.env` during setup | local cargo client, setup helpers, Docker operator runtime | required when creating or unlocking member/user keystores |
-| `USER_BITCOIN_WIF` | shell or `.envrc`; written into generated `docker-service.env` during setup | user flows, wallet helpers, Docker operator runtime, happy-path testing | required for user-facing Bitcoin operations |
+| `USER_BITCOIN_WIF` | shell or `.envrc` | user flows, wallet helpers, happy-path testing | required for user-facing Bitcoin operations |
 | `MEMBER_BITCOIN_WIF` | shell or `.envrc` | `./cli-bitcoin-wallet.sh`, happy-path testing | required for member wallet operations in local happy-path setup and automated flow tests |
 | `BITCOIND_URL` | shell or `.envrc` | `./cli-setup-operators.sh` while patching generated BitVMX configs | required before preparing operator artifacts for Docker-backed local flows |
 | `SLOTS_PER_PACKAGE` | shell or `.envrc` | coordinator, BitVMX dispute setup, and `./cli-operations.sh` | temporary workaround until sourced from contracts; optional; defaults to `100` |
@@ -284,8 +284,8 @@ fresh host-side runtime artifacts under
 Host-side `keystore/{member,user}` is used by both local cargo mode and Docker operator runs. Docker operator
 containers bind-mount the host keystore directory and reuse the existing files; they do not generate replacement keys.
 `cli-setup-operators.sh` creates these files via the `key-manager` crate before Docker startup. Setup does not read
-secrets back from an old `docker-service.env`; export the intended `KEY_STORE_PASSWORD` and `USER_BITCOIN_WIF` before
-running it, or enter them when prompted. Use `./cli-setup-operators.sh --ops 4 -y` for non-interactive reset and setup.
+secrets back from an old `docker-service.env`; export the intended `KEY_STORE_PASSWORD` before running it, or enter
+it when prompted. Use `./cli-setup-operators.sh --ops 4 -y` for non-interactive reset and setup.
 
 ### DRP Program Files
 

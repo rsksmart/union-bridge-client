@@ -54,7 +54,6 @@ services:
       - ${USER_API_BROKER_PEM_PATH}:/app/broker.pem:ro
     environment:
       - UB__USER_API__COORDINATOR__PUBKEY_HASH
-      - USER_BITCOIN_WIF
     ports:
       - "${USER_API_PORT:-40001}:40001"
     extra_hosts:

@@ -59,11 +59,6 @@ impl Environment {
         matches!(self, Environment::Remote(_))
     }
 
-    /// returns the remote ssh user for remote environments
-    pub(crate) fn remote_ssh_user(&self) -> Result<String> {
-        required_remote_value(self, "UC_REMOTE_SSH_USER")
-    }
-
     /// returns the remote hosts for remote environments
     pub(crate) fn hosts(&self) -> Result<Vec<String>> {
         match self {
