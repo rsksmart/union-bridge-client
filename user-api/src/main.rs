@@ -7,7 +7,7 @@ use std::thread;
 
 use anyhow::{Context, Result, ensure};
 use clap::{Arg, Command};
-use common::msg_broker::broker::{BrokerServer, Identifier};
+use common::msg_broker::broker::{BrokerServer, Identifier, broker_queue_storage_path};
 use common::shutdown_flag::ShutdownFlag;
 use log::{error, info};
 use tokio::net::TcpListener;
@@ -17,6 +17,7 @@ use user_api::config::{Config, Logger};
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config";
+const BROKER_QUEUE_SERVICE_NAME: &str = "user-api";
 
 struct BrokerDropGuard(Option<Arc<BrokerServer>>);
 
@@ -81,11 +82,18 @@ async fn main() -> Result<()> {
     let broker_port = config.user_api_config.notifier.port;
     let broker_key_path = config.user_api_config.broker_key_path.clone();
 
-    let broker_server =
+    let broker_server = if config.indexer.broker_queue_storage_enabled {
+        let broker_storage_path =
+            broker_queue_storage_path(&config.indexer.storage.path, BROKER_QUEUE_SERVICE_NAME);
+        tokio::task::spawn_blocking(move || {
+            BrokerServer::new_with_storage_path(broker_port, &broker_key_path, &broker_storage_path)
+        })
+    } else {
         tokio::task::spawn_blocking(move || BrokerServer::new(broker_port, &broker_key_path))
-            .await
-            .context("Failed to spawn blocking task")?
-            .context("Failed to create BrokerServer")?;
+    }
+    .await
+    .context("Failed to spawn blocking task")?
+    .context("Failed to create BrokerServer")?;
 
     let broker_drop_guard = BrokerDropGuard::new(Arc::new(broker_server));
     info!("Broker Server started on {broker_port}");

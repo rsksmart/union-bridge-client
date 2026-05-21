@@ -1,4 +1,4 @@
-use common::config::{CommonConfig, KeyStoreConfig};
+use common::config::{CommonConfig, IndexerConfig, KeyStoreConfig};
 use common::errors::ConfigError;
 use serde::Deserialize;
 
@@ -7,6 +7,7 @@ const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub bitcoin_network: String,
+    pub indexer: IndexerConfig,
     pub key_store: KeyStoreConfig,
     #[serde(rename = "user_api")]
     pub user_api_config: UserApiConfig,
@@ -69,6 +70,9 @@ mod tests {
 
         assert_eq!(101, config.user_api_config.coordinator.client_id);
         assert_eq!("<to_patch_with_env>", config.user_api_config.coordinator.pubkey_hash);
+        assert!(!config.indexer.broker_queue_storage_enabled);
+        assert!(!config.indexer.storage.path.contains("{BASE_STORAGE_PATH}"));
+        assert!(config.indexer.storage.path.ends_with("/.union_bridge/op_1/local_database"));
         assert!(
             config
                 .user_api_config
