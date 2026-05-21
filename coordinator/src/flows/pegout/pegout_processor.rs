@@ -788,7 +788,7 @@ where
 
                 if !skip_signatures {
                     let mut btc_sig_subflow =
-                        self.btc_sig_subflow_factory.create_flow(*protocol_id, pegout_log_id);
+                        self.btc_sig_subflow_factory.create_flow(*protocol_id, pegout_log_id, None);
                     btc_sig_subflow.start_signature_flow(*protocol_id, &register_input)?;
                     self.signature_flows.insert(*protocol_id, btc_sig_subflow);
                 }

@@ -56,6 +56,12 @@ any non-`local` environment — intended for log shippers / structured search.
 ```
 
 Notes:
+- Pegin work in the coordinator runs inside a `pegin` span carrying the
+  `pegin_id` of the pegin being processed. In JSON output every log emitted
+  from inside `PeginFlow`/`PeginFlowProcessor` includes `span.name="pegin"`
+  and `span.pegin_id="<uuid>"`, so logs from parallel pegins can be filtered
+  by `pegin_id`. In pretty output the same span context appears between the
+  level and the target.
 - File output is always written **without** ANSI codes, regardless of format.
 - In JSON the operator identity should be carried via `CLIENT_ID` in your
   shipping pipeline.

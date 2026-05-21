@@ -218,16 +218,17 @@ where
     S: CoordinatorStoreApi,
 {
     /// Create a new pegin flow from `PeginTransactionFound`
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         contracts: Rc<CG>,
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
         btc_tx_id: Txid,
+        flow_id: FlowId,
         store: Rc<S>,
         signaling: Rc<Signaling>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
     ) -> Self {
-        let flow_id = flow_id_from_request_pegin_txid(btc_tx_id);
         let mut state = State {
             flow_id,
             log_id: String::new(),
@@ -252,7 +253,7 @@ where
             created_at: Some(chrono::Utc::now()),
         };
         state.log_id = state.build_log_id();
-        info!("Created PeginFlow {}", state.log_id);
+        info!("PeginFlow created");
 
         Self { contracts, rt_sync, bitvmx_broker, state, store, signaling, native_bridge_verifier }
     }
@@ -271,10 +272,7 @@ where
     }
 
     fn persist_state(&self) -> Result<()> {
-        debug!(
-            "PeginFlow {}: Persisting state for step: {:?}",
-            self.state.log_id, self.state.ctx.step
-        );
+        debug!("Persisting state for step: {:?}", self.state.ctx.step);
         self.store.save_flow(&StoreKey::PeginFlow(self.state.flow_id.value()), self.state.clone())
     }
 
@@ -283,12 +281,7 @@ where
         let previous_step = self.state.ctx.step;
         self.state.ctx.step = next_step;
 
-        debug!(
-            "PeginFlow {}: {} -> {}",
-            self.state.log_id,
-            format_step(previous_step),
-            format_step(next_step)
-        );
+        debug!("{} -> {}", format_step(previous_step), format_step(next_step));
 
         // Execute the entry action for the new state
         match next_step {
@@ -299,7 +292,7 @@ where
                 self.request_pegin_spv_proof()?;
             }
             Steps::WaitPeginRequested => {
-                info!("Waiting for PeginRequested event for flow_id: {}", self.state.log_id);
+                info!("Waiting for PeginRequested event");
             }
             Steps::GetCommInfoAuthoritativeCheckpoint => {
                 self.request_bitvmx_comm_info()?;
@@ -308,17 +301,11 @@ where
                 self.prepare_pegin_setup()?;
             }
             Steps::RequestOperatorTakeTransactionInfo => {
-                info!(
-                    "Requesting operator take transaction info from BitVMX for flow_id: {}",
-                    self.state.log_id
-                );
+                info!("Requesting operator take transaction info from BitVMX");
                 self.request_operator_take_transaction_info()?;
             }
             Steps::RequestOperatorWonTransactionInfo => {
-                info!(
-                    "Requesting operator won transaction info from BitVMX for flow_id: {}",
-                    self.state.log_id
-                );
+                info!("Requesting operator won transaction info from BitVMX");
                 self.request_operator_won_transaction_info()?;
             }
             Steps::AddOperatorTakeHash => {
@@ -326,13 +313,10 @@ where
                 self.complete_step(&StepData::OperatorTakeHashAdded)?;
             }
             Steps::WaitAllOperatorTakeTxidsAdded => {
-                info!("Waiting for AllOperatorTakeTxidsAdded for flow_id: {}", self.state.log_id);
+                info!("Waiting for AllOperatorTakeTxidsAdded");
             }
             Steps::WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint => {
-                info!(
-                    "Waiting for signatures to be ready to dispatch transaction for flow_id: {}",
-                    self.state.log_id
-                );
+                info!("Waiting for signatures to be ready to dispatch transaction");
             }
             Steps::DispatchAcceptPeginTransactionAllConvergeCheckpoint => {
                 self.dispatch_transaction()?;
@@ -342,37 +326,34 @@ where
                 // Transaction status will be polled via TickScheduler in the processor
                 // to ensure the transaction has time to be broadcast before querying
                 info!(
-                    "Waiting for AcceptPegin Bitcoin confirmations for flow_id: {} and tx_id: {:?}",
-                    self.state.log_id,
+                    "Waiting for AcceptPegin Bitcoin confirmations: accept_tx_id={:?}",
                     self.get_accept_pegin_txid_from_bitvmx_var()
                 );
             }
             Steps::RequestAcceptPeginSpvProof => {
                 info!(
-                    "Requesting SPV proof for flow_id: {} and tx_id: {:?}",
-                    self.state.log_id,
+                    "Requesting SPV proof for accept pegin: accept_tx_id={:?}",
                     self.get_accept_pegin_txid_from_bitvmx_var()
                 );
                 self.request_spv_proof()?;
             }
             Steps::AcceptPegin => {
-                info!("Accepting pegin for flow_id: {}", self.state.log_id);
-                let spv_proof =
-                    self.state.ctx.accept_pegin_spv_proof.as_ref().ok_or_else(|| {
-                        anyhow!(
-                            "SPV proof not available for pegin acceptance - flow_id {}",
-                            self.state.log_id
-                        )
-                    })?;
+                info!("Accepting pegin");
+                let spv_proof = self
+                    .state
+                    .ctx
+                    .accept_pegin_spv_proof
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("SPV proof not available for pegin acceptance"))?;
                 self.accept_pegin(spv_proof)?;
             }
             Steps::Done => {
                 self.send_pegin_accepted_to_bitvmx()?;
                 self.write_completion_marker()?;
-                info!("PeginFlow Done: {}", self.state.log_id);
+                info!("Done");
             }
             Steps::Failed => {
-                info!("PeginFlow Failed: {}", self.state.log_id);
+                info!("Failed");
             }
         }
 
@@ -389,12 +370,7 @@ where
     pub(crate) fn complete_step(&mut self, data: &StepData) -> Result<()> {
         let current_step = self.state.ctx.step;
 
-        info!(
-            "PeginFlow {}: Completing step {} with data: {:?}",
-            self.state.log_id,
-            format_step(current_step),
-            data
-        );
+        info!("Completing step {} with data: {:?}", format_step(current_step), data);
 
         // Process data and determine next state
         let next_step = self.process_step_data(current_step, data)?;
@@ -471,13 +447,13 @@ where
                 StepData::AcceptPeginTransactionConfirmed(tx_status),
             ) => self.confirm_accept_pegin_transaction(tx_status),
             (Steps::RequestAcceptPeginSpvProof, StepData::AcceptPeginSpvProof(spv_proof)) => {
-                info!("Received SPV proof for flow_id: {}", self.state.log_id);
+                info!("Received SPV proof for accept pegin");
                 trace!("SPV Proof data: {spv_proof:?}");
                 self.state.ctx.accept_pegin_spv_proof = Some(spv_proof.clone());
                 Ok(Steps::AcceptPegin)
             }
             (Steps::AcceptPegin, StepData::RetryAcceptPegin) => {
-                info!("Retrying accept pegin for flow_id: {}", self.state.log_id);
+                info!("Retrying accept pegin");
                 Ok(Steps::AcceptPegin)
             }
             (step, StepData::PeginAccepted(pegin_accepted))
@@ -509,7 +485,7 @@ where
     }
 
     fn prepare_pegin_setup(&mut self) -> Result<()> {
-        info!("Preparing pegin setup for BitVMX with flow_id: {}", self.state.log_id);
+        info!("Preparing pegin setup for BitVMX");
 
         let pegin_requested = self
             .state
@@ -525,7 +501,7 @@ where
     }
 
     fn send_pegin_request_to_bitvmx(&mut self, committee_id: &CommitteeId) -> Result<()> {
-        debug!("Sending pegin request to BitVMX with flow_id: {}", self.state.log_id);
+        debug!("Sending pegin request to BitVMX");
 
         let committee_output = self.get_committee_output(committee_id.clone())?;
         self.state.ctx.committee_output = Some(committee_output.clone());
@@ -552,7 +528,7 @@ where
     }
 
     fn send_setup_to_bitvmx(&mut self, committee_id: &CommitteeId) -> Result<()> {
-        debug!("Sending setup to BitVMX with flow_id: {}", self.state.log_id);
+        debug!("Sending setup to BitVMX");
 
         let committee_addresses = self.get_committee_addresses(committee_id)?;
         let committee_pubkey_hashes = self.get_committee_pubkey_hashes(committee_id)?;
@@ -592,8 +568,8 @@ where
             .ok_or_else(|| anyhow!("BitVMX pegin accepted message not found"))?;
 
         debug!(
-            "Adding operator (prover) take tx hash for flow_id: {}, accept_pegin_txid: {}",
-            self.state.log_id, pegin_accepted.accept_pegin_txid
+            "Adding operator (prover) take tx hash: accept_pegin_txid={}",
+            pegin_accepted.accept_pegin_txid
         );
 
         let take_tx_hash = self
@@ -638,7 +614,7 @@ where
     }
 
     fn dispatch_transaction(&self) -> Result<()> {
-        info!("Dispatching transaction {} for flow_id: {}", ACCEPT_PEGIN_TX, self.state.log_id);
+        info!("Dispatching {}", ACCEPT_PEGIN_TX);
         let msg = IncomingBitVMXApiMessages::DispatchTransactionName(
             self.bitvmx_protocol_id()?.value(),
             ACCEPT_PEGIN_TX.to_string(),
@@ -695,7 +671,7 @@ where
             .as_ref()
             .ok_or_else(|| anyhow!("PeginAccepted data not available"))?;
 
-        debug!("Notifying pegin accepted to BitVMX with flow_id: {}", self.state.log_id);
+        debug!("Notifying pegin accepted to BitVMX");
         let data = serde_json::to_string(&pegin_accepted)?;
         let msg = IncomingBitVMXApiMessages::SetVar(
             self.bitvmx_protocol_id()?.value(),
@@ -741,10 +717,7 @@ where
     fn request_pegin_spv_proof(&self) -> Result<()> {
         let btc_tx_id = self.state.ctx.request_pegin_btc_tx_id;
 
-        info!(
-            "Requesting SPV proof for pegin request: flow_id={}, btc_tx_id={btc_tx_id}",
-            self.state.log_id
-        );
+        info!("Requesting SPV proof: btc_tx_id={btc_tx_id}");
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetSPVProof(btc_tx_id))?;
         Ok(())
     }
@@ -868,7 +841,7 @@ where
     }
 
     fn request_bitvmx_comm_info(&self) -> Result<()> {
-        info!("Requesting BitVMX comm info for flow_id: {}", self.state.log_id);
+        info!("Requesting BitVMX comm info");
         let req_id = Uuid::new_v4();
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo(req_id))
     }
@@ -883,10 +856,7 @@ where
         let tx_id = self
             .get_accept_pegin_txid_from_bitvmx_var()
             .ok_or_else(|| anyhow!("Expected accept pegin tx_id not found"))?;
-        info!(
-            "Requesting transaction status for flow_id: {} and tx_id: {:?}",
-            self.state.log_id, tx_id
-        );
+        info!("Requesting transaction status: tx_id={:?}", tx_id);
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetTransaction(
             self.bitvmx_protocol_id()?.value(),
             tx_id,
@@ -951,9 +921,12 @@ where
     }
 
     fn retry_request_pegin_step(&mut self) -> Result<Steps> {
-        let spv_proof = self.state.ctx.request_pegin_spv_proof.as_ref().ok_or_else(|| {
-            anyhow!("SPV proof not available for pegin request - flow_id {}", self.state.log_id)
-        })?;
+        let spv_proof = self
+            .state
+            .ctx
+            .request_pegin_spv_proof
+            .as_ref()
+            .ok_or_else(|| anyhow!("SPV proof not available for pegin request"))?;
         self.request_pegin(spv_proof)?;
         Ok(Steps::WaitPeginRequested)
     }
@@ -966,8 +939,7 @@ where
         let expected_tx_name = self.operator_take_transaction_name()?;
         if tx_name != expected_tx_name {
             bail!(
-                "Unexpected transaction info for flow {} in step {:?}: got {}, expected {}",
-                self.state.log_id,
+                "Unexpected transaction info in step {:?}: got {}, expected {}",
                 Steps::RequestOperatorTakeTransactionInfo,
                 tx_name,
                 expected_tx_name
@@ -981,8 +953,7 @@ where
         let expected_tx_name = self.operator_won_transaction_name()?;
         if tx_name != expected_tx_name {
             bail!(
-                "Unexpected transaction info for flow {} in step {:?}: got {}, expected {}",
-                self.state.log_id,
+                "Unexpected transaction info in step {:?}: got {}, expected {}",
                 Steps::RequestOperatorWonTransactionInfo,
                 tx_name,
                 expected_tx_name
@@ -993,10 +964,7 @@ where
     }
 
     fn confirm_accept_pegin_transaction(&mut self, tx_status: &TransactionStatus) -> Result<Steps> {
-        info!(
-            "Transaction confirmed for flow_id: {} and tx_id: {:?}",
-            self.state.log_id, tx_status.tx_id
-        );
+        info!("Transaction confirmed: tx_id={:?}", tx_status.tx_id);
         trace!("Transaction status data: {tx_status:?}");
         let expected_tx_id = self
             .get_accept_pegin_txid_from_bitvmx_var()
@@ -1021,11 +989,7 @@ where
     /// state-machine bug.
     fn bitvmx_protocol_id(&self) -> Result<BitVmxProtocolId> {
         self.state.ctx.bitvmx_protocol_id.ok_or_else(|| {
-            anyhow!(
-                "bitvmx_protocol_id not yet set for pegin flow {} at step {:?}",
-                self.state.log_id,
-                self.state.ctx.step
-            )
+            anyhow!("bitvmx_protocol_id not yet set at step {:?}", self.state.ctx.step)
         })
     }
 
@@ -1039,7 +1003,7 @@ where
     }
 
     pub(crate) fn mark_failed(&mut self, reason: &str) -> Result<()> {
-        info!("Marking pegin flow {} as failed: {reason}", self.state.log_id);
+        info!("Marking as failed: {reason}");
         self.start_step(Steps::Failed)
     }
 
