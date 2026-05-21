@@ -152,4 +152,3 @@ fn bitcoin_network_for_environment(env: &Environment, network_kind: NetworkKind)
         },
     }
 }
-
