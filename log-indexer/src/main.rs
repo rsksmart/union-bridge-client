@@ -5,7 +5,7 @@ use std::sync::mpsc;
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
 use common::alloy_rsk_provider::rpc::AlloyProvider;
-use common::msg_broker::broker::BrokerServer;
+use common::msg_broker::broker::{BrokerServer, broker_queue_storage_path};
 use common::rsk_indexer::RskIndexer;
 use common::shutdown_flag::ShutdownFlag;
 use common::types::RskLog;
@@ -17,6 +17,7 @@ use log_indexer::store::RawLogStore;
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config";
+const BROKER_QUEUE_SERVICE_NAME: &str = "log-indexer";
 
 fn main() -> Result<()> {
     let matches = Command::new("Union Bridge Log Indexer")
@@ -73,16 +74,21 @@ fn main() -> Result<()> {
     )
     .context("Failed to create LogIndexer")?;
 
-    let mut notifier = Notifier::new(
-        rx,
+    let broker_server = if config.indexer.broker_queue_storage_enabled {
+        BrokerServer::new_with_storage_path(
+            config.log_indexer_config.notifier.port,
+            &config.log_indexer_config.broker_key_path,
+            &broker_queue_storage_path(&config.indexer.storage.path, BROKER_QUEUE_SERVICE_NAME),
+        )
+    } else {
         BrokerServer::new(
             config.log_indexer_config.notifier.port,
             &config.log_indexer_config.broker_key_path,
         )
-        .expect("Failed to create BrokerServer"),
-        monitored_addresses,
-        shutdown_flag.clone(),
-    );
+    }
+    .expect("Failed to create BrokerServer");
+
+    let mut notifier = Notifier::new(rx, broker_server, monitored_addresses, shutdown_flag.clone());
 
     let shutdown_flag_notifier = shutdown_flag.clone();
     std::thread::spawn(move || {
