@@ -2,7 +2,9 @@ use anyhow::{Context, Result};
 use bitcoin::PublicKey;
 use bitcoin::key::Parity::Even;
 use bitcoin::secp256k1::XOnlyPublicKey;
-use common::types::{Address, CommitteeId, Hash256};
+use common::msg_broker::bitvmx_types::AdvanceFundsRegistered;
+use common::types::{Address, CommitteeId, Hash256, TxIdParser};
+use uuid::Uuid;
 
 use crate::types::OperatorTakeTriggeredEvent;
 
@@ -54,4 +56,21 @@ fn xonly_to_compressed_pubkey(bytes: &[u8]) -> Result<PublicKey> {
         XOnlyPublicKey::from_slice(bytes).context("Failed to parse x-only public key bytes")?;
     let secp_pubkey = xonly.public_key(Even);
     Ok(PublicKey::new(secp_pubkey))
+}
+
+/// Translate the on-chain `AdvanceFundsRegistered` solidity event into the
+/// runtime/BitVMX domain type. Lives here (next to `OperatorTakeTriggerData`)
+/// so the processor only routes events — it doesn't assemble flow-domain
+/// types.
+pub(crate) fn advance_funds_registered_from_event(
+    event: &union_contracts::bindings::pegout_manager::PegoutManager::AdvanceFundsRegistered,
+) -> Result<AdvanceFundsRegistered> {
+    let committee_id = Uuid::from_u128(event.committeeId);
+    let slot_index =
+        usize::try_from(event.streamInfo.slotId).context("Failed to convert slotId to usize")?;
+    let txid = TxIdParser::fb_32_to_txid(event.txid);
+    let pegout_id = event.pegoutId.as_slice().to_vec();
+    let operator_pubkey = xonly_to_compressed_pubkey(event.operatorTakePubKey.as_slice())?;
+
+    Ok(AdvanceFundsRegistered { committee_id, slot_index, txid, pegout_id, operator_pubkey })
 }

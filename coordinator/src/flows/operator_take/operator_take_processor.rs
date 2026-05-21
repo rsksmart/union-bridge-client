@@ -3,11 +3,11 @@ use std::rc::Rc;
 
 use anyhow::{Context, Result, anyhow};
 use common::msg_broker::bitvmx_types::{
-    AdvanceFundsRegistered, FundsAdvanceSPV, OPERATOR_TAKE_TX, OutgoingBitVMXApiMessages,
-    UnionSPVNotification, UnionTxType, VariableTypes, advance_funds_protocol_id,
+    FundsAdvanceSPV, OPERATOR_TAKE_TX, OutgoingBitVMXApiMessages, UnionSPVNotification,
+    UnionTxType, VariableTypes, advance_funds_protocol_id,
 };
 use common::runtime_sync::RuntimeSync;
-use common::types::{CommitteeId, Hash256, RskBlockAndUncles, TxIdParser};
+use common::types::{CommitteeId, Hash256, RskBlockAndUncles};
 use primitive_types::H256;
 use tracing::{debug, error, info, trace, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
@@ -22,7 +22,9 @@ use crate::flows::operator_take::operator_take_flow::Steps;
 use crate::flows::operator_take::operator_take_flow::{
     AdvanceFundsFlow, StepData, StepOutcome, flow_id_from_operator_take_triggered_tx_hash,
 };
-use crate::flows::operator_take::types::OperatorTakeTriggerData;
+use crate::flows::operator_take::types::{
+    OperatorTakeTriggerData, advance_funds_registered_from_event,
+};
 use crate::types::{
     AdminRequest, EventStatus, FlowKind, OperatorTakeTriggeredEvent, PegoutRegisteredEvent,
     RetryTracker, RskPegManagerEvents, UserRequests,
@@ -279,23 +281,6 @@ where
         self.flows.values_mut().find(|flow| flow.matches_committee_slot(committee_id, slot_id))
     }
 
-    fn build_advance_funds_registered(
-        event: &union_contracts::bindings::pegout_manager::PegoutManager::AdvanceFundsRegistered,
-    ) -> Result<AdvanceFundsRegistered> {
-        let committee_id = Uuid::from_u128(event.committeeId);
-        let slot_index = usize::try_from(event.streamInfo.slotId)
-            .context("Failed to convert slotId to usize")?;
-        let txid = TxIdParser::fb_32_to_txid(event.txid);
-        let pegout_id = event.pegoutId.as_slice().to_vec();
-
-        let xonly =
-            bitcoin::secp256k1::XOnlyPublicKey::from_slice(event.operatorTakePubKey.as_slice())
-                .context("Failed to parse operatorTakePubKey as x-only key")?;
-        let operator_pubkey = bitcoin::PublicKey::new(xonly.public_key(bitcoin::key::Parity::Even));
-
-        Ok(AdvanceFundsRegistered { committee_id, slot_index, txid, pegout_id, operator_pubkey })
-    }
-
     fn cleanup_terminal_flow_state(&mut self) {
         let terminal_flows: Vec<&AdvanceFundsFlow<CG, BC>> =
             self.flows.values().filter(|flow| flow.is_terminal()).collect();
@@ -344,7 +329,7 @@ where
             }
             RskPegManagerEvents::AdvanceFundsRegistered(e) => {
                 let ev = &e.inner;
-                let data = Self::build_advance_funds_registered(ev)?;
+                let data = advance_funds_registered_from_event(ev)?;
                 self.complete_step_by_pegout_id(
                     Hash256::from(ev.pegoutId),
                     StepData::AdvanceFundsConfirmed(data),
