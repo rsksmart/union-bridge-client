@@ -339,6 +339,15 @@ impl Server {
     ) -> impl IntoResponse {
         info!("Received pegin-address request: {req:?}");
 
+        if !is_valid_xonly_pubkey(&req.btc_reimbursement_pub_key) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(
+                    json!({ "error": "btc_reimbursement_pub_key must be a valid 32-byte x-only public key hex string with 0x prefix (66 chars total)" }),
+                ),
+            );
+        }
+
         let payload = PeginAddressInput {
             rootstock_deposit_address: req.rootstock_deposit_address,
             value: req.value,
@@ -457,6 +466,11 @@ fn build_apply_stream_payload(body: &ApplyStreamReq) -> Value {
 /// Validates a 33-byte compressed public key with 0x prefix
 fn is_valid_compressed_pubkey(key: &str) -> bool {
     key.len() == 68 && key.starts_with("0x") && key[2..].chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Validates a 32-byte x-only public key with 0x prefix
+fn is_valid_xonly_pubkey(key: &str) -> bool {
+    key.len() == 66 && key.starts_with("0x") && key[2..].chars().all(|c| c.is_ascii_hexdigit())
 }
 
 #[cfg(test)]
