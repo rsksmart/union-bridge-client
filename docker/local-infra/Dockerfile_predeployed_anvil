@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 ghcr.io/foundry-rs/foundry:v1.5.1@sha256:3a70bfa9bd2c732a767bb60d12c8770b40e8f9b6cca28efc4b12b1be81c7f28e AS builder
+FROM --platform=linux/amd64 ghcr.io/foundry-rs/foundry:v1.7.1@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd AS builder
 
 USER root
 ENV NODE_VERSION=22.14.0
@@ -52,7 +52,7 @@ RUN set -e; \
     trap - EXIT; \
     test -s /opt/anvil/predeployed-state.json
 
-FROM --platform=linux/amd64 ghcr.io/foundry-rs/foundry:v1.5.1@sha256:3a70bfa9bd2c732a767bb60d12c8770b40e8f9b6cca28efc4b12b1be81c7f28e
+FROM --platform=linux/amd64 ghcr.io/foundry-rs/foundry:v1.7.1@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd
 
 COPY --from=builder /opt/anvil/predeployed-state.json /opt/anvil/predeployed-state.json
 
