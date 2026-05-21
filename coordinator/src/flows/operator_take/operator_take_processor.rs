@@ -130,11 +130,16 @@ where
             // parked due to missing native-bridge confirmations. Re-entering
             // the same step (via `StepData::Retry`) re-runs the submission.
             // If the flow has already moved past the register step (success
-            // event arrived first), `complete_step` returns Err via the
-            // catch-all and the retry stops cleanly.
+            // event arrived first), the flow returns `NoOp` and we drop the
+            // stale retry silently.
             match flow.complete_step(StepData::Retry) {
-                Ok(StepOutcome::Done | StepOutcome::NoOp) => {
+                Ok(StepOutcome::Done) => {
                     info!("Registration succeeded on retry for flow {flow_id}");
+                }
+                Ok(StepOutcome::NoOp) => {
+                    debug!(
+                        "Stale retry for flow {flow_id} — success event already advanced the flow",
+                    );
                 }
                 Ok(StepOutcome::Retry { reason }) => {
                     self.schedule_retry(flow_id, attempt.saturating_add(1), &reason);

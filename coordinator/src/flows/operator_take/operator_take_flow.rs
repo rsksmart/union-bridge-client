@@ -371,7 +371,7 @@ where
             StepData::PegoutRegistered(pegout_registered) => {
                 self.on_pegout_registered(current_step, &pegout_registered)?
             }
-            StepData::Retry => self.on_retry(current_step)?,
+            StepData::Retry => self.on_retry(current_step),
         };
 
         match next_step {
@@ -545,12 +545,16 @@ where
         Ok(Some(Steps::Done))
     }
 
-    fn on_retry(&mut self, current_step: Steps) -> Result<Option<Steps>> {
+    fn on_retry(&mut self, current_step: Steps) -> Option<Steps> {
         if !current_step.is_retriable_step() {
-            bail!("Invalid state transition from {current_step:?} with Retry");
+            debug!(
+                "Stale retry for flow_id {} at non-retriable step {current_step:?}; success event already advanced the flow",
+                self.state.flow_id
+            );
+            return None;
         }
         info!("Retrying registration at step {current_step:?} for flow_id: {}", self.state.flow_id);
-        Ok(Some(current_step))
+        Some(current_step)
     }
 
     fn enter_setup_protocol(&mut self) -> Result<()> {
