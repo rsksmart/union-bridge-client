@@ -79,7 +79,7 @@ fn main() -> Result<()> {
             &config.block_indexer_config.broker_key_path,
         )
     }
-    .expect("Failed to create BrokerServer");
+    .context("Failed to create BrokerServer")?;
 
     let mut notifier = Notifier::new(rx, broker_server, shutdown_flag.clone());
 
