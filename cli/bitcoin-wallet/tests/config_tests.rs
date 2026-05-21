@@ -6,9 +6,11 @@ use ub_wallet::config::Config;
 
 #[test]
 fn load_config_from_directory() {
-    let mut opts = CliOpts::default();
-    opts.config = Some("regtest".to_string());
-    opts.db_path = Some(PathBuf::from("custom-utxo-db"));
+    let opts = CliOpts {
+        config: Some("regtest".to_string()),
+        db_path: Some(PathBuf::from("custom-utxo-db")),
+        ..Default::default()
+    };
 
     let (config, _path) = Config::load(&opts).expect("load config");
     assert_eq!(config.network, Some(Network::Regtest));
@@ -19,8 +21,7 @@ fn load_config_from_directory() {
 
 #[test]
 fn load_config_missing_errors() {
-    let mut opts = CliOpts::default();
-    opts.config = Some("nonexistent".to_string());
+    let opts = CliOpts { config: Some("nonexistent".to_string()), ..Default::default() };
     let err = Config::load(&opts).expect_err("missing config dir");
     let msg = err.to_string();
     assert!(msg.contains("not found"));

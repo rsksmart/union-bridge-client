@@ -1,9 +1,9 @@
-use std::env;
-use std::fs;
 use std::path::{Path, PathBuf};
+use std::{env, fs};
 
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::Network;
+use secrecy::SecretString;
 use serde::Deserialize;
 
 use crate::cli::{CliOpts, WalletMode};
@@ -16,10 +16,10 @@ pub struct Config {
     pub sats_per_byte: Option<u64>,
     pub network: Option<Network>,
     pub mode: WalletMode,
-    pub private_key_wif: Option<String>,
+    pub private_key_wif: Option<SecretString>,
     pub rpc_url: Option<String>,
     pub rpc_user: Option<String>,
-    pub rpc_password: Option<String>,
+    pub rpc_password: Option<SecretString>,
     pub enabler_amount: Option<u64>,
 }
 
@@ -28,10 +28,10 @@ pub struct Config {
 struct FileConfig {
     network: Option<String>,
     sats_per_byte: Option<u64>,
-    private_key_wif: Option<String>,
+    private_key_wif: Option<SecretString>,
     rpc_url: Option<String>,
     rpc_user: Option<String>,
-    rpc_password: Option<String>,
+    rpc_password: Option<SecretString>,
     db_path: Option<PathBuf>,
     enabler_amount: Option<u64>,
 }
@@ -54,7 +54,7 @@ impl Config {
         let db_path = cli
             .db_path
             .clone()
-            .or_else(|| Self::build_db_path_from_conf(&mut file_config))
+            .or_else(|| Self::build_db_path_from_conf(&file_config))
             .ok_or_else(|| anyhow!(
                 "Database path must be provided via --db-path (or WALLET_DB_PATH), or set db_path in config together with BASE_STORAGE_PATH env"
             ))?;
@@ -74,6 +74,7 @@ impl Config {
                 env::var("USER_BITCOIN_WIF")
                     .or_else(|_| env::var("MEMBER_BITCOIN_WIF"))
                     .ok()
+                    .map(SecretString::from)
                     .or_else(|| file_config.private_key_wif.take())
             }
             WalletMode::User | WalletMode::Member => {
@@ -84,6 +85,7 @@ impl Config {
                 };
                 Some(
                     env::var(wif_env_var)
+                        .map(SecretString::from)
                         .or_else(|_| file_config.private_key_wif.take().ok_or_else(|| anyhow!("Not found in config")))
                         .with_context(|| format!(
                             "Private key WIF is required: set {} environment variable or define private_key_wif in config file",
@@ -120,14 +122,13 @@ impl Config {
         Ok((config, config_path))
     }
 
-    // read db_path from config file and resolve under BASE_STORAGE_PATH env var
+    // Resolve `db_path` from the config file under `BASE_STORAGE_PATH`.
+    // Returns `None` if either is missing; the caller surfaces a unified
+    // error in `Self::load` rather than panicking here.
     fn build_db_path_from_conf(file_config: &FileConfig) -> Option<PathBuf> {
-        file_config.db_path.as_ref().map(|rel_from_config| {
-            let base = env::var("BASE_STORAGE_PATH").with_context(||
-                "BASE_STORAGE_PATH environment variable must be set when using db_path from config file"
-            ).unwrap();
-            PathBuf::from(base).join(rel_from_config)
-        })
+        let rel_from_config = file_config.db_path.as_ref()?;
+        let base = env::var("BASE_STORAGE_PATH").ok()?;
+        Some(PathBuf::from(base).join(rel_from_config))
     }
 }
 

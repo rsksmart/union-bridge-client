@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use std::borrow::Cow;
 use std::convert::TryFrom;
 use std::str::FromStr;
@@ -13,6 +15,7 @@ use bitcoincore_rpc::RpcApi;
 use chrono::{DateTime, Utc};
 use clap::Parser;
 use rustyline::error::ReadlineError;
+use secrecy::ExposeSecret;
 use serde_json::{Value, json};
 use ub_wallet::bitcoin::utils::find_vout_for_address;
 use ub_wallet::cli::{CliOpts, WalletMode, setup_editor};
@@ -225,7 +228,7 @@ fn handle_command(wallet: &mut Wallet, line: &str, mode: &WalletMode) -> Result<
             let generated = wallet.generate_address()?;
             let address_str = generated.address.to_string();
             println!("Generated P2WPKH address: {}", address_str);
-            println!("  Private key (WIF): {}", generated.private_key_wif);
+            println!("  Private key (WIF): {}", generated.private_key_wif.expose_secret());
             println!("  Public key: {}", generated.public_key_hex);
             let is_active = wallet
                 .active_address()
@@ -687,7 +690,7 @@ fn prompt_for(mode: &WalletMode, network_name: &str) -> String {
 }
 
 fn print_active_address_utxos(wallet: &mut Wallet) -> Result<(), anyhow::Error> {
-    Ok(if let Some(address) = wallet.active_address() {
+    let _: () = if let Some(address) = wallet.active_address() {
         let utxos = wallet.utxos_with_timestamps()?;
         println!("Registered UTXOs for {address}:");
         if utxos.is_empty() {
@@ -697,7 +700,8 @@ fn print_active_address_utxos(wallet: &mut Wallet) -> Result<(), anyhow::Error> 
         }
     } else {
         println!("No active address. Import or switch to an address to list funds.");
-    })
+    };
+    Ok(())
 }
 
 fn print_all_utxos(
@@ -894,8 +898,9 @@ fn format_timestamp(timestamp: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_trusted_balance_sat;
     use serde_json::json;
+
+    use super::parse_trusted_balance_sat;
 
     #[test]
     fn parses_trusted_balance_from_getbalances_response() {

@@ -68,6 +68,8 @@
 //! cargo run -- user pegout -v 100000 -k 0x<33-byte-compressed-pubkey> --env local
 //! ```
 
+#![forbid(unsafe_code)]
+
 mod bitcoin_wallet;
 mod committee;
 mod constants;
@@ -82,6 +84,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use op_funding::derive_stream_funding_profile;
 use protocol_params::{committee_member_count, prover_count, slots_per_package};
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::committee::CommitteeRole;
 use crate::environments::Environment;
@@ -160,7 +163,7 @@ enum OperatorCommands {
         /// Private key to use in remote profile mode.
         /// If omitted in remote environments, it is prompted interactively.
         #[arg(long = "private-key", value_name = "HEX_KEY", conflicts_with = "from_address")]
-        private_key: Option<String>,
+        private_key: Option<SecretString>,
     },
     /// Print the per-operator Bitcoin funding amount (sats) for the given stream.
     /// Emits a single integer to stdout so it can be consumed by scripts.
@@ -293,7 +296,7 @@ async fn main() -> Result<()> {
                     env,
                     &contract_address,
                     from_address.as_deref(),
-                    private_key.as_deref(),
+                    private_key.as_ref().map(|s| s.expose_secret()),
                     &member_funding_info,
                 )
                 .await?;

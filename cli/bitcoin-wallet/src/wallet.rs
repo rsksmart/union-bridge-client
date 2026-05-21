@@ -4,17 +4,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use crate::bitcoin::reqwest_https::ReqwestHttpsTransport;
-use crate::bitcoin::utils::fetch_utxo_amount;
-use crate::config::Config;
-use crate::pending_tx_store::PendingTransactionStore;
-use crate::utxo_store::{UtxoState, UtxoStore};
 use anyhow::{Context, Result, anyhow, bail};
-use bitcoin::absolute;
 use bitcoin::address::{Address, NetworkUnchecked};
 use bitcoin::blockdata::transaction::{Sequence, Version};
 use bitcoin::consensus::encode::serialize_hex;
-use bitcoin::ecdsa;
 use bitcoin::hashes::hex::FromHex;
 use bitcoin::key::{CompressedPublicKey, PrivateKey, PublicKey};
 use bitcoin::network::{Network, NetworkKind};
@@ -24,9 +17,19 @@ use bitcoin::secp256k1::rand::rngs::OsRng;
 use bitcoin::secp256k1::{self, Message, Secp256k1, SecretKey};
 use bitcoin::sighash::{EcdsaSighashType, SighashCache};
 use bitcoin::{
-    Amount, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness, XOnlyPublicKey,
+    Amount, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness, XOnlyPublicKey, absolute,
+    ecdsa,
 };
 use bitcoincore_rpc::{Client, RpcApi, jsonrpc};
+use secrecy::{ExposeSecret, SecretString};
+
+use crate::bitcoin::reqwest_https::ReqwestHttpsTransport;
+use crate::bitcoin::utils::fetch_utxo_amount;
+use crate::config::Config;
+use crate::pending_tx_store::PendingTransactionStore;
+use crate::utxo_store::{UtxoState, UtxoStore};
+
+type AddressUtxoEntries = Vec<(Address, Vec<(Utxo, u64)>)>;
 
 pub const DEFAULT_SATS_PER_BYTE: u64 = 5;
 pub const DEFAULT_ENABLER_AMOUNT: u64 = 1_080;
@@ -53,7 +56,7 @@ pub struct CreatedTransaction {
 #[derive(Debug, Clone)]
 pub struct GeneratedAddress {
     pub address: Address,
-    pub private_key_wif: String,
+    pub private_key_wif: SecretString,
     pub public_key_hex: String,
 }
 
@@ -124,7 +127,7 @@ impl Wallet {
         }
 
         if let Some(ref wif) = config.private_key_wif {
-            let address = wallet.import_private_key(wif)?;
+            let address = wallet.import_private_key(wif.expose_secret())?;
             wallet.active_address = Some(address.clone());
             wallet.reload_active_utxos()?;
             println!("Loaded private key. Default P2WPKH address: {address}");
@@ -134,7 +137,7 @@ impl Wallet {
             wallet.configure_rpc(
                 url,
                 config.rpc_user.as_deref(),
-                config.rpc_password.as_deref(),
+                config.rpc_password.as_ref().map(|p| p.expose_secret()),
             )?;
             println!("RPC client configured (URL: {url}).");
         } else if config.rpc_user.is_some() || config.rpc_password.is_some() {
@@ -151,21 +154,12 @@ impl Wallet {
         pass: Option<&str>,
     ) -> Result<()> {
         let transport = match (user, pass) {
-            (Some(user), Some(pass)) => {
-                let transport = ReqwestHttpsTransport::builder()
-                    .url(url)?
-                    .basic_auth(user.to_owned(), Some(pass.to_string()))
-                    .build();
-
-                transport
-            }
+            (Some(user), Some(pass)) => ReqwestHttpsTransport::builder()
+                .url(url)?
+                .basic_auth(user.to_owned(), Some(pass.to_string()))
+                .build(),
             (Some(user), None) => {
-                let transport = ReqwestHttpsTransport::builder()
-                    .url(url)?
-                    .basic_auth(user.to_owned(), None)
-                    .build();
-
-                transport
+                ReqwestHttpsTransport::builder().url(url)?.basic_auth(user.to_owned(), None).build()
             }
             (None, None) => ReqwestHttpsTransport::builder().url(url)?.build(),
             (None, Some(_)) => bail!("RPC password provided without username"),
@@ -452,7 +446,7 @@ impl Wallet {
         self.load_utxos_for_address(address)
     }
 
-    pub fn utxos_with_timestamps_all(&self) -> Result<Vec<(Address, Vec<(Utxo, u64)>)>> {
+    pub fn utxos_with_timestamps_all(&self) -> Result<AddressUtxoEntries> {
         let mut grouped: BTreeMap<String, (Address, Vec<(Utxo, u64)>)> = BTreeMap::new();
 
         let parse_address = |addr: &str| -> Result<Address> {
@@ -486,14 +480,13 @@ impl Wallet {
             entry.1.sort_by_key(|(_, timestamp)| std::cmp::Reverse(*timestamp));
         }
 
-        let mut collected: Vec<(Address, Vec<(Utxo, u64)>)> =
-            grouped.into_iter().map(|(_, value)| value).collect();
+        let mut collected: Vec<(Address, Vec<(Utxo, u64)>)> = grouped.into_values().collect();
 
-        if let Some(active) = &self.active_address {
-            if let Some(pos) = collected.iter().position(|(addr, _)| addr == active) {
-                let active_entry = collected.remove(pos);
-                collected.insert(0, active_entry);
-            }
+        if let Some(active) = &self.active_address
+            && let Some(pos) = collected.iter().position(|(addr, _)| addr == active)
+        {
+            let active_entry = collected.remove(pos);
+            collected.insert(0, active_entry);
         }
 
         Ok(collected)
@@ -578,7 +571,7 @@ impl Wallet {
 
         Ok(GeneratedAddress {
             address,
-            private_key_wif: wif,
+            private_key_wif: SecretString::from(wif),
             public_key_hex: public_key.to_string(),
         })
     }
@@ -1015,8 +1008,9 @@ pub fn network_name(network: Network) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::tempdir;
+
+    use super::*;
 
     #[test]
     fn generate_address_sets_new_active_address() -> Result<()> {
@@ -1033,7 +1027,7 @@ mod tests {
         );
 
         let private_key = wallet.private_key().expect("generated key should be available");
-        assert_eq!(private_key.to_wif(), generated.private_key_wif);
+        assert_eq!(private_key.to_wif().to_string(), generated.private_key_wif.expose_secret());
         assert_eq!(private_key.public_key(&wallet.secp).to_string(), generated.public_key_hex);
 
         Ok(())
@@ -1049,7 +1043,7 @@ mod tests {
         let second = wallet.generate_address()?;
 
         assert_ne!(first.address, second.address);
-        assert_ne!(first.private_key_wif, second.private_key_wif);
+        assert_ne!(first.private_key_wif.expose_secret(), second.private_key_wif.expose_secret());
 
         let addresses = wallet.imported_addresses();
         assert!(addresses.contains(&first.address.to_string()));

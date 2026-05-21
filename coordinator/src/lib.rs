@@ -1,3 +1,5 @@
+#![cfg_attr(not(test), forbid(unsafe_code))]
+
 pub mod blockchain_tracker;
 pub mod config;
 pub mod coordinator;

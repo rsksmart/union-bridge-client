@@ -10,7 +10,6 @@ use common::msg_broker::bitvmx_types::{
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::{CommitteeId, TxHash};
-use hex;
 use log::{debug, info, trace, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -27,20 +26,20 @@ use crate::flows::common::{COMM_KEY_INDEX, FlowId, Signaling};
 
 /// Derive the pegout flow id from the `PegoutRequested` Rootstock tx hash.
 #[must_use]
-pub fn flow_id_from_pegout_requested_tx_hash(pegout_requested_tx_hash: TxHash) -> FlowId {
+pub(crate) fn flow_id_from_pegout_requested_tx_hash(pegout_requested_tx_hash: TxHash) -> FlowId {
     FlowId::from_tx("pegout_flow", pegout_requested_tx_hash.value().as_bytes())
 }
 
 use crate::store::{CoordinatorStoreApi, StoreKey};
 use crate::types::PegoutRegisteredEvent;
 
-pub const PROGRAM_TYPE_USER_TAKE: &str = "take";
-pub const USER_TAKE_TX: &str = "USER_TAKE_TX";
+pub(crate) const PROGRAM_TYPE_USER_TAKE: &str = "take";
+pub(crate) const USER_TAKE_TX: &str = "USER_TAKE_TX";
 const PEGOUT_COMPLETED_VAR_NAME: &str = "PEG_OUT_COMPLETED";
 
 /// Steps for the pegout state machine flow
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub enum Steps {
+pub(crate) enum Steps {
     #[default]
     // Wait for the confirmed RSK PegoutRequested event.
     WaitPegoutRequested,
@@ -76,7 +75,7 @@ impl Steps {
 
 /// Data passed between steps in the pegout flow
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum StepData {
+pub(crate) enum StepData {
     PegoutRequested,
     CommInfo(CommsAddress),
     PegoutAccepted(PegOutAccepted),
@@ -91,7 +90,7 @@ pub enum StepData {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FlowContext {
+pub(crate) struct FlowContext {
     pub pegout_requested: PegoutRequested,
     /// Canonical on-chain identifier (the `PegoutRequested` Rootstock tx
     /// hash). Set at flow creation from the wrapper `PegoutRequestedEvent`.
@@ -112,7 +111,7 @@ pub struct FlowContext {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct State {
+pub(crate) struct State {
     pub flow_id: FlowId,
     /// Pre-formatted display id for log lines. Not persisted — re-computed
     /// at construction and on `from_saved_state` via `build_log_id`.
@@ -135,7 +134,7 @@ impl State {
     }
 }
 
-pub struct PegoutFlow<CG, BC, S>
+pub(crate) struct PegoutFlow<CG, BC, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
@@ -156,7 +155,8 @@ where
     BC: BitVmxBrokerClientApi,
     S: CoordinatorStoreApi,
 {
-    pub fn new(
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new(
         contracts: Rc<CG>,
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
@@ -204,7 +204,7 @@ where
         })
     }
 
-    pub fn from_saved_state(
+    pub(crate) fn from_saved_state(
         contracts: Rc<CG>,
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
@@ -225,7 +225,7 @@ where
         self.store.save_flow(&StoreKey::PegoutFlow(self.state.flow_id.value()), self.state.clone())
     }
 
-    pub fn start_step(&mut self, next_step: Steps) -> Result<()> {
+    pub(crate) fn start_step(&mut self, next_step: Steps) -> Result<()> {
         let previous_step = self.state.step;
         self.state.step = next_step;
 
@@ -311,7 +311,7 @@ where
     }
 
     /// Complete the current step with data and advance to the next
-    pub fn complete_step(&mut self, data: &StepData) -> Result<()> {
+    pub(crate) fn complete_step(&mut self, data: &StepData) -> Result<()> {
         let current_step: Steps = self.state.step;
 
         info!(
@@ -645,12 +645,12 @@ where
         Ok(())
     }
 
-    pub fn get_user_take_txid(&self) -> Option<Txid> {
+    pub(crate) fn get_user_take_txid(&self) -> Option<Txid> {
         self.state.ctx.peg_out_accepted.as_ref().map(|accepted| accepted.user_take_txid)
     }
 
     /// Get the pegout txid from the `PegoutRequested` event
-    pub fn get_pegout_txid(&self) -> String {
+    pub(crate) fn get_pegout_txid(&self) -> String {
         hex::encode(self.state.ctx.pegout_requested.pegoutSignatureData.txid.as_slice())
     }
 
@@ -670,7 +670,7 @@ where
         Ok(())
     }
 
-    pub fn request_transaction_status(&self) -> Result<()> {
+    pub(crate) fn request_transaction_status(&self) -> Result<()> {
         let tx_id = self
             .get_user_take_txid()
             .ok_or_else(|| anyhow!("Expected user take tx_id not found"))?;
@@ -685,7 +685,7 @@ where
         Ok(())
     }
 
-    pub fn request_spv_proof(&self) -> Result<()> {
+    pub(crate) fn request_spv_proof(&self) -> Result<()> {
         let tx_id = self
             .get_user_take_txid()
             .ok_or_else(|| anyhow!("Expected user take tx_id not found"))?;
@@ -693,33 +693,33 @@ where
         Ok(())
     }
 
-    pub fn is_terminal(&self) -> bool {
+    pub(crate) fn is_terminal(&self) -> bool {
         matches!(self.state.step, Steps::Done | Steps::Failed)
     }
 
-    pub fn mark_failed(&mut self, reason: &str) -> Result<()> {
+    pub(crate) fn mark_failed(&mut self, reason: &str) -> Result<()> {
         info!("Marking pegout flow {} as failed: {reason}", self.state.log_id);
         self.start_step(Steps::Failed)
     }
 
     /// Get the flow id (a `Uuid` derived from `pegout_requested_tx_hash`).
-    pub fn flow_id(&self) -> FlowId {
+    pub(crate) fn flow_id(&self) -> FlowId {
         self.state.flow_id
     }
 
     /// Pre-formatted display id for log lines.
-    pub fn log_id(&self) -> &str {
+    pub(crate) fn log_id(&self) -> &str {
         &self.state.log_id
     }
 
     /// `BitVMX` program id for the user-take program. Available from flow
     /// creation, since `(committee_id, slot_index)` are present in
     /// `PegoutRequested`.
-    pub fn bitvmx_protocol_id(&self) -> BitVmxProtocolId {
+    pub(crate) fn bitvmx_protocol_id(&self) -> BitVmxProtocolId {
         self.state.ctx.bitvmx_protocol_id
     }
 
-    pub fn current_step(&self) -> Steps {
+    pub(crate) fn current_step(&self) -> Steps {
         self.state.step
     }
 
@@ -733,11 +733,11 @@ where
     }
 
     #[cfg(test)]
-    pub fn get_state(&self) -> &State {
+    pub(crate) fn get_state(&self) -> &State {
         &self.state
     }
 
-    pub fn pegout_requested(&self) -> &PegoutRequested {
+    pub(crate) fn pegout_requested(&self) -> &PegoutRequested {
         &self.state.ctx.pegout_requested
     }
 

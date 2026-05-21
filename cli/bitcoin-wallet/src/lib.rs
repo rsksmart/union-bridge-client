@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 pub mod bitcoin;
 pub mod cli;
 pub mod config;

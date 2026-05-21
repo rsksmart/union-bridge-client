@@ -69,10 +69,12 @@ mod tests {
 
         assert_eq!(101, config.user_api_config.coordinator.client_id);
         assert_eq!("<to_patch_with_env>", config.user_api_config.coordinator.pubkey_hash);
-        assert!(config
-            .user_api_config
-            .broker_key_path
-            .ends_with("/.union_bridge/op_1/union-client/broker/user-api.pem"));
+        assert!(
+            config
+                .user_api_config
+                .broker_key_path
+                .ends_with("/.union_bridge/op_1/union-client/broker/user-api.pem")
+        );
         assert_eq!(30001, config.user_api_config.notifier.port);
         assert_eq!(40001, config.user_api_config.http.port);
     }

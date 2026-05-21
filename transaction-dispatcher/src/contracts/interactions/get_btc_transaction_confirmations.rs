@@ -3,7 +3,7 @@ use crate::rsk_gateway::DomainErrors;
 use crate::types::{GetBtcTransactionConfirmationsInput, GetBtcTransactionConfirmationsOutput};
 
 #[derive(Clone)]
-pub struct GetBtcTransactionConfirmationsCall<C: NativeBridgeContractApi> {
+pub(crate) struct GetBtcTransactionConfirmationsCall<C: NativeBridgeContractApi> {
     contract: C,
 }
 

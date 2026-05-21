@@ -11,16 +11,16 @@ use uuid::Uuid;
 
 use crate::flows::committee::common::send_bitvmx_msg;
 
-pub struct FullPenalizationSetup<BC: BitVmxBrokerClientApi> {
+pub(super) struct FullPenalizationSetup<BC: BitVmxBrokerClientApi> {
     broker_client: Rc<BC>,
 }
 
 impl<BC: BitVmxBrokerClientApi> FullPenalizationSetup<BC> {
-    pub fn new(broker_client: Rc<BC>) -> Self {
+    pub(super) fn new(broker_client: Rc<BC>) -> Self {
         Self { broker_client }
     }
 
-    pub fn setup(
+    pub(super) fn setup(
         &self,
         committee_id: Uuid,
         my_id: usize,

@@ -28,20 +28,16 @@ jobs:
         with:
           cache-build: true
 
+      - name: Install cargo-sort
+        uses: taiki-e/install-action@b550161ef8a7bc4f2a671c0b03a18ac9ccedea1e # v2.79.1
+        with:
+          tool: cargo-sort
+
       # check code formatting
       - name: Check Code Formatting
         run: |
           rustup component add rustfmt --toolchain nightly
-          cargo install cargo-sort
-          cargo +nightly fmt --check
-          cargo +nightly fmt --manifest-path check-fork/zkp/guest/Cargo.toml --check
-          cargo sort --check
-          cargo sort --check check-fork/zkp/guest
+          bash .hooks/format-code.sh --check
 
       - name: Check Clippy rules
-        run: |
-          RISC0_SKIP_BUILD=1 cargo clippy --workspace --all-targets --all-features
-
-      - name: Clippy CheckForkGuest
-        run: |
-          RISC0_SKIP_BUILD=1 cargo clippy --manifest-path check-fork/zkp/guest/Cargo.toml --all-targets --all-features
+        run: bash .hooks/check-lints.sh

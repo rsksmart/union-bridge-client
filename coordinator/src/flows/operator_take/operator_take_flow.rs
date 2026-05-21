@@ -23,17 +23,17 @@ use crate::flows::common::{FlowId, Signaling};
 
 /// Derive the operator-take flow id from the `OperatorTakeTriggered` RSK tx hash.
 #[must_use]
-pub fn flow_id_from_operator_take_triggered_tx_hash(tx_hash: TxHash) -> FlowId {
+pub(crate) fn flow_id_from_operator_take_triggered_tx_hash(tx_hash: TxHash) -> FlowId {
     FlowId::from_tx("operator_take_flow", tx_hash.value().as_bytes())
 }
 
 use crate::types::OperatorTakeTriggeredEvent;
 
-pub const PROGRAM_TYPE_ADVANCE_FUNDS: &str = "advance_funds";
-pub const ADVANCE_FUNDS_REQUEST_VAR_NAME: &str = "advance_funds_request";
+pub(crate) const PROGRAM_TYPE_ADVANCE_FUNDS: &str = "advance_funds";
+pub(crate) const ADVANCE_FUNDS_REQUEST_VAR_NAME: &str = "advance_funds_request";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Steps {
+pub(crate) enum Steps {
     #[default]
     // Wait for the confirmed OperatorTakeTriggered event.
     WaitOperatorTakeTriggered,
@@ -73,7 +73,7 @@ impl Steps {
 }
 
 #[derive(Debug, Clone)]
-pub enum StepData {
+pub(crate) enum StepData {
     OperatorTakeTriggered,
     CommInfo(CommsAddress),
     SetupCompleted,
@@ -91,7 +91,7 @@ pub enum StepData {
 }
 
 #[derive(Debug, Clone)]
-pub struct OperatorTakeTriggerData {
+pub(crate) struct OperatorTakeTriggerData {
     pub pegout_txid: Hash256,
     pub pegout_id: Hash256,
     pub committee_id: CommitteeId,
@@ -104,7 +104,7 @@ pub struct OperatorTakeTriggerData {
 }
 
 impl OperatorTakeTriggerData {
-    pub fn try_from_event(
+    pub(crate) fn try_from_event(
         event: &OperatorTakeTriggeredEvent,
         request_pegout_tx_hash: Option<String>,
     ) -> Result<Self> {
@@ -134,7 +134,7 @@ impl OperatorTakeTriggerData {
 }
 
 #[derive(Debug, Clone)]
-pub struct FlowContext {
+pub(crate) struct FlowContext {
     pub flow_id: FlowId,
     /// Canonical on-chain identifier (the `OperatorTakeTriggered` RSK tx
     /// hash). Stored alongside `flow_id` so the pre-formatted `log_id`
@@ -166,7 +166,7 @@ impl FlowContext {
     }
 }
 
-pub struct AdvanceFundsFlow<CG, BC>
+pub(crate) struct AdvanceFundsFlow<CG, BC>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
@@ -185,7 +185,7 @@ where
     BC: BitVmxBrokerClientApi,
 {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub(crate) fn new(
         contracts: Rc<CG>,
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
@@ -254,7 +254,7 @@ where
     }
 
     #[allow(clippy::too_many_lines)]
-    pub fn start_step(&mut self, next_step: Steps) -> Result<()> {
+    pub(crate) fn start_step(&mut self, next_step: Steps) -> Result<()> {
         let previous_step = self.state.step;
         self.state.step = next_step;
 
@@ -389,7 +389,7 @@ where
         Ok(())
     }
 
-    pub fn complete_step(&mut self, data: StepData) -> Result<()> {
+    pub(crate) fn complete_step(&mut self, data: StepData) -> Result<()> {
         let current_step = self.state.step;
 
         info!(
@@ -680,17 +680,17 @@ where
         self.signaling.signal_done("advance-funds", self.state.bitvmx_protocol_id.value(), &payload)
     }
 
-    pub fn flow_id(&self) -> FlowId {
+    pub(crate) fn flow_id(&self) -> FlowId {
         self.state.flow_id
     }
 
     /// `BitVMX` program id for the advance-funds program. Always set (derived
     /// from `OperatorTakeTriggered`'s committee + slot at flow creation).
-    pub fn bitvmx_protocol_id(&self) -> BitVmxProtocolId {
+    pub(crate) fn bitvmx_protocol_id(&self) -> BitVmxProtocolId {
         self.state.bitvmx_protocol_id
     }
 
-    pub fn current_step(&self) -> Steps {
+    pub(crate) fn current_step(&self) -> Steps {
         self.state.step
     }
 
@@ -703,20 +703,20 @@ where
         }
     }
 
-    pub fn is_terminal(&self) -> bool {
+    pub(crate) fn is_terminal(&self) -> bool {
         matches!(self.state.step, Steps::Done | Steps::Failed)
     }
 
-    pub fn mark_failed(&mut self, reason: &str) -> Result<()> {
+    pub(crate) fn mark_failed(&mut self, reason: &str) -> Result<()> {
         info!("Marking advance funds flow {} as failed: {reason}", self.state.log_id);
         self.start_step(Steps::Failed)
     }
 
-    pub fn committee_id_uuid(&self) -> Uuid {
+    pub(crate) fn committee_id_uuid(&self) -> Uuid {
         Uuid::from_u128(*self.state.trigger_data.committee_id)
     }
 
-    pub fn trigger_data(&self) -> &OperatorTakeTriggerData {
+    pub(crate) fn trigger_data(&self) -> &OperatorTakeTriggerData {
         &self.state.trigger_data
     }
 }

@@ -66,13 +66,13 @@ struct SetupOneInput<'a> {
 }
 
 /// Manages the setup of `DisputeChannel` protocols between operators and watchtowers.
-pub struct DisputeChannelSetup<BC: BitVmxBrokerClientApi> {
+pub(super) struct DisputeChannelSetup<BC: BitVmxBrokerClientApi> {
     broker_client: Rc<BC>,
     drp_program_definition: String,
 }
 
 impl<BC: BitVmxBrokerClientApi> DisputeChannelSetup<BC> {
-    pub fn new(broker_client: Rc<BC>, drp_program_definition: String) -> Self {
+    pub(super) fn new(broker_client: Rc<BC>, drp_program_definition: String) -> Self {
         Self { broker_client, drp_program_definition }
     }
 
@@ -116,7 +116,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeChannelSetup<BC> {
     /// Initiates the `DisputeChannel` setup process.
     /// First requests my own `DisputeCore` data (`OP_COSIGN_UTXOS` and `WT_INIT_CHALLENGE_UTXOS`).
     /// Returns a list of requests for `DisputeCore` data that will be filled later.
-    pub fn request_dispute_core_var(
+    pub(super) fn request_dispute_core_var(
         &self,
         committee_data: &CommitteeData,
         my_index: usize,
@@ -203,7 +203,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeChannelSetup<BC> {
     }
 
     /// Completes the `DisputeChannel` setup once all `DisputeCore` data has been received.
-    pub fn complete_setup(
+    pub(super) fn complete_setup(
         &self,
         committee_data: &CommitteeData,
         my_index: usize,
@@ -483,7 +483,7 @@ impl<BC: BitVmxBrokerClientApi> DisputeChannelSetup<BC> {
 /// Represents a pending `DisputeChannel` setup request.
 /// Stores the `DisputeCore` data needed for setup.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct DisputeChannelSetupRequest {
+pub(super) struct DisputeChannelSetupRequest {
     pub dispute_core_pid: Uuid,
     pub member_index: usize,
     pub op_cosign_utxos: Option<Vec<Option<PartialUtxo>>>,

@@ -2666,7 +2666,7 @@ dependencies = [
  "alloy-signer-local",
  "anyhow",
  "clap",
- "rand 0.8.5",
+ "secrecy",
 ]
 
 [[package]]
@@ -3021,9 +3021,9 @@ dependencies = [
  "protocol-params",
  "reqwest",
  "rpassword",
+ "secrecy",
  "serde",
  "serde_json",
- "tempfile",
  "tokio",
 ]
 
@@ -3684,6 +3684,7 @@ dependencies = [
  "clap",
  "key-manager",
  "nix 0.29.0",
+ "secrecy",
  "sysinfo",
  "tokio",
 ]
@@ -3785,9 +3786,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.12"
+version = "0.103.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8279bb85272c9f10811ae6a6c547ff594d6a7f3c6c6b02ee9726d1d0dcfcdd06"
+checksum = "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e"
 dependencies = [
  "ring",
  "rustls-pki-types",
@@ -3968,6 +3969,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4387882333d3aa8cb20530a17c69a3752e97837832f34f6dccc760e715001d9"
 dependencies = [
  "cc",
+]
+
+[[package]]
+name = "secrecy"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e891af845473308773346dc847b2c23ee78fe442e0472ac50e22a18a93d3ae5a"
+dependencies = [
+ "serde",
+ "zeroize",
 ]
 
 [[package]]
@@ -4756,6 +4767,7 @@ dependencies = [
  "reqwest",
  "rust-bitvmx-storage-backend",
  "rustyline",
+ "secrecy",
  "serde",
  "serde_json",
  "tempfile",

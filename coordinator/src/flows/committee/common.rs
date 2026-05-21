@@ -29,19 +29,22 @@ pub(crate) struct CommitteeData {
 impl CommitteeData {
     /// Converts the `CommitteeId` to a Uuid.
     /// This is a common operation that's repeated multiple times across the codebase.
-    pub fn committee_uuid(&self) -> Uuid {
+    pub(super) fn committee_uuid(&self) -> Uuid {
         Uuid::from_u128(*self.committee_id)
     }
 
     /// Gets the dispute core protocol ID for a member by their take key.
     /// This is a common operation that's repeated multiple times across the codebase.
-    pub fn get_dispute_core_pid_for_key(&self, pubkey: &PublicKey) -> BitVmxProtocolId {
+    pub(super) fn get_dispute_core_pid_for_key(&self, pubkey: &PublicKey) -> BitVmxProtocolId {
         dispute_core_protocol_id(self.committee_uuid(), pubkey)
     }
 
     /// Gets the dispute core protocol ID for a member by their index.
     /// This is a common operation that's repeated multiple times across the codebase.
-    pub fn get_dispute_core_pid_for_index(&self, member_index: usize) -> Result<BitVmxProtocolId> {
+    pub(super) fn get_dispute_core_pid_for_index(
+        &self,
+        member_index: usize,
+    ) -> Result<BitVmxProtocolId> {
         let member = self
             .members
             .get(member_index)
@@ -52,7 +55,7 @@ impl CommitteeData {
 
 /// Sends a message to `BitVMX` broker with proper error handling and logging.
 /// Returns Result to allow error propagation.
-pub fn send_bitvmx_msg<BC: BitVmxBrokerClientApi>(
+pub(super) fn send_bitvmx_msg<BC: BitVmxBrokerClientApi>(
     broker_client: &BC,
     msg: IncomingBitVMXApiMessages,
 ) -> Result<()> {

@@ -1,16 +1,19 @@
+#![allow(clippy::pedantic)]
+#![forbid(unsafe_code)]
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::thread;
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use clap::{Arg, Command};
 use common::msg_broker::broker::{BrokerServer, Identifier};
 use common::shutdown_flag::ShutdownFlag;
 use log::{error, info};
 use tokio::net::TcpListener;
 use transaction_dispatcher::config::Config as TxDispatcherConfig;
-use user_api::config::{Config, Logger};
 use user_api::Server;
+use user_api::config::{Config, Logger};
 
 const LOGGER_CLI_FLAG: &str = "logger-path";
 const CONFIG_CLI_FLAG: &str = "config";
@@ -94,9 +97,15 @@ async fn main() -> Result<()> {
     let tx_dispatcher_config: TxDispatcherConfig = TxDispatcherConfig::load(config_file)
         .expect("Failed to load transaction dispatcher config");
 
+    let keystore_password = secrecy::SecretString::from(
+        std::env::var("KEY_STORE_PASSWORD")
+            .context("KEY_STORE_PASSWORD environment variable not found")?,
+    );
+
     let user_contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib(
         tx_dispatcher_config.clone(),
         transaction_dispatcher::GatewayRole::User,
+        keystore_password,
     )
     .await?;
 

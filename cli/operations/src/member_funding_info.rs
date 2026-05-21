@@ -1,18 +1,18 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use reqwest::Client;
 use serde::Deserialize;
 
 use crate::environments::Environment;
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct MemberFundingInfo {
+pub(crate) struct MemberFundingInfo {
     pub bitcoin_address: String,
     pub rsk_address: String,
 }
 
-pub type CollectedMemberFundingInfo = Vec<(String, MemberFundingInfo)>;
+pub(crate) type CollectedMemberFundingInfo = Vec<(String, MemberFundingInfo)>;
 
-pub async fn collect_member_funding_info(
+pub(crate) async fn collect_member_funding_info(
     env: &Environment,
     first_only: bool,
 ) -> Result<CollectedMemberFundingInfo> {

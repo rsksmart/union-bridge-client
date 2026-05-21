@@ -3,7 +3,7 @@
 For repository-level setup and the recommended local flow, start with:
 
 - [Repository README](../../README.md)
-- [Contributing Guide](../../CONTRIBUTING.md)
+- [Local Setup Guide](../../LOCAL_SETUP.md)
 - [CLI Tools Guide](../README.md)
 
 This README only covers wallet-specific commands and behavior.

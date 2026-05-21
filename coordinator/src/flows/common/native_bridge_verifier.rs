@@ -8,12 +8,12 @@ use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use transaction_dispatcher::types::GetBtcTransactionConfirmationsInput;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum VerificationStatus {
+pub(crate) enum VerificationStatus {
     Verified,
     InsufficientConfirmations { required: u32, actual: u32 },
 }
 
-pub enum NativeBridgeVerifier<CG: RskContractsGatewayApi> {
+pub(crate) enum NativeBridgeVerifier<CG: RskContractsGatewayApi> {
     Real { contracts: Rc<CG>, rt_sync: RuntimeSync, required_confirmations: u32 },
     Dummy, // used in local/test environments
 }
@@ -30,12 +30,16 @@ impl<CG: RskContractsGatewayApi> Clone for NativeBridgeVerifier<CG> {
 }
 
 impl<CG: RskContractsGatewayApi> NativeBridgeVerifier<CG> {
-    pub fn real(contracts: Rc<CG>, rt_sync: RuntimeSync, required_confirmations: u32) -> Self {
+    pub(crate) fn real(
+        contracts: Rc<CG>,
+        rt_sync: RuntimeSync,
+        required_confirmations: u32,
+    ) -> Self {
         Self::Real { contracts, rt_sync, required_confirmations }
     }
 
     /// Returns the confirmations required for this verifier
-    pub fn required_confirmations(&self) -> u32 {
+    pub(crate) fn required_confirmations(&self) -> u32 {
         match self {
             NativeBridgeVerifier::Real { required_confirmations, .. } => *required_confirmations,
             NativeBridgeVerifier::Dummy => 0, // Dummy verifier doesn't check confirmations
@@ -44,7 +48,7 @@ impl<CG: RskContractsGatewayApi> NativeBridgeVerifier<CG> {
 }
 
 impl<CG: RskContractsGatewayApi> NativeBridgeVerifier<CG> {
-    pub fn verify_confirmations(
+    pub(crate) fn verify_confirmations(
         &self,
         spv_proof: &BtcTxSPVProof,
         required_confirmations: u32,
@@ -162,7 +166,7 @@ where
 
 /// Verifies that the native bridge has enough confirmations for the given SPV proof
 /// and then invokes a contract method
-pub fn invoke_contract_safe<Fut, F, T, CG>(
+pub(crate) fn invoke_contract_safe<Fut, F, T, CG>(
     rt_sync: &RuntimeSync,
     method_name: &str,
     spv_proof: &BtcTxSPVProof,

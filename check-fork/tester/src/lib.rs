@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use std::error::Error;
 use std::str::FromStr;
 use std::string::ToString;

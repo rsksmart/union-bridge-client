@@ -315,6 +315,7 @@ mod tests {
     static TEST_MUTEX: Mutex<()> = Mutex::new(());
 
     fn cleanup_env_vars() {
+        // SAFETY: Callers hold TEST_MUTEX, serializing process env mutation across tests.
         unsafe {
             remove_var(LOG_DIR_ENV_VAR);
             remove_var("UB__INDEXER__STORAGE__PATH");
@@ -394,6 +395,7 @@ mod tests {
     fn test_environment_variables_override_config_files() {
         let _guard = TEST_MUTEX.lock().unwrap();
 
+        // SAFETY: Access to process-global env vars is serialized via TEST_MUTEX (held above).
         unsafe {
             set_var("UB__INDEXER__STORAGE__PATH", "/test/env/path");
             set_var("UB__INDEXER__CACHE__SIZE", "3000");
@@ -423,6 +425,7 @@ mod tests {
     fn test_priority_order_base_env_file_env_vars() {
         let _guard = TEST_MUTEX.lock().unwrap();
 
+        // SAFETY: Access to process-global env vars is serialized via TEST_MUTEX (held above).
         unsafe {
             set_var("UB__INDEXER__CACHE__SIZE", "3000");
             set_var("UB__BITCOIN_NETWORK", "mainnet");
@@ -460,6 +463,7 @@ mod tests {
     fn test_log_destination_defaults_to_logs_when_env_var_is_not_set() {
         let _guard = TEST_MUTEX.lock().unwrap();
 
+        // SAFETY: Access to process-global env vars is serialized via TEST_MUTEX (held above).
         unsafe {
             remove_var(LOG_DIR_ENV_VAR);
         }
@@ -474,6 +478,7 @@ mod tests {
         let _guard = TEST_MUTEX.lock().unwrap();
         let expected_destination = "/tmp/union-bridge-client-logs";
 
+        // SAFETY: Access to process-global env vars is serialized via TEST_MUTEX (held above).
         unsafe {
             set_var(LOG_DIR_ENV_VAR, expected_destination);
         }

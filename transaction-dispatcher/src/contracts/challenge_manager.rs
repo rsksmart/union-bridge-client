@@ -17,7 +17,7 @@ use crate::rsk_gateway::DomainErrors;
 use crate::types::BtcTxSPVProofInput;
 
 #[cfg_attr(test, automock)]
-pub trait ChallengeManagerContractApi {
+pub(crate) trait ChallengeManagerContractApi {
     async fn invoke_register_challenge(
         &self,
         accept_pegin_txid: FixedBytes<32>,
@@ -34,12 +34,12 @@ pub trait ChallengeManagerContractApi {
 }
 
 #[derive(Clone)]
-pub struct ChallengeManagerContract<P: Provider> {
+pub(crate) struct ChallengeManagerContract<P: Provider> {
     contract_instance: ChallengeManagerInstance<P>,
 }
 
 impl<P: Provider> ChallengeManagerContract<P> {
-    pub fn new(provider: P, contract_address: Address) -> Self {
+    pub(crate) fn new(provider: P, contract_address: Address) -> Self {
         info!("Connecting to ChallengeManagerContract @ {contract_address}");
         let contract_instance = ChallengeManager::new(contract_address, provider);
         ChallengeManagerContract { contract_instance }

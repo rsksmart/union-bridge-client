@@ -36,7 +36,7 @@ fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
     })
 }
 
-pub struct AdvanceFundsFlowProcessor<CG, BC>
+pub(crate) struct AdvanceFundsFlowProcessor<CG, BC>
 where
     CG: RskContractsGatewayApi,
     BC: common::msg_broker::broker::BitVmxBrokerClientApi,
@@ -68,7 +68,7 @@ where
     BC: common::msg_broker::broker::BitVmxBrokerClientApi,
 {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub(crate) fn new(
         contracts_gateway: Rc<CG>,
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,

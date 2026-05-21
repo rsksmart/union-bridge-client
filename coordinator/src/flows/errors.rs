@@ -3,13 +3,13 @@ use mockall::automock;
 use thiserror::Error;
 
 #[cfg_attr(test, automock)]
-pub trait FailableFlow {
+pub(crate) trait FailableFlow {
     fn fail(&mut self) -> ();
 }
 
 /// Generic error type for flow operations
 #[derive(Error, Debug)]
-pub enum FlowError {
+pub(crate) enum FlowError {
     /// Fatal error that requires flow termination
     #[error("Fatal error: {message}")]
     Fatal {
@@ -29,13 +29,13 @@ pub enum FlowError {
 
 impl FlowError {
     /// Create a transient error without a source
-    pub fn transient(message: impl Into<String>) -> Self {
+    pub(crate) fn transient(message: impl Into<String>) -> Self {
         FlowError::Transient { message: message.into(), source: None }
     }
 }
 
 /// Extension trait for Result types to easily convert to `FlowError`
-pub trait FlowResultExt<T> {
+pub(crate) trait FlowResultExt<T> {
     /// Convert any error to a fatal `FlowError`
     #[allow(unused)]
     fn or_fatal(self) -> Result<T, FlowError>;

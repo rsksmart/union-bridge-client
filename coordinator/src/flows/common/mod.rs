@@ -1,6 +1,6 @@
 mod context;
-pub mod native_bridge_verifier;
-pub mod signaling;
+pub(crate) mod native_bridge_verifier;
+pub(crate) mod signaling;
 
-pub use context::*;
-pub use signaling::*;
+pub(crate) use context::*;
+pub(crate) use signaling::*;

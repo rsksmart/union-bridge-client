@@ -11,7 +11,6 @@ use bitcoincore_rpc::RpcApi;
 use bollard::errors::Error as BollardError;
 use serde_json::json;
 use tempfile::tempdir;
-
 use ub_wallet::bitcoin::bitcoind::{Bitcoind, RpcConfig};
 use ub_wallet::bitcoin::utils::{ensure_wallet, find_vout_for_address, wait_for_ready};
 use ub_wallet::cli::WalletMode;
@@ -48,7 +47,7 @@ fn wallet_end_to_end_over_regtest_rpc() -> Result<()> {
         Network::Regtest,
         RPC_URL.to_string(),
         RPC_USER.to_string(),
-        RPC_PASS.to_string(),
+        secrecy::SecretString::from(RPC_PASS),
         wallet_name,
     );
 

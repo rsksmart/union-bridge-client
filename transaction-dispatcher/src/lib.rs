@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use std::path::Path;
 
 use alloy_provider::network::EthereumWallet;
@@ -7,6 +9,7 @@ use common::runtime_sync::RuntimeSync;
 use common::types::Address;
 use key_manager::key_manager::KeyManager;
 use log::info;
+use secrecy::SecretString;
 
 use crate::rsk_gateway::{DomainErrors, RskContractsGateway};
 
@@ -45,6 +48,9 @@ pub async fn get_contracts_gateway<P: Provider + Clone>(
 
 /// Get a contracts gateway instance synchronously with a specific role.
 ///
+/// `keystore_password` must be loaded at startup by the caller (typically the
+/// service binary's `main`) and passed in.
+///
 /// # Errors
 ///
 /// Returns a `DomainErrors` if the gateway cannot be created.
@@ -52,12 +58,16 @@ pub fn get_contracts_gateway_as_lib_sync_with_role(
     rt_sync: &RuntimeSync,
     config: config::Config,
     role: GatewayRole,
+    keystore_password: SecretString,
 ) -> Result<RskContractsGateway<impl Provider + Clone + 'static>, DomainErrors> {
     let rt_sync = rt_sync.clone();
-    rt_sync.run(create_contracts_gateway_impl_with_role(config, role))
+    rt_sync.run(create_contracts_gateway_impl_with_role(config, role, keystore_password))
 }
 
 /// Get a contracts gateway instance asynchronously with a specific role.
+///
+/// `keystore_password` must be loaded at startup by the caller (typically the
+/// service binary's `main`) and passed in.
 ///
 /// # Errors
 ///
@@ -65,8 +75,9 @@ pub fn get_contracts_gateway_as_lib_sync_with_role(
 pub async fn get_contracts_gateway_as_lib(
     config: config::Config,
     role: GatewayRole,
+    keystore_password: SecretString,
 ) -> Result<RskContractsGateway<impl Provider + Clone>> {
-    create_contracts_gateway_impl_with_role(config, role)
+    create_contracts_gateway_impl_with_role(config, role, keystore_password)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to create contracts gateway: {e}"))
 }
@@ -74,6 +85,7 @@ pub async fn get_contracts_gateway_as_lib(
 async fn create_contracts_gateway_impl_with_role(
     config: config::Config,
     role: GatewayRole,
+    keystore_password: SecretString,
 ) -> Result<RskContractsGateway<impl Provider + Clone>, DomainErrors> {
     let key_path = match role {
         GatewayRole::User => &config.key_store.user_path,
@@ -91,7 +103,7 @@ async fn create_contracts_gateway_impl_with_role(
         key_store_path.display()
     );
 
-    let signer = KeyManager::get_signer(key_store_path).map_err(|e| {
+    let signer = KeyManager::get_signer(key_store_path, &keystore_password).map_err(|e| {
         DomainErrors::InternalServerError(format!("Failed to get {role:?} signer: {e}"))
     })?;
     info!(

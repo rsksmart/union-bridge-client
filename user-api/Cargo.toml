@@ -3,7 +3,7 @@ name = "user-api"
 version.workspace = true
 license.workspace = true
 rust-version.workspace = true
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 anyhow = { workspace = true }
@@ -13,6 +13,7 @@ clap = { workspace = true }
 common = { path = "../common" }
 hex = "0.4.3"
 log = { workspace = true }
+secrecy = { workspace = true }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -21,5 +22,5 @@ tower-http = { workspace = true }
 transaction-dispatcher = { path = "../transaction-dispatcher", features = ["types"] }
 uuid = { workspace = true }
 
-[lints.clippy]
-all = "allow" # non-production code, do not require strict linting
+[lints]
+workspace = true

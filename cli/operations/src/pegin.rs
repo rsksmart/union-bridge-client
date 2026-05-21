@@ -1,6 +1,6 @@
 use std::process::Command;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
@@ -21,7 +21,7 @@ struct PeginAddressResponse {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub async fn create_pegin_tx(
+pub(crate) async fn create_pegin_tx(
     environment: Environment,
     rsk_address: String,
     value: u64,
@@ -29,7 +29,9 @@ pub async fn create_pegin_tx(
     execute: bool,
 ) -> Result<()> {
     if execute && environment.is_remote() {
-        bail!("--execute flag is only supported for local environments (`local`/`docker`). For remote environments, please run the wallet commands manually.");
+        bail!(
+            "--execute flag is only supported for local environments (`local`/`docker`). For remote environments, please run the wallet commands manually."
+        );
     }
 
     validate_rsk_address(&rsk_address)?;

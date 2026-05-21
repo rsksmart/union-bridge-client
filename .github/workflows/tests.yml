@@ -38,6 +38,14 @@ jobs:
         run: |
           cargo test --workspace --all-features --locked
 
+      - name: Test cli workspace (Prod)
+        run: |
+          cargo test --manifest-path cli/Cargo.toml --workspace --locked
+
+      - name: Test cli workspace (Features)
+        run: |
+          cargo test --manifest-path cli/Cargo.toml --workspace --all-features --locked
+
   check-all-targets:
     runs-on: ubuntu-latest
     env:
@@ -59,3 +67,15 @@ jobs:
       - name: Check All Targets
         run: |
           cargo check --workspace --all-targets --all-features --locked
+
+      - name: Check Rustdoc
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: |
+          cargo doc --workspace --no-deps --all-features --locked
+
+      - name: Check Rustdoc (cli workspace)
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: |
+          cargo doc --manifest-path cli/Cargo.toml --workspace --no-deps --all-features --locked

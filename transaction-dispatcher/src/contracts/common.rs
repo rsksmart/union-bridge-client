@@ -290,7 +290,7 @@ impl From<alloy_contract::Error> for DomainErrors {
 }
 
 #[cfg(test)]
-pub mod tests {
+pub(crate) mod tests {
     use alloy_primitives::{Bloom, TxHash};
     use alloy_rpc_types::{Receipt, ReceiptEnvelope, ReceiptWithBloom};
 
@@ -597,7 +597,7 @@ pub mod tests {
     }
 
     // Helper function for generating contract revert errors in tests
-    pub fn generate_contract_revert_error<T: alloy_sol_types::SolInterface>(
+    pub(crate) fn generate_contract_revert_error<T: alloy_sol_types::SolInterface>(
         input: &T,
     ) -> alloy_contract::Error {
         use alloy_contract::Error::TransportError;

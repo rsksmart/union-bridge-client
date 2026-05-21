@@ -29,9 +29,11 @@ jobs:
         include:
           - language: actions
             build-mode: none
-            # temporary disable, as Rust support is not prod ready
-          #- language: rust
-          #  build-mode: none
+          - language: rust
+            # Rust CodeQL (v4.35.5) only supports buildless extraction; `manual`
+            # and `autobuild` are rejected. See github/codeql#19966 for the
+            # known macro-expansion noise that comes with buildless extraction.
+            build-mode: none
 
     steps:
       - name: Checkout repository
@@ -42,25 +44,13 @@ jobs:
         with:
           cache-build: false
 
-      # required due to check-fork/zkp/build.rs
-      - name: Build with Cargo
-        if: matrix.language == 'rust'
-        run: |
-          cd check-fork/zkp
-          cargo build
-
-      # initialize CodeQL pointing at the real root of client code
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@5c8a8a642e79153f5d047b10ec1cba1d1cc65699 # v3.35.1
+        uses: github/codeql-action/init@9e0d7b8d25671d64c341c19c0152d693099fb5ba # v4.35.5
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
-          config-file: ./.github/codeql/codeql-config.yml
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@5c8a8a642e79153f5d047b10ec1cba1d1cc65699 # v3.35.1
-        # enable for debugging
-        # env:
-          # CODEQL_EXTRACTOR_RUST_OPTION_LOGGING_VERBOSITY: debug
+        uses: github/codeql-action/analyze@9e0d7b8d25671d64c341c19c0152d693099fb5ba # v4.35.5
         with:
           category: "/language:${{ matrix.language }}"

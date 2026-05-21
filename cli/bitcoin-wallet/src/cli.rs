@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 
-use clap::{Parser, ValueEnum};
-
 use anyhow::Result;
+use clap::{Parser, ValueEnum};
 use rustyline::completion::{Completer, Pair};
 use rustyline::config::{CompletionType, Config as RustyConfig, EditMode};
 use rustyline::highlight::Highlighter;
@@ -10,9 +9,11 @@ use rustyline::hint::Hinter;
 use rustyline::history::DefaultHistory;
 use rustyline::validate::Validator;
 use rustyline::{Context as RustyContext, Editor, Helper, Result as RustyResult};
+use secrecy::SecretString;
 
-#[derive(Debug, Clone, ValueEnum, PartialEq)]
+#[derive(Debug, Clone, ValueEnum, PartialEq, Default)]
 pub enum WalletMode {
+    #[default]
     Default,
     User,
     Member,
@@ -25,12 +26,6 @@ impl std::fmt::Display for WalletMode {
             WalletMode::User => write!(f, "user"),
             WalletMode::Member => write!(f, "member"),
         }
-    }
-}
-
-impl Default for WalletMode {
-    fn default() -> Self {
-        WalletMode::Default
     }
 }
 
@@ -52,10 +47,10 @@ pub struct CliOpts {
     #[arg(long, env = "WALLET_RPC_USER", value_name = "USER")]
     pub rpc_user: Option<String>,
     #[arg(long, env = "WALLET_RPC_PASSWORD", value_name = "PASS")]
-    pub rpc_password: Option<String>,
+    pub rpc_password: Option<SecretString>,
     #[arg(long, env = "WALLET_ENABLER_AMOUNT", value_name = "SATS")]
     pub enabler_amount: Option<u64>,
-    /// Command to execute in non-interactive mode (e.g., "mine_block", "send_to_address <addr> <amount>")
+    /// Command to execute in non-interactive mode (e.g., `mine_block`, `send_to_address <addr> <amount>`).
     #[arg(trailing_var_arg = true)]
     pub command: Vec<String>,
 }
@@ -170,11 +165,11 @@ pub fn setup_editor(
         .max_history_size(100)?
         .build();
     let mut editor: Editor<CliHelper, DefaultHistory> = Editor::with_config(rl_config)?;
-    editor.set_helper(Some(CliHelper::default()));
-    if history_path.exists() {
-        if let Err(err) = editor.load_history(&history_path) {
-            eprintln!("Failed to load command history: {err}");
-        }
+    editor.set_helper(Some(CliHelper));
+    if history_path.exists()
+        && let Err(err) = editor.load_history(&history_path)
+    {
+        eprintln!("Failed to load command history: {err}");
     }
     Ok(editor)
 }

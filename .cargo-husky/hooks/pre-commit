@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Installed by cargo-husky from .cargo-husky/hooks/pre-commit.
+# Keep this entrypoint thin — the real work lives in .hooks/format-code.sh so
+# edits there take effect without re-running cargo build.
+
+set -e
+exec bash "$(git rev-parse --show-toplevel)/.hooks/format-code.sh"

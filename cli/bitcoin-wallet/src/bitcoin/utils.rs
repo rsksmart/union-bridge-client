@@ -100,7 +100,7 @@ pub fn find_vout_for_address(
             == Some(script_hex.as_str())
         {
             let vout = entry.get("n").and_then(|n| n.as_u64()).context("vout entry missing 'n'")?;
-            return Ok(u32::try_from(vout).context("vout does not fit in u32")?);
+            return u32::try_from(vout).context("vout does not fit in u32");
         }
     }
 

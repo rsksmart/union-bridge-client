@@ -28,6 +28,7 @@ log = { workspace = true }
 multiaddr = "0.18.2"
 musig2 = { workspace = true }
 primitive-types = { workspace = true }
+secrecy = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

@@ -38,5 +38,12 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 uuid = { version = "1.11.1", features = ["v4", "serde"] }
 
+# cargo-husky installs the git hooks from `.cargo-husky/hooks/` the first time
+# `common`'s dev-dependencies are compiled after clone (e.g. `cargo test` or
+# `cargo test --no-run`; a plain `cargo build` does not pull in dev-deps).
+# `user-hooks` disables its built-in default hooks; we use our own scripts.
+[dev-dependencies]
+cargo-husky = { version = "1", default-features = false, features = ["user-hooks"] }
+
 [lints]
 workspace = true

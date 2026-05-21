@@ -14,7 +14,7 @@ use crate::contracts::types::{Address, Bytes, FixedBytes32};
 
 #[allow(clippy::struct_field_names)]
 #[cfg_attr(test, automock)]
-pub trait SignatureManagerContractApi {
+pub(crate) trait SignatureManagerContractApi {
     async fn add_member_nonce(
         &self,
         hash_to_sign: FixedBytes32,
@@ -39,12 +39,12 @@ pub trait SignatureManagerContractApi {
 }
 
 #[derive(Clone)]
-pub struct SignatureManagerContract<P: Provider> {
+pub(crate) struct SignatureManagerContract<P: Provider> {
     contract_instance: SignatureManagerInstance<P>,
 }
 
 impl<P: Provider> SignatureManagerContract<P> {
-    pub fn new(provider: P, contract_address: Address) -> Self {
+    pub(crate) fn new(provider: P, contract_address: Address) -> Self {
         info!("Connecting to SignatureManager Contract @ {contract_address}");
         let contract_instance = SignatureManager::new(contract_address, provider);
         SignatureManagerContract { contract_instance }

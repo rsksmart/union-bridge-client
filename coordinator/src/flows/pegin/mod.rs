@@ -1,2 +1,2 @@
-pub mod pegin_flow;
-pub mod pegin_processor;
+pub(crate) mod pegin_flow;
+pub(crate) mod pegin_processor;

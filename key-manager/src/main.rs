@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use key_manager::cli::Cli;
 
 fn main() {

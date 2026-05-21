@@ -12,7 +12,7 @@ use crate::rsk_gateway::DomainErrors;
 
 #[cfg_attr(test, automock)]
 #[allow(clippy::struct_field_names)]
-pub trait StreamManagerContractApi {
+pub(crate) trait StreamManagerContractApi {
     async fn call_get_minimum_deposit(
         &self,
         denomination: StreamDenomination,
@@ -29,12 +29,12 @@ pub trait StreamManagerContractApi {
 }
 
 #[derive(Clone)]
-pub struct StreamManagerContract<P: Provider> {
+pub(crate) struct StreamManagerContract<P: Provider> {
     contract_instance: StreamManagerInstance<P>,
 }
 
 impl<P: Provider> StreamManagerContract<P> {
-    pub fn new(provider: P, contract_address: Address) -> Self {
+    pub(crate) fn new(provider: P, contract_address: Address) -> Self {
         info!("Connecting to StreamManager Contract @ {contract_address}");
         let contract_instance = StreamManager::new(contract_address, provider);
         StreamManagerContract { contract_instance }

@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use std::rc::Rc;
 
 use anyhow::{Context, Result, ensure};
@@ -150,10 +152,16 @@ fn main() -> Result<()> {
 
     let rt_sync = RuntimeSync::new().context("Failed to create runtime sync")?;
 
+    let keystore_password = secrecy::SecretString::from(
+        std::env::var("KEY_STORE_PASSWORD")
+            .context("KEY_STORE_PASSWORD environment variable not found")?,
+    );
+
     let contracts_gateway = transaction_dispatcher::get_contracts_gateway_as_lib_sync_with_role(
         &rt_sync,
         tx_dispatcher_config,
         transaction_dispatcher::GatewayRole::Member, // Coordinator uses member role
+        keystore_password,
     )?;
 
     let store_path = &format!("{}/coordinator", config.coordinator.storage_path);

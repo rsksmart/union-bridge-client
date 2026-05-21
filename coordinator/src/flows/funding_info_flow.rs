@@ -38,7 +38,7 @@ where
     BC: BitVmxBrokerClientApi,
     CG: RskContractsGatewayApi,
 {
-    pub fn new(
+    pub(crate) fn new(
         bitvmx_broker: Rc<BC>,
         contracts: Rc<CG>,
         bitcoin_network: Network,

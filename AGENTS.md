@@ -1,5 +1,9 @@
 # General
 
+> Rust coding patterns and codebase-specific guidance. For formal quality criteria (Quality Gate, scope and classification, sign-off bullets) see [`CONTRIBUTING.md`](CONTRIBUTING.md). For developer setup, environment, and workflow see [`LOCAL_SETUP.md`](LOCAL_SETUP.md).
+>
+> Not all crates run the same Quality Gate. [`CONTRIBUTING.md` › Scope and classification](CONTRIBUTING.md#scope-and-classification) classifies each crate as production or non-production and describes the relaxed bar that applies to the latter.
+
 ## Agent Style
 - Use brief and direct responses
 - If you don't know the response, state it
@@ -13,11 +17,20 @@
 
 ## General Standards
 - Follow Rust API Guidelines and naming conventions (snake_case for functions/variables, PascalCase for types)
-- Check `rusty-hook.toml` for lints and formatting rules that you must follow
+- Workspace lints live in the root `Cargo.toml` under `[workspace.lints]`; fmt/sort/clippy invocations live in [`.hooks/`](.hooks/) and are shared between CI and the local git hooks. Treat both as source of truth.
 - Prefer composition over inheritance when designing structs and traits
 - Always handle `Result` and `Option` types explicitly - avoid `.unwrap()` in production code except where panic is intentional
 - Use `?` operator for error propagation instead of manual unwrap/match when appropriate
 - Prefer Rc, RefCell, Arc... etc. wrapping in inner fields rather than in parent struct
+
+## Visibility
+
+> See [`CONTRIBUTING.md` › Workspace and crate boundaries](CONTRIBUTING.md#workspace-and-crate-boundaries) for
+> the rule. The bullets below are the concrete checks reviewers run when verifying compliance.
+
+- Prefer the minimum visibility that satisfies actual callers. Use no visibility marker for items used only within their own module; `pub(crate)` only when the item is used across modules of the same crate; `pub` only when the item is reached from another crate.
+- The `unreachable_pub` lint is enforced workspace-wide and catches `pub` items that could be `pub(crate)`. The `pub(crate) → private` direction has no automated check; verify introduced or modified items by hand at review time.
+- Existing items in the codebase may be over-visible. When you touch a file, tighten the visibility of the items you modify rather than carrying their previous visibility forward.
 
 ## Refactoring
 - Never remove code comments when refactoring and moving code around
@@ -30,6 +43,10 @@
 - Review shared state usage - question if `Arc<Mutex<T>>` is truly necessary
 
 ## Unsafe Code Review
+
+> See [`CONTRIBUTING.md` › Unsafe code policy](CONTRIBUTING.md#unsafe-code-policy) for the rule. The bullets
+> below are the concrete checks reviewers run when verifying compliance.
+
 - **Critical**: All `unsafe` blocks must have detailed comments explaining safety contracts
 - Document what invariants are assumed and under what conditions the code would break
 - Verify pointer arithmetic is bounds-checked and alignment requirements are met
@@ -40,9 +57,19 @@
 - Validate all user inputs using proper parsing (avoid `.parse().unwrap()`)
 - Use parameterized queries or prepared statements for database operations
 - Implement proper authentication and authorization checks
-- Review sensitive data handling - ensure secrets aren't logged or exposed
+- Review sensitive data handling - ensure secrets aren't logged or exposed (the "Sensitive data" bullet in [`CONTRIBUTING.md` › Observability](CONTRIBUTING.md#observability) is the rule; this is the review check)
 - Check for integer overflow in arithmetic operations (use checked arithmetic where needed)
 - Audit dependencies regularly with `cargo audit`
+
+## Secrets in Types
+
+> See [`CONTRIBUTING.md` › Configuration and secrets](CONTRIBUTING.md#configuration-and-secrets) for the rule.
+> The bullets below are the concrete pattern reviewers expect new code to follow.
+
+- When a new type holds a secret value (private key, WIF, password, mnemonic, token), wrap the field with `secrecy::SecretString` (or `secrecy::SecretBox<T>` for non-string secrets) rather than using a plain `String` or byte slice. The wrapper redacts the value from `Debug` so accidental `{:?}` formatting cannot leak it.
+- Use `.expose_secret()` only at the boundary where the underlying value is consumed (e.g. building HTTP auth headers, signing a transaction). Avoid holding the exposed value in a local for longer than the consuming call.
+- Existing transient handling (a function parameter taking `password: &str` and discarding it after use) is acceptable as long as the parameter is not stored in a Debug-deriving struct. Prefer `&SecretString` parameters when the value crosses module boundaries.
+- External secret types without a redacted `Debug` (notably `bitcoin::PrivateKey`) must be wrapped before being stored in a workspace type that derives `Debug`.
 
 ## Bitcoin-Specific Considerations
 - **Critical**: Avoid `TxId::from_slice`, `TxId::from_byte_array`, or any other method that relies on `hashes::hash_newtype!` - these reverse the byte order
@@ -64,10 +91,15 @@
 - Validate that trait implementations are necessary - avoid over-abstraction
 - Use `match` expressions instead of complex `if let` chains when appropriate
 - Prefer `impl Trait` over `Box<dyn Trait>` when possible for better performance
-- Review error types - use `thiserror` or `anyhow` consistently for error handling
+- Review error types — [`CONTRIBUTING.md` › Error handling](CONTRIBUTING.md#error-handling) specifies when `thiserror` is required (typed enum where callers branch) versus when `anyhow::Result` + `.context(...)` is the default
 - Ensure comprehensive test coverage, especially for error paths and edge cases
 
 ## Concurrency & Async Review
+
+> See [`CONTRIBUTING.md` › Concurrency](CONTRIBUTING.md#concurrency) for the rule (tokio-only, cancellation,
+> `JoinHandle` retention, lock ordering). The bullets below are the concrete checks reviewers run when
+> verifying compliance.
+
 - Check for potential deadlocks in multi-threaded code
 - Verify proper use of atomic operations and memory ordering
 - Review async code for `.await` points that might cause blocking

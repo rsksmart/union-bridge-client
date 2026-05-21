@@ -1,6 +1,5 @@
 use bitcoin::Network;
 use bollard::errors::Error;
-
 use ub_wallet::bitcoin::bitcoind::{Bitcoind, BitcoindFlags, RpcConfig};
 
 #[test]
@@ -8,7 +7,7 @@ use ub_wallet::bitcoin::bitcoind::{Bitcoind, BitcoindFlags, RpcConfig};
 fn test_start_stop_bitcoind() -> Result<(), Error> {
     let rpc_config = RpcConfig {
         username: "foo".to_string(),
-        password: "rpcpassword".to_string(),
+        password: secrecy::SecretString::from("rpcpassword"),
         url: "http://localhost:18443".to_string(),
         wallet: "mywallet".to_string(),
         network: Network::Regtest,
@@ -27,7 +26,7 @@ fn test_start_stop_bitcoind() -> Result<(), Error> {
 fn test_start_stop_bitcoind_with_flags() -> Result<(), Error> {
     let rpc_config = RpcConfig {
         username: "foo".to_string(),
-        password: "rpcpassword".to_string(),
+        password: secrecy::SecretString::from("rpcpassword"),
         url: "http://localhost:18443".to_string(),
         wallet: "mywallet".to_string(),
         network: Network::Regtest,

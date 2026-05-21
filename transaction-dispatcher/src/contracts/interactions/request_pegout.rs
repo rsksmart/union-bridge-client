@@ -7,17 +7,17 @@ use crate::rsk_gateway::DomainErrors;
 use crate::types::{RequestPegoutInput, RequestPegoutOutput};
 
 #[derive(Clone)]
-pub struct TryPegoutInvoke<C: PegoutManagerContractApi> {
+pub(crate) struct TryPegoutInvoke<C: PegoutManagerContractApi> {
     contract: C,
     gas_bumps: u8,
 }
 
 impl<C: PegoutManagerContractApi> TryPegoutInvoke<C> {
-    pub fn new(contract: C, gas_bumps: u8) -> Self {
+    pub(crate) fn new(contract: C, gas_bumps: u8) -> Self {
         Self { contract, gas_bumps }
     }
 
-    pub async fn run(
+    pub(crate) async fn run(
         &self,
         input: RequestPegoutInput,
     ) -> Result<RequestPegoutOutput, DomainErrors> {

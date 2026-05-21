@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
@@ -25,7 +25,7 @@ fn sats_to_wei(sats: u64) -> u64 {
     sats.saturating_mul(10_000_000_000)
 }
 
-pub async fn request_pegout(
+pub(crate) async fn request_pegout(
     environment: Environment,
     value: u64,
     usr_pub_key: String,
@@ -100,7 +100,9 @@ fn validate_usr_pub_key(key: &str) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("User public key must start with 0x"))?;
 
     if stripped.len() != 66 {
-        bail!("User public key must be a 33-byte compressed pubkey (66 hex characters after 0x prefix)");
+        bail!(
+            "User public key must be a 33-byte compressed pubkey (66 hex characters after 0x prefix)"
+        );
     }
 
     if !stripped.chars().all(|c| c.is_ascii_hexdigit()) {

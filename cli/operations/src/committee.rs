@@ -2,7 +2,7 @@ use std::fmt;
 use std::str::FromStr;
 use std::time::Duration;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use clap::ValueEnum;
 use op_funding::derive_stream_funding_profile;
 use protocol_params::{committee_member_count, prover_count, slots_per_package};
@@ -16,7 +16,7 @@ use crate::validate_1_10;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
 #[value(rename_all = "lowercase")]
-pub enum CommitteeRole {
+pub(crate) enum CommitteeRole {
     Prover,
     Verifier,
 }
@@ -68,7 +68,7 @@ struct Funding {
     value: u64,
 }
 
-pub async fn run_committee_setup(
+pub(crate) async fn run_committee_setup(
     stream_id: u64,
     environment: Environment,
     operator_id: Option<u8>,

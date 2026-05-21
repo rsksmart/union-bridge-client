@@ -2,8 +2,7 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, anyhow};
-use bitcoin::Address;
-use bitcoin::OutPoint;
+use bitcoin::{Address, OutPoint};
 use serde::{Deserialize, Serialize};
 use storage_backend::storage::{KeyValueStore, Storage};
 use storage_backend::storage_config::StorageConfig;
@@ -121,9 +120,7 @@ impl UtxoStore {
         // Note: Currently filters client-side by scanning all UTXOs. If the storage backend
         // supports address-specific prefix scanning (e.g., "utxo/{address}/"), we could optimize
         // this by storing UTXOs under an address-specific prefix structure.
-        self.iter_utxos(|stored| {
-            stored.address.as_deref().map_or(false, |addr| addr == address_str)
-        })
+        self.iter_utxos(|stored| stored.address.as_deref().is_some_and(|addr| addr == address_str))
     }
 
     pub fn contains(&self, outpoint: &OutPoint) -> Result<bool> {

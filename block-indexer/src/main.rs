@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use std::sync::mpsc;
 
 use anyhow::{Context, Result};
