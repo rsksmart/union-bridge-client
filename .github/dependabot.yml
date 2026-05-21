@@ -4,20 +4,35 @@ updates:
   - package-ecosystem: "cargo"
     directory: "/" # main workspace directory
     schedule:
-      interval: "daily"
+      interval: "weekly"
+    # Wait at least 10 days after a new version is released before opening a PR
+    cooldown:
+      default-days: 10
   - package-ecosystem: "cargo"
     directory: "/zkp/guest" # guest workspace directory
     schedule:
-      interval: "daily"
+      interval: "weekly"
+    # Wait at least 10 days after a new version is released before opening a PR
+    cooldown:
+      default-days: 10
   - package-ecosystem: "github-actions"
     directory: "/" # GitHub workflows and composite actions
     schedule:
-      interval: "daily"
+      interval: "weekly"
+    # Wait at least 10 days after a new version is released before opening a PR
+    cooldown:
+      default-days: 10
   - package-ecosystem: "docker"
     directory: "/docker/build" # build and runtime images
     schedule:
-      interval: "daily"
+      interval: "weekly"
+    # Wait at least 10 days after a new version is released before opening a PR
+    cooldown:
+      default-days: 10
   - package-ecosystem: "docker"
     directory: "/docker/local-infra" # local infra images
     schedule:
-      interval: "daily"
+      interval: "weekly"
+    # Wait at least 10 days after a new version is released before opening a PR
+    cooldown:
+      default-days: 10
