@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 use std::convert::TryFrom;
 use std::str::FromStr;
+use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use bitcoin::address::{Address, NetworkUnchecked};
@@ -973,7 +974,11 @@ struct BlockstreamUtxoStatus {
 
 fn fetch_testnet_utxos(address: &str) -> Result<Vec<BlockstreamUtxo>> {
     let url = format!("https://blockstream.info/testnet/api/address/{address}/utxo");
-    let client = Client::new();
+    let client = Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(30))
+        .build()
+        .context("failed to build HTTP client")?;
     let response = client.get(&url).send().with_context(|| format!("failed to call {url}"))?;
     let status = response.status();
     if !status.is_success() {
