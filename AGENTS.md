@@ -70,8 +70,8 @@ For Rust edits in this repo, "verified" includes both clippy and tests passing. 
 Source of truth for fmt/sort/clippy is [`.hooks/`](.hooks/) — CI and pre-push call the same scripts, and they iterate across `.`, `cli/`, and `check-fork/zkp/guest/`. Call them when you need CI parity:
 
 ```bash
-bash .hooks/format-code.sh --check   # cargo +nightly fmt + cargo sort, all workspaces
-bash .hooks/check-lints.sh           # cargo clippy --locked -- -D warnings, all workspaces
+bash .hooks/format-code.sh --check   # canonical fmt + sort check across all workspaces
+bash .hooks/check-lints.sh           # canonical clippy check across all workspaces
 ```
 
 For faster inner-loop checks against the root workspace only:
