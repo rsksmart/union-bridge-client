@@ -8,6 +8,8 @@ DOCKER_COMPOSE_ARGS=()
 
  # TODO(iago) probably we should split this in 2 scripts
 
+ # TODO(iago) create rskj and anvil folders within local-infra
+
 # Resolve script directory (for referencing compose files reliably)
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 ENVIRONMENT="local-anvil"

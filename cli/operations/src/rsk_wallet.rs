@@ -21,9 +21,9 @@ const LOCAL_RSKJ_DEPLOYER_PRIVATE_KEY_ENV: &str = "LOCAL_RSKJ_DEPLOYER_PRIVATE_K
 const DEFAULT_LOCAL_RSKJ_DEPLOYER_PRIVATE_KEY: &str =
     "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 
-// TODO(iago) do we need both?
-const RSKJ_COW_PRIVATE_KEY_ENV: &str = "RSKJ_COW_PRIVATE_KEY";
-const DEFAULT_RSKJ_COW_PRIVATE_KEY: &str =
+// Well-known RSKj regtest COW account, pre-funded in the regtest genesis.
+// Deterministic across every RSKj regtest run, so there's no env-var override.
+const RSKJ_COW_PRIVATE_KEY: &str =
     "0xc85ef7d79691fe79573b1a7064c19c1a9819ebdbd1faaab1a8ec92344438aaf4";
 const WEI_PER_RBTC: u64 = 1_000_000_000_000_000_000;
 const WEI_PER_SAT: u64 = 10_000_000_000;
@@ -304,16 +304,15 @@ pub(crate) async fn handle_user_funding(env: Environment) -> Result<()> {
                 }
             }
             Environment::LocalRskj | Environment::DockerRskj => {
-                println!("Fund using local Rootstock regtest:");
+                println!("Fund using local Rootstock regtest (regtest COW account):");
                 println!(
                     "  value should be: pegout amount in wei + {} wei gas buffer",
                     LOCAL_USER_RSK_GAS_BUFFER_WEI
                 );
-                println!("  export {RSKJ_COW_PRIVATE_KEY_ENV}=<rskj-cow-private-key>");
                 for (_, address) in &user_addresses {
                     println!(
-                        "  cast send {} --value <AMOUNT_IN_WEI_PLUS_BUFFER> --private-key \"${{{}}}\" --rpc-url {} --legacy",
-                        address, RSKJ_COW_PRIVATE_KEY_ENV, rpc_url
+                        "  cast send {} --value <AMOUNT_IN_WEI_PLUS_BUFFER> --private-key {} --rpc-url {} --legacy",
+                        address, RSKJ_COW_PRIVATE_KEY, rpc_url
                     );
                 }
             }
@@ -920,11 +919,7 @@ fn format_wei_as_rbtc(value: U256) -> String {
 }
 
 fn rskj_cow_private_key() -> Result<String> {
-    let key = std::env::var(RSKJ_COW_PRIVATE_KEY_ENV)
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| DEFAULT_RSKJ_COW_PRIVATE_KEY.to_string());
-    normalize_private_key(&key)
+    normalize_private_key(RSKJ_COW_PRIVATE_KEY)
 }
 
 fn run_cast_send_unlocked(rpc_url: &str, address: &str, value: U256) -> Result<()> {
