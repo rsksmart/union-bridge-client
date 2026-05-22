@@ -17,7 +17,7 @@ Run the wrapper scripts below from the repository root.
 
 - local cargo client + Docker-backed infra: follow the [Local Setup Guide](../LOCAL_SETUP.md) first, then use the wrapper
   commands below
-- local Docker operator runtime: use `--env docker` after following the [Operator Docker Runtime Guide](../docker/operator/README.md)
+- local Docker operator runtime: use `--env docker-anvil` (or `--env docker-rskj`) after following the [Operator Docker Runtime Guide](../docker/operator/README.md)
 - remote CLI profile: use `--env <profile>` with a matching `cli/.env.<profile>`
 
 For the automated happy-path script:
@@ -33,8 +33,9 @@ Launch one or more Union Bridge clients locally for development and testing.
 
 ```bash
 ./cli-run.sh --help
-./cli-run.sh --features anvil
-./cli-run.sh --id 1 --features anvil
+./cli-run.sh                       # default: local-anvil (--features anvil, --config local-anvil)
+./cli-run.sh --id 1
+./cli-run.sh --rskj                # local-rskj: --config local-rskj, no anvil feature
 ./cli-run.sh --fresh
 ./cli-run.sh --bitvmx-mode docker
 ./cli-run.sh --bitvmx-mode repo
@@ -54,8 +55,10 @@ Address sources now differ by flow:
 
 ### Supported Environments
 
-- `local`
-- `docker`
+- `local-anvil` (default)
+- `docker-anvil`
+- `local-rskj`
+- `docker-rskj`
 - any remote profile name, for example `alphanet`
 
 ### Environment Variables
@@ -73,24 +76,24 @@ For remote CLI access, copy `cli/.env.sample` to `cli/.env.<profile>` and fill i
 ```bash
 ./cli-operations.sh --help
 
-# Local Docker funding
-./cli-operations.sh operator fund --env docker
+# Docker operator funding
+./cli-operations.sh operator fund --env docker-anvil
 
 # Local operator apply-stream
 ./cli-operations.sh operator apply-stream --stream 1
 
 # Local whitelist
-./cli-operations.sh operator whitelist --contract-address 0x742d35... --env local
+./cli-operations.sh operator whitelist --contract-address 0x742d35... --env local-anvil
 
 # Local user flows
-./cli-operations.sh user fund --env local
-./cli-operations.sh user pegin --rsk-address 0x742d35... --value 1000000 --btc-pub-key 0x<32-byte-xonly-pubkey> --env local
-./cli-operations.sh user pegout --value 1000000 --usr-pub-key 0x<33-byte-compressed-pubkey> --env local
+./cli-operations.sh user fund --env local-anvil
+./cli-operations.sh user pegin --rsk-address 0x742d35... --value 1000000 --btc-pub-key 0x<32-byte-xonly-pubkey> --env local-anvil
+./cli-operations.sh user pegout --value 1000000 --usr-pub-key 0x<33-byte-compressed-pubkey> --env local-anvil
 ```
 
 ### Remote CLI Notes
 
-Any `--env <name>` other than `local` or `docker` is treated as a remote profile. The CLI looks for `cli/.env.<name>`
+Any `--env <name>` other than `local-anvil`, `docker-anvil`, `local-rskj`, or `docker-rskj` is treated as a remote profile. The CLI looks for `cli/.env.<name>`
 and expects these keys there:
 
 - `UC_REMOTE_SSH_USER`
@@ -102,7 +105,7 @@ These files are ignored by git.
 
 ### Safety Features
 
-- `--execute` is only supported for local environments (`local`, `docker`)
+- `--execute` is only supported for local environments (`local-anvil`, `docker-anvil`, `local-rskj`, `docker-rskj`)
 - confirmation prompts remain enabled for remote operations
 
 ## Workspace Layout

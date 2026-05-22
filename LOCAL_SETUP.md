@@ -126,7 +126,7 @@ Configuration ownership is:
 | `docker-compose.env` | generated under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/` | `docker/operator/start-operators.sh` / Docker compose | Docker operator runtime only |
 | `docker-service.env` | generated under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/` | operator containers | Docker operator runtime only |
 | `UB__...` overrides | shell, `.envrc`, CI, or container env | application config loader | use when you need to override TOML config without editing files |
-| `docker/local-infra/.env.local` | tracked under `docker/local-infra/` | `start-blockchains.sh` and `start-bitvmx.sh` | local infra Docker scripts only |
+| `docker/local-infra/.env.anvil`, `.env.rskj` | tracked under `docker/local-infra/` | `start-blockchains.sh` and `start-bitvmx.sh` | local infra Docker scripts only; one file per Rootstock impl |
 
 Wrapper script note:
 

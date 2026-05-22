@@ -118,7 +118,7 @@ cast rpc eth_chainId --rpc-url http://127.0.0.1:8545
 selected image tag is not present locally, startup pulls it from GHCR and fails
 if the tag is not published. Use `--pull-contracts` to force a GHCR refresh.
 
-## Local-Regtest RSKj And PowPeg Versions
+## local-rskj RSKj And PowPeg Versions
 
 `local-rskj` uses official Docker Hub images:
 
