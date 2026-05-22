@@ -81,7 +81,7 @@ cargo build --workspace                                                         
 RISC0_SKIP_BUILD=1 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings   # lint (matches hooks except multi-workspace iteration)
 cargo test --workspace --locked                                                                    # all tests
 cargo test --package <crate> <test_name>                                                           # single test
-cargo +nightly fmt                                                                                 # write mode; use `bash .hooks/format-code.sh --check` for parity
+bash .hooks/format-code.sh                                                                         # write mode (rewrites files); add --check to verify only
 ```
 
 **Don't build, test, or clippy after every edit.** Run them at meaningful milestones — after completing a logical change, before declaring work done, or when debugging a specific failure. Mid-edit verification slows the loop; pre-push hooks enforce clippy + tests at push time anyway.
