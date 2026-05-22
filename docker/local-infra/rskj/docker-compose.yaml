@@ -1,37 +1,10 @@
-# Local blockchain stack for Rootstock-based development (bitcoind + rskj + powpeg + contracts deploy).
+# RSKj side of the local blockchain stack (rskj + powpeg + deploy-contracts).
+# bitcoind is supplied via compose's `include:` from the shared
+# ../docker-compose.bitcoind.yaml so the service definition isn't duplicated.
 name: blockchains
+include:
+  - ../docker-compose.bitcoind.yaml
 services:
-  bitcoind:
-    image: "ruimarinho/bitcoin-core:24.0.1"
-    container_name: bitcoind
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    environment:
-      BITCOIN_DATA: /data
-    command:
-      - -regtest=1
-      - -printtoconsole
-      - -rpcallowip=0.0.0.0/0
-      - -rpcbind=0.0.0.0
-      - -rpcuser=${BITCOIND_USER}
-      - -rpcpassword=${BITCOIND_PASSWORD}
-      - -server=1
-      - -txindex=1
-      - -fallbackfee=0.0002
-      - -wallet=mainwallet
-    ports:
-      - "18443:18443"
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "bitcoin-cli -regtest -rpcuser=${BITCOIND_USER} -rpcpassword=${BITCOIND_PASSWORD} getblockchaininfo > /dev/null",
-        ]
-      start_period: 10s
-      interval: 10s
-      timeout: 5s
-      retries: 20
-
   rskj:
     image: "rsksmart/rskj:${RSKJ_TAG}"
     platform: ${PLATFORM}
@@ -48,7 +21,7 @@ services:
       - "8545:4444"
       - "8546:4445"
     volumes:
-      - ./rskj.node.conf:/etc/rsk/node.conf:ro
+      - ./config/rskj.node.conf:/etc/rsk/node.conf:ro
     healthcheck:
       test: ["CMD-SHELL", "tr '\\0' ' ' < /proc/1/cmdline | grep -q 'co.rsk.Start'"]
       start_period: 15s
@@ -74,8 +47,8 @@ services:
       RSKJ_CLASS: "co.rsk.federate.FederateRunner"
       RSKJ_OPTS: "--reset"
     volumes:
-      - ./powpeg/config/node-federator1.conf:/etc/rsk/node.conf:ro
-      - ./powpeg/config/federator1.key:/etc/rsk/federator1.key:ro
+      - ./config/node-federator1.conf:/etc/rsk/node.conf:ro
+      - ./config/federator1.key:/etc/rsk/federator1.key:ro
     healthcheck:
       test: ["CMD-SHELL", "tr '\\0' ' ' < /proc/1/cmdline | grep -q 'co.rsk.federate.FederateRunner'"]
       start_period: 20s

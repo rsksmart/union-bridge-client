@@ -7,7 +7,6 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.bitvmx.yml"
-ENV_FILE="${SCRIPT_DIR}/.env.local"
 NETWORK_NAME="bitvmx-shared-network"
 export BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
 
@@ -37,12 +36,6 @@ print_help() {
   echo "  op_4 -> localhost:55554"
   exit 0
 }
-
-# Check env file exists
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "Error: .env.local not found at $ENV_FILE"
-  exit 1
-fi
 
 FRESH=false
 DOCKER_COMPOSE_ARGS=()
@@ -180,7 +173,7 @@ done
 # If --fresh, clean first
 if [[ "${FRESH}" == true ]]; then
   echo "Cleaning BitVMX stack (down --volumes)..."
-  docker compose -p bitvmx --env-file "$ENV_FILE" -f "$COMPOSE_FILE" down --volumes --timeout 1 2>/dev/null || true
+  docker compose -p bitvmx -f "$COMPOSE_FILE" down --volumes --timeout 1 2>/dev/null || true
 fi
 
 # Ensure network exists for up command
@@ -190,7 +183,7 @@ if [[ "${IS_UP_COMMAND}" == true ]]; then
 fi
 
 # Run docker compose with provided args
-docker compose -p bitvmx --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "${DOCKER_COMPOSE_ARGS[@]}"
+docker compose -p bitvmx -f "$COMPOSE_FILE" "${DOCKER_COMPOSE_ARGS[@]}"
 
 # Print connection info after up
 if [[ "${IS_UP_COMMAND}" == true ]]; then

@@ -9,7 +9,7 @@ For the full startup order, shared env rules, and the recommended local workflow
 Environment note:
 
 - `./cli-infra.sh` reads `BASE_STORAGE_PATH` and any other exported variables from your current shell; it does not source `.envrc` itself.
-- For the Docker-backed local setup, the generated BitVMX configs are patched from `BITCOIND_URL`, which should match the local Docker value in [`.env.local`](./.env.local): `http://foo:rpcpassword@host.docker.internal:18443`.
+- For the Docker-backed local setup, the generated BitVMX configs are patched from `BITCOIND_URL` (read from your shell or `.envrc`). The expected local Docker value is `http://foo:rpcpassword@host.docker.internal:18443`.
 
 ## Related Docs
 
@@ -87,7 +87,7 @@ cd ../union-bridge-contracts
 docker buildx build \
   --platform linux/amd64 \
   -t ghcr.io/rsksmart/union-bridge-contracts-anvil:<tag> \
-  -f ../union-bridge-client/docker/local-infra/Dockerfile_predeployed_anvil \
+  -f ../union-bridge-client/docker/local-infra/anvil/Dockerfile_predeployed \
   .
 ```
 
@@ -97,7 +97,7 @@ Example:
 docker buildx build \
   --platform linux/amd64 \
   -t ghcr.io/rsksmart/union-bridge-contracts-anvil:v0.4.1-alpha-10-4-2 \
-  -f ../union-bridge-client/docker/local-infra/Dockerfile_predeployed_anvil \
+  -f ../union-bridge-client/docker/local-infra/anvil/Dockerfile_predeployed \
   .
 ```
 
@@ -125,7 +125,7 @@ if the tag is not published. Use `--pull-contracts` to force a GHCR refresh.
 - RSKj tags: <https://hub.docker.com/r/rsksmart/rskj/tags>
 - powpeg-node tags: <https://hub.docker.com/r/rsksmart/powpeg-node/tags>
 
-The default tested tags live in [`.env.rskj`](./.env.rskj):
+The default tested tags live in [`rskj/.env`](./rskj/.env):
 
 ```bash
 RSKJ_TAG=VETIVER-9.0.1
