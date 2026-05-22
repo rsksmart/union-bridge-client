@@ -54,11 +54,18 @@ case "$ENVIRONMENT" in
     COMPOSE_FILE="${SCRIPT_DIR}/anvil/docker-compose.yaml"
     ENV_PATH="${SCRIPT_DIR}/anvil/.env"
     ROOTSTOCK_SCRIPT="${SCRIPT_DIR}/anvil/start.sh"
+    # Used to detect / tear down the other chain when switching.
+    OTHER_CHAIN_CONTAINER="rskj"
+    OTHER_CHAIN_COMPOSE="${SCRIPT_DIR}/rskj/docker-compose.yaml"
+    OTHER_CHAIN_ENV="${SCRIPT_DIR}/rskj/.env"
     ;;
   local-rskj)
     COMPOSE_FILE="${SCRIPT_DIR}/rskj/docker-compose.yaml"
     ENV_PATH="${SCRIPT_DIR}/rskj/.env"
     ROOTSTOCK_SCRIPT="${SCRIPT_DIR}/rskj/start.sh"
+    OTHER_CHAIN_CONTAINER="anvil"
+    OTHER_CHAIN_COMPOSE="${SCRIPT_DIR}/anvil/docker-compose.yaml"
+    OTHER_CHAIN_ENV="${SCRIPT_DIR}/anvil/.env"
     ;;
   *)
     echo "Error: --env must be 'local-anvil' or 'local-rskj' (got: '${ENVIRONMENT}')" >&2
@@ -159,10 +166,18 @@ create_bitcoin_wallet_if_needed() {
   wait_for_bitcoind_wallet "${wallet_name}"
 }
 
-# Fresh teardown
+# If the *other* chain is currently running, tear it down first. Both chains
+# share ports (bitcoin: 18443, rootstock RPC: 8545), so they can't coexist.
+# We preserve the other chain's volumes — only its containers are removed.
+if docker ps --format '{{.Names}}' | grep -qx "${OTHER_CHAIN_CONTAINER}"; then
+  echo "Detected '${OTHER_CHAIN_CONTAINER}' from the other chain; tearing it down so '${ENVIRONMENT}' can take over..."
+  docker compose -p blockchains --env-file "$OTHER_CHAIN_ENV" -f "$OTHER_CHAIN_COMPOSE" down --remove-orphans --timeout 5 || true
+fi
+
+# Fresh teardown of the requested chain.
 if [[ "$FRESH" == true ]]; then
   echo "Cleaning ${ENVIRONMENT} blockchains stack (down --volumes)..."
-  docker compose -p blockchains --env-file "$ENV_PATH" -f "$COMPOSE_FILE" down --volumes --timeout 1 || true
+  docker compose -p blockchains --env-file "$ENV_PATH" -f "$COMPOSE_FILE" down --volumes --remove-orphans --timeout 1 || true
 fi
 
 # Bring up bitcoind first; the Rootstock-node script assumes it's ready.

@@ -4,12 +4,12 @@
 #
 # prerequisites:
 #   - union bridge clients running (via: cargo run -- run)
-#   - Anvil running on localhost:8545, or Rootstock regtest HTTP running on localhost:8545 for docker-rskj
+#   - Anvil running on localhost:8545, or Rootstock regtest HTTP running on localhost:8545 for local-rskj / docker-rskj
 #   - bitcoin regtest node running with RPC enabled
 #   - USER_BITCOIN_WIF environment variable set (for bitcoin-wallet operations)
 #   - MEMBER_BITCOIN_WIF environment variable set (for member operations)
 #
-# usage: bash tests/run-flows.sh [--env <local-anvil|docker-anvil|docker-rskj>] [--ops <1-10>] [--stream <0-4>] [--happy|--setup|--committee|--pegin|--pegout|--operator-take]
+# usage: bash tests/run-flows.sh [--env <local-anvil|docker-anvil|local-rskj|docker-rskj>] [--ops <1-10>] [--stream <0-4>] [--happy|--setup|--committee|--pegin|--pegout|--operator-take]
 
 set -euo pipefail
 
@@ -63,7 +63,7 @@ usage() {
     local script_name
     script_name=$(basename "${BASH_SOURCE[0]}")
     cat <<EOF
-Usage: ${script_name} [--env <local-anvil|docker-anvil|docker-rskj>] [--ops <1-10>] [--stream <0-4>] [--happy|--setup|--committee|--pegin|--pegout|--operator-take]
+Usage: ${script_name} [--env <local-anvil|docker-anvil|local-rskj|docker-rskj>] [--ops <1-10>] [--stream <0-4>] [--happy|--setup|--committee|--pegin|--pegout|--operator-take]
 
 Modes:
   default (no mode flags)
@@ -77,8 +77,8 @@ Modes:
   --operator-take
              Operator-take-only: requests pegout with FORCE_ADVANCE enabled.
 
-  --env      Environment: local-anvil, docker-anvil, or docker-rskj (default: from UC_ENV or local-anvil)
-  --ops      Number of operators (1-10, default: 4 for local-anvil, docker env file for docker-anvil/docker-rskj)
+  --env      Environment: local-anvil, docker-anvil, local-rskj, or docker-rskj (default: from UC_ENV or local-anvil)
+  --ops      Number of operators (1-10, default: 4 for cargo modes, docker env file for docker-anvil/docker-rskj)
   --stream   Stream identifier (0-4). Defaults to 0.
   --help     Show this help text.
 
@@ -123,7 +123,7 @@ load_envrc_if_needed() {
 
 initialize_script_env_default() {
     if [[ -n "${UC_ENV:-}" ]]; then
-        if [[ "$UC_ENV" == "local-anvil" || "$UC_ENV" == "docker-anvil" || "$UC_ENV" == "docker-rskj" ]]; then
+        if [[ "$UC_ENV" == "local-anvil" || "$UC_ENV" == "docker-anvil" || "$UC_ENV" == "local-rskj" || "$UC_ENV" == "docker-rskj" ]]; then
             SCRIPT_ENV="$UC_ENV"
         else
             SCRIPT_ENV="local-anvil"
@@ -150,8 +150,8 @@ parse_args() {
                 usage
                 return 1
             fi
-            if [[ "$SCRIPT_ENV" != "local-anvil" && "$SCRIPT_ENV" != "docker-anvil" && "$SCRIPT_ENV" != "docker-rskj" ]]; then
-                echo "Error: --env must be 'local-anvil', 'docker-anvil', or 'docker-rskj'" >&2
+            if [[ "$SCRIPT_ENV" != "local-anvil" && "$SCRIPT_ENV" != "docker-anvil" && "$SCRIPT_ENV" != "local-rskj" && "$SCRIPT_ENV" != "docker-rskj" ]]; then
+                echo "Error: --env must be 'local-anvil', 'docker-anvil', 'local-rskj', or 'docker-rskj'" >&2
                 usage
                 return 1
             fi
@@ -247,8 +247,8 @@ parse_args() {
 }
 
 validate_script_env() {
-    if [[ "$SCRIPT_ENV" != "local-anvil" && "$SCRIPT_ENV" != "docker-anvil" && "$SCRIPT_ENV" != "docker-rskj" ]]; then
-        echo "Error: SCRIPT_ENV must be 'local-anvil', 'docker-anvil', or 'docker-rskj'" >&2
+    if [[ "$SCRIPT_ENV" != "local-anvil" && "$SCRIPT_ENV" != "docker-anvil" && "$SCRIPT_ENV" != "local-rskj" && "$SCRIPT_ENV" != "docker-rskj" ]]; then
+        echo "Error: SCRIPT_ENV must be 'local-anvil', 'docker-anvil', 'local-rskj', or 'docker-rskj'" >&2
         return 1
     fi
 }
@@ -258,7 +258,7 @@ is_docker_mode_env() {
 }
 
 is_rskj_backend_env() {
-    [[ "$SCRIPT_ENV" == "docker-rskj" ]]
+    [[ "$SCRIPT_ENV" == "local-rskj" || "$SCRIPT_ENV" == "docker-rskj" ]]
 }
 
 rootstock_label() {
@@ -353,7 +353,8 @@ running_docker_operator_coordinators() {
 }
 
 ensure_selected_env_matches_running_mode() {
-    if [[ "$SCRIPT_ENV" != "local-anvil" ]]; then
+    # Only the cargo-mode envs (local-anvil, local-rskj) conflict with running docker operators.
+    if is_docker_mode_env; then
         return 0
     fi
 
@@ -363,9 +364,9 @@ ensure_selected_env_matches_running_mode() {
         return 0
     fi
 
-    echo "Error: --env local-anvil cannot be used while Docker operator coordinators are running." >&2
+    echo "Error: --env ${SCRIPT_ENV} cannot be used while Docker operator coordinators are running." >&2
     echo "Detected coordinator container(s): $running_coordinators" >&2
-    echo "Use --env docker-anvil/docker-rskj for docker/operator/start-operators.sh, or stop the Docker operators before running --env local-anvil." >&2
+    echo "Use --env docker-anvil/docker-rskj for docker/operator/start-operators.sh, or stop the Docker operators before running --env ${SCRIPT_ENV}." >&2
     return 1
 }
 

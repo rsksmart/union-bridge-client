@@ -59,7 +59,8 @@ services:
   deploy-contracts:
     build:
       context: ${CONTRACTS_CONTEXT_PATH}
-      dockerfile: ${CONTRACTS_DOCKERFILE}
+      # Dockerfile path is relative to the build context (the contracts repo).
+      dockerfile: ../union-bridge-client/docker/local-infra/rskj/Dockerfile_deploy
     platform: ${PLATFORM}
     container_name: deploy-contracts
     extra_hosts:
@@ -88,7 +89,7 @@ services:
           --legacy \
           --broadcast \
           --slow \
-          -v
+          -vvv
     depends_on:
       rskj:
         condition: service_healthy

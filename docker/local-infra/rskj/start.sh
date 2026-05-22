@@ -99,7 +99,6 @@ else
   exit 1
 fi
 export CONTRACTS_CONTEXT_PATH="$CONTRACTS_CONTEXT_CANDIDATE"
-export CONTRACTS_DOCKERFILE="$SCRIPT_DIR/Dockerfile_deploy"
 
 echo "Using local-rskj images:"
 echo "  RSKj:        rsksmart/rskj:${RSKJ_TAG}"
