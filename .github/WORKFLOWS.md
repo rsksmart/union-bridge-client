@@ -46,14 +46,6 @@ This file is the narrow reference for the workflow files currently tracked under
   - pull requests against `main`
   - scheduled weekly scan
 
-### `check_peer_tested.yml`
-
-- Name: `Check Peer Tested`
-- Triggers:
-  - pull requests against `main`
-  - actions: `opened`, `synchronize`, `reopened`, `labeled`, `unlabeled`
-- Purpose: maintain the `Peer Test Status Check` commit status from the `peer tested` label
-
 ### `e2e-smoke-tests.yml`
 
 - Name: `E2E Smoke Tests`
