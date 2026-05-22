@@ -257,7 +257,7 @@ impl CommonConfig {
     /// **Outputs**:
     /// - Stdout: always emitted, with the chosen format.
     /// - File: always written, never with ANSI codes. The directory is resolved as
-    ///   `log_dir_opt` (CLI arg) → `UB_LOG_DIR` env var → [`DEFAULT_LOG_DIR`]
+    ///   `log_dir_opt` (CLI arg) → `UB_LOG_DIR` env var → `DEFAULT_LOG_DIR`
     ///   (relative to the current working directory).
     ///
     /// **Operator identification**: when `CLIENT_ID` is set (injected per-operator by the
@@ -265,7 +265,7 @@ impl CommonConfig {
     /// mode each stdout line is prefixed with `[op-<CLIENT_ID>] ` so launcher-interleaved
     /// output is attributable. Otherwise the file falls back to `<crate_name>-<timestamp>.log`.
     ///
-    /// **Log level**: controlled by `RUST_LOG`. When unset, defaults to [`DEFAULT_FILTER`] —
+    /// **Log level**: controlled by `RUST_LOG`. When unset, defaults to `DEFAULT_FILTER` —
     /// `debug` for service code, `warn` for noisy third-party crates.
     ///
     /// Also installs [`tracing_log::LogTracer`] (via `tracing-subscriber`'s default
@@ -344,7 +344,7 @@ impl CommonConfig {
     }
 
     /// Resolves the log directory used by [`init_logger`]. CLI arg wins, then
-    /// `UB_LOG_DIR`, then [`DEFAULT_LOG_DIR`]. Empty strings are treated as unset.
+    /// `UB_LOG_DIR`, then `DEFAULT_LOG_DIR`. Empty strings are treated as unset.
     fn resolve_log_dir(arg: Option<&str>, env: Option<&str>) -> String {
         arg.filter(|s| !s.is_empty())
             .or(env.filter(|s| !s.is_empty()))
