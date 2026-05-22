@@ -106,6 +106,13 @@ struct Cli {
     /// Source of BitVMX identity used by coordinator in local runs.
     #[arg(long = "bitvmx-mode", value_enum, default_value_t = BitvmxMode::Docker)]
     bitvmx_mode: BitvmxMode,
+
+    /// Run against the local-rskj Rootstock node instead of the default
+    /// local-anvil. Selects `--config local-rskj` for each spawned service
+    /// and skips the `--features anvil` cargo flag (which gates anvil-only
+    /// shims in common/src/alloy_rsk_provider/sub.rs and common/src/types.rs).
+    #[arg(long = "rskj", action = ArgAction::SetTrue)]
+    rskj: bool,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
@@ -194,6 +201,7 @@ async fn main() -> Result<()> {
         features: cli.features,
         fresh: cli.fresh,
         bitvmx_mode: cli.bitvmx_mode,
+        rskj: cli.rskj,
     };
 
     let result = run_clients(run_config).await;
@@ -215,6 +223,9 @@ struct RunConfig {
     features: Option<String>,
     fresh: bool,
     bitvmx_mode: BitvmxMode,
+    /// When true, spawn services against `--config local-rskj` and skip the
+    /// `--features anvil` default. See the matching `--rskj` flag on `Cli`.
+    rskj: bool,
 }
 
 async fn run_clients(config: RunConfig) -> Result<()> {
@@ -706,11 +717,15 @@ fn fresh_cleanup(client_id: Option<u8>) -> Result<()> {
 fn cargo_args_for_service(config: &RunConfig, svc: &Service) -> Vec<String> {
     let mut args: Vec<String> = vec!["run".into(), "--bin".into(), svc.name().into()];
 
-    // pass features flag if provided, otherwise default to anvil for services that support it
+    // Resolve features:
+    //   - Explicit --features <x>  → use that verbatim
+    //   - --rskj                   → no default features (anvil shims stay off)
+    //   - default (local-anvil)    → enable the `anvil` feature on services that have one
     let features = if let Some(f) = &config.features {
         Some(f.clone())
+    } else if config.rskj {
+        None
     } else {
-        // default to anvil for local development on services that support it
         match svc {
             Service::BlockIndexer | Service::LogIndexer | Service::Coordinator => {
                 Some("anvil".into())
@@ -726,7 +741,7 @@ fn cargo_args_for_service(config: &RunConfig, svc: &Service) -> Vec<String> {
 
     args.push("--".into());
     args.push("--config".into());
-    args.push("local-anvil".into());
+    args.push(if config.rskj { "local-rskj".into() } else { "local-anvil".into() });
     args
 }
 
