@@ -9,13 +9,15 @@ use crate::constants::operator_ids;
 /// unified environment enum for all cli commands
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) enum Environment {
-    /// local cargo-run services (no docker)
+    /// host-side cargo-run services backed by Anvil (no docker)
     #[default]
-    Local,
-    /// local docker compose services
-    Docker,
-    /// docker-first local Rootstock regtest services
-    LocalRegtest,
+    LocalAnvil,
+    /// docker compose operator services backed by Anvil
+    DockerAnvil,
+    /// host-side cargo-run services backed by a Rootstock regtest RSKj node
+    LocalRskj,
+    /// docker compose operator services backed by a Rootstock regtest RSKj node
+    DockerRskj,
     /// generic remote deployment configured via `cli/.env.<profile>`
     Remote(String),
 }
@@ -30,9 +32,10 @@ impl FromStr for Environment {
         }
 
         match normalized {
-            "local" => Ok(Environment::Local),
-            "docker" => Ok(Environment::Docker),
-            "local-regtest" => Ok(Environment::LocalRegtest),
+            "local-anvil" => Ok(Environment::LocalAnvil),
+            "docker-anvil" => Ok(Environment::DockerAnvil),
+            "local-rskj" => Ok(Environment::LocalRskj),
+            "docker-rskj" => Ok(Environment::DockerRskj),
             other => {
                 validate_remote_profile_name(other)?;
                 Ok(Environment::Remote(other.to_string()))
@@ -51,9 +54,10 @@ impl Environment {
     /// returns the name of the environment as a string
     pub(crate) fn get_name(&self) -> String {
         match self {
-            Environment::Local => "local".to_string(),
-            Environment::Docker => "docker".to_string(),
-            Environment::LocalRegtest => "local-regtest".to_string(),
+            Environment::LocalAnvil => "local-anvil".to_string(),
+            Environment::DockerAnvil => "docker-anvil".to_string(),
+            Environment::LocalRskj => "local-rskj".to_string(),
+            Environment::DockerRskj => "docker-rskj".to_string(),
             Environment::Remote(name) => name.clone(),
         }
     }
@@ -63,9 +67,15 @@ impl Environment {
         matches!(self, Environment::Remote(_))
     }
 
-    /// returns true for local developer environments backed by regtest chains.
-    pub(crate) fn is_local_regtest(&self) -> bool {
-        matches!(self, Environment::Local | Environment::Docker | Environment::LocalRegtest)
+    /// returns true for local developer environments (Bitcoin regtest backend, fake or real Rootstock).
+    pub(crate) fn uses_bitcoin_regtest(&self) -> bool {
+        matches!(
+            self,
+            Environment::LocalAnvil
+                | Environment::DockerAnvil
+                | Environment::LocalRskj
+                | Environment::DockerRskj
+        )
     }
 
     /// returns the remote ssh user for remote environments
@@ -77,7 +87,10 @@ impl Environment {
     pub(crate) fn hosts(&self) -> Result<Vec<String>> {
         match self {
             Environment::Remote(_) => read_csv_remote_value(self, "UC_REMOTE_HOSTS"),
-            Environment::Local | Environment::Docker | Environment::LocalRegtest => {
+            Environment::LocalAnvil
+            | Environment::DockerAnvil
+            | Environment::LocalRskj
+            | Environment::DockerRskj => {
                 Err(anyhow!("hosts() is only available for remote environments"))
             }
         }
@@ -86,8 +99,10 @@ impl Environment {
     /// returns the RPC URL for this environment
     pub(crate) fn rpc_url(&self) -> Result<String> {
         match self {
-            Environment::Local | Environment::Docker => Ok("http://localhost:8545".to_string()),
-            Environment::LocalRegtest => Ok("http://localhost:8545".to_string()),
+            Environment::LocalAnvil
+            | Environment::DockerAnvil
+            | Environment::LocalRskj
+            | Environment::DockerRskj => Ok("http://localhost:8545".to_string()),
             Environment::Remote(_) => required_remote_value(self, "UC_REMOTE_RPC_URL"),
         }
     }
@@ -96,7 +111,10 @@ impl Environment {
     pub(crate) fn user_api_endpoints(&self) -> Result<Vec<String>> {
         let ports = user_api_ports();
         match self {
-            Environment::Local | Environment::Docker | Environment::LocalRegtest => {
+            Environment::LocalAnvil
+            | Environment::DockerAnvil
+            | Environment::LocalRskj
+            | Environment::DockerRskj => {
                 Ok(ports.iter().map(|port| format!("{}:{}", LOCAL_HOST, port)).collect())
             }
             Environment::Remote(_) => read_csv_remote_value(self, "UC_REMOTE_USER_API_ENDPOINTS"),
@@ -226,14 +244,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_local_regtest_as_builtin_environment() {
-        let env = Environment::from_str("local-regtest").expect("local-regtest should parse");
-
-        assert_eq!(Environment::LocalRegtest, env);
-        assert_eq!("local-regtest", env.get_name());
-        assert!(!env.is_remote());
-        assert!(env.is_local_regtest());
-        assert_eq!("http://localhost:8545", env.rpc_url().unwrap());
+    fn parses_builtin_environments() {
+        for (input, expected) in [
+            ("local-anvil", Environment::LocalAnvil),
+            ("docker-anvil", Environment::DockerAnvil),
+            ("local-rskj", Environment::LocalRskj),
+            ("docker-rskj", Environment::DockerRskj),
+        ] {
+            let env = Environment::from_str(input).expect("builtin should parse");
+            assert_eq!(expected, env);
+            assert_eq!(input, env.get_name());
+            assert!(!env.is_remote());
+            assert!(env.uses_bitcoin_regtest());
+            assert_eq!("http://localhost:8545", env.rpc_url().unwrap());
+        }
     }
 
     #[test]

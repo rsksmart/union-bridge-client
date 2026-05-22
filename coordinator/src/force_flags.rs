@@ -4,7 +4,8 @@
 //! mechanisms without waiting for normal timeouts or conditions.
 //!
 //! **IMPORTANT**: These flags are enabled only when the loaded runtime
-//! environment is `local` or `local-regtest`.
+//! environment is `local-anvil` or `local-rskj`. The runtime string is the
+//! tier (backend axis), so both cargo and docker operator modes are covered.
 //!
 //! ## Activation Methods
 //!
@@ -33,7 +34,7 @@ use std::path::Path;
 
 use log::warn;
 
-use crate::{RUNTIME_ENV_LOCAL, RUNTIME_ENV_LOCAL_REGTEST};
+use crate::{RUNTIME_ENV_LOCAL_ANVIL, RUNTIME_ENV_LOCAL_RSKJ};
 
 /// File path for hot-reloadable `FORCE_ADVANCE` flag
 const FORCE_ADVANCE_FILE: &str = "/tmp/FORCE_ADVANCE";
@@ -46,8 +47,8 @@ const FORCE_DISPUTE_FILE: &str = "/tmp/FORCE_DISPUTE";
 /// Returns `true` only for local test runtime environments.
 fn is_force_flags_allowed(runtime_environment: Option<&str>) -> bool {
     runtime_environment.is_some_and(|env| {
-        env.eq_ignore_ascii_case(RUNTIME_ENV_LOCAL)
-            || env.eq_ignore_ascii_case(RUNTIME_ENV_LOCAL_REGTEST)
+        env.eq_ignore_ascii_case(RUNTIME_ENV_LOCAL_ANVIL)
+            || env.eq_ignore_ascii_case(RUNTIME_ENV_LOCAL_RSKJ)
     })
 }
 
@@ -145,15 +146,14 @@ mod tests {
         let _guard = lock_force_flags_test_state();
         clear_force_flags_state();
 
-        // Local runtime environment should allow force flags
-        assert!(is_force_flags_allowed(Some("local")));
-        assert!(is_force_flags_allowed(Some("LOCAL"))); // case insensitive
-        assert!(is_force_flags_allowed(Some("local-regtest")));
-        assert!(is_force_flags_allowed(Some("LOCAL-REGTEST"))); // case insensitive
+        // Both dev-tier runtimes (anvil and rskj) should allow force flags.
+        assert!(is_force_flags_allowed(Some(RUNTIME_ENV_LOCAL_ANVIL)));
+        assert!(is_force_flags_allowed(Some("LOCAL-ANVIL"))); // verifies case-insensitivity
+        assert!(is_force_flags_allowed(Some(RUNTIME_ENV_LOCAL_RSKJ)));
 
-        // Non-local runtime environments should not allow force flags
+        // Production-like and unknown runtime tiers should not allow force flags.
         assert!(!is_force_flags_allowed(None));
-        assert!(!is_force_flags_allowed(Some("docker")));
+        assert!(!is_force_flags_allowed(Some("")));
         assert!(!is_force_flags_allowed(Some("regtest")));
         assert!(!is_force_flags_allowed(Some("REGTEST")));
         assert!(!is_force_flags_allowed(Some("stage")));
@@ -182,18 +182,17 @@ mod tests {
             clear_force_flags_state();
 
             // Without env var set, should return None
-            assert!(get_force_advance_address(Some("local")).is_none());
+            assert!(get_force_advance_address(Some(RUNTIME_ENV_LOCAL_ANVIL)).is_none());
 
-            // With env var set to an address in local, should return Some(address)
+            // With env var set to an address in local-anvil, should return Some(address)
             std::env::set_var("FORCE_ADVANCE", "0xABCDEF1234567890");
             assert_eq!(
-                get_force_advance_address(Some("local")).as_deref(),
+                get_force_advance_address(Some(RUNTIME_ENV_LOCAL_ANVIL)).as_deref(),
                 Some("0xABCDEF1234567890")
             );
-            // In local-regtest, force flags are also enabled for Docker-first local flows.
-            assert!(get_force_advance_address(Some("docker")).is_none());
+            // rskj dev tier is also enabled (covers both cargo and docker operator modes).
             assert_eq!(
-                get_force_advance_address(Some("local-regtest")).as_deref(),
+                get_force_advance_address(Some(RUNTIME_ENV_LOCAL_RSKJ)).as_deref(),
                 Some("0xABCDEF1234567890")
             );
             // In non-local/non-test environments, should return None regardless.
@@ -215,14 +214,13 @@ mod tests {
             clear_force_flags_state();
 
             // Without env var set, should return false
-            assert!(!is_force_dispute_enabled(Some("local")));
+            assert!(!is_force_dispute_enabled(Some(RUNTIME_ENV_LOCAL_ANVIL)));
 
-            // With env var set to true in local, should return true
+            // With env var set to true in local-anvil, should return true
             std::env::set_var("FORCE_DISPUTE", "true");
-            assert!(is_force_dispute_enabled(Some("local")));
-            // With env var set to true in local-regtest, should return true.
-            assert!(!is_force_dispute_enabled(Some("docker")));
-            assert!(is_force_dispute_enabled(Some("local-regtest")));
+            assert!(is_force_dispute_enabled(Some(RUNTIME_ENV_LOCAL_ANVIL)));
+            // rskj dev tier is also enabled (covers both cargo and docker operator modes).
+            assert!(is_force_dispute_enabled(Some(RUNTIME_ENV_LOCAL_RSKJ)));
             // In non-local/non-test environments, should return false.
             assert!(!is_force_dispute_enabled(Some("regtest")));
             assert!(!is_force_dispute_enabled(Some("alphanet")));
@@ -242,19 +240,25 @@ mod tests {
             clear_force_flags_state();
 
             std::env::set_var("FORCE_ADVANCE", "0xDEADBEEF");
-            assert_eq!(get_force_advance_address(Some("local")).as_deref(), Some("0xDEADBEEF"));
+            assert_eq!(
+                get_force_advance_address(Some(RUNTIME_ENV_LOCAL_ANVIL)).as_deref(),
+                Some("0xDEADBEEF")
+            );
 
             // Empty string should return None
             std::env::set_var("FORCE_ADVANCE", "");
-            assert!(get_force_advance_address(Some("local")).is_none());
+            assert!(get_force_advance_address(Some(RUNTIME_ENV_LOCAL_ANVIL)).is_none());
 
             // Whitespace-only should return None
             std::env::set_var("FORCE_ADVANCE", "  ");
-            assert!(get_force_advance_address(Some("local")).is_none());
+            assert!(get_force_advance_address(Some(RUNTIME_ENV_LOCAL_ANVIL)).is_none());
 
             // Address with whitespace should be trimmed
             std::env::set_var("FORCE_ADVANCE", "  0xABC123  ");
-            assert_eq!(get_force_advance_address(Some("local")).as_deref(), Some("0xABC123"));
+            assert_eq!(
+                get_force_advance_address(Some(RUNTIME_ENV_LOCAL_ANVIL)).as_deref(),
+                Some("0xABC123")
+            );
 
             // Clean up
             clear_force_flags_state();

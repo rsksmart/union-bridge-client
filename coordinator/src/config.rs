@@ -15,7 +15,12 @@ const STREAM_MANAGER_CONTRACT_NAME: &str = "StreamManager";
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
+    /// Runtime tier classification (`local-anvil`, `local-rskj`, ...). Required:
+    /// every overlay must set this; base.toml is incomplete on its own.
     pub environment: String,
+    /// `[[contracts]]` blocks live in the per-env overlay TOMLs, not in
+    /// `base.toml`. Default to empty so base alone deserializes.
+    #[serde(default)]
     pub contracts: Vec<ContractConfig>,
     pub bitcoin_network: String, // loaded from common.yaml
     pub key_store: KeyStoreConfig,
@@ -210,21 +215,21 @@ mod tests {
     use common::config::CommonConfig;
     use common::types::Address;
 
-    use crate::RUNTIME_ENV_LOCAL;
     use crate::config::{Config, FlowsConfig};
 
     #[test]
     fn test_parse_bitcoin_network() -> anyhow::Result<()> {
-        let config = CommonConfig::load_config::<Config>(None)?;
+        let config = CommonConfig::load_config::<Config>(Some("local-anvil".to_string()))?;
         assert_eq!(Network::Regtest, CommonConfig::parse_bitcoin_network(&config.bitcoin_network)?);
         Ok(())
     }
 
     #[test]
-    fn test_load_base_toml_config() {
-        let config: Config = Config::load(None).expect("Failed to load base config");
+    fn test_load_local_anvil_toml_config() {
+        let config: Config =
+            Config::load(Some("local-anvil")).expect("Failed to load local-anvil config");
 
-        assert_eq!(RUNTIME_ENV_LOCAL, config.environment);
+        assert_eq!("local-anvil", config.environment);
         assert_eq!("0.0.0.0", config.coordinator.logs.host);
         assert_eq!(20001, config.coordinator.logs.port);
         assert_eq!("<to_patch_with_env>", config.coordinator.logs.pubkey_hash);
@@ -253,7 +258,11 @@ mod tests {
         assert_eq!(config.coordinator.check_period_secs, 1);
         assert_eq!(config.coordinator.bitvmx_not_responding_threshold_secs, 30);
         assert_eq!(config.coordinator.bitvmx_ping_after_silence_secs, 15);
-        assert_eq!("resources/union-verifier.yaml", config.flows.committee.drp_program_definition);
+        // local-anvil overlay points DRP at the Docker mount path; base uses the repo-relative one.
+        assert_eq!(
+            "/app/resources/union-verifier.yaml",
+            config.flows.committee.drp_program_definition
+        );
         assert_eq!("regtest", config.bitcoin_network);
         assert_eq!(10, config.contracts.len());
     }
@@ -276,7 +285,7 @@ mod tests {
 
     #[test]
     fn test_coordinator_config_duration_helpers() {
-        let config = Config::load(None).expect("Failed to load base config");
+        let config = Config::load(Some("local-anvil")).expect("Failed to load local-anvil config");
         let config = config.coordinator;
         assert_eq!(config.check_period(), Duration::from_secs(1));
         assert_eq!(config.bitvmx_not_responding_threshold(), Duration::from_secs(30));
@@ -286,7 +295,7 @@ mod tests {
     #[test]
     fn test_config_with_missing_flows_section_uses_defaults() {
         let config: Config = serde_json::from_value(serde_json::json!({
-            "environment": "local",
+            "environment": "local-anvil",
             "contracts": [],
             "bitcoin_network": "regtest",
             "key_store": {
@@ -320,7 +329,7 @@ mod tests {
 
     #[test]
     fn test_get_contract_addresses_returns_runtime_subscriptions() {
-        let config = Config::load(None).expect("Failed to load base config");
+        let config = Config::load(Some("local-anvil")).expect("Failed to load local-anvil config");
         let contract_addresses = config.get_contract_addresses();
 
         assert_eq!(6, contract_addresses.len());

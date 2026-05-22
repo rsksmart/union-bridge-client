@@ -153,7 +153,7 @@ export BASE_STORAGE_PATH="$HOME"
 Configuration files live under `config/`:
 
 - `config/base.toml`
-- `config/{env}.toml`, for example `local.toml`, `docker.toml`, or `ci.toml`
+- `config/{env}.toml`, for example `local-anvil.toml`, `docker-anvil.toml`, `local-rskj.toml`, `docker-rskj.toml`, or `ci.toml`
 
 Any value can be overridden with `UB__...` environment variables using double underscores as path separators.
 
@@ -296,7 +296,7 @@ The repository ships sample files under `resources/`:
 | `resources/generic-verifier.elf` | BitVMX union verifier ELF binary |
 | `resources/union-verifier.yaml` | BitVMX union verifier program definition |
 
-For the recommended Docker-backed local path, `config/local.toml` already points to `/app/resources/union-verifier.yaml`,
+For the recommended Docker-backed local path, `config/local-anvil.toml` already points to `/app/resources/union-verifier.yaml`,
 which matches the Docker mounts used by the local BitVMX flow.
 
 For repo-mode BitVMX, `./cli-run.sh --bitvmx-mode repo` injects:

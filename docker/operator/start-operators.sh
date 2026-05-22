@@ -15,7 +15,7 @@ OPERATOR_ARG=""
 AUTO_CONFIRM=false
 FRESH=false
 BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
-DEFAULT_ENV_FILE="${SCRIPT_DIR}/docker-deploy.env"
+DEFAULT_ENV_FILE="${SCRIPT_DIR}/docker-anvil.env"
 ENV_FILE="${DEFAULT_ENV_FILE}"
 
 print_help() {
@@ -27,7 +27,7 @@ print_help() {
   echo "Options:"
   echo "  --op <ID>                Start only the prepared operator under .union_bridge/op_<ID> (1-10)"
   echo "  --ops <N>                Number of operators to start (1-10, default: 4)"
-  echo "  --env-file <PATH>        Compose env file to use instead of docker/operator/docker-deploy.env"
+  echo "  --env-file <PATH>        Compose env file to use instead of docker/operator/docker-anvil.env"
   echo "  --tag <TAG>              Override UC_TAG for this docker compose invocation only"
   echo "  --help                   Display this help message"
   echo "  --fresh                  Tear down operators (and volumes) before running the command"
@@ -38,7 +38,7 @@ print_help() {
   echo "  $0 --op 3 up -d"
   echo "  $0 --ops 6 up -d"
   echo "  $0 --fresh up -d"
-  echo "  $0 --env-file /path/to/docker-deploy.env up -d"
+  echo "  $0 --env-file /path/to/docker-anvil.env up -d"
   echo "  $0 logs -f"
   echo "  $0 down"
   echo ""

@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 
 # This script manages the local blockchain stack.
-# local: bitcoind + predeployed Anvil.
-# local-regtest: bitcoind + RSKj + powpeg-node + contracts deploy.
+# local-anvil: bitcoind + predeployed Anvil.
+# local-rskj: bitcoind + RSKj + powpeg-node + contracts deploy.
 
 DOCKER_COMPOSE_ARGS=()
 
+ # TODO(iago) probably we should split this in 2 scripts
+
 # Resolve script directory (for referencing compose files reliably)
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
-ENVIRONMENT="local"
-COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.blockchains.yaml"
-ENV_PATH="${SCRIPT_DIR}/.env.local"
+ENVIRONMENT="local-anvil"
+COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.blockchains.anvil.yaml"
+ENV_PATH="${SCRIPT_DIR}/.env.anvil"
 
 CONTRACTS_TAG_LOCAL_BUILD="local-build"
 
@@ -20,12 +22,12 @@ print_help() {
   echo ""
   echo "Options:"
   echo "  --help                     Display this help message"
-  echo "  --env ENV                  Environment: local or local-regtest (default: local)"
+  echo "  --env ENV                  Environment: local-anvil or local-rskj (default: local-anvil)"
   echo "  --fresh                    Tear down local blockchains (and volumes). Can be used standalone or with 'up'"
   echo "  --contracts-tag TAG         Override contracts image tag (e.g. v0.2.0-alpha.1 or ${CONTRACTS_TAG_LOCAL_BUILD})"
   echo "  --pull-contracts            Pull predeployed Anvil image from registry even if it exists locally"
-  echo "  --rskj-tag TAG              Official rsksmart/rskj tag for local-regtest (default: .env.local-regtest)"
-  echo "  --powpeg-tag TAG            Official rsksmart/powpeg-node tag for local-regtest (default: .env.local-regtest)"
+  echo "  --rskj-tag TAG              Official rsksmart/rskj tag for local-rskj (default: .env.rskj)"
+  echo "  --powpeg-tag TAG            Official rsksmart/powpeg-node tag for local-rskj (default: .env.rskj)"
   echo ""
   echo "Predeployed Anvil image:"
   echo "  Default: derived from Cargo.toml (union-contracts tag) — uses local image if present, otherwise pulls from PREDEPLOYED_ANVIL_IMAGE_BASE"
@@ -42,8 +44,8 @@ print_help() {
   echo ""
   echo "Examples:"
   echo "  $0 up -d                            # Start (uses contracts version from Cargo.toml)"
-  echo "  $0 --env local-regtest --fresh up -d # Start bitcoind + rskj + powpeg-node + contracts"
-  echo "  $0 --env local-regtest --rskj-tag VETIVER-9.0.1 --powpeg-tag VETIVER-9.0.0.0 --fresh up -d"
+  echo "  $0 --env local-rskj --fresh up -d # Start bitcoind + rskj + powpeg-node + contracts"
+  echo "  $0 --env local-rskj --rskj-tag VETIVER-9.0.1 --powpeg-tag VETIVER-9.0.0.0 --fresh up -d"
   echo "  $0 --fresh up -d                    # Clean and start local blockchains"
   echo "  $0 --contracts-tag ${CONTRACTS_TAG_LOCAL_BUILD} up -d # Build predeployed Anvil from local contracts"
   echo "  $0 --contracts-tag v0.2.0-alpha.1 up -d   # Use specific registry tag"
@@ -69,7 +71,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --env)
       if [[ $# -lt 2 || -z "${2:-}" ]]; then
-        echo "Error: --env requires a non-empty value (local or local-regtest)"
+        echo "Error: --env requires a non-empty value (local-anvil or local-rskj)"
         exit 1
       fi
       ENVIRONMENT="$2"
@@ -115,16 +117,16 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$ENVIRONMENT" in
-  local)
-    COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.blockchains.yaml"
-    ENV_PATH="${SCRIPT_DIR}/.env.local"
+  local-anvil)
+    COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.blockchains.anvil.yaml"
+    ENV_PATH="${SCRIPT_DIR}/.env.anvil"
     ;;
-  local-regtest)
-    COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.blockchains.local-regtest.yaml"
-    ENV_PATH="${SCRIPT_DIR}/.env.local-regtest"
+  local-rskj)
+    COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.blockchains.rskj.yaml"
+    ENV_PATH="${SCRIPT_DIR}/.env.rskj"
     ;;
   *)
-    echo "Error: --env must be 'local' or 'local-regtest'" >&2
+    echo "Error: --env must be 'local-anvil' or 'local-rskj'" >&2
     exit 1
     ;;
 esac
@@ -137,8 +139,8 @@ fi
 
 source "${ENV_PATH}"
 
-if [[ "$ENVIRONMENT" != "local-regtest" && ( -n "$RSKJ_TAG_ARG" || -n "$POWPEG_TAG_ARG" ) ]]; then
-  echo "Error: --rskj-tag/--powpeg-tag are only supported with --env local-regtest." >&2
+if [[ "$ENVIRONMENT" != "local-rskj" && ( -n "$RSKJ_TAG_ARG" || -n "$POWPEG_TAG_ARG" ) ]]; then
+  echo "Error: --rskj-tag/--powpeg-tag are only supported with --env local-rskj." >&2
   exit 1
 fi
 
@@ -152,7 +154,7 @@ validate_image_tag() {
   fi
 }
 
-if [[ "$ENVIRONMENT" == "local-regtest" ]]; then
+if [[ "$ENVIRONMENT" == "local-rskj" ]]; then
   RSKJ_TAG="${RSKJ_TAG_ARG:-${RSKJ_TAG:-VETIVER-9.0.1}}"
   POWPEG_TAG="${POWPEG_TAG_ARG:-${POWPEG_TAG:-VETIVER-9.0.0.0}}"
   validate_image_tag RSKJ_TAG "$RSKJ_TAG"
@@ -172,7 +174,7 @@ if [[ "$ENVIRONMENT" == "local-regtest" ]]; then
     exit 1
   fi
   export CONTRACTS_CONTEXT_PATH="$CONTRACTS_CONTEXT_CANDIDATE"
-  export CONTRACTS_DOCKERFILE="$SCRIPT_DIR/Dockerfile_contracts"
+  export CONTRACTS_DOCKERFILE="$SCRIPT_DIR/Dockerfile_deploy_rskj"
 fi
 
 BITCOIND_CONTAINER="bitcoind"
@@ -403,13 +405,13 @@ local_regtest_deployer_address() {
 
   deployer_private_key=$(cast wallet private-key --mnemonic "${MNEMONIC}" --mnemonic-index "${DEPLOYER_INDEX}")
   if [[ -z "${deployer_private_key}" ]]; then
-    echo "Error: could not derive local-regtest deployer private key." >&2
+    echo "Error: could not derive local-rskj deployer private key." >&2
     return 1
   fi
 
   deployer_address=$(cast wallet address --private-key "${deployer_private_key}")
   if [[ -z "${deployer_address}" ]]; then
-    echo "Error: could not derive local-regtest deployer address." >&2
+    echo "Error: could not derive local-rskj deployer address." >&2
     return 1
   fi
 
@@ -516,11 +518,11 @@ run_local_regtest() {
   fi
 
   if [[ "${FRESH}" == true ]]; then
-    echo "Cleaning local-regtest blockchains stack (down -v)..."
+    echo "Cleaning local-rskj blockchains stack (down -v)..."
     docker compose -p blockchains --env-file "$ENV_PATH" -f "$COMPOSE_FILE" down --volumes --timeout 1 || true
   fi
 
-  echo "Using local-regtest images:"
+  echo "Using local-rskj images:"
   echo "  RSKj:        rsksmart/rskj:${RSKJ_TAG}"
   echo "  powpeg-node: rsksmart/powpeg-node:${POWPEG_TAG}"
 
@@ -531,14 +533,14 @@ run_local_regtest() {
 
   chmod 400 "${SCRIPT_DIR}/powpeg/config/federator1.key" || true
 
-  echo "Starting local-regtest base services (bitcoind + rskj)..."
+  echo "Starting local-rskj base services (bitcoind + rskj)..."
   docker compose -p blockchains --env-file "$ENV_PATH" -f "$COMPOSE_FILE" up -d bitcoind rskj
   wait_for_bitcoind_rpc 120
   create_bitcoin_wallet_if_needed mainwallet
   wait_for_rskj_rpc 180
 
   if [[ "${FRESH}" == true ]]; then
-    mine_bitcoin_blocks "${LOCAL_REGTEST_BOOTSTRAP_BTC_BLOCKS:-25}"
+    mine_bitcoin_blocks "${LOCAL_RSKJ_BOOTSTRAP_BTC_BLOCKS:-25}"
   fi
 
   echo "Starting powpeg-node..."
@@ -556,7 +558,7 @@ run_local_regtest() {
   echo "Done!!!"
 }
 
-if [[ "$ENVIRONMENT" == "local-regtest" ]]; then
+if [[ "$ENVIRONMENT" == "local-rskj" ]]; then
   run_local_regtest
   exit $?
 fi

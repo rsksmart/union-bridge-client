@@ -4,12 +4,12 @@
 #
 # prerequisites:
 #   - union bridge clients running (via: cargo run -- run)
-#   - Anvil running on localhost:8545, or Rootstock regtest HTTP running on localhost:8545 for local-regtest
+#   - Anvil running on localhost:8545, or Rootstock regtest HTTP running on localhost:8545 for docker-rskj
 #   - bitcoin regtest node running with RPC enabled
 #   - USER_BITCOIN_WIF environment variable set (for bitcoin-wallet operations)
 #   - MEMBER_BITCOIN_WIF environment variable set (for member operations)
 #
-# usage: bash tests/run-flows.sh [--env <local|docker|local-regtest>] [--ops <1-10>] [--stream <0-4>] [--happy|--setup|--committee|--pegin|--pegout|--operator-take]
+# usage: bash tests/run-flows.sh [--env <local-anvil|docker-anvil|docker-rskj>] [--ops <1-10>] [--stream <0-4>] [--happy|--setup|--committee|--pegin|--pegout|--operator-take]
 
 set -euo pipefail
 
@@ -63,7 +63,7 @@ usage() {
     local script_name
     script_name=$(basename "${BASH_SOURCE[0]}")
     cat <<EOF
-Usage: ${script_name} [--env <local|docker|local-regtest>] [--ops <1-10>] [--stream <0-4>] [--happy|--setup|--committee|--pegin|--pegout|--operator-take]
+Usage: ${script_name} [--env <local-anvil|docker-anvil|docker-rskj>] [--ops <1-10>] [--stream <0-4>] [--happy|--setup|--committee|--pegin|--pegout|--operator-take]
 
 Modes:
   default (no mode flags)
@@ -77,8 +77,8 @@ Modes:
   --operator-take
              Operator-take-only: requests pegout with FORCE_ADVANCE enabled.
 
-  --env      Environment: local, docker, or local-regtest (default: from UC_ENV or local)
-  --ops      Number of operators (1-10, default: 4 for local, docker env file for docker/local-regtest)
+  --env      Environment: local-anvil, docker-anvil, or docker-rskj (default: from UC_ENV or local-anvil)
+  --ops      Number of operators (1-10, default: 4 for local-anvil, docker env file for docker-anvil/docker-rskj)
   --stream   Stream identifier (0-4). Defaults to 0.
   --help     Show this help text.
 
@@ -90,9 +90,9 @@ Guides:
 
 Examples:
   bash tests/run-flows.sh
-  bash tests/run-flows.sh --env docker --setup
-  bash tests/run-flows.sh --env docker --committee
-  bash tests/run-flows.sh --happy --env local-regtest
+  bash tests/run-flows.sh --env docker-anvil --setup
+  bash tests/run-flows.sh --env docker-anvil --committee
+  bash tests/run-flows.sh --happy --env docker-rskj
   bash tests/run-flows.sh --pegin
   bash tests/run-flows.sh --operator-take
 
@@ -123,13 +123,13 @@ load_envrc_if_needed() {
 
 initialize_script_env_default() {
     if [[ -n "${UC_ENV:-}" ]]; then
-        if [[ "$UC_ENV" == "local" || "$UC_ENV" == "docker" || "$UC_ENV" == "local-regtest" ]]; then
+        if [[ "$UC_ENV" == "local-anvil" || "$UC_ENV" == "docker-anvil" || "$UC_ENV" == "docker-rskj" ]]; then
             SCRIPT_ENV="$UC_ENV"
         else
-            SCRIPT_ENV="local"
+            SCRIPT_ENV="local-anvil"
         fi
     else
-        SCRIPT_ENV="local"
+        SCRIPT_ENV="local-anvil"
     fi
 }
 
@@ -150,8 +150,8 @@ parse_args() {
                 usage
                 return 1
             fi
-            if [[ "$SCRIPT_ENV" != "local" && "$SCRIPT_ENV" != "docker" && "$SCRIPT_ENV" != "local-regtest" ]]; then
-                echo "Error: --env must be 'local', 'docker', or 'local-regtest'" >&2
+            if [[ "$SCRIPT_ENV" != "local-anvil" && "$SCRIPT_ENV" != "docker-anvil" && "$SCRIPT_ENV" != "docker-rskj" ]]; then
+                echo "Error: --env must be 'local-anvil', 'docker-anvil', or 'docker-rskj'" >&2
                 usage
                 return 1
             fi
@@ -247,18 +247,22 @@ parse_args() {
 }
 
 validate_script_env() {
-    if [[ "$SCRIPT_ENV" != "local" && "$SCRIPT_ENV" != "docker" && "$SCRIPT_ENV" != "local-regtest" ]]; then
-        echo "Error: SCRIPT_ENV must be 'local', 'docker', or 'local-regtest'" >&2
+    if [[ "$SCRIPT_ENV" != "local-anvil" && "$SCRIPT_ENV" != "docker-anvil" && "$SCRIPT_ENV" != "docker-rskj" ]]; then
+        echo "Error: SCRIPT_ENV must be 'local-anvil', 'docker-anvil', or 'docker-rskj'" >&2
         return 1
     fi
 }
 
 is_docker_mode_env() {
-    [[ "$SCRIPT_ENV" == "docker" || "$SCRIPT_ENV" == "local-regtest" ]]
+    [[ "$SCRIPT_ENV" == "docker-anvil" || "$SCRIPT_ENV" == "docker-rskj" ]]
+}
+
+is_rskj_backend_env() {
+    [[ "$SCRIPT_ENV" == "docker-rskj" ]]
 }
 
 rootstock_label() {
-    if [[ "$SCRIPT_ENV" == "local-regtest" ]]; then
+    if is_rskj_backend_env; then
         echo "Rootstock regtest"
     else
         echo "Anvil"
@@ -266,7 +270,7 @@ rootstock_label() {
 }
 
 user_flow_completion_max_blocks() {
-    if [[ "$SCRIPT_ENV" == "local-regtest" ]]; then
+    if is_rskj_backend_env; then
         echo 90
     else
         echo 15
@@ -274,17 +278,23 @@ user_flow_completion_max_blocks() {
 }
 
 docker_operator_env_file() {
-    if [[ "$SCRIPT_ENV" == "local-regtest" ]]; then
-        echo "docker/operator/docker-local-regtest.env"
+    if [[ "$SCRIPT_ENV" == "docker-rskj" ]]; then
+        echo "docker/operator/docker-rskj.env"
     else
-        echo "docker/operator/docker-deploy.env"
+        echo "docker/operator/docker-anvil.env"
     fi
 }
 
 contract_config_file() {
+    # Each env owns its [[contracts]] list — RSKj and Anvil deploys produce
+    # different deterministic CREATE addresses (the Anvil predeploy creates a
+    # BridgeMock at deployer-nonce 0, RSKj doesn't), so we can't share a list
+    # via base.toml.
     case "$SCRIPT_ENV" in
-        local-regtest) echo "config/local-regtest.toml" ;;
-        *) echo "config/base.toml" ;;
+        local-anvil)  echo "config/local-anvil.toml" ;;
+        docker-anvil) echo "config/docker-anvil.toml" ;;
+        local-rskj)   echo "config/local-rskj.toml" ;;
+        docker-rskj)  echo "config/docker-rskj.toml" ;;
     esac
 }
 
@@ -343,7 +353,7 @@ running_docker_operator_coordinators() {
 }
 
 ensure_selected_env_matches_running_mode() {
-    if [[ "$SCRIPT_ENV" != "local" ]]; then
+    if [[ "$SCRIPT_ENV" != "local-anvil" ]]; then
         return 0
     fi
 
@@ -353,9 +363,9 @@ ensure_selected_env_matches_running_mode() {
         return 0
     fi
 
-    echo "Error: --env local cannot be used while Docker operator coordinators are running." >&2
+    echo "Error: --env local-anvil cannot be used while Docker operator coordinators are running." >&2
     echo "Detected coordinator container(s): $running_coordinators" >&2
-    echo "Use --env docker/local-regtest for docker/operator/start-operators.sh, or stop the Docker operators before running --env local." >&2
+    echo "Use --env docker-anvil/docker-rskj for docker/operator/start-operators.sh, or stop the Docker operators before running --env local-anvil." >&2
     return 1
 }
 
@@ -592,7 +602,7 @@ wait_for_test_prereqs() {
         return 1
     fi
 
-    if [[ "$SCRIPT_ENV" == "local-regtest" ]]; then
+    if is_rskj_backend_env; then
         if ! wait_for_condition "Native Bridge authorization" 30 native_bridge_has_union_bridge_address "$ROOTSTOCK_RPC_URL"; then
             echo "Error: Native Bridge RSKIP502 methods are not reachable on ${ROOTSTOCK_RPC_URL}" >&2
             return 1

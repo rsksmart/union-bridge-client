@@ -14,14 +14,14 @@ cd "$(dirname "$0")"
 
 readonly ROOTSTOCK_RPC_URL="http://localhost:8545"
 
-ENVIRONMENT="local"
-LOCAL_REGTEST_TAG_ARGS=()
+ENVIRONMENT="local-anvil"
+LOCAL_RSKJ_TAG_ARGS=()
 FILTERED_ARGS=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --env)
             if [[ $# -lt 2 || -z "${2:-}" ]]; then
-                echo "Error: --env requires a non-empty value (local or local-regtest)" >&2
+                echo "Error: --env requires a non-empty value (local-anvil or local-rskj)" >&2
                 exit 1
             fi
             ENVIRONMENT="$2"
@@ -32,7 +32,7 @@ while [[ $# -gt 0 ]]; do
                 echo "Error: $1 requires a non-empty Docker tag" >&2
                 exit 1
             fi
-            LOCAL_REGTEST_TAG_ARGS+=("$1" "$2")
+            LOCAL_RSKJ_TAG_ARGS+=("$1" "$2")
             shift 2
             ;;
         *)
@@ -48,10 +48,10 @@ else
 fi
 
 case "$ENVIRONMENT" in
-    local|local-regtest)
+    local-anvil|local-rskj)
         ;;
     *)
-        echo "Error: --env must be 'local' or 'local-regtest'" >&2
+        echo "Error: --env must be 'local-anvil' or 'local-rskj'" >&2
         exit 1
         ;;
 esac
@@ -111,7 +111,7 @@ pid_is_running() {
 }
 
 rootstock_label() {
-    if [[ "$ENVIRONMENT" == "local-regtest" ]]; then
+    if [[ "$ENVIRONMENT" == "local-rskj" ]]; then
         echo "Rootstock regtest"
     else
         echo "Anvil"
@@ -224,7 +224,7 @@ start_mining() {
         exit 1
     fi
 
-    if [[ "$ENVIRONMENT" == "local" ]]; then
+    if [[ "$ENVIRONMENT" == "local-anvil" ]]; then
         log "Testing Anvil mining..."
         if ! cast rpc anvil_mine 1 --rpc-url "${ROOTSTOCK_RPC_URL}" &>/dev/null; then
             warn "Anvil mining failed - check Anvil is running correctly"
@@ -250,7 +250,7 @@ start_mining() {
     log "  Bitcoin: every 5s"
 
     local anvil_pid="-"
-    if [[ "$ENVIRONMENT" == "local" ]]; then
+    if [[ "$ENVIRONMENT" == "local-anvil" ]]; then
         log "  Anvil: every 1s"
         nohup bash -c "$(declare -f mine_anvil); mine_anvil \"\$1\"" _ "${ROOTSTOCK_RPC_URL}" >/tmp/union-bridge-${ENVIRONMENT}-anvil-mining.log 2>&1 &
         anvil_pid=$!
@@ -326,8 +326,8 @@ start_blockchains() {
     fi
 
     local blockchains_cmd=(--env "$ENVIRONMENT")
-    if (( ${#LOCAL_REGTEST_TAG_ARGS[@]} > 0 )); then
-        blockchains_cmd+=("${LOCAL_REGTEST_TAG_ARGS[@]}")
+    if (( ${#LOCAL_RSKJ_TAG_ARGS[@]} > 0 )); then
+        blockchains_cmd+=("${LOCAL_RSKJ_TAG_ARGS[@]}")
     fi
     blockchains_cmd+=("$@" up -d)
     docker/local-infra/start-blockchains.sh "${blockchains_cmd[@]}"
@@ -429,7 +429,7 @@ case "${1:-}" in
         stop_bitvmx
         ;;
     *)
-        echo "Usage: $0 [--env local|local-regtest] {--start|--stop|--start-blockchains|--stop-blockchains|--stop-mining|--start-bitvmx|--stop-bitvmx}"
+        echo "Usage: $0 [--env local-anvil|local-rskj] {--start|--stop|--start-blockchains|--stop-blockchains|--stop-mining|--start-bitvmx|--stop-bitvmx}"
         echo ""
         echo "Local Docker Infrastructure:"
         echo "  --start [--fresh] [--contracts-tag TAG] [--pull-contracts] [--rskj-tag TAG] [--powpeg-tag TAG]"
@@ -443,12 +443,12 @@ case "${1:-}" in
         echo "  --stop-bitvmx                                        Stop bitvmx only"
         echo ""
         echo "Options:"
-        echo "  --env local|local-regtest                            Select blockchain environment (default: local)"
+        echo "  --env local-anvil|local-rskj                         Select blockchain environment (default: local-anvil)"
         echo "  --fresh                                              Clean/reset volumes before starting"
         echo "  --contracts-tag TAG                                  Predeployed Anvil/contracts tag (only for blockchains; e.g. local-build or v0.2.0-alpha.1)"
         echo "  --pull-contracts                                     Pull predeployed Anvil image from registry even if it exists locally"
-        echo "  --rskj-tag TAG                                       Official rsksmart/rskj tag for --env local-regtest"
-        echo "  --powpeg-tag TAG                                     Official rsksmart/powpeg-node tag for --env local-regtest"
+        echo "  --rskj-tag TAG                                       Official rsksmart/rskj tag for --env local-rskj"
+        echo "  --powpeg-tag TAG                                     Official rsksmart/powpeg-node tag for --env local-rskj"
         exit 1
         ;;
 esac

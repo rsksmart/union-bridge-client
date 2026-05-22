@@ -79,7 +79,10 @@ pub(crate) async fn run_committee_setup(
     let endpoints = environment.user_api_endpoints()?;
 
     match environment {
-        Environment::Local | Environment::Docker | Environment::LocalRegtest => {
+        Environment::LocalAnvil
+        | Environment::DockerAnvil
+        | Environment::LocalRskj
+        | Environment::DockerRskj => {
             if role.is_some() {
                 eprintln!("Warning: --role is ignored in local environment");
             }
@@ -134,7 +137,7 @@ async fn post_apply(
 ) -> Result<()> {
     let funding_profile = derive_stream_funding_profile(
         stream_id,
-        environment.is_local_regtest(),
+        environment.uses_bitcoin_regtest(),
         slots_per_package()?,
         committee_member_count()?,
         prover_count()?,

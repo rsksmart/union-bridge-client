@@ -25,13 +25,13 @@ pub(crate) async fn handle_bitcoin_funding(
 ) -> Result<()> {
     if execute && environment.is_remote() {
         bail!(
-            "--execute flag is only supported for local environments (`local`/`docker`/`local-regtest`). For remote environments, please run the wallet commands manually."
+            "--execute flag is only supported for local environments (`local-anvil`/`docker-anvil`/`local-rskj`/`docker-rskj`). For remote environments, please run the wallet commands manually."
         );
     }
 
     let funding_profile = derive_stream_funding_profile(
         stream_id,
-        environment.is_local_regtest(),
+        environment.uses_bitcoin_regtest(),
         slots_per_package()?,
         committee_member_count()?,
         prover_count()?,
@@ -102,7 +102,10 @@ fn print_instructions(env: &Environment, addresses: &[String], amount: u64, fund
             );
             println!("  send_to_address {} {}\n", joined, amount);
         }
-        Environment::Docker | Environment::Local | Environment::LocalRegtest => {
+        Environment::LocalAnvil
+        | Environment::DockerAnvil
+        | Environment::LocalRskj
+        | Environment::DockerRskj => {
             println!("Run the following commands in the bitcoin-wallet CLI (Regtest):");
             println!("1 =>    clear_db   (if you see a misaligned utxos error)");
             println!("2 =>    mine_utxo {}", funding_utxo);
@@ -128,9 +131,10 @@ pub(crate) fn collect_user_bitcoin_addresses(
     first_only: bool,
 ) -> Result<Vec<(String, String)>> {
     match env {
-        Environment::Local | Environment::Docker | Environment::LocalRegtest => {
-            collect_local_user_bitcoin_addresses(env, first_only)
-        }
+        Environment::LocalAnvil
+        | Environment::DockerAnvil
+        | Environment::LocalRskj
+        | Environment::DockerRskj => collect_local_user_bitcoin_addresses(env, first_only),
         Environment::Remote(_) => collect_remote_user_bitcoin_addresses(env, first_only),
     }
 }
@@ -247,7 +251,10 @@ fn derive_user_bitcoin_address(env: &Environment, wif: &str) -> Result<String> {
 
 fn bitcoin_network_for_environment(env: &Environment, network_kind: NetworkKind) -> Network {
     match env {
-        Environment::Local | Environment::Docker | Environment::LocalRegtest => Network::Regtest,
+        Environment::LocalAnvil
+        | Environment::DockerAnvil
+        | Environment::LocalRskj
+        | Environment::DockerRskj => Network::Regtest,
         Environment::Remote(profile) => match network_kind {
             NetworkKind::Main => Network::Bitcoin,
             NetworkKind::Test => {

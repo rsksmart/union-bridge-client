@@ -726,7 +726,7 @@ fn cargo_args_for_service(config: &RunConfig, svc: &Service) -> Vec<String> {
 
     args.push("--".into());
     args.push("--config".into());
-    args.push("local".into());
+    args.push("local-anvil".into());
     args
 }
 

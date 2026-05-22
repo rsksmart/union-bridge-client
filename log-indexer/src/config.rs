@@ -13,6 +13,9 @@ const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub struct Config {
     pub indexer: IndexerConfig,
     pub provider: ProviderConfig,
+    /// `[[contracts]]` blocks live in the per-env overlay TOMLs, not in
+    /// `base.toml`. Default to empty so base alone deserializes.
+    #[serde(default)]
     pub contracts: Vec<ContractConfig>,
     pub key_store: KeyStoreConfig,
     #[serde(rename = "log_indexer")]
@@ -78,14 +81,16 @@ mod tests {
 
     #[test]
     fn test_config_load_when_stage_config_set_should_load_config_successfully() {
-        let config: Config =
-            CommonConfig::load_config::<Config>(None).expect("Failed to load config");
+        // base.toml no longer carries [[contracts]]; per-env overlays do.
+        let config: Config = CommonConfig::load_config::<Config>(Some("local-anvil".to_string()))
+            .expect("Failed to load config");
 
         assert_eq!(
             Some("0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"),
             config.indexer.initial_block_hash.as_deref()
         );
-        assert_eq!(IndexerStartFrom::Hash, config.indexer.start_from);
+        // local-anvil overrides start_from to Best (base sets Hash).
+        assert_eq!(IndexerStartFrom::Best, config.indexer.start_from);
         assert!(!config.indexer.storage.path.contains("{BASE_STORAGE_PATH}"));
         assert!(config.indexer.storage.path.ends_with("/.union_bridge/op_1/local_database"));
         assert_eq!(1000, config.indexer.cache.size);
@@ -101,8 +106,9 @@ mod tests {
 
     #[test]
     fn test_load_contracts_when_stage_config_set_should_load_contracts_successfully() {
-        let config: Config =
-            CommonConfig::load_config::<Config>(None).expect("Failed to load config");
+        // base.toml no longer carries [[contracts]]; per-env overlays do.
+        let config: Config = CommonConfig::load_config::<Config>(Some("local-anvil".to_string()))
+            .expect("Failed to load config");
         let contracts = config.load_managed_contracts();
 
         assert_eq!(10, contracts.len());
