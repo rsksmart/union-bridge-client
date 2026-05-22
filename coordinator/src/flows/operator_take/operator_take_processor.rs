@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use common::msg_broker::bitvmx_types::{
     FundsAdvanceSPV, OPERATOR_TAKE_TX, OutgoingBitVMXApiMessages, UnionSPVNotification,
     UnionTxType, VariableTypes, advance_funds_protocol_id,
@@ -155,13 +155,27 @@ where
     /// `BitVMX` `UnionSPVNotification`s. Returns the matching flow if any.
     /// Matches on the cached `bitvmx_protocol_id`, which is derived from the
     /// same `(committee_id, slot_index)` tuple at flow construction.
+    ///
+    /// Bails if more than one flow matches — this is an invariant violation
+    /// (two flows holding the same `BitVMX` protocol id can only arise from a
+    /// bug or an unhandled re-trigger scenario, and would otherwise lead to
+    /// nondeterministic dispatch).
     fn flow_by_committee_slot(
         &mut self,
         committee_id: Uuid,
         slot_index: usize,
-    ) -> Option<&mut AdvanceFundsFlow<CG, BC>> {
+    ) -> Result<Option<&mut AdvanceFundsFlow<CG, BC>>> {
         let target = advance_funds_protocol_id(committee_id, slot_index);
-        self.flows.values_mut().find(|flow| flow.bitvmx_protocol_id() == target)
+        let mut matches =
+            self.flows.values_mut().filter(|flow| flow.bitvmx_protocol_id() == target);
+        let first = matches.next();
+        if matches.next().is_some() {
+            bail!(
+                "Invariant violation: multiple advance-funds flows hold BitVMX protocol id \
+                 {target} for (committee {committee_id}, slot {slot_index}); refusing to route",
+            );
+        }
+        Ok(first)
     }
 
     /// Tear down an advance-funds flow declared dead by an admin operator.
@@ -198,17 +212,14 @@ where
         }
 
         let flow_id = flow_id_from_operator_take_triggered_tx_hash(event.tx_hash);
-
         if self.flows.contains_key(&flow_id) {
-            debug!(
-                "Advance funds flow {flow_id} already exists for committee {committee_id}, updating trigger data",
-            );
-        } else {
-            debug!(
-                "Creating advance funds flow {} for committee {} and slot {}",
-                flow_id, committee_id, trigger_data.slot_index
-            );
+            bail!("Advance funds flow {flow_id} already exists for committee {committee_id}");
         }
+
+        debug!(
+            "Creating advance funds flow {} for committee {} and slot {}",
+            flow_id, committee_id, trigger_data.slot_index
+        );
 
         let flow = AdvanceFundsFlow::new(
             self.contracts_gateway.clone(),
@@ -488,7 +499,7 @@ where
         );
 
         let Some(flow_id) = self
-            .flow_by_committee_slot(notification.committee_id, notification.slot_index)
+            .flow_by_committee_slot(notification.committee_id, notification.slot_index)?
             .map(|flow| flow.flow_id())
         else {
             trace!(
@@ -515,7 +526,7 @@ where
         );
 
         let Some(flow_id) = self
-            .flow_by_committee_slot(notification.committee_id, notification.slot_index)
+            .flow_by_committee_slot(notification.committee_id, notification.slot_index)?
             .map(|flow| flow.flow_id())
         else {
             trace!(
@@ -562,14 +573,20 @@ where
                     "Advance funds flow processor received SetupCompleted for program_id: {program_id}",
                 );
                 // Route by `bitvmx_protocol_id`: BitVMX's `program_id` matches
-                // the cached protocol id, not the coordinator's `FlowId`.
+                // the cached protocol id, not the coordinator's `FlowId`. Same
+                // uniqueness invariant as `flow_by_committee_slot`: at most one
+                // flow per protocol id.
                 let target = (*program_id).into();
-                let flow_id = self
-                    .flows
-                    .values()
-                    .find(|flow| flow.bitvmx_protocol_id() == target)
-                    .map(AdvanceFundsFlow::flow_id);
-                if let Some(flow_id) = flow_id {
+                let mut matches =
+                    self.flows.values().filter(|flow| flow.bitvmx_protocol_id() == target);
+                let first = matches.next().map(AdvanceFundsFlow::flow_id);
+                if matches.next().is_some() {
+                    bail!(
+                        "Invariant violation: multiple advance-funds flows hold BitVMX protocol id \
+                         {program_id} on SetupCompleted; refusing to route",
+                    );
+                }
+                if let Some(flow_id) = first {
                     self.complete_step(flow_id, StepData::SetupCompleted)?;
                 } else {
                     trace!(
