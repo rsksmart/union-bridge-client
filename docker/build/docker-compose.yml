@@ -15,10 +15,12 @@ services:
         - CRATE=block-indexer
     volumes:
       - ${CONFIG_DIR:-../../config}:/app/config/:ro
-      - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - db-blocks:/app/db/blocks
     environment:
       - CONFIG=${CONFIG:-dummy-config-name}
+      - UB_LOG_DIR=${UB_LOG_DIR:-/app/logs}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - RUST_LOG=${RUST_LOG:-}
     restart: no
     healthcheck:
       interval: 30s
@@ -38,10 +40,12 @@ services:
         - CRATE=log-indexer
     volumes:
       - ${CONFIG_DIR:-../../config}:/app/config/:ro
-      - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - db-logs:/app/db/logs
     environment:
       - CONFIG=${CONFIG:-dummy-config-name}
+      - UB_LOG_DIR=${UB_LOG_DIR:-/app/logs}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - RUST_LOG=${RUST_LOG:-}
     restart: no
     healthcheck:
       interval: 30s
@@ -61,7 +65,6 @@ services:
         - CRATE=coordinator
     volumes:
       - ${CONFIG_DIR:-../../config}:/app/config/:ro
-      - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - ${KEYSTORE_DIR}:/keystore-src:ro
       - ${RESOURCES_DIR:-../../resources}:/app/resources:ro
       - db-coordinator:/app/db/coordinator
@@ -69,6 +72,9 @@ services:
     environment:
       KEY_STORE_PASSWORD: ${KEY_STORE_PASSWORD}
       CONFIG: ${CONFIG:-dummy-config-name}
+      UB_LOG_DIR: ${UB_LOG_DIR:-/app/logs}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      RUST_LOG: ${RUST_LOG:-}
       # Temporary protocol sizing workaround until we source these values from contracts.
       SLOTS_PER_PACKAGE:
       COMMITTEE_MEMBER_COUNT:
@@ -99,11 +105,13 @@ services:
         - CRATE=user-api
     volumes:
       - ${CONFIG_DIR:-../../config}:/app/config/:ro
-      - ${LOGGER_PATH:-./log4rs.yaml}:/app/log4rs.yaml:ro
       - ${KEYSTORE_DIR}:/keystore-src:ro
     environment:
       - KEY_STORE_PASSWORD=${KEY_STORE_PASSWORD}
       - CONFIG=${CONFIG:-dummy-config-name}
+      - UB_LOG_DIR=${UB_LOG_DIR:-/app/logs}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - RUST_LOG=${RUST_LOG:-}
     restart: no
     healthcheck:
       interval: 30s

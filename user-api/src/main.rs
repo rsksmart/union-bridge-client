@@ -45,13 +45,9 @@ impl Drop for BrokerDropGuard {
 #[tokio::main]
 async fn main() -> Result<()> {
     let matches = Command::new("Union Bridge User API")
-        .arg(
-            Arg::new(LOG_DIR_CLI_FLAG)
-                .short('l')
-                .long(LOG_DIR_CLI_FLAG)
-                .value_name("DIR")
-                .help("Directory for log files (also set via UB_LOG_DIR). Defaults to ./logs/ when unset."),
-        )
+        .arg(Arg::new(LOG_DIR_CLI_FLAG).short('l').long(LOG_DIR_CLI_FLAG).value_name("DIR").help(
+            "Directory for log files (also set via UB_LOG_DIR). Defaults to ./logs/ when unset.",
+        ))
         .arg(
             Arg::new(CONFIG_CLI_FLAG)
                 .short('e')

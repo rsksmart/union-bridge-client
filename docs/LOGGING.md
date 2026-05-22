@@ -117,9 +117,10 @@ for the full grammar.
 
 ### Bridging the `log` crate
 
-`tracing_log::LogTracer` is installed automatically, so dependencies still using
-the classic `log` macros (`log::info!`, etc.) flow through the same subscriber
-and obey the same `RUST_LOG` filter.
+`tracing_log::LogTracer` is installed automatically by `try_init()` via
+`tracing-subscriber`'s default `tracing-log` feature, so dependencies still
+using the classic `log` macros (`log::info!`, etc.) flow through the same
+subscriber and obey the same `RUST_LOG` filter.
 
 ## File output
 

@@ -6,12 +6,9 @@ use bitcoin::Network;
 use config::{self, Environment, Source};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use tracing::{Event, Subscriber, info, trace};
+use tracing::{info, trace};
 pub use tracing_appender::non_blocking::WorkerGuard as LogGuard;
-use tracing_subscriber::fmt::format::Writer;
-use tracing_subscriber::fmt::{FmtContext, FormatEvent, FormatFields};
 use tracing_subscriber::layer::SubscriberExt as _;
-use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use tracing_subscriber::{EnvFilter, fmt};
 
@@ -38,42 +35,6 @@ const DEFAULT_FILTER: &str = "debug,\
     alloy_provider=warn,alloy_pubsub=warn,alloy_rpc_client=warn,alloy_json_rpc=warn,\
     hyper=warn,hyper_util=warn,h2=warn,\
     reqwest=warn,rustls=warn,tower_http=warn,tungstenite=warn";
-
-/// Pretty-mode event formatter producing `<timestamp> [LEVEL] [target] message`,
-/// with an optional `[op-N]` prefix injected before the timestamp.
-///
-/// The bracketed level matches the pattern emitted by the previous `log4rs`
-/// setup so external log scrapers (e.g. the e2e framework parser) can keep
-/// matching on `[ERROR]`, `[WARN]`, etc.
-struct BracketedFormat {
-    prefix: Option<String>,
-}
-
-impl<S, N> FormatEvent<S, N> for BracketedFormat
-where
-    S: Subscriber + for<'a> LookupSpan<'a>,
-    N: for<'a> FormatFields<'a> + 'static,
-{
-    fn format_event(
-        &self,
-        ctx: &FmtContext<'_, S, N>,
-        mut writer: Writer<'_>,
-        event: &Event<'_>,
-    ) -> std::fmt::Result {
-        if let Some(prefix) = &self.prefix {
-            write!(writer, "[{prefix}] ")?;
-        }
-
-        let now = chrono::Local::now();
-        write!(writer, "{} ", now.format("%Y-%m-%d %H:%M:%S%.3f"))?;
-
-        let meta = event.metadata();
-        write!(writer, "[{:>5}] [{}] ", meta.level(), meta.target())?;
-
-        ctx.format_fields(writer.by_ref(), event)?;
-        writeln!(writer)
-    }
-}
 
 #[derive(Debug, Deserialize)]
 pub struct CommonConfig {
@@ -307,20 +268,21 @@ impl CommonConfig {
     /// **Log level**: controlled by `RUST_LOG`. When unset, defaults to [`DEFAULT_FILTER`] —
     /// `debug` for service code, `warn` for noisy third-party crates.
     ///
-    /// Also installs [`tracing_log::LogTracer`] so dependencies still using the `log` crate
-    /// flow through the same subscriber.
+    /// Also installs [`tracing_log::LogTracer`] (via `tracing-subscriber`'s default
+    /// `tracing-log` feature) so dependencies still using the `log` crate flow through
+    /// the same subscriber.
     ///
     /// Returns a [`LogGuard`] that must be held alive for the duration of the process; dropping
     /// it flushes and closes the background file-writer thread.
     ///
     /// # Errors
     ///
-    /// Returns an error only when the log directory cannot be created.
+    /// Returns an error if the log directory cannot be created, or if a global tracing
+    /// subscriber has already been installed (e.g. in tests that call this more than once).
     pub fn init_logger(log_dir_opt: Option<&String>, crate_name: &str) -> Result<LogGuard> {
-        // Note: `tracing_subscriber::try_init` below installs the `tracing_log::LogTracer`
-        // bridge internally (via the `tracing-log` feature), so we don't call it here. A
-        // separate call would register the global `log` handler twice and make `try_init`
-        // fail with "logger already initialized".
+        // `tracing-subscriber` enables the `tracing-log` default feature, so `try_init()`
+        // installs `LogTracer` internally. An explicit call here would double-register it
+        // and cause try_init() to return "logger already initialized".
 
         let filter =
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(DEFAULT_FILTER));
@@ -368,19 +330,10 @@ impl CommonConfig {
                 .with(file_layer)
                 .try_init()
         } else {
-            // Pretty: stdout carries `[op-N]` when CLIENT_ID is set; file is plain.
-            // Both layers emit `[LEVEL]`-bracketed output so log scrapers can match
-            // the same pattern as the previous log4rs setup.
-            let stdout_prefix = client_id.as_ref().map(|id| format!("op-{id}"));
-            let stdout_layer =
-                fmt::layer().event_format(BracketedFormat { prefix: stdout_prefix });
-            let file_layer = fmt::layer()
-                .event_format(BracketedFormat { prefix: None })
-                .with_writer(file_writer)
-                .with_ansi(false);
+            let file_layer = fmt::layer().with_writer(file_writer).with_ansi(false);
             tracing_subscriber::registry()
                 .with(filter)
-                .with(stdout_layer)
+                .with(fmt::layer())
                 .with(file_layer)
                 .try_init()
         };
@@ -405,9 +358,9 @@ impl CommonConfig {
     fn select_json_format(log_format: Option<&str>, environment: Option<&str>) -> bool {
         match log_format.filter(|s| !s.is_empty()) {
             Some(fmt) => fmt.eq_ignore_ascii_case("json"),
-            None => environment
-                .filter(|s| !s.is_empty())
-                .is_some_and(|env| env != LOCAL_ENVIRONMENT),
+            None => {
+                environment.filter(|s| !s.is_empty()).is_some_and(|env| env != LOCAL_ENVIRONMENT)
+            }
         }
     }
 
@@ -604,10 +557,7 @@ mod tests {
 
     #[test]
     fn test_resolve_log_dir_prefers_cli_arg() {
-        assert_eq!(
-            "from_arg",
-            CommonConfig::resolve_log_dir(Some("from_arg"), Some("from_env"))
-        );
+        assert_eq!("from_arg", CommonConfig::resolve_log_dir(Some("from_arg"), Some("from_env")));
     }
 
     #[test]
@@ -679,10 +629,7 @@ mod tests {
             .with_timezone(&chrono::Local);
         let formatted = now.format("%Y%m%d_%H%M%S").to_string();
         let expected = format!("coordinator-{formatted}.log");
-        assert_eq!(
-            expected,
-            CommonConfig::build_log_file_name("coordinator", None, &now)
-        );
+        assert_eq!(expected, CommonConfig::build_log_file_name("coordinator", None, &now));
     }
 
     #[test]
@@ -693,9 +640,6 @@ mod tests {
         let formatted = now.format("%Y%m%d_%H%M%S").to_string();
         let expected = format!("user-api-{formatted}.log");
         // Empty CLIENT_ID should fall through to the timestamped path.
-        assert_eq!(
-            expected,
-            CommonConfig::build_log_file_name("user-api", Some(""), &now)
-        );
+        assert_eq!(expected, CommonConfig::build_log_file_name("user-api", Some(""), &now));
     }
 }

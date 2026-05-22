@@ -10,7 +10,6 @@ use common::msg_broker::bitvmx_types::{
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::{CommitteeId, TxHash};
-use hex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{debug, info, trace, warn};
