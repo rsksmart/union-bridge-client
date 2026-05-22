@@ -70,8 +70,8 @@ For Rust edits in this repo, "verified" includes both clippy and tests passing. 
 Source of truth for fmt/sort/clippy is [`.hooks/`](.hooks/) — CI and pre-push call the same scripts, and they iterate across `.`, `cli/`, and `check-fork/zkp/guest/`. Call them when you need CI parity:
 
 ```bash
-.hooks/format-code.sh --check   # cargo +nightly fmt + cargo sort, all workspaces
-.hooks/check-lints.sh           # cargo clippy --locked -- -D warnings, all workspaces
+bash .hooks/format-code.sh --check   # cargo +nightly fmt + cargo sort, all workspaces
+bash .hooks/check-lints.sh           # cargo clippy --locked -- -D warnings, all workspaces
 ```
 
 For faster inner-loop checks against the root workspace only:
@@ -81,7 +81,7 @@ cargo build --workspace                                                         
 RISC0_SKIP_BUILD=1 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings   # lint (matches hooks except multi-workspace iteration)
 cargo test --workspace --locked                                                                    # all tests
 cargo test --package <crate> <test_name>                                                           # single test
-cargo +nightly fmt                                                                                 # write mode; use `.hooks/format-code.sh --check` for parity
+cargo +nightly fmt                                                                                 # write mode; use `bash .hooks/format-code.sh --check` for parity
 ```
 
 **Don't build, test, or clippy after every edit.** Run them at meaningful milestones — after completing a logical change, before declaring work done, or when debugging a specific failure. Mid-edit verification slows the loop; pre-push hooks enforce clippy + tests at push time anyway.

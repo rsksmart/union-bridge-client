@@ -392,8 +392,8 @@ bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword \
 When the full Docker stack isn't up, run scoped checks without spinning everything. For exact CI parity (all three workspaces, with the flags pre-push and CI use), call the hook scripts:
 
 ```bash
-.hooks/format-code.sh --check
-.hooks/check-lints.sh
+bash .hooks/format-code.sh --check
+bash .hooks/check-lints.sh
 ```
 
 For faster checks scoped to a single crate (no infra needed):
