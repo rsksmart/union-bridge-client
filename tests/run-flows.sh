@@ -13,6 +13,8 @@
 
 set -euo pipefail
 
+readonly ROOTSTOCK_RPC_URL="http://localhost:8545"
+
 MODE="happy"
 SCRIPT_ENV=""
 OPS_FROM_FLAG=""
@@ -253,14 +255,6 @@ validate_script_env() {
 
 is_docker_mode_env() {
     [[ "$SCRIPT_ENV" == "docker" || "$SCRIPT_ENV" == "local-regtest" ]]
-}
-
-rootstock_rpc_url() {
-    if [[ "$SCRIPT_ENV" == "local-regtest" ]]; then
-        echo "http://localhost:8545"
-    else
-        echo "http://localhost:8545"
-    fi
 }
 
 rootstock_label() {
@@ -593,16 +587,14 @@ wait_for_local_coordinator_health() {
 }
 
 wait_for_test_prereqs() {
-    local rpc_url=""
-    rpc_url=$(rootstock_rpc_url)
-    if ! wait_for_condition "$(rootstock_label) RPC" 30 cast rpc eth_chainId --rpc-url "$rpc_url"; then
-        echo "Error: $(rootstock_label) not ready on ${rpc_url}" >&2
+    if ! wait_for_condition "$(rootstock_label) RPC" 30 cast rpc eth_chainId --rpc-url "$ROOTSTOCK_RPC_URL"; then
+        echo "Error: $(rootstock_label) not ready on ${ROOTSTOCK_RPC_URL}" >&2
         return 1
     fi
 
     if [[ "$SCRIPT_ENV" == "local-regtest" ]]; then
-        if ! wait_for_condition "Native Bridge authorization" 30 native_bridge_has_union_bridge_address "$rpc_url"; then
-            echo "Error: Native Bridge RSKIP502 methods are not reachable on ${rpc_url}" >&2
+        if ! wait_for_condition "Native Bridge authorization" 30 native_bridge_has_union_bridge_address "$ROOTSTOCK_RPC_URL"; then
+            echo "Error: Native Bridge RSKIP502 methods are not reachable on ${ROOTSTOCK_RPC_URL}" >&2
             return 1
         fi
     fi
@@ -880,7 +872,7 @@ wait_for_correlated_completion_markers() {
 
 user_rsk_balance_wei() {
     local address="$1"
-    cast balance "$address" --rpc-url "$(rootstock_rpc_url)"
+    cast balance "$address" --rpc-url "$ROOTSTOCK_RPC_URL"
 }
 
 user_active_bitcoin_address() {

@@ -12,6 +12,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+readonly ROOTSTOCK_RPC_URL="http://localhost:8545"
+
 ENVIRONMENT="local"
 LOCAL_REGTEST_TAG_ARGS=()
 FILTERED_ARGS=()
@@ -106,14 +108,6 @@ trap on_exit EXIT
 
 pid_is_running() {
     [[ "${1:-}" =~ ^[0-9]+$ ]] && kill -0 "$1" 2>/dev/null
-}
-
-rootstock_rpc_url() {
-    if [[ "$ENVIRONMENT" == "local-regtest" ]]; then
-        echo "http://localhost:8545"
-    else
-        echo "http://localhost:8545"
-    fi
 }
 
 rootstock_label() {
@@ -219,8 +213,8 @@ start_mining() {
         exit 1
     fi
 
-    if ! cast rpc eth_chainId --rpc-url "$(rootstock_rpc_url)" &> /dev/null; then
-        warn "Blockchains not started - $(rootstock_label) not running on $(rootstock_rpc_url)"
+    if ! cast rpc eth_chainId --rpc-url "${ROOTSTOCK_RPC_URL}" &> /dev/null; then
+        warn "Blockchains not started - $(rootstock_label) not running on ${ROOTSTOCK_RPC_URL}"
         warn "Start blockchains first with: ./cli-infra.sh --start-blockchains"
         exit 1
     fi
@@ -232,7 +226,7 @@ start_mining() {
 
     if [[ "$ENVIRONMENT" == "local" ]]; then
         log "Testing Anvil mining..."
-        if ! cast rpc anvil_mine 1 --rpc-url "$(rootstock_rpc_url)" &>/dev/null; then
+        if ! cast rpc anvil_mine 1 --rpc-url "${ROOTSTOCK_RPC_URL}" &>/dev/null; then
             warn "Anvil mining failed - check Anvil is running correctly"
             exit 1
         fi
@@ -258,7 +252,7 @@ start_mining() {
     local anvil_pid="-"
     if [[ "$ENVIRONMENT" == "local" ]]; then
         log "  Anvil: every 1s"
-        nohup bash -c "$(declare -f mine_anvil); mine_anvil \"\$1\"" _ "$(rootstock_rpc_url)" >/tmp/union-bridge-${ENVIRONMENT}-anvil-mining.log 2>&1 &
+        nohup bash -c "$(declare -f mine_anvil); mine_anvil \"\$1\"" _ "${ROOTSTOCK_RPC_URL}" >/tmp/union-bridge-${ENVIRONMENT}-anvil-mining.log 2>&1 &
         anvil_pid=$!
     fi
 
