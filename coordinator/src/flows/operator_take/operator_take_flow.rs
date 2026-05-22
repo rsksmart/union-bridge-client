@@ -311,10 +311,9 @@ where
                     self.state.flow_id
                 );
             }
-            Steps::WaitBitVmxOperatorTakeSpv => info!(
-                "Selected operator waiting for operator take SPV proof for flow_id: {}",
-                self.state.flow_id
-            ),
+            Steps::WaitBitVmxOperatorTakeSpv => {
+                info!("Waiting for operator take SPV proof for flow_id: {}", self.state.flow_id);
+            }
             Steps::RegisterOrWaitRskOperatorTake => {
                 if self.was_selected_operator() {
                     return self.enter_register_operator_take();
