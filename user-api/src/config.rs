@@ -62,7 +62,9 @@ impl Logger {
     ///
     /// # Errors
     ///
-    /// Returns an error if the log directory cannot be created.
+    /// Returns an error if the log directory cannot be created, or if a global
+    /// tracing subscriber has already been installed (e.g. in tests that call
+    /// this more than once).
     pub fn init(log_dir_opt: Option<&String>) -> anyhow::Result<common::config::LogGuard> {
         CommonConfig::init_logger(log_dir_opt, CARGO_PKG_NAME)
     }

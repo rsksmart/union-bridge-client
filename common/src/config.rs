@@ -261,9 +261,9 @@ impl CommonConfig {
     ///   (relative to the current working directory).
     ///
     /// **Operator identification**: when `CLIENT_ID` is set (injected per-operator by the
-    /// cli/run launcher), the file name becomes `<crate_name>-<CLIENT_ID>.log`, and in pretty
-    /// mode each stdout line is prefixed with `[op-<CLIENT_ID>] ` so launcher-interleaved
-    /// output is attributable. Otherwise the file falls back to `<crate_name>-<timestamp>.log`.
+    /// cli/run launcher), the file name becomes `<crate_name>-<CLIENT_ID>.log` so the
+    /// per-operator log file is stable. Otherwise the file falls back to
+    /// `<crate_name>-<timestamp>.log`.
     ///
     /// **Log level**: controlled by `RUST_LOG`. When unset, defaults to `DEFAULT_FILTER` —
     /// `debug` for service code, `warn` for noisy third-party crates.

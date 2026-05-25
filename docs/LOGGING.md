@@ -18,7 +18,7 @@ flushes and closes the background file-writer thread.
 | Force JSON output            | `LOG_FORMAT=json`                                  |
 | Force human-readable output  | `LOG_FORMAT=pretty`                                |
 | Customize file location      | `--log-dir <DIR>` or `UB_LOG_DIR=<DIR>` (default: `./logs/`) |
-| Tag stdout per operator      | `CLIENT_ID=<N>` (set automatically by `cli-run.sh`)|
+| Per-operator log file name   | `CLIENT_ID=<N>` (set automatically by `cli-run.sh`)|
 | Switch default format        | `ENVIRONMENT=local` (pretty) vs anything else (json) |
 
 ## Output format: pretty vs JSON
@@ -41,14 +41,10 @@ Default for local dev.
 2026-05-19 10:14:22.041 [ INFO] [block_indexer::sync] caught up height=8421
 ```
 
-When `CLIENT_ID` is set, each stdout line is prefixed with `[op-<id>] ` so that
-interleaved output from the multi-operator launcher (`cli-run.sh`) stays
-attributable:
-
-```
-[op-1] 2026-05-19 10:14:22.041 [ INFO] [block_indexer::sync] caught up height=8421
-[op-2] 2026-05-19 10:14:22.103 [ INFO] [block_indexer::sync] caught up height=8421
-```
+When the multi-operator launcher (`cli-run.sh`) runs several services in
+parallel, their stdout lines interleave; operator identity is disambiguated by
+the per-operator log files (see [File output](#file-output)), not by a stdout
+prefix.
 
 ### JSON
 
@@ -61,8 +57,8 @@ any non-`local` environment — intended for log shippers / structured search.
 
 Notes:
 - File output is always written **without** ANSI codes, regardless of format.
-- The `[op-N]` prefix is a pretty-mode-only convenience; in JSON the operator
-  identity should be carried via `CLIENT_ID` in your shipping pipeline.
+- In JSON the operator identity should be carried via `CLIENT_ID` in your
+  shipping pipeline.
 
 ## Log level / filtering modules
 
@@ -148,7 +144,7 @@ owns the worker thread. Drop it on shutdown to flush.
 | `LOG_FORMAT`  | `json` or `pretty` — overrides environment-based default | (unset)        |
 | `ENVIRONMENT` | Selects default format: `local` → pretty, else → JSON  | `local`          |
 | `UB_LOG_DIR`  | Directory for the per-crate log file                   | `./logs/`        |
-| `CLIENT_ID`   | Operator id; tags stdout (`[op-N]`) and file name      | (unset)          |
+| `CLIENT_ID`   | Operator id; included in the per-operator log file name | (unset)         |
 
 ## Common recipes
 
