@@ -195,10 +195,22 @@ impl Config {
 pub struct Logger {}
 
 impl Logger {
+    /// Initialize logger.
+    ///
+    /// `log_dir_opt` is an optional directory for log files. When `None`, the
+    /// `UB_LOG_DIR` env var is consulted; if neither is set, logs are written
+    /// under `./logs/` (relative to the current working directory).
+    ///
+    /// Returns a [`common::config::LogGuard`] that must be kept alive for the
+    /// duration of the process to flush the background file-writer thread.
+    ///
     /// # Errors
-    /// Returns an error if logger initialization fails.
-    pub fn init(logger_file_opt: Option<&String>) -> anyhow::Result<()> {
-        CommonConfig::init_logger(logger_file_opt, CARGO_PKG_NAME)
+    ///
+    /// Returns an error if the log directory cannot be created, or if a global
+    /// tracing subscriber has already been installed (e.g. in tests that call
+    /// this more than once).
+    pub fn init(log_dir_opt: Option<&String>) -> anyhow::Result<common::config::LogGuard> {
+        CommonConfig::init_logger(log_dir_opt, CARGO_PKG_NAME)
     }
 }
 

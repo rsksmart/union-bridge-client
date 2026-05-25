@@ -4,11 +4,11 @@ use std::hash::BuildHasher;
 use anyhow::{Result, ensure};
 use common::msg_broker::bitvmx_types::{ParticipantRole, SignedPublicKey};
 use common::types::CommitteeId;
-use log::{debug, error, info};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use storage_backend::storage::{KeyValueStore, Storage};
 use storage_backend::storage_config::StorageConfig;
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 use crate::flows::common::GlobalContext;

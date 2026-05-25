@@ -12,9 +12,9 @@ use common::msg_broker::bitvmx_types::{
     PartialUtxo, ParticipantRole, PegOutAccepted, PeginAcceptedMessage,
 };
 use common::types::{Address, BlockHash, BlockNumber, Hash256, RskLog, TxHash};
-use log::{debug, trace, warn};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
+use tracing::{debug, trace, warn};
 use union_contracts::bindings::bitcoin_manager::BitcoinManager::BitcoinManagerEvents;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     AllCommunicationDataReady, CommitteeRegistryEvents, MemberInfoDeposited, NewCommittee,

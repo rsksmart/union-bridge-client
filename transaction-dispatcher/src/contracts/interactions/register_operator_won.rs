@@ -1,4 +1,4 @@
-use log::{debug, info};
+use tracing::{debug, info};
 use union_contracts::bindings::pegout_manager::PegoutManager::BtcTxSPVProof;
 
 use crate::contracts::pegout_manager::PegoutManagerContractApi;

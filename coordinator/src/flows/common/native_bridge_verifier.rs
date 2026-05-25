@@ -3,7 +3,7 @@ use std::rc::Rc;
 use common::msg_broker::bitvmx_types::BtcTxSPVProof;
 use common::runtime_sync::RuntimeSync;
 use common::types::{Hash256, TxIdParser};
-use log::{debug, info, warn};
+use tracing::{debug, info, warn};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use transaction_dispatcher::types::GetBtcTransactionConfirmationsInput;
 

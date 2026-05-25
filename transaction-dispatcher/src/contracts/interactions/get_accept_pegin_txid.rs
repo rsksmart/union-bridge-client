@@ -1,5 +1,5 @@
 use alloy_primitives::FixedBytes;
-use log::info;
+use tracing::info;
 
 use crate::contracts::pegout_manager::PegoutManagerContractApi;
 use crate::rsk_gateway::DomainErrors;

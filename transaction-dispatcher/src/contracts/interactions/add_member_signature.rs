@@ -1,4 +1,4 @@
-use log::info;
+use tracing::info;
 
 use crate::contracts::signature_manager::SignatureManagerContractApi;
 use crate::contracts::types::FixedBytes32;

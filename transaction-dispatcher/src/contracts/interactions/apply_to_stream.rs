@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::{debug, error, info};
+use tracing::{debug, error, info};
 use union_contracts::bindings::stream_manager::StreamManager::{Role, StreamDenomination};
 
 use crate::contracts::committee_registry::CommitteeRegistryContractApi;

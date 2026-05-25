@@ -62,23 +62,27 @@ impl Config {
 pub struct Logger {}
 
 impl Logger {
-    /// Initialize logger
+    /// Initialize logger.
+    ///
+    /// `log_dir_opt` is an optional directory for log files. When `None`, the
+    /// `UB_LOG_DIR` env var is consulted; if neither is set, logs are written
+    /// under `./logs/` (relative to the current working directory).
+    ///
+    /// Returns a [`common::config::LogGuard`] that must be kept alive for the
+    /// duration of the process to flush the background file-writer thread.
     ///
     /// # Errors
     ///
-    /// Returns an error if the logger configuration file cannot be loaded or parsed
-    pub fn init(logger_file_opt: Option<&String>) -> anyhow::Result<()> {
-        CommonConfig::init_logger(logger_file_opt, CARGO_PKG_NAME)
+    /// Returns an error if the log directory cannot be created, or if a global
+    /// tracing subscriber has already been installed (e.g. in tests that call
+    /// this more than once).
+    pub fn init(log_dir_opt: Option<&String>) -> anyhow::Result<common::config::LogGuard> {
+        CommonConfig::init_logger(log_dir_opt, CARGO_PKG_NAME)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::path::Path;
-
-    use tempfile::TempDir;
-
     use super::*;
 
     #[test]
@@ -111,49 +115,10 @@ mod tests {
     }
 
     #[test]
-    fn test_init_logger_with_custom_file() {
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let logger_file = temp_dir.path().join("log4rs.yaml");
-        let log_file = &format!("{}/{}", temp_dir.path().to_str().unwrap(), CARGO_PKG_NAME);
-
-        let logger_config_template = r#"
-refresh_rate: 30 seconds
-
-appenders:
-  rolling_file:
-    kind: rolling_file
-    path: "{TO_REPLACE}.log"
-    encoder:
-      pattern: "{d(%Y-%m-%d %H:%M:%S%.3f)} - {l:>5} - {m}{n}"
-    policy:
-      trigger:
-        kind: size
-        limit: 10mb
-      roller:
-        kind: fixed_window
-        base: 1
-        count: 5
-        pattern: "{TO_REPLACE}.{}.log"
-
-root:
-  level: debug
-  appenders:
-    - rolling_file
-"#;
-
-        let logger_config_content =
-            logger_config_template.to_string().replace("{TO_REPLACE}", log_file);
-
-        fs::write(&logger_file, logger_config_content).expect("Failed to write logger config");
-
-        let result = CommonConfig::init_logger(
-            Some(&logger_file.to_string_lossy().to_string()),
-            "test_crate",
-        );
-
-        println!("result: {result:?}");
-
-        assert!(result.is_ok());
-        assert!(Path::new(&format!("{log_file}.log")).exists());
+    fn test_init_logger() {
+        // Smoke test: a different test in this binary may have already installed
+        // a global subscriber, in which case init_logger legitimately Errs. We
+        // only assert the call doesn't panic.
+        let _ = CommonConfig::init_logger(None, CARGO_PKG_NAME);
     }
 }

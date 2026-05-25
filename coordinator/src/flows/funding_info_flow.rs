@@ -8,7 +8,7 @@ use bitcoin::Network;
 use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::msg_broker::types::{MemberFundingInfo, ToServer};
-use log::{info, trace, warn};
+use tracing::{info, trace, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
 

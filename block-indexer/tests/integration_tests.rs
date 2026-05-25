@@ -13,8 +13,8 @@ use common::shutdown_flag::ShutdownFlag;
 use common::test_utils::mock_rsk_provider_handler::MockRskProviderHandler;
 use common::test_utils::rsk_block_generator::FakeBlockGenerator;
 use common::types::{BlockHash, BlockNumber, RskBlock};
-use log::info;
 use tempfile::tempdir;
+use tracing::info;
 const BLOCK_CACHE_SIZE: usize = 100;
 use common::test_utils::rsk_utils::UncleBlockInfo;
 
@@ -34,7 +34,7 @@ fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
     const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
-    let _ = env_logger::builder().is_test(true).try_init();
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().join("blocks");
     fs::create_dir_all(&store_path)?;
@@ -92,7 +92,7 @@ fn test_when_shutdown_happens_during_backwards_sync_should_set_checkpoint() -> R
     const INIT_BLOCK_HEIGHT: u64 = 1;
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
     const BLOCK_HEIGHT_SHUTDOWN_HAPPENS_AT: u64 = 10;
-    let _ = env_logger::builder().is_test(true).try_init();
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().join("blocks");
     fs::create_dir_all(&store_path)?;
@@ -159,7 +159,7 @@ fn test_when_shutdown_happens_during_backwards_sync_and_indexer_restarts_should_
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
     const BLOCK_HEIGHT_SHUTDOWN_HAPPENS_AT: u64 = 10;
     const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
-    let _ = env_logger::builder().is_test(true).try_init();
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().join("blocks");
     fs::create_dir_all(&store_path)?;
@@ -276,7 +276,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complet
     const REORG_BLOCK_HEIGHT: u64 = 10;
     const REORG_HAPPENS_AT_HEIGHT: u64 = 15;
     const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
-    let _ = env_logger::builder().is_test(true).try_init();
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().join("blocks");
     fs::create_dir_all(&store_path)?;
@@ -342,7 +342,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_
     const REORG_BLOCK_HEIGHT: u64 = 25;
     const REORG_HAPPENS_AT_HEIGHT: u64 = 30;
     const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
-    let _ = env_logger::builder().is_test(true).try_init();
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().join("blocks");
     fs::create_dir_all(&store_path)?;
@@ -409,7 +409,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_from_early_block
     const REORG_BLOCK_HEIGHT: u64 = 10;
     const REORG_HAPPENS_AT_HEIGHT: u64 = 30;
     const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
-    let _ = env_logger::builder().is_test(true).try_init();
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().join("blocks");
     fs::create_dir_all(&store_path)?;
@@ -493,7 +493,7 @@ fn test_when_monitor_runs_should_backwards_sync_and_add_blocks_from_subscription
     const MAX_BLOCK_HEIGHT_BACKWARDS_SYNC: u64 = 20;
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 40;
     const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
-    let _ = env_logger::builder().is_test(true).try_init();
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
     let uncle_block_info_vec: Vec<UncleBlockInfo> = vec![
         UncleBlockInfo::new(5, false, "uD.A", 0),
         UncleBlockInfo::new(8, false, "uG.A", 0),
@@ -598,7 +598,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_backwards_sync_should_complet
     const REORG_BLOCK_HEIGHT: u64 = 10;
     const REORG_HAPPENS_AT_HEIGHT: u64 = 15;
     const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
-    let _ = env_logger::builder().is_test(true).try_init();
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
     let uncle_block_info_vec: Vec<UncleBlockInfo> = vec![
         UncleBlockInfo::new(5, false, "uD.A", 0),
         UncleBlockInfo::new(12, false, "uJ.A", 0),
@@ -708,7 +708,7 @@ fn test_when_monitor_runs_and_reorg_happens_during_subscription_should_complete_
     const REORG_BLOCK_HEIGHT: u64 = 25;
     const REORG_HAPPENS_AT_HEIGHT: u64 = 30;
     const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
-    let _ = env_logger::builder().is_test(true).try_init();
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
     let uncle_block_info_vec: Vec<UncleBlockInfo> = vec![
         UncleBlockInfo::new(23, false, "uP.A", 0),
         UncleBlockInfo::new(28, false, "uR.A", 0),

@@ -1,8 +1,8 @@
 use alloy_primitives::{Bytes, U256};
 use alloy_provider::Provider;
-use log::info;
 #[cfg(test)]
 use mockall::automock;
+use tracing::info;
 use union_contracts::bindings::stream_manager::StreamManager::{
     self, Role, Stream, StreamDenomination, StreamManagerErrors, StreamManagerInstance,
 };

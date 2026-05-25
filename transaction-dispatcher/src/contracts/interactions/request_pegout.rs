@@ -1,6 +1,6 @@
 use alloy_primitives::FixedBytes;
 use anyhow::Result;
-use log::{debug, info};
+use tracing::{debug, info};
 
 use crate::contracts::pegout_manager::PegoutManagerContractApi;
 use crate::rsk_gateway::DomainErrors;

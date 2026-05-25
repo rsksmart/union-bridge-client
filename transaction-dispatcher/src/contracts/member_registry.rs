@@ -1,7 +1,7 @@
 use alloy_provider::Provider;
-use log::info;
 #[cfg(test)]
 use mockall::automock;
+use tracing::info;
 use union_contracts::bindings::member_registry::MemberRegistry::{
     self, MemberKeys, MemberRegistryErrors, MemberRegistryInstance,
 };
