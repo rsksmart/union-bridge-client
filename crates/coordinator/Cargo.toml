@@ -21,6 +21,7 @@ common-broker = { path = "../common/broker", features = ["bitvmx"] }
 common-core = { path = "../common/core" }
 common-runtime = { path = "../common/runtime" }
 hex = { workspace = true }
+metrics = { workspace = true }
 musig2 = { workspace = true }
 op-funding = { path = "../op-funding" }
 primitive-types = { workspace = true }

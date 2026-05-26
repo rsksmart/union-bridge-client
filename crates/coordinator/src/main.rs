@@ -146,6 +146,13 @@ fn main() -> Result<()> {
 
     let shutdown_flag = ShutdownFlag::init();
 
+    let _metrics_thread = common_runtime::metrics::install_and_spawn(
+        &config.coordinator.monitoring,
+        "coordinator",
+        shutdown_flag.clone(),
+    )
+    .context("Failed to start Prometheus metrics endpoint")?;
+
     let rt_sync = RuntimeSync::new().context("Failed to create runtime sync")?;
 
     let keystore_password = secrecy::SecretString::from(

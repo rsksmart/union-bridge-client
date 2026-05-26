@@ -218,6 +218,34 @@ operator_bitvmx_p2p_host() {
   echo "${hosts[$((op_num - 1))]}"
 }
 
+# Prometheus /metrics ports per operator. Layout: 91<op_idx><svc> where op_idx is
+# zero-based and svc is 1=coordinator, 2=user-api, 3=block-indexer, 4=log-indexer.
+# Keeps op_1 on the base.toml defaults (9101-9104) so single-operator runs stay
+# backward-compatible.
+operator_coordinator_metrics_port() {
+  local op_num="$1"
+
+  echo "$((9101 + (op_num - 1) * 10))"
+}
+
+operator_user_api_metrics_port() {
+  local op_num="$1"
+
+  echo "$((9102 + (op_num - 1) * 10))"
+}
+
+operator_block_indexer_metrics_port() {
+  local op_num="$1"
+
+  echo "$((9103 + (op_num - 1) * 10))"
+}
+
+operator_log_indexer_metrics_port() {
+  local op_num="$1"
+
+  echo "$((9104 + (op_num - 1) * 10))"
+}
+
 broker_pem_path() {
   local service="$1"
   local op_num="$2"
@@ -595,6 +623,10 @@ COORDINATOR_BROKER_PEM_PATH=$(broker_pem_path "coordinator" "${op_num}")
 USER_API_PORT=$(operator_user_api_port "${op_num}")
 BITVMX_PORT=$(operator_bitvmx_port "${op_num}")
 BITVMX_P2P_HOST=$(operator_bitvmx_p2p_host "${op_num}")
+COORDINATOR_METRICS_PORT=$(operator_coordinator_metrics_port "${op_num}")
+USER_API_METRICS_PORT=$(operator_user_api_metrics_port "${op_num}")
+BLOCK_INDEXER_METRICS_PORT=$(operator_block_indexer_metrics_port "${op_num}")
+LOG_INDEXER_METRICS_PORT=$(operator_log_indexer_metrics_port "${op_num}")
 EOF
 
   chmod 600 "${env_file_path}"
@@ -621,6 +653,10 @@ UB__COORDINATOR__BITVMX__PUBKEY_HASH=${bitvmx_pubkey_hash}
 UB__COORDINATOR__BITVMX__PORT=$(operator_bitvmx_port "${op_num}")
 UB__USER_API__COORDINATOR__CLIENT_ID=$((100 + op_num))
 UB__USER_API__COORDINATOR__PUBKEY_HASH=$(read_broker_pubkey_hash "coordinator" "${op_num}")
+UB__COORDINATOR__MONITORING__BIND_ADDR=0.0.0.0:$(operator_coordinator_metrics_port "${op_num}")
+UB__USER_API__MONITORING__BIND_ADDR=0.0.0.0:$(operator_user_api_metrics_port "${op_num}")
+UB__BLOCK_INDEXER__MONITORING__BIND_ADDR=0.0.0.0:$(operator_block_indexer_metrics_port "${op_num}")
+UB__LOG_INDEXER__MONITORING__BIND_ADDR=0.0.0.0:$(operator_log_indexer_metrics_port "${op_num}")
 KEY_STORE_PASSWORD=${key_store_password}
 EOF
 

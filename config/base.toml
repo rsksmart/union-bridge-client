@@ -31,6 +31,7 @@ notifier.port = 10001
 coordinator.client_id = 101
 coordinator.pubkey_hash = "<to_patch_with_env>"
 broker_key_path = "/{BASE_STORAGE_PATH}/.union_bridge/op_1/union-client/broker/block-indexer.pem"
+monitoring.bind_addr = "0.0.0.0:9103"
 
 [log_indexer]
 
@@ -38,6 +39,7 @@ notifier.port = 20001
 coordinator.client_id = 101
 coordinator.pubkey_hash = "<to_patch_with_env>"
 broker_key_path = "/{BASE_STORAGE_PATH}/.union_bridge/op_1/union-client/broker/log-indexer.pem"
+monitoring.bind_addr = "0.0.0.0:9104"
 
 # ═══════════════════════════════════════════════════════
 # Coordinator
@@ -67,6 +69,7 @@ storage_path = "/{BASE_STORAGE_PATH}/.union_bridge/op_1/local_database"
 check_period_secs = 1
 bitvmx_not_responding_threshold_secs = 30
 bitvmx_ping_after_silence_secs = 15
+monitoring.bind_addr = "0.0.0.0:9101"
 
 # ═══════════════════════════════════════════════════════
 # Key Store
@@ -92,6 +95,7 @@ coordinator.pubkey_hash = "<to_patch_with_env>"
 broker_key_path = "/{BASE_STORAGE_PATH}/.union_bridge/op_1/union-client/broker/user-api.pem"
 notifier.port = 30001
 http.port = 40001
+monitoring.bind_addr = "0.0.0.0:9102"
 # Bearer token for admin endpoints (e.g., POST /admin/fail-flow). Leave unset to disable.
 # admin_token = ""
 

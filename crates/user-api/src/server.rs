@@ -252,6 +252,11 @@ impl Server {
             Duration::from_secs(10),
         ));
 
+        // Outermost layer so request/response timings cover everything below,
+        // including the timeout layer above. MatchedPath is recorded as the
+        // `path` label so URI parameters never inflate cardinality.
+        app = app.layer(middleware::from_fn(common_runtime::metrics::track_http_metrics));
+
         Self { listener, app, shutdown_flag }
     }
 

@@ -74,6 +74,21 @@ async fn main() -> Result<()> {
 
     let shutdown_flag = ShutdownFlag::init();
 
+    let monitoring = &config.user_api_config.monitoring;
+    if monitoring.enabled {
+        let handle = common_runtime::metrics::init_prometheus_recorder("user-api")
+            .context("Failed to install Prometheus recorder")?;
+        let addr = monitoring.bind_addr;
+        let shutdown = shutdown_flag.clone();
+        tokio::spawn(async move {
+            if let Err(err) = common_runtime::metrics::serve_metrics(addr, handle, shutdown).await {
+                error!("Prometheus /metrics server terminated with error: {err:?}");
+            }
+        });
+    } else {
+        info!("Prometheus metrics disabled for user-api");
+    }
+
     let broker_port = config.user_api_config.notifier.port;
     let broker_key_path = config.user_api_config.broker_key_path.clone();
 

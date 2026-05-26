@@ -255,6 +255,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
             let new_log = match rsk_log_subscription.next() {
                 Ok(log) => log,
                 Err(RskSubscriptionError::ClosedConnection) => {
+                    metrics::counter!("union_indexer_subscription_errors_total", "indexer" => "log", "kind" => "closed").increment(1);
                     if self.is_running() {
                         bail!("Provider closed unexpectedly!");
                     }
@@ -262,16 +263,19 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
                     break;
                 }
                 Err(RskSubscriptionError::Transient(err)) => {
+                    metrics::counter!("union_indexer_subscription_errors_total", "indexer" => "log", "kind" => "transient").increment(1);
                     error!("[subscribe_logs] Ignoring problematic log: {err:?}");
                     continue;
                 }
                 Err(RskSubscriptionError::Lagged(err)) => {
+                    metrics::counter!("union_indexer_subscription_errors_total", "indexer" => "log", "kind" => "lagged").increment(1);
                     error!(
                         "[subscribe_logs] Subscription lagged, a backward_sync will be needed: {err:?}"
                     );
                     continue;
                 }
                 Err(RskSubscriptionError::Unexpected(err)) => {
+                    metrics::counter!("union_indexer_subscription_errors_total", "indexer" => "log", "kind" => "unexpected").increment(1);
                     bail!("[subscribe_logs] Unknown error on log subs: {err:?}");
                 }
             };
@@ -293,6 +297,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
             trace!("[subscribe_logs] Log: {new_log:?}");
 
             if !self.managed_contracts.contains_key(&new_log.info().address()) {
+                metrics::counter!("union_log_indexer_unmanaged_contract_logs_total").increment(1);
                 error!(
                     "[subscribe_logs] Received unmanaged contract log {} [{:?}]",
                     new_log.info().address(),
@@ -304,9 +309,16 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
             self.store.save_log(&new_log).context("Saving new log")?;
             self.store.set_sync_checkpoint(&new_log).context("Setting new log checkpoint")?;
 
+            #[allow(clippy::cast_precision_loss)]
+            metrics::gauge!("union_indexer_height", "indexer" => "log", "network" => "rsk")
+                .set(new_log.info().block_number().value() as f64);
+            metrics::counter!("union_log_indexer_logs_indexed_total").increment(1);
+
             #[allow(clippy::collapsible_if)]
             if let Some(channel) = &self.new_log_sender {
                 if let Err(e) = channel.send(new_log) {
+                    metrics::counter!("union_indexer_notify_errors_total", "indexer" => "log")
+                        .increment(1);
                     error!("Failed to send new block through channel: {e:?}");
                 }
             }

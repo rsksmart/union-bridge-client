@@ -3,6 +3,7 @@ use std::time::Duration;
 use common_core::types::Address;
 use common_runtime::config::{CommonConfig, ContractConfig, KeyStoreConfig};
 use common_runtime::errors::ConfigError;
+use common_runtime::metrics::MonitoringConfig;
 use serde::Deserialize;
 
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
@@ -43,6 +44,7 @@ pub struct CoordinatorConfig {
     pub check_period_secs: u64,
     pub bitvmx_not_responding_threshold_secs: u64,
     pub bitvmx_ping_after_silence_secs: u64,
+    pub monitoring: MonitoringConfig,
 }
 
 impl CoordinatorConfig {
@@ -272,6 +274,11 @@ mod tests {
             "/app/resources/union-verifier.yaml",
             config.flows.committee.drp_program_definition
         );
+        assert!(config.coordinator.monitoring.enabled);
+        assert_eq!(
+            config.coordinator.monitoring.bind_addr,
+            "0.0.0.0:9101".parse().expect("valid bind_addr")
+        );
         assert_eq!("regtest", config.bitcoin_network);
         assert_eq!(10, config.contracts.len());
     }
@@ -315,7 +322,8 @@ mod tests {
                 "storage_path": "/tmp/coordinator",
                 "check_period_secs": 1,
                 "bitvmx_not_responding_threshold_secs": 30,
-                "bitvmx_ping_after_silence_secs": 15
+                "bitvmx_ping_after_silence_secs": 15,
+                "monitoring": { "bind_addr": "0.0.0.0:9101" }
             }
         }));
 

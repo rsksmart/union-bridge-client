@@ -48,6 +48,13 @@ fn main() -> Result<()> {
 
     let shutdown_flag = ShutdownFlag::init();
 
+    let _metrics_thread = common_runtime::metrics::install_and_spawn(
+        &config.log_indexer_config.monitoring,
+        "log-indexer",
+        shutdown_flag.clone(),
+    )
+    .context("Failed to start Prometheus metrics endpoint")?;
+
     let alloy_provider = AlloyProvider::new(&config.provider.rootstock.url, shutdown_flag.clone())
         .expect("Failed to create AlloyProvider (unrecoverable)");
 

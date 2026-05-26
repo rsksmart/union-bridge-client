@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use bitcoin::Network;
@@ -14,6 +14,12 @@ use common_runtime::runtime_sync::RuntimeSync;
 use common_runtime::shutdown_flag::ShutdownFlag;
 use tracing::{error, info, instrument, trace, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
+
+/// Liveness gauge values for `union_bitvmx_liveness`. Numeric so a single
+/// gauge can express the three states without an explosion of label values.
+const LIVENESS_UNKNOWN: f64 = 0.0;
+const LIVENESS_HEALTHY: f64 = 1.0;
+const LIVENESS_NOT_RESPONDING: f64 = -1.0;
 
 use crate::RUNTIME_ENV_LOCAL_ANVIL;
 use crate::event_processor::EventProcessor;
@@ -265,6 +271,8 @@ impl<
         let mut blocks_since_active_flows_log: u32 = 0;
 
         let result = (|| -> Result<()> {
+            metrics::gauge!("union_bitvmx_liveness").set(LIVENESS_UNKNOWN);
+
             loop {
                 if !self.is_running() {
                     break;
@@ -279,6 +287,8 @@ impl<
                 if let Some(req) =
                     Self::handle_runtime_broker_result(user_request_result, "getting User request")?
                 {
+                    metrics::counter!("union_coordinator_events_processed_total", "kind" => "user_request").increment(1);
+
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_user_request(&req) {
@@ -304,6 +314,9 @@ impl<
                     bitvmx_ping = None;
                     bitvmx_last_msg = Instant::now();
                     Self::record_bitvmx_activity(&mut bitvmx_liveness);
+                    record_bitvmx_message();
+
+                    metrics::counter!("union_coordinator_events_processed_total", "kind" => "bitvmx_event").increment(1);
 
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
@@ -320,6 +333,8 @@ impl<
                 if let Some(event) =
                     Self::handle_runtime_broker_result(rsk_event_result, "getting RSK event")?
                 {
+                    metrics::counter!("union_coordinator_events_processed_total", "kind" => "rsk_event").increment(1);
+
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_new_rsk_event(&event) {
@@ -335,6 +350,8 @@ impl<
                 if let Some(block) =
                     Self::handle_runtime_broker_result(block_result, "getting block")?
                 {
+                    metrics::counter!("union_coordinator_events_processed_total", "kind" => "block").increment(1);
+
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_new_block(&block) {
                             error!("Error processing block {block:?}: {e:?}");
@@ -404,6 +421,8 @@ impl<
             if *bitvmx_liveness != BitvmxLiveness::NotResponding {
                 error!("BitVMX is not responding: ping timed out after {:?}", ping.elapsed());
                 *bitvmx_liveness = BitvmxLiveness::NotResponding;
+                metrics::gauge!("union_bitvmx_liveness").set(LIVENESS_NOT_RESPONDING);
+                metrics::counter!("union_bitvmx_ping_timeouts_total").increment(1);
             }
             *bitvmx_ping = None;
         }
@@ -422,7 +441,10 @@ impl<
         trace!("Sending Ping to BitVMX with uuid: {ping_id}");
 
         match self.bitvmx_broker.send(IncomingBitVMXApiMessages::Ping(ping_id)) {
-            Ok(true) => true,
+            Ok(true) => {
+                metrics::counter!("union_bitvmx_pings_sent_total").increment(1);
+                true
+            }
             Ok(false) => {
                 warn!("Broker could not deliver BitVMX ping");
                 false
@@ -433,6 +455,7 @@ impl<
             }
             Err(error) => {
                 error!("Failed to send Ping to BitVMX: {error:?}");
+                metrics::counter!("union_bitvmx_ping_send_errors_total").increment(1);
                 false
             }
         }
@@ -449,6 +472,7 @@ impl<
             BitvmxLiveness::Healthy => {}
         }
         *bitvmx_liveness = BitvmxLiveness::Healthy;
+        metrics::gauge!("union_bitvmx_liveness").set(LIVENESS_HEALTHY);
     }
 
     fn is_running(&self) -> bool {
@@ -476,6 +500,44 @@ impl<
         let flows: Vec<_> = self.processors.iter().flat_map(|p| p.active_flows()).collect();
         let payload = serde_json::json!({ "count": flows.len(), "flows": flows });
         info!("active_flows {payload}");
+        publish_flow_gauges(&flows);
+    }
+}
+
+/// Update the UNIX-timestamp gauge prometheus can subtract from `time()` to
+/// derive the "seconds since last `BitVMX` message" without us having to push
+/// a fresh sample on every loop iteration.
+fn record_bitvmx_message() {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64());
+    metrics::gauge!("union_bitvmx_last_message_timestamp_seconds").set(now);
+    metrics::counter!("union_bitvmx_messages_received_total").increment(1);
+}
+
+/// Re-publish the `union_flows_active{type}` gauge from the latest snapshot.
+/// `FlowKind` is a closed enum (kebab-case label values) so cardinality stays
+/// bounded; per-flow id and step are deliberately excluded.
+fn publish_flow_gauges(flows: &[crate::event_processor::FlowDetails]) {
+    use crate::types::FlowKind;
+    let mut counts = [
+        (FlowKind::Pegin, 0_u64),
+        (FlowKind::Pegout, 0_u64),
+        (FlowKind::AdvanceFunds, 0_u64),
+        (FlowKind::CommitteeSetup, 0_u64),
+    ];
+    for flow in flows {
+        if let Some(entry) = counts.iter_mut().find(|(k, _)| *k == flow.kind) {
+            entry.1 += 1;
+        }
+    }
+    for (kind, count) in counts {
+        let label = match kind {
+            FlowKind::Pegin => "pegin",
+            FlowKind::Pegout => "pegout",
+            FlowKind::AdvanceFunds => "advance-funds",
+            FlowKind::CommitteeSetup => "committee-setup",
+        };
+        #[allow(clippy::cast_precision_loss)]
+        metrics::gauge!("union_flows_active", "type" => label).set(count as f64);
     }
 }
 
