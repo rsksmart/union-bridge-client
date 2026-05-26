@@ -367,9 +367,11 @@ where
                     signature: pegin_accepted.accept_pegin_signature,
                 };
 
-                let mut btc_sig_subflow = self
-                    .btc_sig_subflow_factory
-                    .create_flow(protocol_uuid, flow.log_id().to_string());
+                let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(
+                    protocol_uuid,
+                    flow.log_id().to_string(),
+                    None,
+                );
                 btc_sig_subflow.start_signature_flow(protocol_uuid, &register_input)?;
 
                 self.signature_flows.insert(protocol_uuid, btc_sig_subflow);

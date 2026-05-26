@@ -5,7 +5,7 @@ use common::runtime_sync::RuntimeSync;
 use common::types::RskBlockAndUncles;
 #[cfg(test)]
 use mockall::automock;
-use tracing::{debug, trace};
+use tracing::{debug, info_span, trace};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
 
@@ -26,7 +26,7 @@ pub(crate) trait BtcSignatureSubFlowApi {
 
 #[cfg_attr(test, automock)]
 pub(crate) trait BtcSignatureSubFlowFactoryApi<BSF: BtcSignatureSubFlowApi> {
-    fn create_flow(&self, flow_id: Uuid, parent_log_id: String) -> BSF;
+    fn create_flow(&self, flow_id: Uuid, parent_log_id: String, pegout_id: Option<Uuid>) -> BSF;
 }
 
 pub(crate) struct BaseBtcSignatureSubFlow<BSF: BtcSignatureLifecycleApi> {
@@ -37,6 +37,11 @@ pub(crate) struct BaseBtcSignatureSubFlow<BSF: BtcSignatureLifecycleApi> {
     /// with the current phase to produce `{parent_log_id} ({phase})` for
     /// log lines.
     parent_log_id: String,
+    /// `pegout{pegout_id=…}` span built once at construction when this subflow
+    /// was spawned from a pegout. Cloning the handle on each entry keeps the
+    /// span id stable across the subflow's lifetime; `None` for non-pegout
+    /// subflows.
+    pegout_span: Option<tracing::Span>,
 }
 
 impl<CG> BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>>
@@ -49,6 +54,7 @@ where
         flow_id: Uuid,
         parent_log_id: String,
         required_confirmations: u32,
+        pegout_id: Option<Uuid>,
     ) -> Self {
         let lifecycle = BtcSignatureLifeCycle::new(
             contracts_gateway.clone(),
@@ -56,8 +62,9 @@ where
             flow_id,
             required_confirmations,
         );
+        let pegout_span = pegout_id.map(|id| info_span!("pegout", pegout_id = %id));
 
-        Self { lifecycle, is_done: false, is_nonces_step_done: false, parent_log_id }
+        Self { lifecycle, is_done: false, is_nonces_step_done: false, parent_log_id, pegout_span }
     }
 
     #[cfg(test)]
@@ -74,7 +81,13 @@ where
             flow_id,
             required_confirmations,
         );
-        Self { lifecycle, is_done: true, is_nonces_step_done: true, parent_log_id }
+        Self {
+            lifecycle,
+            is_done: true,
+            is_nonces_step_done: true,
+            parent_log_id,
+            pegout_span: None,
+        }
     }
 }
 
@@ -87,6 +100,14 @@ where
     fn log_id(&self) -> String {
         let phase = if self.is_nonces_step_done { "signatures" } else { "nonces" };
         format!("{} ({phase})", self.parent_log_id)
+    }
+
+    /// Enters the stored `pegout{pegout_id=…}` span when this subflow was
+    /// spawned from a pegout. Cloning the `Span` handle is cheap and keeps the
+    /// underlying span id stable across calls, so all btc-signature log lines
+    /// for one subflow share the same span id.
+    fn enter_pegout_span(&self) -> Option<tracing::span::EnteredSpan> {
+        self.pegout_span.clone().map(tracing::Span::entered)
     }
 }
 
@@ -102,7 +123,7 @@ where
         if self.lifecycle.flow_id() != flow_id {
             return Ok(()); // not mine
         }
-
+        let _span = self.enter_pegout_span();
         self.lifecycle.send_nonce_to_contracts(event)?;
         Ok(())
     }
@@ -111,7 +132,7 @@ where
         if self.lifecycle.flow_id() != flow_id {
             return Ok(()); // not mine
         }
-
+        let _span = self.enter_pegout_span();
         debug!("Processing delegated event for {}", self.log_id());
 
         match event {
@@ -146,6 +167,7 @@ where
     }
 
     fn delegate_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
+        let _span = self.enter_pegout_span();
         // update blockchain view
         self.lifecycle.blockchain_view().update(block);
 
@@ -201,6 +223,7 @@ impl<CG: RskContractsGatewayApi>
         &self,
         flow_id: Uuid,
         parent_log_id: String,
+        pegout_id: Option<Uuid>,
     ) -> BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>> {
         BaseBtcSignatureSubFlow::<BtcSignatureLifeCycle<CG>>::new(
             &self.contracts_gateway,
@@ -208,6 +231,7 @@ impl<CG: RskContractsGatewayApi>
             flow_id,
             parent_log_id,
             self.required_confirmations,
+            pegout_id,
         )
     }
 }
@@ -235,6 +259,7 @@ mod tests {
                 is_done: false,
                 is_nonces_step_done: false,
                 parent_log_id: String::new(),
+                pegout_span: None,
             }
         }
     }

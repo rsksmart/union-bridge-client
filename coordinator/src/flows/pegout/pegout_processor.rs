@@ -10,7 +10,8 @@ use common::msg_broker::bitvmx_types::{
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles, TxIdParser};
-use tracing::{debug, error, info, trace, warn};
+use tracing::span::Span;
+use tracing::{debug, error, info, info_span, instrument, trace, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use union_contracts::bindings::pegout_manager::PegoutManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
@@ -24,7 +25,9 @@ use crate::flows::btc_signature::btc_signature_subflow::{
 };
 use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
 use crate::flows::common::{FlowId, GlobalContext, Signaling};
-use crate::flows::pegout::pegout_flow::{PegoutFlow, State, StepData, Steps};
+use crate::flows::pegout::pegout_flow::{
+    PegoutFlow, State, StepData, Steps, flow_id_from_pegout_requested_tx_hash,
+};
 use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix, restore_flows};
 use crate::types::{
     AdminRequest, EventStatus, FlowKind, RegisterSignaturesBitVmxData, RskPegManagerEvents,
@@ -43,6 +46,18 @@ fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
 }
 
 pub(crate) const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
+
+/// Records the originating pegout id onto the *current* tracing span.
+///
+/// Precondition: the current span must declare `pegout_id` as
+/// `tracing::field::Empty`. Calling this on a span where `pegout_id` is
+/// already set appends a duplicate field to the formatted span output, so
+/// it must only be invoked from `#[instrument]`-annotated functions that
+/// opt in via `pegout_id = tracing::field::Empty` in their `fields(...)`
+/// clause.
+fn record_pegout_id(flow_id: &FlowId) {
+    Span::current().record("pegout_id", tracing::field::display(flow_id));
+}
 
 /// Processor that manages multiple pegout flow state machines
 pub(crate) struct PegoutFlowProcessor<CG, BC, BSF, FactoryBSF, S>
@@ -247,16 +262,24 @@ where
 
         self.pegout_flows.insert(flow_id, flow);
 
-        info!("Created new pegout flow {flow_id} for committee {committee_id}");
+        info!("Created new pegout flow for committee {committee_id}");
         Ok(())
     }
 
     /// Handle confirmed `PegoutRegistered` event
+    #[instrument(
+        skip(self, pr),
+        name = "pegout",
+        fields(
+            pegout_id = tracing::field::Empty,
+            user_take_tx_id = %TxIdParser::fb_32_to_txid(pr.inner.txid),
+        )
+    )]
     fn handle_pegout_registered(
         &mut self,
         pr: &crate::types::EventWithBlock<PegoutRegistered>,
     ) -> Result<()> {
-        info!("Processing confirmed PegoutRegistered event: {pr:?}");
+        info!("Processing confirmed PegoutRegistered event");
         let pegout_registered = pr.inner.clone();
         let pegout_registered_txid: Txid = TxIdParser::fb_32_to_txid(pegout_registered.txid);
         let flow_opt = self
@@ -265,6 +288,7 @@ where
             .find(|flow| flow.get_user_take_txid() == Some(pegout_registered_txid));
 
         if let Some(flow) = flow_opt {
+            record_pegout_id(&flow.flow_id());
             // Keep correlation strict: PegoutRegistered is matched only by user_take_txid.
             // We intentionally do not broaden matching by committee or slot, because the
             // PegoutAccepted checkpoint gives the flow the shared txid needed for safe
@@ -278,10 +302,15 @@ where
 
     /// Process confirmed RSK events
     fn process_confirmed_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
-        info!("Processing confirmed RSK event: {event:?}");
-
         match event {
             RskPegManagerEvents::PegoutRequested(pr) => {
+                let flow_id = flow_id_from_pegout_requested_tx_hash(pr.tx_hash);
+                let _span = info_span!(
+                    "pegout",
+                    pegout_id = %flow_id,
+                    pegout_requested_tx_hash = %pr.tx_hash,
+                )
+                .entered();
                 let committee_id = pr.inner.committeeId.try_into()?;
                 if !self.global_context.my_committees().im_member(&committee_id) {
                     debug!(
@@ -289,7 +318,7 @@ where
                     );
                     return Ok(());
                 }
-                info!("Processing confirmed PegoutRequested event: {pr:?}");
+                info!("Processing confirmed PegoutRequested event");
                 self.create_flow_for_pegout_requested(pr)?;
             }
             RskPegManagerEvents::PegoutRegistered(pr) => {
@@ -345,12 +374,13 @@ where
 
             if let Some(flow) = self.pegout_flow_by_protocol_id(protocol_id) {
                 let flow_id = flow.flow_id();
+                let _span = info_span!("pegout", pegout_id = %flow_id).entered();
                 let txid_key = flow_id;
 
                 // Only complete the step if the flow is still waiting for signatures
                 if flow.current_step() != Steps::WaitUserTakeSignaturesReady {
                     warn!(
-                        "Signature flow completed for flow_id: {flow_id} but flow is at step {:?}, expected {:?}. Skipping dispatch step.",
+                        "Signature flow completed but flow is at step {:?}, expected {:?}. Skipping dispatch step.",
                         flow.current_step(),
                         Steps::WaitUserTakeSignaturesReady
                     );
@@ -361,9 +391,7 @@ where
 
                 // Cancel advance funds timeout since signatures completed successfully
                 if self.advance_funds_timeout_scheduler.is_scheduled(&txid_key) {
-                    debug!(
-                        "Cancelling advance funds timeout for flow_id: {flow_id} - signatures completed",
-                    );
+                    debug!("Cancelling advance funds timeout - signatures completed");
                     self.advance_funds_timeout_scheduler.cancel(&txid_key);
                 }
             } else {
@@ -390,34 +418,32 @@ where
 
         let TransactionStatus { tx_id, confirmations, .. } = tx_status;
         let flow_id = flow.flow_id();
+        let _span = info_span!("pegout", pegout_id = %flow_id).entered();
         let txid_key = flow_id;
         let expected_txid = flow
             .get_user_take_txid()
             .ok_or_else(|| anyhow!("Expected user take tx_id not found"))?;
         if expected_txid != tx_id {
-            bail!(
-                "Pegout state for flow_id: {flow_id} does not match received tx_id: {tx_id} from tx status message"
-            );
+            bail!("Pegout state does not match received tx_id: {tx_id} from tx status message");
         }
 
         if flow.current_step() != Steps::ConfirmUserTakeTransaction {
             bail!(
-                "Mismatch current step for flow {} expected {:?} having {:?}",
-                flow_id,
+                "Mismatch current step expected {:?} having {:?}",
                 Steps::ConfirmUserTakeTransaction,
                 flow.current_step()
             );
         }
 
         if confirmations >= btc_confirmations {
-            debug!("Transaction confirmed with sufficient confirmations for flow_id: {flow_id}");
+            debug!("Transaction confirmed with sufficient confirmations");
             flow.complete_step(&StepData::TransactionConfirmed(tx_status))?;
             if self.tx_status_scheduler.is_scheduled(&txid_key) {
                 self.tx_status_scheduler.cancel(&txid_key);
             }
         } else {
             debug!(
-                "Bitcoin transaction {tx_id} missing confirmations ({confirmations}/{btc_confirmations}) for flow_id {flow_id}, rescheduling"
+                "Bitcoin transaction {tx_id} missing confirmations ({confirmations}/{btc_confirmations}), rescheduling"
             );
             self.tx_status_scheduler.schedule(txid_key, btc_status_retry_blocks);
         }
@@ -431,14 +457,14 @@ where
 
         let ready = self.tx_status_scheduler.tick();
         for txid_key in ready {
+            let _span = info_span!("pegout", pegout_id = %txid_key).entered();
             match self.pegout_flows.get_mut(&txid_key) {
                 Some(flow) => {
                     if flow.current_step() == Steps::ConfirmUserTakeTransaction {
                         flow.request_transaction_status()?;
                     } else {
                         warn!(
-                            "Mismatch current step for flow {} expected {:?} having {:?}",
-                            flow.flow_id(),
+                            "Mismatch current step expected {:?} having {:?}",
                             Steps::ConfirmUserTakeTransaction,
                             flow.current_step()
                         );
@@ -453,6 +479,25 @@ where
         }
 
         Ok(())
+    }
+
+    /// Resolve the originating pegout flow id for an RSK event, if known.
+    /// `PegoutRequested` derives it from the Rootstock tx hash; `PegoutRegistered`
+    /// looks up the in-memory flow by `user_take_txid`.
+    fn pegout_id_for_event(&self, event: &RskPegManagerEvents) -> Option<FlowId> {
+        match event {
+            RskPegManagerEvents::PegoutRequested(e) => {
+                Some(flow_id_from_pegout_requested_tx_hash(e.tx_hash))
+            }
+            RskPegManagerEvents::PegoutRegistered(e) => {
+                let user_take_txid = TxIdParser::fb_32_to_txid(e.inner.txid);
+                self.pegout_flows
+                    .values()
+                    .find(|flow| flow.get_user_take_txid() == Some(user_take_txid))
+                    .map(PegoutFlow::flow_id)
+            }
+            _ => None,
+        }
     }
 
     fn stop_confirming_event(&mut self, id: &str) -> Option<ConfirmableEventWithData> {
@@ -485,6 +530,8 @@ where
 
         for key in confirmed_keys {
             if let Some(event) = self.stop_confirming_event(&key) {
+                let pegout_id = self.pegout_id_for_event(event.get_data());
+                let _span = pegout_id.map(|fid| info_span!("pegout", pegout_id = %fid).entered());
                 debug!("RSK event confirmed, removing pending {key}");
                 trace!("Event data: {:?}", event.get_data());
                 self.process_confirmed_rsk_event(event.get_data())?;
@@ -505,6 +552,7 @@ where
         let pending_flows: Vec<FlowId> = self.flows_pending_timeout.iter().copied().collect();
 
         for flow_id in pending_flows {
+            let _span = info_span!("pegout", pegout_id = %flow_id).entered();
             if let Some(flow) = self.pegout_flows.get(&flow_id) {
                 // Only schedule if flow is still waiting for signatures (not yet dispatched)
                 if flow.current_step() == Steps::WaitUserTakeSignaturesReady {
@@ -514,8 +562,7 @@ where
                         self.advance_funds_timeout_secs,
                     );
                     info!(
-                        "Scheduled advance funds timeout for flow_id: {} at timestamp: {} (expires at: {})",
-                        flow_id,
+                        "Scheduled advance funds timeout at timestamp: {} (expires at: {})",
                         current_timestamp,
                         current_timestamp + self.advance_funds_timeout_secs
                     );
@@ -535,17 +582,19 @@ where
         let expired_flows = self.advance_funds_timeout_scheduler.check_expired(current_timestamp);
 
         for flow_id in expired_flows {
-            info!(
-                "Advance funds timeout expired for flow {flow_id} at timestamp: {current_timestamp}",
-            );
+            let _span = info_span!("pegout", pegout_id = %flow_id).entered();
+            info!("Advance funds timeout expired at timestamp: {current_timestamp}");
             self.trigger_operator_take_for_flow(flow_id)?;
         }
 
         Ok(())
     }
 
-    /// Trigger operator take for a flow when timeout expires
-    /// This completes the `WaitUserTakeSignaturesReady` step with `TriggerOperatorTakeTimeout` data
+    /// Trigger operator take for a flow when timeout expires.
+    /// This completes the `WaitUserTakeSignaturesReady` step with `TriggerOperatorTakeTimeout` data.
+    ///
+    /// Caller is expected to have entered a `pegout` span with the matching `pegout_id`; this
+    /// function does not open its own span to avoid a duplicate nested `pegout` span.
     fn trigger_operator_take_for_flow(&mut self, flow_id: FlowId) -> Result<()> {
         let flow = self
             .pegout_flows
@@ -556,8 +605,7 @@ where
         // Verify flow is still in the expected state
         if flow.current_step() != Steps::WaitUserTakeSignaturesReady {
             warn!(
-                "Cannot trigger operator take for flow_id: {} - flow is at step {:?}, expected {:?}",
-                flow_id,
+                "Cannot trigger operator take - flow is at step {:?}, expected {:?}",
                 flow.current_step(),
                 Steps::WaitUserTakeSignaturesReady
             );
@@ -565,12 +613,12 @@ where
         }
 
         info!(
-            "Timeout expired for flow_id: {flow_id}, completing WaitUserTakeSignaturesReady step with TriggerOperatorTakeTimeout",
+            "Timeout expired, completing WaitUserTakeSignaturesReady step with TriggerOperatorTakeTimeout",
         );
 
         // Remove the signature flow since we're bypassing it via timeout
         if self.signature_flows.remove(&protocol_id.value()).is_some() {
-            debug!("Removed signature flow for flow_id: {flow_id} due to timeout");
+            debug!("Removed signature flow due to timeout");
         }
 
         // Complete the WaitUserTakeSignaturesReady step with timeout data
@@ -587,12 +635,13 @@ where
     }
 
     /// Mark a pegout flow as failed and stop pending local work for it.
+    #[instrument(skip(self, reason), name = "pegout", fields(pegout_id = %flow_id))]
     fn fail_flow(&mut self, flow_id: FlowId, reason: &str) -> Result<()> {
         if let Some(flow) = self.pegout_flows.get_mut(&flow_id) {
             flow.mark_failed(reason)?;
-            warn!("Admin marked pegout flow {flow_id} as failed: {reason}");
+            warn!("Admin marked pegout flow as failed: {reason}");
         } else {
-            warn!("Admin requested fail for unknown pegout flow {flow_id}: {reason}");
+            warn!("Admin requested fail for unknown pegout flow: {reason}");
         }
 
         self.cleanup_terminal_flows();
@@ -601,7 +650,8 @@ where
     }
 
     fn schedule_register_pegout_retry(&mut self, flow_id: FlowId, attempt: i16, reason: &str) {
-        info!("{reason} for flow {flow_id} (attempt {attempt})");
+        let _span = info_span!("pegout", pegout_id = %flow_id).entered();
+        info!("{reason} (attempt {attempt})");
         let txid_key = flow_id;
         self.unconfirmed_register_pegout.insert(txid_key, attempt);
         self.register_pegout_retry_scheduler.schedule(txid_key, self.btc_status_retry_blocks);
@@ -613,6 +663,7 @@ where
         }
 
         for txid_key in self.register_pegout_retry_scheduler.tick() {
+            let _span = info_span!("pegout", pegout_id = %txid_key).entered();
             let Some(attempt) = self.unconfirmed_register_pegout.remove(&txid_key) else {
                 warn!("No register_pegout retry state found for flow {txid_key}");
                 continue;
@@ -626,15 +677,12 @@ where
             let flow_id = flow.flow_id();
 
             if flow.current_step() != Steps::RegisterPegout {
-                debug!(
-                    "Skipping register_pegout retry for flow {flow_id} in step {:?}",
-                    flow.current_step()
-                );
+                debug!("Skipping register_pegout retry in step {:?}", flow.current_step());
                 continue;
             }
 
             let Err(err) = flow.complete_step(&StepData::RetryRegisterPegout) else {
-                info!("Register pegout succeeded on retry for flow {flow_id}");
+                info!("Register pegout succeeded on retry");
                 continue;
             };
 
@@ -728,9 +776,8 @@ where
                 //for any flow in flows having active step GetCommInfoAuthoritativeCheckpoint, complete the step with the CommInfo
                 for (flow_id, flow) in &mut self.pegout_flows {
                     if flow.current_step() == Steps::GetCommInfoAuthoritativeCheckpoint {
-                        debug!(
-                            "Completing GetCommInfoAuthoritativeCheckpoint step for flow {flow_id}"
-                        );
+                        let _span = info_span!("pegout", pegout_id = %flow_id).entered();
+                        debug!("Completing GetCommInfoAuthoritativeCheckpoint step");
                         flow.complete_step(&StepData::CommInfo(comm_info.clone()))?;
                     }
                 }
@@ -740,18 +787,19 @@ where
                 method,
                 VariableTypes::String(data),
             ) if matches!(method.as_str(), PEGOUT_ACCEPTED_NAME) => {
+                let flow = self
+                    .pegout_flow_by_protocol_id(protocol_id)
+                    .ok_or_else(|| anyhow!("Flow not found for protocol_id: {protocol_id}"))?;
+                let pegout_flow_id = flow.flow_id();
+                let _span = info_span!("pegout", pegout_id = %pegout_flow_id).entered();
                 info!(
                     "Received PegOutAccepted variable from BitVMX for protocol_id: {protocol_id}"
                 );
                 debug!("PegOutAccepted data: {data}");
                 let input: PegOutAccepted = serde_json::from_str::<PegOutAccepted>(data)?;
-                let flow = self
-                    .pegout_flow_by_protocol_id(protocol_id)
-                    .ok_or_else(|| anyhow!("Flow not found for protocol_id: {protocol_id}"))?;
                 if flow.current_step() != Steps::PrepareUserTakeSetup {
                     bail!(
-                        "Mismatch current step for flow {} expected {:?} having {:?}",
-                        flow.flow_id(),
+                        "Mismatch current step expected {:?} having {:?}",
                         Steps::PrepareUserTakeSetup,
                         flow.current_step()
                     );
@@ -764,7 +812,6 @@ where
                     nonce: input.user_take_nonce.clone(),
                     signature: input.user_take_signature,
                 };
-                let pegout_flow_id = flow.flow_id();
                 let pegout_log_id = flow.log_id().to_string();
                 flow.complete_step(&StepData::PegoutAccepted(input))?;
 
@@ -779,7 +826,7 @@ where
                                 == force_addr.trim().to_lowercase();
                             if matches {
                                 warn!(
-                                    "[FORCE_ADVANCE] Skipping signature flow for flow_id: {pegout_flow_id} - \
+                                    "[FORCE_ADVANCE] Skipping signature flow - \
                                      operator {my_addr} will not sign, timeout will trigger advance funds",
                                 );
                             }
@@ -787,21 +834,23 @@ where
                         });
 
                 if !skip_signatures {
-                    let mut btc_sig_subflow =
-                        self.btc_sig_subflow_factory.create_flow(*protocol_id, pegout_log_id);
+                    let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(
+                        *protocol_id,
+                        pegout_log_id,
+                        Some(pegout_flow_id.value()),
+                    );
                     btc_sig_subflow.start_signature_flow(*protocol_id, &register_input)?;
                     self.signature_flows.insert(*protocol_id, btc_sig_subflow);
                 }
 
                 // Schedule advance funds timeout: 2 hours from now
                 // We'll schedule it when we process the next block with its timestamp
-                info!(
-                    "Pegout accepted for flow_id: {pegout_flow_id}, will schedule advance funds timeout on next block",
-                );
+                info!("Pegout accepted, will schedule advance funds timeout on next block");
                 self.flows_pending_timeout.insert(pegout_flow_id);
             }
             OutgoingBitVMXApiMessages::SetupCompleted(program_id) => {
-                if self.pegout_flow_by_protocol_id(program_id).is_some() {
+                if let Some(flow) = self.pegout_flow_by_protocol_id(program_id) {
+                    let _span = info_span!("pegout", pegout_id = %flow.flow_id()).entered();
                     info!("Pegout setup was completed: protocol_id={program_id}");
                 } else {
                     trace!("Ignoring BitVMX SetupCompleted for unknown program_id: {program_id}");
@@ -819,6 +868,8 @@ where
                     trace!("Ignoring SPV proof for tx_id {tx_id} without matching flow");
                     return Ok(());
                 };
+                let _span =
+                    info_span!("pegout", pegout_id = %flow_id, user_take_tx_id = %tx_id).entered();
 
                 // Verify step before proceeding
                 let current_step =
@@ -829,8 +880,7 @@ where
 
                 if current_step != Steps::RequestUserTakeSpvProof {
                     bail!(
-                        "Mismatch current step for flow {} expected {:?} having {:?}",
-                        flow_id,
+                        "Mismatch current step expected {:?} having {:?}",
                         Steps::RequestUserTakeSpvProof,
                         current_step
                     );
@@ -902,6 +952,10 @@ where
                 return Ok(());
             }
         };
+
+        let _span = self
+            .pegout_id_for_event(event)
+            .map(|fid| info_span!("pegout", pegout_id = %fid).entered());
 
         if is_removal {
             warn!("Removing pending RSK event: {event:?}");

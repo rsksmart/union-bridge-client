@@ -56,6 +56,13 @@ any non-`local` environment — intended for log shippers / structured search.
 ```
 
 Notes:
+- Pegout work in the coordinator runs inside a `pegout` span carrying the
+  `pegout_id` of the pegout being processed. In JSON output every log emitted
+  from inside `PegoutFlow`/`PegoutFlowProcessor` (and the `btc_signature`
+  subflow when spawned from a pegout) includes `span.name="pegout"` and
+  `span.pegout_id="<uuid>"`, so logs from parallel pegouts can be filtered
+  by `pegout_id`. In pretty output the same span context appears between the
+  level and the target.
 - File output is always written **without** ANSI codes, regardless of format.
 - In JSON the operator identity should be carried via `CLIENT_ID` in your
   shipping pipeline.
