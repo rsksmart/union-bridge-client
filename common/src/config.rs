@@ -8,9 +8,41 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use tracing::{info, trace};
 pub use tracing_appender::non_blocking::WorkerGuard as LogGuard;
+use tracing_subscriber::field::RecordFields;
+use tracing_subscriber::fmt::FormatFields;
+use tracing_subscriber::fmt::format::{DefaultFields, JsonFields, Writer};
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use tracing_subscriber::{EnvFilter, fmt};
+
+// `tracing-subscriber` caches per-span formatted fields in span extensions keyed by the
+// field-formatter type. When two `fmt::Layer`s share that type, the first layer to format
+// a span wins and the other reuses its cached string — including ANSI codes. Wrapping the
+// default formatters in newtypes gives the file layer a distinct cache key so its
+// `with_ansi(false)` is honored independently of the stdout layer.
+struct PlainFields(DefaultFields);
+
+impl<'writer> FormatFields<'writer> for PlainFields {
+    fn format_fields<R: RecordFields>(
+        &self,
+        writer: Writer<'writer>,
+        fields: R,
+    ) -> std::fmt::Result {
+        self.0.format_fields(writer, fields)
+    }
+}
+
+struct PlainJsonFields(JsonFields);
+
+impl<'writer> FormatFields<'writer> for PlainJsonFields {
+    fn format_fields<R: RecordFields>(
+        &self,
+        writer: Writer<'writer>,
+        fields: R,
+    ) -> std::fmt::Result {
+        self.0.format_fields(writer, fields)
+    }
+}
 
 use crate::errors::ConfigError;
 use crate::rsk_provider::RskProvider;
@@ -316,21 +348,25 @@ impl CommonConfig {
                 .json()
                 .flatten_event(true)
                 .with_current_span(true)
-                .with_span_list(false);
+                .with_span_list(true);
             let file_layer = fmt::layer()
                 .json()
                 .flatten_event(true)
                 .with_current_span(true)
-                .with_span_list(false)
+                .with_span_list(true)
                 .with_writer(file_writer)
-                .with_ansi(false);
+                .with_ansi(false)
+                .fmt_fields(PlainJsonFields(JsonFields::new()));
             tracing_subscriber::registry()
                 .with(filter)
                 .with(stdout_layer)
                 .with(file_layer)
                 .try_init()
         } else {
-            let file_layer = fmt::layer().with_writer(file_writer).with_ansi(false);
+            let file_layer = fmt::layer()
+                .with_writer(file_writer)
+                .with_ansi(false)
+                .fmt_fields(PlainFields(DefaultFields::new()));
             tracing_subscriber::registry()
                 .with(filter)
                 .with(fmt::layer())

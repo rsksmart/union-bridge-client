@@ -5,12 +5,21 @@ use common::runtime_sync::RuntimeSync;
 use common::types::RskBlockAndUncles;
 #[cfg(test)]
 use mockall::automock;
-use tracing::{debug, trace};
+use tracing::{debug, info_span, trace};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
 
 use super::btc_signature_lifecycle::{BtcSignatureLifeCycle, BtcSignatureLifecycleApi};
 use crate::types::{RegisterSignaturesBitVmxData, RskPegManagerEvents};
+
+/// Origin of a btc-signature subflow, used to tag its tracing span with the
+/// originating pegin or pegout id so all subflow logs are traceable back to
+/// the parent flow.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ParentSpan {
+    Pegin(Uuid),
+    Pegout(Uuid),
+}
 
 #[cfg_attr(test, automock)]
 pub(crate) trait BtcSignatureSubFlowApi {
@@ -26,7 +35,7 @@ pub(crate) trait BtcSignatureSubFlowApi {
 
 #[cfg_attr(test, automock)]
 pub(crate) trait BtcSignatureSubFlowFactoryApi<BSF: BtcSignatureSubFlowApi> {
-    fn create_flow(&self, flow_id: Uuid, parent_log_id: String) -> BSF;
+    fn create_flow(&self, flow_id: Uuid, parent_log_id: String, parent: Option<ParentSpan>) -> BSF;
 }
 
 pub(crate) struct BaseBtcSignatureSubFlow<BSF: BtcSignatureLifecycleApi> {
@@ -37,6 +46,11 @@ pub(crate) struct BaseBtcSignatureSubFlow<BSF: BtcSignatureLifecycleApi> {
     /// with the current phase to produce `{parent_log_id} ({phase})` for
     /// log lines.
     parent_log_id: String,
+    /// `pegin{pegin_id=…}` or `pegout{pegout_id=…}` span built once at
+    /// construction when this subflow was spawned from a parent flow.
+    /// Cloning the handle on each entry keeps the span id stable across the
+    /// subflow's lifetime; `None` for subflows without a parent context.
+    parent_span: Option<tracing::Span>,
 }
 
 impl<CG> BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>>
@@ -49,6 +63,7 @@ where
         flow_id: Uuid,
         parent_log_id: String,
         required_confirmations: u32,
+        parent: Option<ParentSpan>,
     ) -> Self {
         let lifecycle = BtcSignatureLifeCycle::new(
             contracts_gateway.clone(),
@@ -56,8 +71,12 @@ where
             flow_id,
             required_confirmations,
         );
+        let parent_span = parent.map(|p| match p {
+            ParentSpan::Pegin(id) => info_span!("pegin", pegin_id = %id),
+            ParentSpan::Pegout(id) => info_span!("pegout", pegout_id = %id),
+        });
 
-        Self { lifecycle, is_done: false, is_nonces_step_done: false, parent_log_id }
+        Self { lifecycle, is_done: false, is_nonces_step_done: false, parent_log_id, parent_span }
     }
 
     #[cfg(test)]
@@ -74,7 +93,13 @@ where
             flow_id,
             required_confirmations,
         );
-        Self { lifecycle, is_done: true, is_nonces_step_done: true, parent_log_id }
+        Self {
+            lifecycle,
+            is_done: true,
+            is_nonces_step_done: true,
+            parent_log_id,
+            parent_span: None,
+        }
     }
 }
 
@@ -87,6 +112,14 @@ where
     fn log_id(&self) -> String {
         let phase = if self.is_nonces_step_done { "signatures" } else { "nonces" };
         format!("{} ({phase})", self.parent_log_id)
+    }
+
+    /// Enters the stored parent (`pegin`/`pegout`) span when this subflow was
+    /// spawned from a parent flow. Cloning the `Span` handle is cheap and
+    /// keeps the underlying span id stable across calls, so all btc-signature
+    /// log lines for one subflow share the same span id.
+    fn enter_parent_span(&self) -> Option<tracing::span::EnteredSpan> {
+        self.parent_span.clone().map(tracing::Span::entered)
     }
 }
 
@@ -111,7 +144,7 @@ where
         if self.lifecycle.flow_id() != flow_id {
             return Ok(()); // not mine
         }
-
+        let _span = self.enter_parent_span();
         debug!("Processing delegated event for {}", self.log_id());
 
         match event {
@@ -146,6 +179,7 @@ where
     }
 
     fn delegate_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
+        let _span = self.enter_parent_span();
         // update blockchain view
         self.lifecycle.blockchain_view().update(block);
 
@@ -201,6 +235,7 @@ impl<CG: RskContractsGatewayApi>
         &self,
         flow_id: Uuid,
         parent_log_id: String,
+        parent: Option<ParentSpan>,
     ) -> BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>> {
         BaseBtcSignatureSubFlow::<BtcSignatureLifeCycle<CG>>::new(
             &self.contracts_gateway,
@@ -208,6 +243,7 @@ impl<CG: RskContractsGatewayApi>
             flow_id,
             parent_log_id,
             self.required_confirmations,
+            parent,
         )
     }
 }
@@ -235,6 +271,7 @@ mod tests {
                 is_done: false,
                 is_nonces_step_done: false,
                 parent_log_id: String::new(),
+                parent_span: None,
             }
         }
     }

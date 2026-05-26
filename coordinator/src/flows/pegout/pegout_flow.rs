@@ -192,7 +192,7 @@ where
             created_at: Some(chrono::Utc::now()),
         };
         state.log_id = state.build_log_id();
-        info!("Created PegoutFlow {}", state.log_id);
+        info!("PegoutFlow created");
         Ok(Self {
             contracts,
             rt_sync,
@@ -218,10 +218,7 @@ where
     }
 
     fn persist_state(&self) -> Result<()> {
-        debug!(
-            "PegoutFlow {}: Persisting state for step: {:?}",
-            self.state.log_id, self.state.step
-        );
+        debug!("Persisting state for step: {:?}", self.state.step);
         self.store.save_flow(&StoreKey::PegoutFlow(self.state.flow_id.value()), self.state.clone())
     }
 
@@ -229,12 +226,7 @@ where
         let previous_step = self.state.step;
         self.state.step = next_step;
 
-        debug!(
-            "PegoutFlow {}: {} -> {}",
-            self.state.log_id,
-            format_step(previous_step),
-            format_step(next_step)
-        );
+        debug!("{} -> {}", format_step(previous_step), format_step(next_step));
 
         match next_step {
             Steps::WaitPegoutRequested => {
@@ -248,60 +240,47 @@ where
                 self.communicate_pegout_requested_to_bitvmx()?;
             }
             Steps::WaitUserTakeSignaturesReady => {
-                info!(
-                    "Waiting for signatures to be ready to dispatch transaction for flow_id: {}",
-                    self.state.log_id
-                );
+                info!("Waiting for signatures to be ready to dispatch transaction");
             }
             Steps::DispatchUserTakeTransactionAllConvergeCheckpoint => {
                 self.dispatch_transaction()?;
                 self.complete_step(&StepData::UserTakeTransactionDispatched)?;
             }
             Steps::TriggerOperatorTake => {
-                info!("Triggering operator take due to timeout for flow_id: {}", self.state.log_id);
+                info!("Triggering operator take due to timeout");
                 let Err(err) = self.trigger_operator_take() else {
-                    info!("PegoutFlow TriggerOperatorTake completed: {}", self.state.log_id);
+                    info!("TriggerOperatorTake completed");
                     return Ok(());
                 };
-                warn!(
-                    "Failed to trigger operator take for flow_id {}: {}. Continuing flow.",
-                    self.state.log_id, err
-                );
-                info!("PegoutFlow TriggerOperatorTake skipped: {}", self.state.log_id);
+                warn!("Failed to trigger operator take: {err}. Continuing flow.");
+                info!("TriggerOperatorTake skipped");
             }
             Steps::ConfirmUserTakeTransaction => {
                 info!(
-                    "Waiting for UserTake Bitcoin confirmations for flow_id: {} and tx_id: {:?}",
-                    self.state.log_id,
+                    "Waiting for UserTake Bitcoin confirmations: user_take_tx_id={:?}",
                     self.get_user_take_txid()
                 );
             }
             Steps::RequestUserTakeSpvProof => {
-                info!(
-                    "Requesting SPV proof for flow_id: {} and tx_id: {:?}",
-                    self.state.log_id,
-                    self.get_user_take_txid()
-                );
+                info!("Requesting SPV proof: user_take_tx_id={:?}", self.get_user_take_txid());
                 self.request_spv_proof()?;
             }
             Steps::RegisterPegout => {
-                info!("Registering pegout for flow_id: {}", self.state.log_id);
-                let spv_proof = self.state.ctx.spv_proof.as_ref().ok_or_else(|| {
-                    anyhow!(
-                        "SPV proof not available for pegout registration - flow_id {}",
-                        self.state.log_id
-                    )
-                })?;
+                info!("Registering pegout");
+                let spv_proof =
+                    self.state.ctx.spv_proof.as_ref().ok_or_else(|| {
+                        anyhow!("SPV proof not available for pegout registration")
+                    })?;
                 self.register_pegout(spv_proof)?;
             }
             Steps::Done => {
                 if self.state.ctx.pegout_registered_tx.is_some() {
                     self.write_completion_marker()?;
-                    info!("PegoutFlow Done: {}", self.state.log_id);
+                    info!("Done");
                 }
             }
             Steps::Failed => {
-                info!("PegoutFlow Failed: {}", self.state.log_id);
+                info!("Failed");
             }
         }
 
@@ -314,13 +293,7 @@ where
     pub(crate) fn complete_step(&mut self, data: &StepData) -> Result<()> {
         let current_step: Steps = self.state.step;
 
-        info!(
-            "PegoutFlow {}: Completing step {} with data: {:?} for flow_id {}",
-            self.state.log_id,
-            format_step(current_step),
-            data,
-            self.state.log_id
-        );
+        info!("Completing step {} with data: {:?}", format_step(current_step), data);
 
         // Process data and determine next state
         let next_step = self.process_step_data(current_step, data)?;
@@ -353,25 +326,16 @@ where
             ) => Ok(Steps::ConfirmUserTakeTransaction),
             (Steps::WaitUserTakeSignaturesReady, StepData::TriggerOperatorTakeTimeout) => {
                 // Timeout expired, transition to TriggerOperatorTake step
-                info!(
-                    "Timeout expired for flow_id: {}, transitioning to TriggerOperatorTake",
-                    self.state.log_id
-                );
+                info!("Timeout expired, transitioning to TriggerOperatorTake");
                 Ok(Steps::TriggerOperatorTake)
             }
             (Steps::TriggerOperatorTake, StepData::TriggerOperatorTakeTimeout) => {
                 // After TriggerOperatorTake step completes, finish the flow
-                info!(
-                    "TriggerOperatorTake step completed for flow_id: {}, completing flow",
-                    self.state.log_id
-                );
+                info!("TriggerOperatorTake step completed, completing flow");
                 Ok(Steps::Done)
             }
             (Steps::ConfirmUserTakeTransaction, StepData::TransactionConfirmed(tx_status)) => {
-                info!(
-                    "Transaction confirmed for flow_id: {} and tx_id: {:?}",
-                    self.state.log_id, tx_status.tx_id
-                );
+                info!("Transaction confirmed: tx_id={:?}", tx_status.tx_id);
                 trace!("Transaction status data: {tx_status:?}");
                 let expected_tx_id = self
                     .get_user_take_txid()
@@ -386,13 +350,13 @@ where
                 Ok(Steps::RequestUserTakeSpvProof)
             }
             (Steps::RequestUserTakeSpvProof, StepData::SpvProof(spv_proof)) => {
-                info!("Received SPV proof for flow_id: {}", self.state.log_id);
+                info!("Received SPV proof");
                 trace!("SPV Proof data: {spv_proof:?}");
                 self.state.ctx.spv_proof = Some(spv_proof.clone());
                 Ok(Steps::RegisterPegout)
             }
             (Steps::RegisterPegout, StepData::RetryRegisterPegout) => {
-                info!("Retrying register pegout for flow_id: {}", self.state.log_id);
+                info!("Retrying register pegout");
                 Ok(Steps::RegisterPegout)
             }
             (step, StepData::PegoutRegistered(pegout_registered))
@@ -425,7 +389,7 @@ where
             "PegoutRegistered txid mismatch: got {registered_tx_id:?}, expected {expected_tx_id:?}"
         );
 
-        info!("Pegout registered successfully for flow_id: {}", self.state.log_id);
+        info!("Pegout registered successfully");
         trace!("PegoutRegistered data: {:?}", pegout_registered.inner);
 
         self.state.ctx.pegout_registered = Some(pegout_registered.inner.clone());
@@ -437,7 +401,7 @@ where
 
     //This step will send the setVar and setup to bitvmx in a single step to make bitvmx complete the pegout setup step.
     fn communicate_pegout_requested_to_bitvmx(&mut self) -> Result<()> {
-        info!("Communicating pegout requested to bitvmx with flow_id: {}", self.state.log_id);
+        info!("Communicating pegout requested to bitvmx");
         let committee_id: CommitteeId = self.state.ctx.pegout_requested.committeeId.try_into()?;
 
         self.send_pegout_requested_to_bitvmx(&committee_id)?;
@@ -452,7 +416,7 @@ where
         Ok(committee_response)
     }
     fn send_setup_to_bitvmx(&mut self, committee_id: &CommitteeId) -> Result<()> {
-        debug!("Sending setup to bitvmx with flow_id: {}", self.state.log_id);
+        debug!("Sending setup to bitvmx");
         let committee_pubkey_hashes = self.get_committee_pubkey_hashes(
             self.state
                 .ctx
@@ -534,7 +498,7 @@ where
     }
 
     fn send_pegout_requested_to_bitvmx(&mut self, committee_id: &CommitteeId) -> Result<()> {
-        debug!("Notifying pegout requested to bitvmx with flow_id: {}", self.state.log_id);
+        debug!("Notifying pegout requested to bitvmx");
         let committee_output: GetCommitteeOutput =
             self.get_committee_output(committee_id.clone())?;
         self.state.ctx.committee_output = Some(committee_output.clone());
@@ -557,7 +521,7 @@ where
         &mut self,
         pegout_registered: &PegoutRegistered,
     ) -> Result<()> {
-        debug!("Notifying pegout completed to bitvmx with flow_id: {}", self.state.log_id);
+        debug!("Notifying pegout completed to bitvmx");
         let data = serde_json::to_string(&pegout_registered)?;
         let msg = IncomingBitVMXApiMessages::SetVar(
             self.state.ctx.bitvmx_protocol_id.value(),
@@ -624,7 +588,7 @@ where
     }
 
     fn request_bitvmx_comm_info(&self) -> Result<()> {
-        info!("Requesting bitvmx comm info for flow_id: {}", self.state.log_id);
+        info!("Requesting bitvmx comm info");
         let req_id = Uuid::new_v4();
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo(req_id))
     }
@@ -636,7 +600,7 @@ where
     }
 
     fn dispatch_transaction(&self) -> Result<()> {
-        info!("Dispatching transaction name {} for flow_id: {}", USER_TAKE_TX, self.state.log_id);
+        info!("Dispatching {}", USER_TAKE_TX);
         let msg = IncomingBitVMXApiMessages::DispatchTransactionName(
             self.state.ctx.bitvmx_protocol_id.value(),
             USER_TAKE_TX.to_string(),
@@ -666,7 +630,7 @@ where
         )
         .context("Failed to register pegout with provided SPV proof")?;
 
-        info!("Pegout registration sent for flow_id {}", self.state.log_id);
+        info!("Pegout registration sent");
         Ok(())
     }
 
@@ -674,10 +638,7 @@ where
         let tx_id = self
             .get_user_take_txid()
             .ok_or_else(|| anyhow!("Expected user take tx_id not found"))?;
-        info!(
-            "Requesting transaction status for flow_id: {} and tx_id: {:?}",
-            self.state.log_id, tx_id
-        );
+        info!("Requesting transaction status: tx_id={:?}", tx_id);
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetTransaction(
             self.state.ctx.bitvmx_protocol_id.value(),
             tx_id,
@@ -698,7 +659,7 @@ where
     }
 
     pub(crate) fn mark_failed(&mut self, reason: &str) -> Result<()> {
-        info!("Marking pegout flow {} as failed: {reason}", self.state.log_id);
+        info!("Marking as failed: {reason}");
         self.start_step(Steps::Failed)
     }
 
@@ -745,10 +706,7 @@ where
     fn trigger_operator_take(&self) -> Result<()> {
         let pegout_txid = self.get_pegout_txid();
 
-        info!(
-            "Calling trigger_operator_take for flow_id: {} with pegout_txid: {}",
-            self.state.log_id, pegout_txid
-        );
+        info!("Calling trigger_operator_take: pegout_txid={pegout_txid}");
 
         let input = TriggerOperatorTakeInput { pegout_txid };
 
@@ -756,18 +714,11 @@ where
             match self.rt_sync.run(async { self.contracts.trigger_operator_take(input).await }) {
                 Ok(output) => output,
                 Err(domain_err) => {
-                    anyhow::bail!(
-                        "Failed to trigger operator take for flow_id {}: {:?}",
-                        self.state.log_id,
-                        domain_err
-                    );
+                    anyhow::bail!("Failed to trigger operator take: {domain_err:?}");
                 }
             };
 
-        info!(
-            "trigger_operator_take called successfully for flow_id {} with tx hash {}",
-            self.state.log_id, output.transaction_hash
-        );
+        info!("trigger_operator_take called successfully: tx_hash={}", output.transaction_hash);
 
         Ok(())
     }
