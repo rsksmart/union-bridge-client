@@ -48,14 +48,33 @@ prefix.
 
 ### JSON
 
-One JSON event per line, flattened, with the current span included. Default in
-any non-`local` environment — intended for log shippers / structured search.
+One JSON event per line, flattened, with the current span and the full span
+ancestry included. Default in any non-`local` environment — intended for log
+shippers / structured search.
 
 ```json
-{"timestamp":"2026-05-19T10:14:22.041Z","level":"INFO","target":"block_indexer::sync","message":"caught up","height":8421,"span":{"name":"sync_loop"}}
+{"timestamp":"2026-05-19T10:14:22.041Z","level":"INFO","target":"block_indexer::sync","message":"caught up","height":8421,"span":{"name":"sync_loop"},"spans":[{"name":"sync_loop"}]}
 ```
 
+`span` carries only the innermost (current) span; `spans` is the full array
+from outermost to innermost. Filter on `span.<field>` for the immediate
+context, or scan `spans[*].<field>` when you need to match an ancestor.
+
 Notes:
+- Pegin work in the coordinator runs inside a `pegin` span carrying the
+  `pegin_id` of the pegin being processed. In JSON output every log emitted
+  from inside `PeginFlow`/`PeginFlowProcessor` (and the `btc_signature`
+  subflow when spawned from a pegin) includes `span.name="pegin"` and
+  `span.pegin_id="<uuid>"`, so logs from parallel pegins can be filtered
+  by `pegin_id`. In pretty output the same span context appears between the
+  level and the target.
+- Pegout work in the coordinator runs inside a `pegout` span carrying the
+  `pegout_id` of the pegout being processed. In JSON output every log emitted
+  from inside `PegoutFlow`/`PegoutFlowProcessor` (and the `btc_signature`
+  subflow when spawned from a pegout) includes `span.name="pegout"` and
+  `span.pegout_id="<uuid>"`, so logs from parallel pegouts can be filtered
+  by `pegout_id`. In pretty output the same span context appears between the
+  level and the target.
 - File output is always written **without** ANSI codes, regardless of format.
 - In JSON the operator identity should be carried via `CLIENT_ID` in your
   shipping pipeline.
