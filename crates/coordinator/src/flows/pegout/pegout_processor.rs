@@ -44,6 +44,17 @@ fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
     })
 }
 
+fn is_invalid_peg_status(err: &anyhow::Error) -> bool {
+    use transaction_dispatcher::rsk_gateway::DomainErrors;
+    err.chain().any(|cause| {
+        if let Some(domain_err) = cause.downcast_ref::<DomainErrors>() {
+            matches!(domain_err, DomainErrors::InvalidPegStatus { actual: 9 })
+        } else {
+            false
+        }
+    })
+}
+
 pub(crate) const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
 
 /// Processor that manages multiple pegout flow state machines
@@ -678,6 +689,13 @@ where
                 continue;
             };
 
+            if is_invalid_peg_status(&err) {
+                warn!(
+                    "Invalid peg status on retry for register_pegout for flow {flow_id}: {err:#}"
+                );
+                continue;
+            }
+
             if !is_missing_native_bridge_confirmations(&err) {
                 error!("Error on retry for register_pegout: {err:?}");
                 continue;
@@ -898,6 +916,10 @@ where
                             attempt,
                             "Missing confirmations on native bridge, scheduling retry",
                         );
+                        return Ok(());
+                    }
+                    if is_invalid_peg_status(&err) {
+                        warn!("Invalid peg status on register_pegout for flow {flow_id}: {err:#}");
                         return Ok(());
                     }
                     return Err(err);

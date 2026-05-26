@@ -533,7 +533,11 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         info!("Interacting with PegoutManager#registerUserTake");
 
         self.register_pegout_invoke.run(input).await.map_err(|err| {
-            error!("Error on register_pegout_invoke: {err}");
+            if let DomainErrors::InvalidPegStatus { actual: 9 } = err {
+                tracing::warn!("Warning on register_pegout_invoke: {err}");
+            } else {
+                error!("Error on register_pegout_invoke: {err}");
+            }
             err
         })
     }
@@ -768,8 +772,8 @@ pub enum DomainErrors {
     InvalidRevealedInputCount(String),
     #[error("Reimbursement kickoff txid mismatch: {0}")]
     ReimbursementKickoffTxidNotMatch(String),
-    #[error("Invalid peg status: {0}")]
-    InvalidPegStatus(String),
+    #[error("Invalid peg status: actual {actual}")]
+    InvalidPegStatus { actual: u8 },
     #[error("Member not in committee: {0}")]
     MemberNotInCommittee(String),
 
