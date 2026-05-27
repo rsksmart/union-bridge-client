@@ -21,7 +21,7 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 primitive-types = { workspace = true }
-rand = "0.9.4"
+rand = "0.10.1"
 tempfile = { workspace = true }
 tracing-subscriber = { workspace = true }
 
