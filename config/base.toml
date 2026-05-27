@@ -134,7 +134,7 @@ http.port = 40001
 
 [flows.common]
 # Required RSK block confirmations for events
-rsk_confirmations = 5
+rsk_confirmations = 3
 # BTC confirmations used by non-Native-Bridge coordinator flows
 btc_confirmations = 1
 # Blocks delay before rechecking BTC transaction status

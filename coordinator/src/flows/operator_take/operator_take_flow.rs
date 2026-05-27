@@ -923,18 +923,18 @@ where
 
 fn format_step(step: Steps) -> &'static str {
     match step {
-        Steps::WaitRskOperatorTakeTriggered => "WaitOperatorTakeTriggered",
-        Steps::GetBitVmxCommInfo => "GetCommInfo",
-        Steps::RequestBitVmxOperatorTakeTransactionInfo => "RequestOperatorTakeTransactionInfo",
-        Steps::SetupBitVmxAdvanceFundsProtocol => "SetupAdvanceFundsProtocol",
-        Steps::WaitBitVmxAdvanceFundsSpv => "WaitForAdvanceFundsSPV",
-        Steps::RegisterOrWaitRskAdvanceFunds => "RegisterOrWaitAdvanceFundsRegistered",
-        Steps::SetVarBitVmxAdvanceFundsRegistered => "SetVarAdvanceFundsRegistered",
-        Steps::RegisterOrWaitRskReimbursementKickoff => {
-            "RegisterOrWaitReimbursementKickoffRegistered"
+        Steps::WaitRskOperatorTakeTriggered => "WaitRskOperatorTakeTriggered",
+        Steps::GetBitVmxCommInfo => "GetBitVmxCommInfo",
+        Steps::RequestBitVmxOperatorTakeTransactionInfo => {
+            "RequestBitVmxOperatorTakeTransactionInfo"
         }
-        Steps::WaitBitVmxOperatorTakeSpv => "WaitForOperatorTakeSpv",
-        Steps::RegisterOrWaitRskOperatorTake => "RegisterOrWaitPegoutRegistered",
+        Steps::SetupBitVmxAdvanceFundsProtocol => "SetupBitVmxAdvanceFundsProtocol",
+        Steps::WaitBitVmxAdvanceFundsSpv => "WaitBitVmxAdvanceFundsSpv",
+        Steps::RegisterOrWaitRskAdvanceFunds => "RegisterOrWaitRskAdvanceFunds",
+        Steps::SetVarBitVmxAdvanceFundsRegistered => "SetVarBitVmxAdvanceFundsRegistered",
+        Steps::RegisterOrWaitRskReimbursementKickoff => "RegisterOrWaitRskReimbursementKickoff",
+        Steps::WaitBitVmxOperatorTakeSpv => "WaitBitVmxOperatorTakeSpv",
+        Steps::RegisterOrWaitRskOperatorTake => "RegisterOrWaitRskOperatorTake",
         Steps::Done => "Done",
         Steps::Failed => "Failed",
     }
