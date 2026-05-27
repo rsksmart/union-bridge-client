@@ -39,7 +39,7 @@ tracing = { workspace = true }
 tracing-appender = { workspace = true }
 tracing-log = { workspace = true }
 tracing-subscriber = { workspace = true }
-uuid = { version = "1.11.1", features = ["v4", "serde"] }
+uuid = { version = "1.23.1", features = ["v4", "serde"] }
 
 # cargo-husky installs the git hooks from `.cargo-husky/hooks/` the first time
 # `common`'s dev-dependencies are compiled after clone (e.g. `cargo test` or
