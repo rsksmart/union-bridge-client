@@ -200,7 +200,7 @@ impl FakeBlockGenerator {
         };
         hasher.update(&bytes);
         let result = hasher.finalize();
-        format!("0x{result:064x}")
+        format!("0x{}", hex::encode(result))
     }
 
     /// Generates a fake RSK block for the given block height.
