@@ -3,9 +3,9 @@ use std::rc::Rc;
 use anyhow::{Result, bail};
 use common::runtime_sync::RuntimeSync;
 use common::types::RskBlockAndUncles;
-use log::{debug, trace};
 #[cfg(test)]
 use mockall::automock;
+use tracing::{debug, trace};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
 

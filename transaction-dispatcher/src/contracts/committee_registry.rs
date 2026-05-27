@@ -1,9 +1,9 @@
 use alloy_primitives::{TxHash, U256};
 use alloy_provider::Provider;
 use common::types::CommitteeId;
-use log::info;
 #[cfg(test)]
 use mockall::automock;
+use tracing::info;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     self, Committee, CommitteeRegistryErrors, CommitteeRegistryInstance, MemberRegistrationKeys,
     UTXO,

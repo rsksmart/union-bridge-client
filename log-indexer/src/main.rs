@@ -9,24 +9,20 @@ use common::msg_broker::broker::BrokerServer;
 use common::rsk_indexer::RskIndexer;
 use common::shutdown_flag::ShutdownFlag;
 use common::types::RskLog;
-use log::{debug, error, info};
 use log_indexer::config::{Config, Logger};
 use log_indexer::indexer::LogIndexer;
 use log_indexer::notifier::Notifier;
 use log_indexer::store::RawLogStore;
+use tracing::{debug, error, info};
 
-const LOGGER_CLI_FLAG: &str = "logger-path";
+const LOG_DIR_CLI_FLAG: &str = "log-dir";
 const CONFIG_CLI_FLAG: &str = "config";
 
 fn main() -> Result<()> {
     let matches = Command::new("Union Bridge Log Indexer")
-        .arg(
-            Arg::new(LOGGER_CLI_FLAG)
-                .short('l')
-                .long(LOGGER_CLI_FLAG)
-                .value_name("PATH")
-                .help("Sets the path to the log4rs configuration file"),
-        )
+        .arg(Arg::new(LOG_DIR_CLI_FLAG).short('l').long(LOG_DIR_CLI_FLAG).value_name("DIR").help(
+            "Directory for log files (also set via UB_LOG_DIR). Defaults to ./logs/ when unset.",
+        ))
         .arg(
             Arg::new(CONFIG_CLI_FLAG)
                 .short('e')
@@ -36,8 +32,8 @@ fn main() -> Result<()> {
         )
         .get_matches();
 
-    let logger_cfg_path = matches.get_one::<String>(LOGGER_CLI_FLAG);
-    Logger::init(logger_cfg_path).expect("Failed to load logger");
+    let log_dir = matches.get_one::<String>(LOG_DIR_CLI_FLAG);
+    let _log_guard = Logger::init(log_dir).expect("Failed to load logger");
 
     let config_name = matches.get_one::<String>(CONFIG_CLI_FLAG).cloned();
 
@@ -98,7 +94,6 @@ fn main() -> Result<()> {
     })?;
 
     info!("Quitting now...");
-    log::logger().flush();
 
     Ok(())
 }

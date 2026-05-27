@@ -78,7 +78,23 @@ WORKDIR /app
 
 # set environment variables
 ENV RUST_BACKTRACE=1
-ENV RUST_LOG=debug
+# Default tracing filter: project crates at `debug`, everything else at `info`.
+# Override at build time with `--build-arg RUST_LOG="..."`, or per-service at
+# run time via the compose `environment:` block (run-time wins). See docs/LOGGING.md.
+ARG RUST_LOG="info,\
+common=debug,\
+block_indexer=debug,\
+log_indexer=debug,\
+transaction_dispatcher=debug,\
+op_funding=debug,\
+protocol_params=debug,\
+coordinator=debug,\
+user_api=debug,\
+tarpc=warn,\
+alloy_provider=warn,alloy_pubsub=warn,alloy_rpc_client=warn,alloy_json_rpc=warn,\
+hyper=warn,hyper_util=warn,h2=warn,\
+reqwest=warn,rustls=warn,tower_http=warn,tungstenite=warn"
+ENV RUST_LOG=${RUST_LOG}
 # [coordinator Specific] Required by Risc0, otherwise it points to ~/.risc0
 # it does not harm to have it always defined, so we leave it common
 ENV RISC0_HOME=/opt/risc0

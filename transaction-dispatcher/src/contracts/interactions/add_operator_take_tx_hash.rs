@@ -1,5 +1,5 @@
 use common::types::TxIdParser;
-use log::info;
+use tracing::info;
 
 use crate::contracts::signature_manager::SignatureManagerContractApi;
 use crate::rsk_gateway::DomainErrors;

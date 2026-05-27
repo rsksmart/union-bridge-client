@@ -8,8 +8,8 @@ use anyhow::{Context, Result};
 use common::runtime_sync::RuntimeSync;
 use common::types::Address;
 use key_manager::key_manager::KeyManager;
-use log::info;
 use secrecy::SecretString;
+use tracing::info;
 
 use crate::rsk_gateway::{DomainErrors, RskContractsGateway};
 

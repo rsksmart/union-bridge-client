@@ -12,13 +12,13 @@ use common::msg_broker::broker::{BrokerServer, BrokerServerApi, Identifier};
 use common::msg_broker::types::{FromServer, MemberFundingInfo, ToServer};
 use common::shutdown_flag::ShutdownFlag;
 use common::types::Address;
-use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, Notify};
 use tokio::time::{Instant, sleep};
 use tower_http::timeout::TimeoutLayer;
+use tracing::{error, info, instrument, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{PeginAddressInput, RequestPegoutInput};
 use uuid::Uuid;
@@ -255,6 +255,7 @@ impl Server {
         Self { listener, app, shutdown_flag }
     }
 
+    #[instrument(skip_all)]
     pub async fn start(self) -> Result<()> {
         axum::serve(self.listener, self.app)
             .with_graceful_shutdown(self.shutdown_flag.wait_for())
@@ -266,6 +267,7 @@ impl Server {
         (StatusCode::OK, Json(json!({ "status": "ok" })))
     }
 
+    #[instrument(skip_all)]
     async fn member_funding_info(
         Extension(broker): Extension<Arc<FundingSyncBroker>>,
     ) -> impl IntoResponse {
@@ -281,6 +283,7 @@ impl Server {
         }
     }
 
+    #[instrument(skip_all)]
     async fn admin_fail_flow(
         Extension(broker): Extension<Arc<FundingSyncBroker>>,
         Json(body): Json<FailFlowReq>,
@@ -315,6 +318,7 @@ impl Server {
         next.run(request).await
     }
 
+    #[instrument(skip_all)]
     async fn apply_stream(
         Extension(broker): Extension<Arc<FundingSyncBroker>>,
         Json(body): Json<ApplyStreamReq>,
@@ -331,6 +335,7 @@ impl Server {
         }
     }
 
+    #[instrument(skip_all)]
     async fn pegin_address(
         Extension(contracts): Extension<
             Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi>,
@@ -372,6 +377,7 @@ impl Server {
         (StatusCode::OK, Json(json!(AddressResponse { address: address.to_string() })))
     }
 
+    #[instrument(skip_all)]
     async fn request_pegout(
         Extension(contracts): Extension<
             Arc<dyn crate::sync_contracts_gateway::SyncContractsGatewayApi>,

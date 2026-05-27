@@ -14,11 +14,12 @@ use coordinator::config::{Config, Logger};
 use coordinator::coordinator::Coordinator;
 use coordinator::monitor::Monitor;
 use coordinator::store::CoordinatorStore;
-use log::{debug, error, info};
+use tracing::{debug, error, info};
 use transaction_dispatcher::config::Config as TxDispatcherConfig;
 
-const LOGGER_CLI_FLAG: &str = "logger-path";
+const LOG_DIR_CLI_FLAG: &str = "log-dir";
 const CONFIG_CLI_FLAG: &str = "config";
+
 fn create_broker(
     host: String,
     port: u16,
@@ -39,15 +40,11 @@ fn require_pubkey_hash(pubkey_hash: &str, service: &str) -> Result<String> {
     Ok(pubkey_hash.to_owned())
 }
 
-fn parse_cli_args() -> Option<String> {
+fn parse_cli_args() -> (Option<String>, common::config::LogGuard) {
     let matches = Command::new("Union Bridge Coordinator")
-        .arg(
-            Arg::new(LOGGER_CLI_FLAG)
-                .short('l')
-                .long(LOGGER_CLI_FLAG)
-                .value_name("PATH")
-                .help("Sets the path to the log4rs configuration file"),
-        )
+        .arg(Arg::new(LOG_DIR_CLI_FLAG).short('l').long(LOG_DIR_CLI_FLAG).value_name("DIR").help(
+            "Directory for log files (also set via UB_LOG_DIR). Defaults to ./logs/ when unset.",
+        ))
         .arg(
             Arg::new(CONFIG_CLI_FLAG)
                 .short('e')
@@ -57,13 +54,14 @@ fn parse_cli_args() -> Option<String> {
         )
         .get_matches();
 
-    Logger::init(matches.get_one::<String>(LOGGER_CLI_FLAG)).expect("Failed to load logger");
-    matches.get_one::<String>(CONFIG_CLI_FLAG).cloned()
+    let log_guard =
+        Logger::init(matches.get_one::<String>(LOG_DIR_CLI_FLAG)).expect("Failed to load logger");
+    (matches.get_one::<String>(CONFIG_CLI_FLAG).cloned(), log_guard)
 }
 
 #[allow(clippy::too_many_lines)]
 fn main() -> Result<()> {
-    let config_name = parse_cli_args();
+    let (config_name, _log_guard) = parse_cli_args();
 
     info!(
         "Loading configuration profile: {}. Env vars with prefix UB__ will override config values",

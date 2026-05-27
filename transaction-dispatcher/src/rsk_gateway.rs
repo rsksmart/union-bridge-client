@@ -5,10 +5,10 @@ use alloy_primitives::U256;
 use alloy_provider::Provider;
 use anyhow::{Result, anyhow};
 use common::types::{Address, ContractInfo};
-use log::{error, info};
 #[cfg(test)]
 use mockall::automock;
 use thiserror::Error;
+use tracing::{error, info};
 
 use crate::config::TransactionConfig;
 use crate::contracts::challenge_manager::{

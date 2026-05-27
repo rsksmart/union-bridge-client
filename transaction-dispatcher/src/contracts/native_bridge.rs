@@ -3,9 +3,9 @@ use alloy_provider::Provider;
 use alloy_transport::TransportError;
 use anyhow::Result as AnyhowResult;
 use common::types::{BlockHash, TxHash};
-use log::info;
 #[cfg(test)]
 use mockall::automock;
+use tracing::info;
 
 #[cfg_attr(test, automock)]
 pub(crate) trait NativeBridgeContractApi {
@@ -180,7 +180,7 @@ mod tests {
     use bitcoin::transaction::Version;
     use bitcoin::{Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness};
     use common::types::{BlockHash, TxHash};
-    use log::{debug, error, info, warn};
+    use tracing::{debug, error, info, warn};
 
     use super::*;
 

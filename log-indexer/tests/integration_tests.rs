@@ -16,12 +16,12 @@ use common::test_utils::rsk_utils::{
     generate_fake_managed_contracts,
 };
 use common::types::{Address, BlockHash, ContractInfo, LogInfo, RskLog, TxHash};
-use log::info;
 use log_indexer::indexer::LogIndexer;
 use log_indexer::store::RawLogStore;
 use primitive_types::H256;
 use rand::Rng;
 use tempfile::tempdir;
+use tracing::info;
 
 const LOG_INDEX_RANGE: Range<u64> = 0..20;
 const DELAY_BETWEEN_BLOCKS_SUBSCRIPTION: u64 = 2;
@@ -41,7 +41,7 @@ fn test_when_log_indexer_runs_should_store_logs_from_subscription() -> Result<()
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 35;
     const LOG_BLOCK_HEIGHT_RANGE: Range<u64> =
         MAX_BLOCK_HEIGHT_SUBSCRIPTION - FILTER_BLOCK_FROM_DEPTH..MAX_BLOCK_HEIGHT_SUBSCRIPTION;
-    let _ = env_logger::builder().is_test(true).try_init();
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().to_str().unwrap();
     let store = RawLogStore::new(store_path)?;
@@ -103,7 +103,7 @@ fn test_when_log_before_initial_height_should_not_store_log() -> Result<()> {
     const MAX_BLOCK_HEIGHT_SUBSCRIPTION: u64 = 35;
     const LOG_BLOCK_HEIGHT_RANGE: Range<u64> =
         MAX_BLOCK_HEIGHT_SUBSCRIPTION - FILTER_BLOCK_FROM_DEPTH..MAX_BLOCK_HEIGHT_SUBSCRIPTION;
-    let _ = env_logger::builder().is_test(true).try_init();
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
     let temp_dir = tempdir()?;
     let store_path = temp_dir.path().to_str().unwrap();
     let store = RawLogStore::new(store_path)?;

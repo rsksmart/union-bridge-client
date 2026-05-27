@@ -5,9 +5,9 @@ use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
 use common::msg_broker::broker::{BitVmxBrokerClientApi, BrokerError, UnionBrokerClientApi};
 use common::msg_broker::types::{FromServer, ToServer};
 use common::types::{Address, RskBlockAndUncles};
-use log::{debug, error, info, trace};
 #[cfg(test)]
 use mockall::automock;
+use tracing::{debug, error, info, trace};
 
 use crate::types::{EventDecoder, RskPegManagerEvents, UserRequests};
 

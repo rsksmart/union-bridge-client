@@ -10,7 +10,7 @@ use common::msg_broker::broker::{BitVmxBrokerClientApi, UnionBrokerClientApi};
 use common::msg_broker::types::ToServer;
 use common::runtime_sync::RuntimeSync;
 use common::shutdown_flag::ShutdownFlag;
-use log::{error, info, trace, warn};
+use tracing::{error, info, instrument, trace, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 
 use crate::RUNTIME_ENV_LOCAL_ANVIL;
@@ -75,12 +75,12 @@ impl<
         btc_confirmations_buffer: u32,
     ) -> NativeBridgeVerifier<CG> {
         if uses_fake_native_bridge(runtime_environment) {
-            log::info!(
+            info!(
                 "Environment: {runtime_environment} → Using Dummy Native Bridge Verifier (BitVMX confirmations only)"
             );
             NativeBridgeVerifier::Dummy
         } else {
-            log::info!("Environment: {runtime_environment} → Using Real Native Bridge Verifier");
+            info!("Environment: {runtime_environment} → Using Real Native Bridge Verifier");
             let required_confirmations = btc_confirmations.saturating_add(btc_confirmations_buffer);
             NativeBridgeVerifier::real(
                 contracts_arc.clone(),
@@ -242,6 +242,7 @@ impl<
 
     /// # Errors
     /// Returns an error if the coordinator run loop fails.
+    #[instrument(skip_all)]
     pub fn run(&mut self) -> Result<()> {
         self.monitor.start_event_monitoring().context("Failed to start event monitoring")?;
 

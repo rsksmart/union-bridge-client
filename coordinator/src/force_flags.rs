@@ -32,7 +32,7 @@
 
 use std::path::Path;
 
-use log::warn;
+use tracing::warn;
 
 use crate::{RUNTIME_ENV_LOCAL_ANVIL, RUNTIME_ENV_LOCAL_RSKJ};
 

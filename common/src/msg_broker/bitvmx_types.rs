@@ -12,11 +12,11 @@ pub use bitvmx_emulator::decision::challenge::{ForceChallenge, ForceCondition};
 pub use bitvmx_emulator::executor::utils::{
     FailConfiguration, FailExecute, FailOpcode, FailRead, FailReads, FailSelectionBits, FailWrite,
 };
-use log::info;
 use musig2::PubNonce;
 use musig2::secp::MaybeScalar;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use tracing::info;
 use uuid::Uuid;
 
 pub const ACCEPT_PEGIN_TX: &str = "ACCEPT_PEGIN_TX";
