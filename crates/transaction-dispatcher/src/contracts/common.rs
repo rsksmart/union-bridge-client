@@ -207,7 +207,7 @@ where
     match timeout(timeout_dur, build_tx().estimate_gas()).await {
         Ok(Ok(gas)) => Ok(gas),
         Ok(Err(e)) => {
-            error!("Gas estimation failed: {e:?}");
+            debug!("Gas estimation failed: {e:?}");
             Err(e)
         }
         Err(_elapsed) => {

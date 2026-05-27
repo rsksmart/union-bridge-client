@@ -467,7 +467,11 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         info!("Interacting with PeginManager#requestPegin");
 
         self.request_pegin_invoke.run(input).await.map_err(|err| {
-            error!("Error on request_pegin_invoke: {err}");
+            if matches!(err, DomainErrors::PeginAlreadyRequested(_)) {
+                tracing::warn!("Warning on request_pegin_invoke: {err}");
+            } else {
+                error!("Error on request_pegin_invoke: {err}");
+            }
             err
         })
     }
@@ -479,7 +483,11 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         info!("Interacting with PeginManager#acceptPegin");
 
         self.accept_pegin_invoke.run(input).await.map_err(|err| {
-            error!("Error on accept_pegin_invoke: {err}");
+            if matches!(err, DomainErrors::PeginAlreadyAccepted(_)) {
+                tracing::warn!("Warning on accept_pegin_invoke: {err}");
+            } else {
+                error!("Error on accept_pegin_invoke: {err}");
+            }
             err
         })
     }

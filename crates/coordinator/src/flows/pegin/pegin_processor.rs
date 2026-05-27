@@ -56,6 +56,16 @@ fn record_pegin_id(flow_id: &FlowId) {
     Span::current().record("pegin_id", tracing::field::display(flow_id));
 }
 
+fn is_pegin_already_accepted(err: &anyhow::Error) -> bool {
+    err.chain().any(|cause| {
+        if let Some(domain_err) = cause.downcast_ref::<DomainErrors>() {
+            matches!(domain_err, DomainErrors::PeginAlreadyAccepted(_))
+        } else {
+            false
+        }
+    })
+}
+
 /// Processor that manages multiple pegin flow state machines
 pub(crate) struct PeginFlowProcessor<CG, BC, BSF, FactoryBSF, S>
 where
@@ -749,6 +759,13 @@ where
                 continue;
             };
 
+            if is_pegin_already_accepted(&err) {
+                warn!(
+                    "Pegin already accepted on retry for accept_pegin for flow {flow_id}: {err:#}"
+                );
+                continue;
+            }
+
             if !is_missing_native_bridge_confirmations(&err) {
                 error!("Error on retry for accept_pegin: {err:?}");
                 continue;
@@ -979,6 +996,10 @@ where
                         attempt,
                         "Missing confirmations on native bridge, scheduling retry",
                     );
+                    return Ok(());
+                }
+                if is_pegin_already_accepted(&err) {
+                    warn!("Pegin already accepted on accept_pegin for flow {flow_id}: {err:#}");
                     return Ok(());
                 }
                 return Err(err);
