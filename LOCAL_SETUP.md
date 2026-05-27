@@ -70,6 +70,19 @@ git clone https://github.com/FairgateLabs/rust-bitvmx-client.git
 git clone https://github.com/rsksmart/union-bridge-contracts.git
 ```
 
+Temporary `local-rskj` note: until the native-bridge local-regtest deploy changes are available in
+`rsksmart/union-bridge-contracts`, use the fork branch below for the sibling contracts checkout:
+
+```bash
+cd ../union-bridge-contracts
+git remote add fedejinich https://github.com/fedejinich/union-bridge-contracts.git
+git fetch fedejinich
+git checkout chore/local-regtest-native-bridge
+```
+
+The `local-rskj` and `docker-rskj` flows deploy contracts from this local checkout, so the checked-out contracts branch
+controls what gets deployed to Rootstock regtest.
+
 ### Install Git Hooks
 
 Hook installation is automatic on a clean checkout. [cargo-husky](https://github.com/rhysd/cargo-husky) is declared as
