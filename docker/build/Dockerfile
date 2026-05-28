@@ -59,6 +59,7 @@ RUN cargo build --workspace --quiet --release --locked ${EXCLUDES}${JUST_CRATE:+
 
 # --- RUNTIME STAGE ---
 
+# Debian Bookworm 12.14
 FROM debian:bookworm-slim@sha256:0104b334637a5f19aa9c983a91b54c89887c0984081f2068983107a6f6c21eeb AS runtime
 ARG CRATE
 
