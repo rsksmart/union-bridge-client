@@ -48,6 +48,8 @@ Transform tasks into verifiable goals:
 - "Fix the bug" → "Write a test that reproduces it, then make it pass"
 - "Refactor X" → "Ensure tests pass before and after"
 
+When writing tests, default to covering the unhappy paths — invalid input, error returns from dependencies, edge cases. The bug usually lives in the case you didn't test.
+
 For multi-step tasks, state the plan briefly with the verification you'll use for each step — concrete checks ("cargo test passes", "endpoint returns 200") beat abstract milestones ("it works").
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
