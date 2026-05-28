@@ -59,14 +59,8 @@ pub struct IndexerConfig {
     pub start_from: IndexerStartFrom,
     pub initial_block_hash: Option<String>,
     pub sync: SyncConfig,
-    #[serde(default = "default_broker_queue_storage_enabled")]
-    pub broker_queue_storage_enabled: bool,
     pub storage: StorageConfig,
     pub cache: CacheConfig,
-}
-
-const fn default_broker_queue_storage_enabled() -> bool {
-    false
 }
 
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
@@ -430,7 +424,6 @@ mod tests {
         unsafe {
             remove_var("UB__INDEXER__STORAGE__PATH");
             remove_var("UB__INDEXER__CACHE__SIZE");
-            remove_var("UB__INDEXER__BROKER_QUEUE_STORAGE_ENABLED");
             remove_var("UB__PROVIDER__ROOTSTOCK__URL");
             remove_var("UB__BITCOIN_NETWORK");
         }
@@ -453,7 +446,6 @@ mod tests {
         assert_eq!(IndexerStartFrom::Best, config.indexer.start_from);
         assert!(!config.indexer.storage.path.contains("{BASE_STORAGE_PATH}"));
         assert!(config.indexer.storage.path.ends_with("/.union_bridge/op_1/local_database"));
-        assert!(!config.indexer.broker_queue_storage_enabled);
         assert_eq!(1000, config.indexer.cache.size);
         assert_eq!(100, config.indexer.sync.finality_depth);
         assert_eq!(100, config.indexer.sync.batch_size);
@@ -583,7 +575,6 @@ mod tests {
             set_var("UB__ENVIRONMENT", "local-anvil");
             set_var("UB__INDEXER__STORAGE__PATH", "/test/env/path");
             set_var("UB__INDEXER__CACHE__SIZE", "3000");
-            set_var("UB__INDEXER__BROKER_QUEUE_STORAGE_ENABLED", "true");
             set_var("UB__PROVIDER__ROOTSTOCK__URL", "ws://127.0.0.1:8888");
             set_var("UB__BITCOIN_NETWORK", "mainnet");
         }
@@ -600,7 +591,6 @@ mod tests {
         // override
         assert_eq!("/test/env/path", config.indexer.storage.path);
         assert_eq!(3000, config.indexer.cache.size);
-        assert!(config.indexer.broker_queue_storage_enabled);
         assert_eq!("ws://127.0.0.1:8888", config.provider.rootstock.url);
         assert_eq!("mainnet", config.bitcoin_network);
 

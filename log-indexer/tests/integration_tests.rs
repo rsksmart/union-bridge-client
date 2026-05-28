@@ -192,7 +192,6 @@ fn cycle_indexer(
         sync: common::config::SyncConfig { finality_depth: 0, batch_size: 0 },
         storage: common::config::StorageConfig { path: String::new() },
         cache: common::config::CacheConfig { size: 0 },
-        broker_queue_storage_enabled: false,
     };
 
     let indexer = LogIndexer::new(

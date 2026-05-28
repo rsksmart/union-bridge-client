@@ -70,18 +70,11 @@ fn main() -> Result<()> {
     )
     .context("Failed to create LogIndexer")?;
 
-    let broker_server = if config.indexer.broker_queue_storage_enabled {
-        BrokerServer::new_with_storage_path(
-            config.log_indexer_config.notifier.port,
-            &config.log_indexer_config.broker_key_path,
-            &broker_queue_storage_path(&config.indexer.storage.path, BROKER_QUEUE_SERVICE_NAME),
-        )
-    } else {
-        BrokerServer::new(
-            config.log_indexer_config.notifier.port,
-            &config.log_indexer_config.broker_key_path,
-        )
-    }
+    let broker_server = BrokerServer::new_with_storage_path(
+        config.log_indexer_config.notifier.port,
+        &config.log_indexer_config.broker_key_path,
+        &broker_queue_storage_path(&config.indexer.storage.path, BROKER_QUEUE_SERVICE_NAME),
+    )
     .context("Failed to create BrokerServer")?;
 
     let mut notifier = Notifier::new(rx, broker_server, monitored_addresses, shutdown_flag.clone());
