@@ -46,6 +46,16 @@ This file is the narrow reference for the workflow files currently tracked under
   - pull requests against `main`
   - scheduled weekly scan
 
+### `audit.yml`
+
+- Name: `Audit`
+- Triggers:
+  - pull requests (`opened`, `synchronize`, `reopened`, `ready_for_review`)
+  - merge queue checks for `main`
+  - push tags matching `v*`
+  - scheduled weekly scan
+- Purpose: run `cargo audit` against the root workspace and the `cli` workspace to catch advisories on dependencies
+
 ### `e2e-smoke-tests.yml`
 
 - Name: `E2E Smoke Tests`
