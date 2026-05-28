@@ -594,6 +594,69 @@ impl<K: Eq + Hash + Clone> TickScheduler<K> {
     }
 }
 
+/// Pairs a `TickScheduler` with a per-key attempt counter so that scheduled
+/// retries carry along the attempt number that fired them.
+///
+/// `K` identifies the retry instance (e.g. `(flow_id, retry_kind)`); attempts
+/// are tracked as `i16`. The invariant is that an entry in the scheduler has
+/// a matching entry in `attempts`; `tick()` returns matured items together
+/// with their attempt and removes both sides.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct RetryTracker<K: Eq + Hash + Clone> {
+    attempts: HashMap<K, i16>,
+    scheduler: TickScheduler<K>,
+}
+
+impl<K: Eq + Hash + Clone> RetryTracker<K> {
+    pub(crate) fn new() -> Self {
+        Self { attempts: HashMap::new(), scheduler: TickScheduler::new() }
+    }
+
+    /// Schedule a retry for `id` to fire in `delay_ticks` ticks, recording
+    /// `attempt` as the attempt number. Overwrites any existing schedule for
+    /// the same `id`.
+    pub(crate) fn schedule(&mut self, id: K, attempt: i16, delay_ticks: u32) {
+        self.attempts.insert(id.clone(), attempt);
+        self.scheduler.schedule(id, delay_ticks);
+    }
+
+    /// Returns matured retries with their recorded attempts. Each returned
+    /// `(K, i16)` is removed from both the scheduler and the attempts map.
+    pub(crate) fn tick(&mut self) -> Vec<(K, i16)> {
+        self.scheduler
+            .tick()
+            .into_iter()
+            .filter_map(|id| self.attempts.remove(&id).map(|attempt| (id, attempt)))
+            .collect()
+    }
+
+    /// Read the current attempt for `id` without consuming it. Returns 0 if
+    /// no retry is currently tracked for `id`.
+    pub(crate) fn current_attempt(&self, id: &K) -> i16 {
+        self.attempts.get(id).copied().unwrap_or(0)
+    }
+
+    /// Cancel any pending retry for `id` and drop its attempt counter.
+    pub(crate) fn cancel(&mut self, id: &K) {
+        self.scheduler.cancel(id);
+        self.attempts.remove(id);
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.scheduler.is_empty()
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.scheduler.clear();
+        self.attempts.clear();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_scheduled(&self, id: &K) -> bool {
+        self.scheduler.is_scheduled(id)
+    }
+}
+
 /// Time-based scheduler that uses block timestamps to track expiration times
 pub(crate) struct TimeBasedScheduler<K: Eq + Hash + Clone> {
     pending: HashMap<K, u64>, // flow_id -> expiration_timestamp (in seconds)
