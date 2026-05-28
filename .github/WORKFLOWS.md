@@ -46,13 +46,15 @@ This file is the narrow reference for the workflow files currently tracked under
   - pull requests against `main`
   - scheduled weekly scan
 
-### `check_peer_tested.yml`
+### `audit.yml`
 
-- Name: `Check Peer Tested`
+- Name: `Audit`
 - Triggers:
-  - pull requests against `main`
-  - actions: `opened`, `synchronize`, `reopened`, `labeled`, `unlabeled`
-- Purpose: maintain the `Peer Test Status Check` commit status from the `peer tested` label
+  - pull requests (`opened`, `synchronize`, `reopened`, `ready_for_review`)
+  - merge queue checks for `main`
+  - push tags matching `v*`
+  - scheduled weekly scan
+- Purpose: run `cargo audit` against the root workspace and the `cli` workspace to catch advisories on dependencies
 
 ### `e2e-smoke-tests.yml`
 

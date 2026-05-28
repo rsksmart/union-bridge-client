@@ -26,8 +26,8 @@ pub struct Config {
     pub key_store: KeyStoreConfig,
     #[serde(rename = "coordinator")]
     pub coordinator: CoordinatorConfig,
-    /// Flow configuration with sensible defaults
-    #[serde(default)]
+    /// Flow configuration. Required — `[flows.common]` has no Rust-side default,
+    /// so any config that omits `[flows]` (or `[flows.common]`) fails to parse.
     pub flows: FlowsConfig,
 }
 
@@ -91,35 +91,32 @@ pub struct BitVmxBrokerConfig {
 
 /// Top-level flow configuration composing all flow-specific configs.
 /// Loaded from TOML with serde, using 3-tier hierarchy: base.toml -> env.toml -> UB__ env vars.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(default)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct FlowsConfig {
-    /// Common flow settings
+    /// Common flow settings (required — no Rust-side default).
     pub common: CommonFlowConfig,
-    /// Pegout flow settings
+    /// Pegout flow settings.
+    #[serde(default)]
     pub pegout: PegoutConfig,
-    /// Committee setup settings
+    /// Committee setup settings.
+    #[serde(default)]
     pub committee: CommitteeConfig,
-    /// Native bridge verification settings
+    /// Native bridge verification settings.
+    #[serde(default)]
     pub native_bridge: NativeBridgeConfig,
 }
 
-/// Common flow configuration
+/// Common flow configuration. All fields are required in the runtime config —
+/// there is no Rust-side `Default`, so a missing field is a parse error rather
+/// than a silent fall-back to a hardcoded value.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(default)]
 pub struct CommonFlowConfig {
-    /// Required RSK block confirmations for events (default: 5)
+    /// Required RSK block confirmations for events.
     pub rsk_confirmations: u32,
-    /// BTC confirmations used by non-Native-Bridge coordinator flows (default: 1)
+    /// BTC confirmations used by non-Native-Bridge coordinator flows.
     pub btc_confirmations: u32,
-    /// Blocks delay before rechecking BTC transaction status (default: 20)
+    /// Blocks delay before rechecking BTC transaction status.
     pub btc_status_retry_blocks: u32,
-}
-
-impl Default for CommonFlowConfig {
-    fn default() -> Self {
-        Self { rsk_confirmations: 5, btc_confirmations: 1, btc_status_retry_blocks: 20 }
-    }
 }
 
 /// Pegout flow configuration
@@ -227,7 +224,7 @@ mod tests {
     use common::config::CommonConfig;
     use common::types::Address;
 
-    use crate::config::{Config, FlowsConfig};
+    use crate::config::Config;
 
     #[test]
     fn test_parse_bitcoin_network() -> anyhow::Result<()> {
@@ -280,22 +277,6 @@ mod tests {
     }
 
     #[test]
-    fn test_flows_config_defaults_match_hardcoded_values() {
-        let config = FlowsConfig::default();
-
-        // Common defaults (was REQUIRED_CONFIRMATIONS = 5, CHECK_PERIOD = 1s, etc.)
-        assert_eq!(config.common.rsk_confirmations, 5);
-        assert_eq!(config.common.btc_confirmations, 1);
-        assert_eq!(config.common.btc_status_retry_blocks, 20);
-        // Pegin defaults (was MIN_TX_CONFIRMATIONS = 1, BLOCKS_DELAY_FOR_TX_CHECK = 20)
-        // Pegout defaults
-        assert_eq!(config.pegout.advance_funds_timeout_secs, 600);
-
-        // Native bridge defaults (was MIN_TX_CONFIRMATIONS = 2)
-        assert_eq!(config.native_bridge.btc_confirmations_buffer, 1);
-    }
-
-    #[test]
     fn test_coordinator_config_duration_helpers() {
         let config = Config::load(Some("local-anvil")).expect("Failed to load local-anvil config");
         let config = config.coordinator;
@@ -304,9 +285,13 @@ mod tests {
         assert_eq!(config.bitvmx_ping_after_silence(), Duration::from_secs(15));
     }
 
+    /// Guards the strict-config behavior: with `CommonFlowConfig` carrying no
+    /// `Default` impl and `Config.flows` no longer marked `#[serde(default)]`,
+    /// a config that omits `[flows]` must fail to parse rather than silently
+    /// fall back to hardcoded Rust defaults.
     #[test]
-    fn test_config_with_missing_flows_section_uses_defaults() {
-        let config: Config = serde_json::from_value(serde_json::json!({
+    fn test_config_with_missing_flows_section_errors() {
+        let result: Result<Config, _> = serde_json::from_value(serde_json::json!({
             "environment": "local-anvil",
             "contracts": [],
             "bitcoin_network": "regtest",
@@ -332,11 +317,12 @@ mod tests {
                 "bitvmx_not_responding_threshold_secs": 30,
                 "bitvmx_ping_after_silence_secs": 15
             }
-        }))
-        .expect("config without flows should deserialize using defaults");
+        }));
 
-        assert_eq!(config.flows.common.rsk_confirmations, 5);
-        assert_eq!(config.flows.common.btc_confirmations, 1);
+        assert!(
+            result.is_err(),
+            "config without [flows] should fail to deserialize, got: {result:?}",
+        );
     }
 
     #[test]
