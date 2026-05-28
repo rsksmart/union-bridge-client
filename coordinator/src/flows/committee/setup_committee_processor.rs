@@ -15,7 +15,7 @@ use common::msg_broker::bitvmx_types::{
 };
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::types::{BlockNumber, CommitteeId, RskBlockAndUncles, StreamId};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, info_span, instrument, trace, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
 
@@ -122,12 +122,17 @@ where
     }
 
     /// Mark a setup committee flow as failed and stop pending local work for it.
+    #[instrument(
+        skip(self, reason),
+        name = "committee_setup",
+        fields(committee_setup_id = %flow_id)
+    )]
     fn fail_flow(&mut self, flow_id: FlowId, reason: &str) -> Result<()> {
         if let Some(flow) = self.flows.get_mut(&flow_id) {
             flow.mark_failed(reason)?;
-            warn!("Admin marked setup committee flow {flow_id} as failed: {reason}");
+            warn!("Admin marked setup committee flow as failed: {reason}");
         } else {
-            warn!("Admin requested fail for unknown setup committee flow {flow_id}: {reason}");
+            warn!("Admin requested fail for unknown setup committee flow: {reason}");
         }
 
         self.cleanup_terminal_flows();
@@ -144,6 +149,8 @@ where
 {
     fn dispatch_to_flow(&mut self, req_id: &Uuid, step_data: StepData) {
         if let Some(flow) = self.get_flow_for_bitvmx_response(req_id) {
+            let flow_id = flow.flow_id();
+            let _span = info_span!("committee_setup", committee_setup_id = %flow_id).entered();
             Self::continue_flow(flow, step_data);
         } else {
             debug!("No flow found for BitVMX event with id {req_id}");
@@ -156,6 +163,8 @@ where
             .values_mut()
             .find(|flow| flow.is_waiting_for_dispute_core_variable(program_id))
         {
+            let flow_id = flow.flow_id();
+            let _span = info_span!("committee_setup", committee_setup_id = %flow_id).entered();
             Self::continue_flow(flow, step_data);
         } else {
             debug!("No flow in RequestDisputeChannelVars step for DisputeCore pid {program_id}");
@@ -163,47 +172,24 @@ where
     }
 
     fn continue_flow(flow: &mut SetupCommitteeFlow<CG, BC, S>, data: StepData) {
+        let flow_id = flow.flow_id();
         let current_step = flow.current_step();
-        trace!("Continuing flow {} at step {current_step:?} with data: {data:?}", flow.flow_id());
+        trace!("Continuing flow at step {current_step:?} with data: {data:?}");
         match flow.complete_step(data) {
             Ok(()) => {
-                trace!(
-                    "Step {:?} completed successfully for flow {}",
-                    flow.current_step(),
-                    flow.flow_id()
-                );
+                trace!("Step {:?} completed successfully", flow.current_step());
             }
             Err(FlowError::Fatal { message, source }) => {
-                error!(
-                    "Fatal error in flow {} at step {current_step:?}: {message}",
-                    flow.flow_id()
-                );
-                Self::log_flow_error_source(
-                    "Fatal",
-                    &flow.flow_id(),
-                    current_step,
-                    source.as_ref(),
-                );
+                error!("Fatal error at step {current_step:?}: {message}");
+                Self::log_flow_error_source("Fatal", &flow_id, current_step, source.as_ref());
                 flow.fail();
             }
             Err(FlowError::Transient { message, source }) => {
-                error!(
-                    "Transient error in flow {} at step {current_step:?}: {message}",
-                    flow.flow_id()
-                );
-                Self::log_flow_error_source(
-                    "Transient",
-                    &flow.flow_id(),
-                    current_step,
-                    source.as_ref(),
-                );
+                error!("Transient error at step {current_step:?}: {message}");
+                Self::log_flow_error_source("Transient", &flow_id, current_step, source.as_ref());
             }
         }
-        debug!(
-            "Completed continue_flow at step {:?} for flow {}",
-            flow.current_step(),
-            flow.flow_id()
-        );
+        debug!("Completed continue_flow at step {:?}", flow.current_step());
     }
 
     fn log_flow_error_source(
@@ -272,6 +258,13 @@ where
         self.flows.values_mut().find(|flow| flow.is_waiting_for_bitvmx_request(req_id))
     }
 
+    /// Process confirmed RSK events.
+    ///
+    /// Callers must enter a `committee_setup{committee_setup_id}` span before
+    /// invoking this (the `committee_setup_id` is event-derived; see
+    /// [`Self::committee_setup_id_for_event`]). Both `process_new_rsk_event`
+    /// (when `required_confirmations == 0`) and `process_new_block` open that
+    /// span before calling this method.
     fn process_confirmed_rsk_event(&mut self, event: &RskPegManagerEvents) {
         info!("Processing confirmed RSK event: {event:?}");
         let flow_data = match event {
@@ -307,6 +300,45 @@ where
             None => {
                 warn!("Received {event:?} but no matching flow found");
             }
+        }
+    }
+
+    /// Resolve the originating committee-setup flow id for an RSK event, if
+    /// known. `NewCommitteePending` looks up the in-flight flow by `stream_id`;
+    /// the other two look up by `committee_id`. Returns `None` when no flow in
+    /// memory matches (e.g. the event is for a committee we are not part of).
+    fn committee_setup_id_for_event(&self, event: &RskPegManagerEvents) -> Option<FlowId> {
+        match event {
+            RskPegManagerEvents::NewCommitteePending(ncp) => {
+                let stream_id: StreamId = ncp.inner._committee.streamId.into();
+                self.flows
+                    .values()
+                    .find(|f| {
+                        f.current_step() == Steps::ApplyToStream && f.is_for_stream(&stream_id)
+                    })
+                    .map(SetupCommitteeFlow::flow_id)
+            }
+            RskPegManagerEvents::AllCommunicationDataReady(acdr) => {
+                let committee_id: CommitteeId = acdr.inner._committeeId.into();
+                self.flows
+                    .values()
+                    .find(|f| {
+                        f.current_step() == Steps::DepositP2PDataAuthoritativeCheckpoint
+                            && f.is_for_committee(&committee_id)
+                    })
+                    .map(SetupCommitteeFlow::flow_id)
+            }
+            RskPegManagerEvents::NewCommitteeReady(ncr) => {
+                let committee_id: CommitteeId = ncr.inner.committeeId.into();
+                self.flows
+                    .values()
+                    .find(|f| {
+                        f.current_step() == Steps::DepositAggregatedKey
+                            && f.is_for_committee(&committee_id)
+                    })
+                    .map(SetupCommitteeFlow::flow_id)
+            }
+            _ => None,
         }
     }
 
@@ -356,6 +388,7 @@ where
         match req {
             UserRequests::ApplyToStream(input) => {
                 let flow_id = FlowId::from_random();
+                let _span = info_span!("committee_setup", committee_setup_id = %flow_id).entered();
                 let mut flow = self.flow_factory.create_flow(flow_id, *input.stream_id);
 
                 Self::continue_flow(&mut flow, StepData::UserRequest(input.clone()));
@@ -380,10 +413,12 @@ where
         match event {
             OutgoingBitVMXApiMessages::CommInfo(req_id, comm_info) => {
                 if let Some(flow) = self.get_flow_for_bitvmx_response(req_id) {
+                    let flow_id = flow.flow_id();
+                    let _span =
+                        info_span!("committee_setup", committee_setup_id = %flow_id).entered();
                     debug!(
                         "Routing BitVMX CommInfo req_id {} to setup committee flow {}",
-                        req_id,
-                        flow.flow_id()
+                        req_id, flow_id
                     );
                     Self::continue_flow(flow, StepData::CommInfo(comm_info.clone()));
                 } else {
@@ -392,8 +427,11 @@ where
             }
 
             OutgoingBitVMXApiMessages::AggregatedPubkey(req_id, pubkey) => {
-                info!("PK Received AggregatedPubkey: {req_id:?}, {pubkey:?}");
                 if let Some(flow) = self.get_flow_for_bitvmx_response(req_id) {
+                    let flow_id = flow.flow_id();
+                    let _span =
+                        info_span!("committee_setup", committee_setup_id = %flow_id).entered();
+                    info!("PK Received AggregatedPubkey: {req_id:?}, {pubkey:?}");
                     let is_pairwise = flow.is_pairwise_aggregated_key_request(req_id);
                     let step_data = if is_pairwise {
                         StepData::PairwiseAggregatedKey(*req_id, *pubkey)
@@ -402,7 +440,7 @@ where
                     };
                     Self::continue_flow(flow, step_data);
                 } else {
-                    debug!("No flow found for AggregatedPubkey with id {req_id}");
+                    debug!("No flow found for AggregatedPubkey req_id={req_id} pubkey={pubkey:?}");
                 }
             }
 
@@ -460,6 +498,9 @@ where
         self.cleanup_terminal_flows();
 
         if self.required_confirmations == 0 {
+            let committee_setup_id = self.committee_setup_id_for_event(event);
+            let _span = committee_setup_id
+                .map(|fid| info_span!("committee_setup", committee_setup_id = %fid).entered());
             self.process_confirmed_rsk_event(event);
             return Ok(());
         }
@@ -525,6 +566,9 @@ where
 
         for key in confirmed_keys {
             if let Some(event) = self.stop_confirming_event(&key) {
+                let committee_setup_id = self.committee_setup_id_for_event(event.get_data());
+                let _span = committee_setup_id
+                    .map(|fid| info_span!("committee_setup", committee_setup_id = %fid).entered());
                 debug!("RSK event confirmed, removing pending {key}");
                 trace!("Event data: {:?}", event.get_data());
                 self.process_confirmed_rsk_event(event.get_data());

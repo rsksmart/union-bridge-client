@@ -513,7 +513,7 @@ where
         self.store
             .save_flow(&self.store_key(), self.state.clone())
             .context("Failed to persist state")?;
-        debug!("State persisted for flow {}", self.state.log_id);
+        debug!("State persisted");
         Ok(())
     }
 
@@ -673,7 +673,7 @@ where
     }
 
     pub(crate) fn mark_failed(&mut self, reason: &str) -> Result<()> {
-        info!("Marking setup committee flow {} as failed: {reason}", self.state.log_id);
+        info!("Marking setup committee flow as failed: {reason}");
         self.state.step = Steps::Failed;
         self.persist_state()
     }
@@ -1495,7 +1495,7 @@ where
 {
     fn fail(&mut self) {
         if let Err(err) = self.mark_failed("flow error") {
-            error!("Failed to persist failed setup committee flow {}: {err}", self.state.log_id);
+            error!("Failed to persist failed setup committee flow: {err}");
         }
     }
 }
@@ -1518,7 +1518,7 @@ where
                 unreachable!("Init step should not be reached in start_step");
             }
             Steps::ValidateBalances => {
-                debug!("CommitteeSetupFlow start validating balances: {}", self.state.log_id);
+                debug!("CommitteeSetupFlow start validating balances");
                 self.validate_rsk_balance().or_transient()?;
                 self.request_bitvmx_funding_balance();
             }
@@ -1625,7 +1625,7 @@ where
             }
             Steps::Done => {
                 self.write_completion_marker()?;
-                info!("CommitteeSetupFlow Done: {}", self.state.log_id);
+                info!("CommitteeSetupFlow Done");
             }
             Steps::Failed => {
                 unreachable!("Failed step should not be reached in start_step");
@@ -1642,7 +1642,7 @@ where
     fn complete_step(&mut self, data: StepData) -> Result<(), FlowError> {
         let current_step = self.state.step;
 
-        debug!("Completing step {current_step:?} for flow {}", self.state.log_id);
+        debug!("Completing step {current_step:?}");
         debug!("Step data: {data:?}");
 
         trace!("Flow Context: {:?}", self.ctx());
@@ -1836,10 +1836,7 @@ where
     fn request_bitvmx_comm_info(&mut self) {
         let req_id = Uuid::new_v4();
         self.ctx_mut().comm_info_req_id = Some(req_id);
-        debug!(
-            "Requesting BitVMX comm info for setup committee flow {} with req_id {}",
-            self.state.log_id, req_id
-        );
+        debug!("Requesting BitVMX comm info with req_id {req_id}");
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetCommInfo(req_id));
     }
 
@@ -1986,10 +1983,7 @@ where
         pending_committee: NewCommitteePendingEvent,
         committee_id: &CommitteeId,
     ) -> Result<()> {
-        info!(
-            "SetupCommitteeFlow {} matched NewCommitteePending committee_id={committee_id}",
-            self.state.log_id
-        );
+        info!("Matched NewCommitteePending committee_id={committee_id}");
         self.ctx_mut().committee_pending_ev = Some(pending_committee);
         self.ctx_mut().committee_data = None;
         let role = self.ctx().get_user_input()?.role;
