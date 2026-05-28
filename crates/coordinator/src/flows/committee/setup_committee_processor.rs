@@ -127,6 +127,11 @@ where
         name = "committee_setup",
         fields(committee_setup_id = %flow_id)
     )]
+    #[instrument(
+        skip(self, reason),
+        name = "committee_setup",
+        fields(committee_setup_id = %flow_id)
+    )]
     fn fail_flow(&mut self, flow_id: FlowId, reason: &str) -> Result<()> {
         if let Some(flow) = self.flows.get_mut(&flow_id) {
             flow.mark_failed(reason)?;
