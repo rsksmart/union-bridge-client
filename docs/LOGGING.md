@@ -75,6 +75,15 @@ Notes:
   `span.pegout_id="<uuid>"`, so logs from parallel pegouts can be filtered
   by `pegout_id`. In pretty output the same span context appears between the
   level and the target.
+- Committee setup work in the coordinator runs inside a `committee_setup` span
+  carrying the `committee_setup_id` of the in-flight flow (a stable UUID per
+  setup attempt, distinct from the RSK `committeeId` which is only known after
+  `NewCommitteePending`). In JSON output every log emitted from inside
+  `SetupCommitteeFlow`/`SetupCommitteeProcessor` includes
+  `span.name="committee_setup"` and `span.committee_setup_id="<uuid>"`, so the
+  many BitVMX/RSK calls of a single committee formation can be filtered by
+  `committee_setup_id`. In pretty output the same span context appears between
+  the level and the target.
 - File output is always written **without** ANSI codes, regardless of format.
 - In JSON the operator identity should be carried via `CLIENT_ID` in your
   shipping pipeline.
