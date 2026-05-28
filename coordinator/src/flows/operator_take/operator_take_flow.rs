@@ -175,6 +175,7 @@ struct FlowContext {
     reimbursement_kickoff_spv: Option<BtcTxSPVProof>,
     operator_take_spv: Option<BtcTxSPVProof>,
     accept_pegin_pid: Option<Uuid>,
+    created_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 pub(crate) struct AdvanceFundsFlow<CG, BC>
@@ -226,6 +227,7 @@ where
                 reimbursement_kickoff_spv: None,
                 operator_take_spv: None,
                 accept_pegin_pid: None,
+                created_at: Some(chrono::Utc::now()),
             },
         }
     }
@@ -260,6 +262,7 @@ where
                 reimbursement_kickoff_spv: None,
                 operator_take_spv: None,
                 accept_pegin_pid: None,
+                created_at: None,
             },
         }
     }
@@ -898,9 +901,7 @@ where
             kind: crate::types::FlowKind::AdvanceFunds,
             id: self.flow_id().to_string(),
             step: format!("{:?}", self.state.step),
-            // `created_at` is not currently tracked on advance-funds flows;
-            // `None` is acceptable per the field's docstring.
-            created_at: None,
+            created_at: self.state.created_at,
         }
     }
 
