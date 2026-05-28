@@ -816,6 +816,7 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
+    use crate::RUNTIME_ENV_LOCAL_ANVIL;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
     use crate::store::MockCoordinatorStoreApi;
 
@@ -986,7 +987,7 @@ mod tests {
                 created_at: None,
             },
             Rc::new(store),
-            Rc::new(Signaling::new(signaling_root.path(), "local")),
+            Rc::new(Signaling::new(signaling_root.path(), RUNTIME_ENV_LOCAL_ANVIL)),
             NativeBridgeVerifier::Dummy,
         )
     }
@@ -1120,7 +1121,7 @@ mod tests {
                 created_at: None,
             },
             Rc::new(store),
-            Rc::new(Signaling::new(tempdir.path(), "local")),
+            Rc::new(Signaling::new(tempdir.path(), RUNTIME_ENV_LOCAL_ANVIL)),
             NativeBridgeVerifier::Dummy,
         );
 

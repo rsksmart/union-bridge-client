@@ -1,0 +1,105 @@
+# ═══════════════════════════════════════════════════════
+# Common Configuration
+# ═══════════════════════════════════════════════════════
+
+environment = "local-anvil"
+provider.rootstock.url = "ws://host.docker.internal:8545"
+# url: "ws://node-container:8545" # if running anvil/node in a container
+# url: "ws://<external-rootstock-node>:4445/websocket" # if connecting to an external node
+
+# ═══════════════════════════════════════════════════════
+# Deployed Contracts
+# ═══════════════════════════════════════════════════════
+# Same predeployed Anvil chain state as the local-anvil profile, since both
+# docker-anvil and local-anvil talk to the same predeployed Anvil instance —
+# the only thing that differs between them is the network URL (host.docker
+# .internal vs 127.0.0.1) for operators running inside vs outside containers.
+
+[[contracts]]
+name = "TestContractDyn"
+address = "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761"
+
+[[contracts]]
+name = "TestContractCompiled"
+address = "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc"
+
+[[contracts]]
+name = "PeginManager"
+address = "0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE"
+
+[[contracts]]
+name = "PegoutManager"
+address = "0x3Aa5ebB10DC797CAC828524e59A333d0A371443c"
+
+[[contracts]]
+name = "SignatureManager"
+address = "0x0B306BF915C4d645ff596e518fAf3F9669b97016"
+
+[[contracts]]
+name = "CommitteeRegistry"
+address = "0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82"
+
+[[contracts]]
+name = "MemberRegistry"
+address = "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e"
+
+[[contracts]]
+name = "StreamManager"
+address = "0x0165878A594ca255338adfa4d48449f69242Eb8F"
+
+[[contracts]]
+name = "ChallengeManager"
+address = "0x59b670e9fA9D0A427751Af201D676719a970857b"
+
+[[contracts]]
+name = "NativeBridge"
+address = "0x0000000000000000000000000000000001000006"
+
+# ═══════════════════════════════════════════════════════
+# Indexers
+# ═══════════════════════════════════════════════════════
+
+[indexer]
+
+# Override base: start from current tip; initial_block_hash from base is ignored in this env.
+start_from = "best"
+storage.path = "/app/db/" # This should match the volume mount in docker-compose
+
+[block_indexer]
+broker_key_path = "/app/broker.pem"
+
+[log_indexer]
+broker_key_path = "/app/broker.pem"
+
+# ═══════════════════════════════════════════════════════
+# Coordinator
+# ═══════════════════════════════════════════════════════
+
+[coordinator]
+storage_path = "/app/db/" # This should match the volume mount in docker-compose
+blocks.host = "block-indexer"
+logs.host = "log-indexer"
+user.host = "user-api"
+broker.key_path = "/app/broker.pem"
+
+# ═══════════════════════════════════════════════════════
+# Key Store
+# ═══════════════════════════════════════════════════════
+
+[key_store]
+user_path = "/keystore/user"      # should match the mounted host keystore layout
+member_path = "/keystore/member"  # should match the mounted host keystore layout
+
+# ═══════════════════════════════════════════════════════
+# User API
+# ═══════════════════════════════════════════════════════
+
+[user_api]
+broker_key_path = "/app/broker.pem"
+
+# ═══════════════════════════════════════════════════════
+# Bridge Flow Configuration
+# ═══════════════════════════════════════════════════════
+
+[flows.committee]
+drp_program_definition = "/app/resources/union-verifier.yaml"

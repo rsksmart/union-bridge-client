@@ -1,10 +1,48 @@
+# Local Rootstock regtest profile for Docker operator containers.
+
 # ═══════════════════════════════════════════════════════
 # Common Configuration
 # ═══════════════════════════════════════════════════════
 
-provider.rootstock.url = "ws://host.docker.internal:8545"
-# url: "ws://node-container:8545" # if running anvil/node in a container
-# url: "ws://<external-rootstock-node>:4445/websocket" # if connecting to an external node
+environment = "local-rskj"
+provider.rootstock.url = "ws://host.docker.internal:8546"
+bitcoin_network = "regtest"
+
+# ═══════════════════════════════════════════════════════
+# Deployed Contracts
+# ═══════════════════════════════════════════════════════
+
+[[contracts]]
+name = "PeginManager"
+address = "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1"
+
+[[contracts]]
+name = "PegoutManager"
+address = "0x68B1D87F95878fE05B998F19b66F4baba5De1aed"
+
+[[contracts]]
+name = "SignatureManager"
+address = "0x9A676e781A523b5d0C0e43731313A708CB607508"
+
+[[contracts]]
+name = "CommitteeRegistry"
+address = "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"
+
+[[contracts]]
+name = "MemberRegistry"
+address = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"
+
+[[contracts]]
+name = "StreamManager"
+address = "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707"
+
+[[contracts]]
+name = "ChallengeManager"
+address = "0xc6e7DF5E7b4f2A278906862b61205850344D4e7d"
+
+[[contracts]]
+name = "NativeBridge"
+address = "0x0000000000000000000000000000000001000006"
 
 # ═══════════════════════════════════════════════════════
 # Indexers

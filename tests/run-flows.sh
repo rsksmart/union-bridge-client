@@ -4,14 +4,16 @@
 #
 # prerequisites:
 #   - union bridge clients running (via: cargo run -- run)
-#   - anvil running on localhost:8545
+#   - Anvil running on localhost:8545, or Rootstock regtest HTTP running on localhost:8545 for local-rskj / docker-rskj
 #   - bitcoin regtest node running with RPC enabled
 #   - USER_BITCOIN_WIF environment variable set (for bitcoin-wallet operations)
 #   - MEMBER_BITCOIN_WIF environment variable set (for member operations)
 #
-# usage: bash tests/run-flows.sh [--env <local|docker>] [--ops <1-10>] [--stream <0-4>] [--happy|--setup|--committee|--pegin|--pegout|--operator-take]
+# usage: bash tests/run-flows.sh [--env <local-anvil|docker-anvil|local-rskj|docker-rskj>] [--ops <1-10>] [--stream <0-4>] [--happy|--setup|--committee|--pegin|--pegout|--operator-take]
 
 set -euo pipefail
+
+readonly ROOTSTOCK_RPC_URL="http://localhost:8545"
 
 MODE="happy"
 SCRIPT_ENV=""
@@ -26,7 +28,7 @@ MEMBER_UTXO_VALUE=""
 RSK_ADDRESS=""
 EXPECTED_PEGIN_STARTED_AT_EPOCH=""
 EXPECTED_PEGOUT_STARTED_AT_EPOCH=""
-COMMITTEE_REGISTRY_ADDRESS="0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82"
+COMMITTEE_REGISTRY_ADDRESS=""
 FORCE_ADVANCE_FILE="/tmp/FORCE_ADVANCE"
 FORCE_ADVANCE_TARGET_OPERATOR_ID=""
 USER_API_HOST="localhost"
@@ -61,7 +63,7 @@ usage() {
     local script_name
     script_name=$(basename "${BASH_SOURCE[0]}")
     cat <<EOF
-Usage: ${script_name} [--env <local|docker>] [--ops <1-10>] [--stream <0-4>] [--happy|--setup|--committee|--pegin|--pegout|--operator-take]
+Usage: ${script_name} [--env <local-anvil|docker-anvil|local-rskj|docker-rskj>] [--ops <1-10>] [--stream <0-4>] [--happy|--setup|--committee|--pegin|--pegout|--operator-take]
 
 Modes:
   default (no mode flags)
@@ -75,8 +77,8 @@ Modes:
   --operator-take
              Operator-take-only: requests pegout with FORCE_ADVANCE enabled.
 
-  --env      Environment: local or docker (default: from UC_ENV or local)
-  --ops      Number of operators (1-10, default: 4 for local, docker-deploy.env or 4 for docker)
+  --env      Environment: local-anvil, docker-anvil, local-rskj, or docker-rskj (default: from UC_ENV or local-anvil)
+  --ops      Number of operators (1-10, default: 4 for cargo modes, docker env file for docker-anvil/docker-rskj)
   --stream   Stream identifier (0-4). Defaults to 0.
   --help     Show this help text.
 
@@ -88,8 +90,9 @@ Guides:
 
 Examples:
   bash tests/run-flows.sh
-  bash tests/run-flows.sh --env docker --setup
-  bash tests/run-flows.sh --env docker --committee
+  bash tests/run-flows.sh --env docker-anvil --setup
+  bash tests/run-flows.sh --env docker-anvil --committee
+  bash tests/run-flows.sh --happy --env docker-rskj
   bash tests/run-flows.sh --pegin
   bash tests/run-flows.sh --operator-take
 
@@ -120,13 +123,13 @@ load_envrc_if_needed() {
 
 initialize_script_env_default() {
     if [[ -n "${UC_ENV:-}" ]]; then
-        if [[ "$UC_ENV" == "local" || "$UC_ENV" == "docker" ]]; then
+        if [[ "$UC_ENV" == "local-anvil" || "$UC_ENV" == "docker-anvil" || "$UC_ENV" == "local-rskj" || "$UC_ENV" == "docker-rskj" ]]; then
             SCRIPT_ENV="$UC_ENV"
         else
-            SCRIPT_ENV="local"
+            SCRIPT_ENV="local-anvil"
         fi
     else
-        SCRIPT_ENV="local"
+        SCRIPT_ENV="local-anvil"
     fi
 }
 
@@ -147,8 +150,8 @@ parse_args() {
                 usage
                 return 1
             fi
-            if [[ "$SCRIPT_ENV" != "local" && "$SCRIPT_ENV" != "docker" ]]; then
-                echo "Error: --env must be 'local' or 'docker'" >&2
+            if [[ "$SCRIPT_ENV" != "local-anvil" && "$SCRIPT_ENV" != "docker-anvil" && "$SCRIPT_ENV" != "local-rskj" && "$SCRIPT_ENV" != "docker-rskj" ]]; then
+                echo "Error: --env must be 'local-anvil', 'docker-anvil', 'local-rskj', or 'docker-rskj'" >&2
                 usage
                 return 1
             fi
@@ -244,8 +247,93 @@ parse_args() {
 }
 
 validate_script_env() {
-    if [[ "$SCRIPT_ENV" != "local" && "$SCRIPT_ENV" != "docker" ]]; then
-        echo "Error: SCRIPT_ENV must be 'local' or 'docker'" >&2
+    if [[ "$SCRIPT_ENV" != "local-anvil" && "$SCRIPT_ENV" != "docker-anvil" && "$SCRIPT_ENV" != "local-rskj" && "$SCRIPT_ENV" != "docker-rskj" ]]; then
+        echo "Error: SCRIPT_ENV must be 'local-anvil', 'docker-anvil', 'local-rskj', or 'docker-rskj'" >&2
+        return 1
+    fi
+}
+
+is_docker_mode_env() {
+    [[ "$SCRIPT_ENV" == "docker-anvil" || "$SCRIPT_ENV" == "docker-rskj" ]]
+}
+
+is_rskj_backend_env() {
+    [[ "$SCRIPT_ENV" == "local-rskj" || "$SCRIPT_ENV" == "docker-rskj" ]]
+}
+
+rootstock_label() {
+    if is_rskj_backend_env; then
+        echo "Rootstock regtest"
+    else
+        echo "Anvil"
+    fi
+}
+
+user_flow_completion_max_blocks() {
+    if is_rskj_backend_env; then
+        echo 90
+    else
+        echo 15
+    fi
+}
+
+docker_operator_env_file() {
+    if [[ "$SCRIPT_ENV" == "docker-rskj" ]]; then
+        echo "docker/operator/docker-rskj.env"
+    else
+        echo "docker/operator/docker-anvil.env"
+    fi
+}
+
+contract_config_file() {
+    # Each env owns its [[contracts]] list — RSKj and Anvil deploys produce
+    # different deterministic CREATE addresses (the Anvil predeploy creates a
+    # BridgeMock at deployer-nonce 0, RSKj doesn't), so we can't share a list
+    # via base.toml.
+    case "$SCRIPT_ENV" in
+        local-anvil)  echo "config/local-anvil.toml" ;;
+        docker-anvil) echo "config/docker-anvil.toml" ;;
+        local-rskj)   echo "config/local-rskj.toml" ;;
+        docker-rskj)  echo "config/docker-rskj.toml" ;;
+    esac
+}
+
+contract_address_from_config() {
+    local contract_name="$1"
+    local config_file="$2"
+
+    awk -v target="$contract_name" '
+        $0 ~ /^\[\[contracts\]\]/ {
+            in_contract = 1
+            name = ""
+            address = ""
+            next
+        }
+        in_contract && $1 == "name" {
+            value = $0
+            sub(/^[^=]*=[[:space:]]*"/, "", value)
+            sub(/".*$/, "", value)
+            name = value
+        }
+        in_contract && $1 == "address" {
+            value = $0
+            sub(/^[^=]*=[[:space:]]*"/, "", value)
+            sub(/".*$/, "", value)
+            address = value
+        }
+        in_contract && name == target && address != "" {
+            print address
+            exit
+        }
+    ' "$config_file"
+}
+
+load_contract_addresses() {
+    local config_file=""
+    config_file=$(contract_config_file)
+    COMMITTEE_REGISTRY_ADDRESS=$(contract_address_from_config "CommitteeRegistry" "$config_file")
+    if [[ -z "$COMMITTEE_REGISTRY_ADDRESS" ]]; then
+        echo "Error: failed to resolve CommitteeRegistry address from ${config_file}" >&2
         return 1
     fi
 }
@@ -265,7 +353,8 @@ running_docker_operator_coordinators() {
 }
 
 ensure_selected_env_matches_running_mode() {
-    if [[ "$SCRIPT_ENV" != "local" ]]; then
+    # Only the cargo-mode envs (local-anvil, local-rskj) conflict with running docker operators.
+    if is_docker_mode_env; then
         return 0
     fi
 
@@ -275,9 +364,9 @@ ensure_selected_env_matches_running_mode() {
         return 0
     fi
 
-    echo "Error: --env local cannot be used while Docker operator coordinators are running." >&2
+    echo "Error: --env ${SCRIPT_ENV} cannot be used while Docker operator coordinators are running." >&2
     echo "Detected coordinator container(s): $running_coordinators" >&2
-    echo "Use --env docker for docker/operator/start-operators.sh, or stop the Docker operators before running --env local." >&2
+    echo "Use --env docker-anvil/docker-rskj for docker/operator/start-operators.sh, or stop the Docker operators before running --env ${SCRIPT_ENV}." >&2
     return 1
 }
 
@@ -290,13 +379,14 @@ load_num_operators() {
     fi
 
     NUM_OPERATORS=4
-    if [[ "$SCRIPT_ENV" != "docker" ]]; then
+    if ! is_docker_mode_env; then
         COMMITTEE_MEMBER_COUNT="$NUM_OPERATORS"
         export COMMITTEE_MEMBER_COUNT
         return 0
     fi
 
-    local env_file="docker/operator/docker-deploy.env"
+    local env_file
+    env_file=$(docker_operator_env_file)
     if [[ -f "$env_file" ]]; then
         local configured_ops=""
         configured_ops=$(grep -E '^\s*NUM_OPERATORS=' "$env_file" | tail -1 | cut -d= -f2 | tr -d ' "'\''')
@@ -336,7 +426,7 @@ derived_member_wallet_utxo_value() {
     local committee_member_count="$2"
     local wallet_fee_buffer=10000
     local per_member_funding
-    per_member_funding=$(bash cli-operations.sh operator funding-amount --env local --stream "$stream_id")
+    per_member_funding=$(bash cli-operations.sh operator funding-amount --env "$SCRIPT_ENV" --stream "$stream_id")
 
     echo $((per_member_funding * committee_member_count + wallet_fee_buffer))
 }
@@ -456,6 +546,14 @@ wait_for_condition() {
     return 1
 }
 
+native_bridge_has_union_bridge_address() {
+    local rpc_url="$1"
+    local address=""
+    address=$(cast call --rpc-url "$rpc_url" 0x0000000000000000000000000000000001000006 "getUnionBridgeContractAddress()(address)" 2>/dev/null) || return 1
+    address=$(printf '%s' "$address" | tr '[:upper:]' '[:lower:]')
+    [[ -n "$address" && "$address" != "0x0000000000000000000000000000000000000000" ]]
+}
+
 docker_container_healthy() {
     local container_ref="$1"
     local status
@@ -500,9 +598,16 @@ wait_for_local_coordinator_health() {
 }
 
 wait_for_test_prereqs() {
-    if ! wait_for_condition "Anvil RPC" 30 cast rpc eth_chainId --rpc-url http://localhost:8545; then
-        echo "Error: Anvil not ready on localhost:8545" >&2
+    if ! wait_for_condition "$(rootstock_label) RPC" 30 cast rpc eth_chainId --rpc-url "$ROOTSTOCK_RPC_URL"; then
+        echo "Error: $(rootstock_label) not ready on ${ROOTSTOCK_RPC_URL}" >&2
         return 1
+    fi
+
+    if is_rskj_backend_env; then
+        if ! wait_for_condition "Native Bridge authorization" 30 native_bridge_has_union_bridge_address "$ROOTSTOCK_RPC_URL"; then
+            echo "Error: Native Bridge RSKIP502 methods are not reachable on ${ROOTSTOCK_RPC_URL}" >&2
+            return 1
+        fi
     fi
 
     if ! wait_for_condition "Bitcoin RPC" 30 check_bitcoin_connectivity; then
@@ -517,7 +622,7 @@ wait_for_test_prereqs() {
         return 1
     fi
 
-    if [[ "$SCRIPT_ENV" == "docker" ]]; then
+    if is_docker_mode_env; then
         if ! wait_for_docker_coordinator_health; then
             echo "Error: Docker coordinators are not healthy" >&2
             return 1
@@ -556,8 +661,8 @@ check_required_commands() {
         return 1
     fi
 
-    if [[ "$SCRIPT_ENV" == "docker" ]] && ! command -v docker &> /dev/null; then
-        echo "Error: docker is required for --env docker" >&2
+    if is_docker_mode_env && ! command -v docker &> /dev/null; then
+        echo "Error: docker is required for --env ${SCRIPT_ENV}" >&2
         return 1
     fi
 }
@@ -612,7 +717,7 @@ collect_completion_marker_refs_docker() {
 
 collect_completion_marker_refs() {
     local kind="$1"
-    if [[ "$SCRIPT_ENV" == "docker" ]]; then
+    if is_docker_mode_env; then
         collect_completion_marker_refs_docker "$kind"
         return 0
     fi
@@ -778,7 +883,7 @@ wait_for_correlated_completion_markers() {
 
 user_rsk_balance_wei() {
     local address="$1"
-    cast balance "$address" --rpc-url http://localhost:8545
+    cast balance "$address" --rpc-url "$ROOTSTOCK_RPC_URL"
 }
 
 user_active_bitcoin_address() {
@@ -1275,7 +1380,7 @@ ensure_force_advance_inactive_unless_requested() {
     fi
 
     local active_state=""
-    if [[ "$SCRIPT_ENV" == "docker" ]]; then
+    if is_docker_mode_env; then
         if active_state=$(find_active_force_advance_in_docker); then
             :
         else
@@ -1337,7 +1442,7 @@ remove_force_advance_in_docker() {
 enable_force_advance() {
     local target_address="$1"
 
-    if [[ "$SCRIPT_ENV" == "docker" ]]; then
+    if is_docker_mode_env; then
         write_force_advance_in_docker "$target_address" || return 1
         log "FORCE_ADVANCE enabled via $FORCE_ADVANCE_FILE in coordinator container op_${FORCE_ADVANCE_TARGET_OPERATOR_ID} for operator $target_address"
         return 0
@@ -1350,7 +1455,7 @@ enable_force_advance() {
 restore_force_advance() {
     rm -f "$FORCE_ADVANCE_FILE"
 
-    if [[ "$SCRIPT_ENV" == "docker" ]]; then
+    if is_docker_mode_env; then
         remove_force_advance_in_docker
     fi
 }
@@ -1542,7 +1647,9 @@ run_pegin_phase() {
     fi
     success "Pegin transaction created"
     echo ""
-    if ! wait_for_correlated_completion_markers "pegin" "$NUM_OPERATORS" 15; then
+    local max_blocks
+    max_blocks=$(user_flow_completion_max_blocks)
+    if ! wait_for_correlated_completion_markers "pegin" "$NUM_OPERATORS" "$max_blocks"; then
         warn "Pegin completion marker not found within timeout"
         return 1
     fi
@@ -1594,7 +1701,9 @@ run_pegout_phase() {
     success "Pegout requested"
     echo ""
 
-    if ! wait_for_correlated_completion_markers "pegout" "$NUM_OPERATORS" 15; then
+    local max_blocks
+    max_blocks=$(user_flow_completion_max_blocks)
+    if ! wait_for_correlated_completion_markers "pegout" "$NUM_OPERATORS" "$max_blocks"; then
         warn "Pegout completion marker not found within timeout"
         return 1
     fi
@@ -1738,6 +1847,7 @@ main() {
 
     cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+    load_contract_addresses || return 1
     load_num_operators
     initialize_mode_config
     check_required_commands || return 1

@@ -1,0 +1,95 @@
+# RSKj side of the local blockchain stack (rskj + powpeg + deploy-contracts).
+# bitcoind is supplied via compose's `include:` from the shared
+# ../docker-compose.bitcoind.yaml so the service definition isn't duplicated.
+name: blockchains
+include:
+  - ../docker-compose.bitcoind.yaml
+services:
+  rskj:
+    image: "rsksmart/rskj:${RSKJ_TAG}"
+    platform: ${PLATFORM}
+    container_name: rskj
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      DEFAULT_JVM_OPTS: "-Xms2G -Xmx4G -XX:+UseGCOverheadLimit"
+      RSKJ_SYS_PROPS: "-Drsk.conf.file=/etc/rsk/node.conf -Dpeer.privateKey=${RSKJ_PEER_PRIVATE_KEY}"
+      RSKJ_LOG_PROPS: "-Dlogging.stdout=INFO"
+      RSKJ_CLASS: "co.rsk.Start"
+      RSKJ_OPTS: ""
+    ports:
+      - "8545:4444"
+      - "8546:4445"
+    volumes:
+      - ./config/rskj.node.conf:/etc/rsk/node.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "tr '\\0' ' ' < /proc/1/cmdline | grep -q 'co.rsk.Start'"]
+      start_period: 15s
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  powpeg-node:
+    image: "rsksmart/powpeg-node:${POWPEG_TAG}"
+    platform: ${PLATFORM}
+    container_name: powpeg-node
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      rskj:
+        condition: service_healthy
+      bitcoind:
+        condition: service_healthy
+    environment:
+      DEFAULT_JVM_OPTS: "-Xss4M -Xms1G"
+      RSKJ_SYS_PROPS: "-Drsk.conf.file=/etc/rsk/node.conf -Dpeer.active.0.ip=rskj -Dpeer.active.0.port=50505 -Dpeer.active.0.nodeId=${RSKJ_NODE_ID}"
+      RSKJ_LOG_PROPS: "-Dlogging.stdout=INFO"
+      RSKJ_CLASS: "co.rsk.federate.FederateRunner"
+      RSKJ_OPTS: "--reset"
+    volumes:
+      - ./config/node-federator1.conf:/etc/rsk/node.conf:ro
+      - ./config/federator1.key:/etc/rsk/federator1.key:ro
+    healthcheck:
+      test: ["CMD-SHELL", "tr '\\0' ' ' < /proc/1/cmdline | grep -q 'co.rsk.federate.FederateRunner'"]
+      start_period: 20s
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  deploy-contracts:
+    build:
+      context: ${CONTRACTS_CONTEXT_PATH}
+      # Dockerfile path is relative to the build context (the contracts repo).
+      dockerfile: ../union-bridge-client/docker/local-infra/rskj/Dockerfile_deploy
+    platform: ${PLATFORM}
+    container_name: deploy-contracts
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      RPC_URL: ${RSKJ_HTTP_URL}
+      MNEMONIC: ${MNEMONIC}
+      DEPLOYER_INDEX: ${DEPLOYER_INDEX}
+      IS_TEST: "false"
+    entrypoint: []
+    command:
+      - bash
+      - -lc
+      - |
+        if [ -z "$${RPC_URL:-}" ]; then
+          echo "Error: RPC_URL is required"
+          exit 1
+        fi
+        if [ -z "$${MNEMONIC:-}" ]; then
+          echo "Error: MNEMONIC is required"
+          exit 1
+        fi
+        echo "================ DEPLOY CONTRACTS TO $${RPC_URL} ================"
+        forge script script/deploy/DeployScript.s.sol \
+          --rpc-url "$${RPC_URL}" \
+          --legacy \
+          --broadcast \
+          --slow \
+          -vvv
+    depends_on:
+      rskj:
+        condition: service_healthy

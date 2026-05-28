@@ -38,9 +38,17 @@ const DEFAULT_FILTER: &str = "debug,\
 
 #[derive(Debug, Deserialize)]
 pub struct CommonConfig {
+    /// Runtime tier classification used for cross-cutting policy
+    /// (force flags, fake native bridge, signaling backend).
+    /// Required: every overlay must set this. base.toml is incomplete on its own.
     pub environment: String,
     pub indexer: IndexerConfig,
     pub provider: ProviderConfig,
+    /// `[[contracts]]` blocks live in the per-env overlay TOMLs, not in
+    /// `base.toml`. Default to empty so the base layer can be deserialized
+    /// on its own (e.g. in tests that exercise env-var overrides) without
+    /// requiring a contracts list to exist there.
+    #[serde(default)]
     pub contracts: Vec<ContractConfig>,
     pub bitcoin_network: String,
 }
@@ -422,17 +430,20 @@ mod tests {
     }
 
     #[test]
-    fn test_load_base_toml_config() {
+    fn test_load_base_plus_local_anvil_toml_config() {
         let _guard = TEST_MUTEX.lock().unwrap();
 
+        // base.toml on its own is incomplete (no `environment`); we always overlay a profile.
         let config: CommonConfig =
-            CommonConfig::load_config::<CommonConfig>(None).expect("Failed to load base config");
+            CommonConfig::load_config::<CommonConfig>(Some("local-anvil".to_string()))
+                .expect("Failed to load local-anvil config");
 
         assert_eq!(
             Some("0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"),
             config.indexer.initial_block_hash.as_deref()
         );
-        assert_eq!(IndexerStartFrom::Hash, config.indexer.start_from);
+        // local-anvil overrides start_from to Best (base sets Hash).
+        assert_eq!(IndexerStartFrom::Best, config.indexer.start_from);
         assert!(!config.indexer.storage.path.contains("{BASE_STORAGE_PATH}"));
         assert!(config.indexer.storage.path.ends_with("/.union_bridge/op_1/local_database"));
         assert_eq!(1000, config.indexer.cache.size);
@@ -468,12 +479,12 @@ mod tests {
     }
 
     #[test]
-    fn test_docker_environment_overrides() {
+    fn test_docker_anvil_environment_overrides() {
         let _guard = TEST_MUTEX.lock().unwrap();
 
         let config: CommonConfig =
-            CommonConfig::load_config::<CommonConfig>(Some("docker".to_string()))
-                .expect("Failed to load config with docker environment");
+            CommonConfig::load_config::<CommonConfig>(Some("docker-anvil".to_string()))
+                .expect("Failed to load config with docker-anvil environment");
 
         assert_eq!(
             Some("0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"),
@@ -482,9 +493,77 @@ mod tests {
         assert_eq!(IndexerStartFrom::Best, config.indexer.start_from);
         assert_eq!("/app/db/", config.indexer.storage.path); // override
         assert_eq!(1000, config.indexer.cache.size);
+        // docker-anvil shares the anvil dev tier with local-anvil at runtime.
+        assert_eq!("local-anvil", config.environment);
         assert_eq!("ws://host.docker.internal:8545", config.provider.rootstock.url);
         assert_eq!("regtest", config.bitcoin_network);
         assert_eq!(10, config.contracts.len());
+    }
+
+    #[test]
+    fn test_local_rskj_environment_overrides() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+
+        let config: CommonConfig =
+            CommonConfig::load_config::<CommonConfig>(Some("local-rskj".to_string()))
+                .expect("Failed to load config with local-rskj environment");
+
+        assert_eq!(IndexerStartFrom::Best, config.indexer.start_from);
+        assert_eq!("local-rskj", config.environment);
+        assert_eq!("ws://127.0.0.1:8546", config.provider.rootstock.url);
+        assert_eq!("regtest", config.bitcoin_network);
+        // RSKj has its own [[contracts]] list (8 entries): no anvil-only
+        // TestContract*, no rskj-only AccessManager/BitcoinManager/RbtcBridge.
+        // Addresses come from the RSKj deploy where no BridgeMock is created,
+        // so the deployer's nonce sequence is offset by one vs Anvil's predeploy.
+        assert_eq!(8, config.contracts.len());
+        let pegin = config.contracts.iter().find(|c| c.name == "PeginManager").unwrap();
+        assert_eq!("0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1", pegin.address);
+        let stream = config.contracts.iter().find(|c| c.name == "StreamManager").unwrap();
+        assert_eq!("0x5FC8d32690cc91D4c39d9d3abcBD16989F875707", stream.address);
+        let native = config.contracts.iter().find(|c| c.name == "NativeBridge").unwrap();
+        assert_eq!("0x0000000000000000000000000000000001000006", native.address);
+    }
+
+    #[test]
+    fn test_docker_rskj_environment_overrides() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+
+        let config: CommonConfig =
+            CommonConfig::load_config::<CommonConfig>(Some("docker-rskj".to_string()))
+                .expect("Failed to load config with docker-rskj environment");
+
+        assert_eq!(IndexerStartFrom::Best, config.indexer.start_from);
+        assert_eq!("/app/db/", config.indexer.storage.path);
+        // docker-rskj shares the rskj dev tier with local-rskj at runtime.
+        assert_eq!("local-rskj", config.environment);
+        assert_eq!("ws://host.docker.internal:8546", config.provider.rootstock.url);
+        assert_eq!("regtest", config.bitcoin_network);
+        // Same 8-entry rskj-specific [[contracts]] list as local-rskj.
+        assert_eq!(8, config.contracts.len());
+        let pegin = config.contracts.iter().find(|c| c.name == "PeginManager").unwrap();
+        assert_eq!("0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1", pegin.address);
+    }
+
+    #[test]
+    fn test_local_anvil_environment_overrides() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+
+        let config: CommonConfig =
+            CommonConfig::load_config::<CommonConfig>(Some("local-anvil".to_string()))
+                .expect("Failed to load config with local-anvil environment");
+
+        assert_eq!(IndexerStartFrom::Best, config.indexer.start_from);
+        assert_eq!("local-anvil", config.environment);
+        assert_eq!("ws://127.0.0.1:8545", config.provider.rootstock.url);
+    }
+
+    #[test]
+    fn test_base_alone_fails_to_load() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+
+        // base.toml omits `environment` (required field). Loading without an overlay must error.
+        assert!(CommonConfig::load_config::<CommonConfig>(None).is_err());
     }
 
     #[test]
@@ -493,6 +572,7 @@ mod tests {
 
         // SAFETY: Access to process-global env vars is serialized via TEST_MUTEX (held above).
         unsafe {
+            set_var("UB__ENVIRONMENT", "local-anvil");
             set_var("UB__INDEXER__STORAGE__PATH", "/test/env/path");
             set_var("UB__INDEXER__CACHE__SIZE", "3000");
             set_var("UB__PROVIDER__ROOTSTOCK__URL", "ws://127.0.0.1:8888");
@@ -514,6 +594,10 @@ mod tests {
         assert_eq!("ws://127.0.0.1:8888", config.provider.rootstock.url);
         assert_eq!("mainnet", config.bitcoin_network);
 
+        // SAFETY: serialized via TEST_MUTEX.
+        unsafe {
+            remove_var("UB__ENVIRONMENT");
+        }
         cleanup_env_vars();
     }
 
@@ -528,7 +612,7 @@ mod tests {
         }
 
         let config: CommonConfig =
-            CommonConfig::load_config::<CommonConfig>(Some("docker".to_string()))
+            CommonConfig::load_config::<CommonConfig>(Some("docker-anvil".to_string()))
                 .expect("Failed to load config with all overrides");
 
         assert_eq!("/app/db/", config.indexer.storage.path); // environment override

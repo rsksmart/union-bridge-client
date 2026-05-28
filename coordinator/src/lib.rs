@@ -11,4 +11,7 @@ pub mod store;
 mod types;
 mod user_requests;
 
-pub const RUNTIME_ENV_LOCAL: &str = "local";
+// Runtime tier classifications, grouped by Rootstock backend (not operator location).
+// Both cargo-mode and docker-mode operators against the same backend report the same tier.
+pub const RUNTIME_ENV_LOCAL_ANVIL: &str = "local-anvil";
+pub const RUNTIME_ENV_LOCAL_RSKJ: &str = "local-rskj";

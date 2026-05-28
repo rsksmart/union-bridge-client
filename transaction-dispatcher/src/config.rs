@@ -10,6 +10,9 @@ const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
     pub provider: ProviderConfig,
+    /// `[[contracts]]` blocks live in the per-env overlay TOMLs, not in
+    /// `base.toml`. Default to empty so base alone deserializes.
+    #[serde(default)]
     pub contracts: Vec<ContractConfig>,
     pub key_store: KeyStoreConfig,
     #[serde(rename = "transaction_dispatcher")]
@@ -107,8 +110,9 @@ mod tests {
 
     #[test]
     fn test_load_contracts_when_stage_config_set_should_load_contracts_successfully() {
-        let config: Config =
-            CommonConfig::load_config::<Config>(None).expect("Failed to load config");
+        // base.toml no longer carries [[contracts]]; per-env overlays do.
+        let config: Config = CommonConfig::load_config::<Config>(Some("local-anvil".to_string()))
+            .expect("Failed to load config");
         let contracts = config.load_managed_contracts();
 
         assert_eq!(10, contracts.len());

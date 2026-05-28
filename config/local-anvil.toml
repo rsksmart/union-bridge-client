@@ -1,0 +1,71 @@
+# ═══════════════════════════════════════════════════════
+# Common Configuration
+# ═══════════════════════════════════════════════════════
+
+environment = "local-anvil"
+
+# ═══════════════════════════════════════════════════════
+# Deployed Contracts
+# ═══════════════════════════════════════════════════════
+# Addresses come from the predeployed Anvil chain state shipped by
+# Dockerfile_predeployed_anvil (deterministic CREATE addresses from
+# mnemonic-index-0 deployer, with BridgeMock at nonce 0).
+# NativeBridge here is the RSKIP502 precompile placeholder — it has no code
+# on Anvil; uses_fake_native_bridge("local-anvil") returns true so the
+# coordinator uses the Dummy verifier instead of calling the precompile.
+
+[[contracts]]
+name = "TestContractDyn"
+address = "0x663B50C9DA9Bd586f855aF13e91EF2f0954c9761"
+
+[[contracts]]
+name = "TestContractCompiled"
+address = "0x9d4b2c05818A0086e641437fcb64ab6098c7BbEc"
+
+[[contracts]]
+name = "PeginManager"
+address = "0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE"
+
+[[contracts]]
+name = "PegoutManager"
+address = "0x3Aa5ebB10DC797CAC828524e59A333d0A371443c"
+
+[[contracts]]
+name = "SignatureManager"
+address = "0x0B306BF915C4d645ff596e518fAf3F9669b97016"
+
+[[contracts]]
+name = "CommitteeRegistry"
+address = "0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82"
+
+[[contracts]]
+name = "MemberRegistry"
+address = "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e"
+
+[[contracts]]
+name = "StreamManager"
+address = "0x0165878A594ca255338adfa4d48449f69242Eb8F"
+
+[[contracts]]
+name = "ChallengeManager"
+address = "0x59b670e9fA9D0A427751Af201D676719a970857b"
+
+[[contracts]]
+name = "NativeBridge"
+address = "0x0000000000000000000000000000000001000006"
+
+# ═══════════════════════════════════════════════════════
+# Indexers
+# ═══════════════════════════════════════════════════════
+
+[indexer]
+
+# Start from current provider tip in local runs; base initial_block_hash is ignored.
+start_from = "best"
+
+# ═══════════════════════════════════════════════════════
+# Bridge Flow Configuration
+# ═══════════════════════════════════════════════════════
+
+[flows.committee]
+drp_program_definition = "/app/resources/union-verifier.yaml"

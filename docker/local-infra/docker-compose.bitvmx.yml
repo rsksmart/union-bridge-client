@@ -1,6 +1,7 @@
 # 4 BitVMX clients for local development (union-client runs locally with cargo)
 # Preferred usage: ./start-bitvmx.sh up -d (creates network + bootstraps broker key/pubkey_hash)
-# Manual usage (advanced): docker compose --env-file .env.local -f docker-compose.bitvmx.yml up -d
+# Manual usage (advanced): docker compose -p bitvmx -f docker-compose.bitvmx.yml up -d
+# (BitVMX needs no env file — the only compose-time interpolation is ${BASE_STORAGE_PATH:-$HOME}.)
 # Volume ../../resources -> /app/resources: BitVMX verifier assets (e.g. union-verifier.yaml)
 # live in resources/; coordinator config uses /app/resources/union-verifier.yaml.
 # BitVMX client config is generated per operator under ${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/...

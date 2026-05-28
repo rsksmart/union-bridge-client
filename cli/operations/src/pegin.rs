@@ -29,7 +29,7 @@ pub(crate) async fn create_pegin_tx(
 ) -> Result<()> {
     if execute && environment.is_remote() {
         bail!(
-            "--execute flag is only supported for local environments (`local`/`docker`). For remote environments, please run the wallet commands manually."
+            "--execute flag is only supported for local environments (`local-anvil`/`docker-anvil`/`local-rskj`/`docker-rskj`). For remote environments, please run the wallet commands manually."
         );
     }
 

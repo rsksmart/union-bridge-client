@@ -59,11 +59,14 @@ mod tests {
 
     #[test]
     fn test_config_load_when_custom_config_set_should_load_config_successfully() {
-        let config: Config =
-            CommonConfig::load_config::<Config>(None).expect("Failed to load config");
+        // base.toml no longer carries [[contracts]] or `environment`; per-env
+        // overlays do, so load with an explicit profile.
+        let config: Config = CommonConfig::load_config::<Config>(Some("local-anvil".to_string()))
+            .expect("Failed to load config");
 
         assert_eq!(10001, config.block_indexer_config.notifier.port);
-        assert_eq!(IndexerStartFrom::Hash, config.indexer.start_from);
+        // local-anvil overrides start_from to Best (base sets Hash).
+        assert_eq!(IndexerStartFrom::Best, config.indexer.start_from);
         assert!(!config.indexer.storage.path.contains("{BASE_STORAGE_PATH}"));
         assert!(config.indexer.storage.path.ends_with("/.union_bridge/op_1/local_database"));
         assert_eq!(1000, config.indexer.cache.size);

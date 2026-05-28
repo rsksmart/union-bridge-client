@@ -84,7 +84,7 @@ Notes:
 - This sequence starts the blockchains from `docker/local-infra` and the wrapper's background mining loop.
 - `start-operators.sh` includes the `bitvmx-client` service in the operator compose stack.
 - `bash start-operators.sh up -d` reuses the current operator containers and volumes.
-- After the Docker operator runtime is up, you can use `bash tests/run-flows.sh --env docker --setup`,
+- After the Docker operator runtime is up, you can use `bash tests/run-flows.sh --env docker-anvil --setup`,
   then `--committee`, then the user-flow modes.
 
 For broader workflow context, go back to the [Local Setup Guide](../../LOCAL_SETUP.md) or the
@@ -99,7 +99,7 @@ bash start-operators.sh up -d
 bash start-operators.sh --op 3 up -d
 bash start-operators.sh --ops 6 up -d
 bash start-operators.sh --fresh up -d
-bash start-operators.sh --env-file /path/to/docker-deploy.env up -d
+bash start-operators.sh --env-file /path/to/docker-anvil.env up -d
 
 bash start-operators.sh logs -f
 bash start-operators.sh ps
@@ -119,13 +119,13 @@ Compose selection is derived from the effective operator count:
 
 The Docker operator runtime uses:
 
-- tracked static environment file: [`docker-deploy.env`](docker-deploy.env)
+- tracked static environment file: [`docker-anvil.env`](docker-anvil.env)
 - optional external env file passed with `--env-file`
 - generated per-operator files:
   - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-compose.env`
   - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-service.env`
 
-`docker-deploy.env` can override shared deployment paths such as `CONFIG_DIR` and `RESOURCES_DIR`. When unset, Docker
+`docker-anvil.env` can override shared deployment paths such as `CONFIG_DIR` and `RESOURCES_DIR`. When unset, Docker
 falls back to the tracked repo copies under `../../config` and `../../resources`.
 
 `--op <ID>` selects the staged payload under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_<ID>/` and is the intended

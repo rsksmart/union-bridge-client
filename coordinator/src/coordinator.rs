@@ -13,7 +13,7 @@ use common::shutdown_flag::ShutdownFlag;
 use tracing::{error, info, instrument, trace, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 
-use crate::RUNTIME_ENV_LOCAL;
+use crate::RUNTIME_ENV_LOCAL_ANVIL;
 use crate::event_processor::EventProcessor;
 use crate::flows::committee::setup_committee_flow::SetupCommitteeFlowFactory;
 use crate::flows::committee::setup_committee_processor::SetupCommitteeProcessor;
@@ -52,7 +52,7 @@ enum BitvmxLiveness {
 }
 
 fn uses_fake_native_bridge(runtime_environment: &str) -> bool {
-    runtime_environment.eq_ignore_ascii_case(RUNTIME_ENV_LOCAL)
+    runtime_environment.eq_ignore_ascii_case(RUNTIME_ENV_LOCAL_ANVIL)
 }
 
 /// Log the active-flows summary once every N RSK blocks the coordinator ingests.
@@ -473,13 +473,14 @@ pub(crate) mod tests {
     use crate::monitor::MockMonitorApi;
     use crate::store::MockCoordinatorStoreApi;
     use crate::types::RskPegManagerEvents;
+    use crate::{RUNTIME_ENV_LOCAL_ANVIL, RUNTIME_ENV_LOCAL_RSKJ};
 
     #[test]
-    fn test_uses_fake_native_bridge_only_for_local_modes() {
-        assert!(super::uses_fake_native_bridge("local"));
-        assert!(super::uses_fake_native_bridge("LOCAL"));
+    fn test_uses_fake_native_bridge_only_for_anvil_tier() {
+        assert!(super::uses_fake_native_bridge(RUNTIME_ENV_LOCAL_ANVIL));
+        assert!(super::uses_fake_native_bridge("LOCAL-ANVIL")); // verifies case-insensitivity
 
-        assert!(!super::uses_fake_native_bridge("docker"));
+        assert!(!super::uses_fake_native_bridge(RUNTIME_ENV_LOCAL_RSKJ));
         assert!(!super::uses_fake_native_bridge("regtest"));
         assert!(!super::uses_fake_native_bridge("alphanet"));
         assert!(!super::uses_fake_native_bridge("testnet"));

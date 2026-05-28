@@ -1,6 +1,7 @@
 # Local Infra
 
-This doc owns the Docker-backed local infrastructure used when Union Bridge runs locally with `cargo`.
+This doc owns the Docker-backed local infrastructure used when Union Bridge runs locally with `cargo`
+or against the Docker-first `local-rskj` stack.
 
 For the full startup order, shared env rules, and the recommended local workflow, start with the
 [Local Setup Guide](../../LOCAL_SETUP.md).
@@ -8,7 +9,7 @@ For the full startup order, shared env rules, and the recommended local workflow
 Environment note:
 
 - `./cli-infra.sh` reads `BASE_STORAGE_PATH` and any other exported variables from your current shell; it does not source `.envrc` itself.
-- For the Docker-backed local setup, the generated BitVMX configs are patched from `BITCOIND_URL`, which should match the local Docker value in [`.env.local`](./.env.local): `http://foo:rpcpassword@host.docker.internal:18443`.
+- For the Docker-backed local setup, the generated BitVMX configs are patched from `BITCOIND_URL` (read from your shell or `.envrc`). The expected local Docker value is `http://foo:rpcpassword@host.docker.internal:18443`.
 
 ## Related Docs
 
@@ -47,7 +48,7 @@ background mining.
 
 ## Scripts
 
-- `start-blockchains.sh`: starts bitcoind (regtest) + Anvil loaded with predeployed contract state
+- `start-blockchains.sh`: starts bitcoind (regtest) + Anvil for `local-anvil`, or bitcoind + RSKj + powpeg-node for `local-rskj`
 - `cli-infra.sh --start-blockchains`: wraps blockchain startup, bootstraps the Bitcoin miner wallet with 101 blocks when needed, and then starts background mining
 - `start-bitvmx.sh`: starts 4 BitVMX client instances
 
@@ -86,7 +87,7 @@ cd ../union-bridge-contracts
 docker buildx build \
   --platform linux/amd64 \
   -t ghcr.io/rsksmart/union-bridge-contracts-anvil:<tag> \
-  -f ../union-bridge-client/docker/local-infra/Dockerfile_predeployed_anvil \
+  -f ../union-bridge-client/docker/local-infra/anvil/Dockerfile_predeployed \
   .
 ```
 
@@ -96,7 +97,7 @@ Example:
 docker buildx build \
   --platform linux/amd64 \
   -t ghcr.io/rsksmart/union-bridge-contracts-anvil:v0.4.1-alpha-10-4-2 \
-  -f ../union-bridge-client/docker/local-infra/Dockerfile_predeployed_anvil \
+  -f ../union-bridge-client/docker/local-infra/anvil/Dockerfile_predeployed \
   .
 ```
 
@@ -116,6 +117,37 @@ cast rpc eth_chainId --rpc-url http://127.0.0.1:8545
 `./cli-infra.sh --start --fresh` can use the local image tag directly. If the
 selected image tag is not present locally, startup pulls it from GHCR and fails
 if the tag is not published. Use `--pull-contracts` to force a GHCR refresh.
+
+## local-rskj RSKj And PowPeg Versions
+
+`local-rskj` uses official Docker Hub images:
+
+- RSKj tags: <https://hub.docker.com/r/rsksmart/rskj/tags>
+- powpeg-node tags: <https://hub.docker.com/r/rsksmart/powpeg-node/tags>
+
+The contracts are deployed from the local `union-bridge-contracts` checkout resolved by `CONTRACTS_CONTEXT_PATH`
+(`../../../union-bridge-contracts` by default). Until the native-bridge local-regtest deploy changes land upstream, keep
+that sibling checkout on `fedejinich/chore/local-regtest-native-bridge`; see the required sibling repository setup in
+the [Local Setup Guide](../../LOCAL_SETUP.md#required-sibling-repositories).
+
+The default tested tags live in [`rskj/.env`](./rskj/.env):
+
+```bash
+RSKJ_TAG=VETIVER-9.0.1
+POWPEG_TAG=VETIVER-9.0.0.0
+```
+
+For a one-off run, pass the tags to `cli-infra.sh`:
+
+```bash
+PLATFORM=linux/arm64 ./cli-infra.sh --env local-rskj \
+  --start-blockchains --fresh \
+  --rskj-tag VETIVER-9.0.1 \
+  --powpeg-tag VETIVER-9.0.0.0
+```
+
+Use `--fresh` when changing RSKj or powpeg-node versions so old chain data does
+not leak into the new run.
 
 ## Scope
 
@@ -172,7 +204,8 @@ Ensure these ports are free before starting:
 | Service | Ports |
 | --- | --- |
 | Bitcoind | 18443 |
-| Anvil | 8545 |
+| Anvil / RSKj HTTP | 8545 |
+| RSKj WS | 8546 |
 | BitVMX P2P | 22222, 33333, 44444, 55554 |
 | BitVMX broker | 61180-61183 |
 | User API | 40001-40004 |

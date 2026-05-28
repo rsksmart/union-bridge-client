@@ -70,6 +70,19 @@ git clone https://github.com/FairgateLabs/rust-bitvmx-client.git
 git clone https://github.com/rsksmart/union-bridge-contracts.git
 ```
 
+Temporary `local-rskj` note: until the native-bridge local-regtest deploy changes are available in
+`rsksmart/union-bridge-contracts`, use the fork branch below for the sibling contracts checkout:
+
+```bash
+cd ../union-bridge-contracts
+git remote add fedejinich https://github.com/fedejinich/union-bridge-contracts.git
+git fetch fedejinich
+git checkout chore/local-regtest-native-bridge
+```
+
+The `local-rskj` and `docker-rskj` flows deploy contracts from this local checkout, so the checked-out contracts branch
+controls what gets deployed to Rootstock regtest.
+
 ### Install Git Hooks
 
 Hook installation is automatic on a clean checkout. [cargo-husky](https://github.com/rhysd/cargo-husky) is declared as
@@ -126,7 +139,7 @@ Configuration ownership is:
 | `docker-compose.env` | generated under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/` | `docker/operator/start-operators.sh` / Docker compose | Docker operator runtime only |
 | `docker-service.env` | generated under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/` | operator containers | Docker operator runtime only |
 | `UB__...` overrides | shell, `.envrc`, CI, or container env | application config loader | use when you need to override TOML config without editing files |
-| `docker/local-infra/.env.local` | tracked under `docker/local-infra/` | `start-blockchains.sh` and `start-bitvmx.sh` | local infra Docker scripts only |
+| `docker/local-infra/.env.anvil`, `.env.rskj` | tracked under `docker/local-infra/` | `start-blockchains.sh` and `start-bitvmx.sh` | local infra Docker scripts only; one file per Rootstock impl |
 
 Wrapper script note:
 
@@ -153,7 +166,7 @@ export BASE_STORAGE_PATH="$HOME"
 Configuration files live under `config/`:
 
 - `config/base.toml`
-- `config/{env}.toml`, for example `local.toml`, `docker.toml`, or `ci.toml`
+- `config/{env}.toml`, for example `local-anvil.toml`, `docker-anvil.toml`, `local-rskj.toml`, `docker-rskj.toml`, or `ci.toml`
 
 Any value can be overridden with `UB__...` environment variables using double underscores as path separators.
 
@@ -303,7 +316,7 @@ The repository ships sample files under `resources/`:
 | `resources/generic-verifier.elf` | BitVMX union verifier ELF binary |
 | `resources/union-verifier.yaml` | BitVMX union verifier program definition |
 
-For the recommended Docker-backed local path, `config/local.toml` already points to `/app/resources/union-verifier.yaml`,
+For the recommended Docker-backed local path, `config/local-anvil.toml` already points to `/app/resources/union-verifier.yaml`,
 which matches the Docker mounts used by the local BitVMX flow.
 
 For repo-mode BitVMX, `./cli-run.sh --bitvmx-mode repo` injects:

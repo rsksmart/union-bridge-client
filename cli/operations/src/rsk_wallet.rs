@@ -1,3 +1,5 @@
+use std::fs;
+use std::path::PathBuf;
 use std::process::Command;
 use std::str::FromStr;
 
@@ -9,14 +11,20 @@ use reqwest::Client;
 use rpassword::prompt_password;
 use serde::Deserialize;
 
-use crate::bitcoin_wallet::derive_user_bitcoin_address_from_env;
+use crate::bitcoin_wallet::collect_user_bitcoin_addresses;
 use crate::constants::{LOCAL_ANVIL_ADDRESS, operator_ids};
 use crate::environments::*;
 use crate::member_funding_info::CollectedMemberFundingInfo;
 
-// Keep this aligned with `union-bridge-client/config/base.toml`. Local and docker both point at
-// the same Anvil deployment, so the CLI can rely on this fixed StreamManager address.
-const LOCAL_STREAM_MANAGER_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
+const STREAM_MANAGER_CONTRACT_NAME: &str = "StreamManager";
+const LOCAL_RSKJ_DEPLOYER_PRIVATE_KEY_ENV: &str = "LOCAL_RSKJ_DEPLOYER_PRIVATE_KEY";
+const DEFAULT_LOCAL_RSKJ_DEPLOYER_PRIVATE_KEY: &str =
+    "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+
+// Well-known RSKj regtest COW account, pre-funded in the regtest genesis.
+// Deterministic across every RSKj regtest run, so there's no env-var override.
+const RSKJ_COW_PRIVATE_KEY: &str =
+    "0xc85ef7d79691fe79573b1a7064c19c1a9819ebdbd1faaab1a8ec92344438aaf4";
 const WEI_PER_RBTC: u64 = 1_000_000_000_000_000_000;
 const WEI_PER_SAT: u64 = 10_000_000_000;
 // Fixed local/dev gas headroom added on top of the pegout amount for user wallets.
@@ -60,7 +68,7 @@ pub(crate) async fn handle_whitelist(
     let rpc_url = env.rpc_url()?;
 
     match env {
-        Environment::Local | Environment::Docker => {
+        Environment::LocalAnvil | Environment::DockerAnvil => {
             let from_address = resolve_local_whitelist_sender(from_address, private_key)?;
             println!(
                 "Running: cast send --rpc-url {} --from {} {} \"whitelistAddresses(address[])\" \"{}\" --unlocked",
@@ -77,6 +85,34 @@ pub(crate) async fn handle_whitelist(
                 .arg("whitelistAddresses(address[])")
                 .arg(&addr_array)
                 .arg("--unlocked")
+                .output()
+                .context("failed to execute cast send for whitelistAddresses")?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                bail!("whitelistAddresses transaction failed: {}", stderr.trim());
+            }
+
+            println!("{}", String::from_utf8_lossy(&output.stdout));
+        }
+        Environment::LocalRskj | Environment::DockerRskj => {
+            let key = resolve_rskj_whitelist_private_key(from_address, private_key)?;
+
+            println!(
+                "Running: cast send {} \"whitelistAddresses(address[])\" \"{}\" --private-key <REDACTED> --rpc-url {} --legacy",
+                contract_address, addr_array, rpc_url
+            );
+
+            let output = Command::new("cast")
+                .arg("send")
+                .arg(contract_address)
+                .arg("whitelistAddresses(address[])")
+                .arg(&addr_array)
+                .arg("--private-key")
+                .arg(&key)
+                .arg("--rpc-url")
+                .arg(&rpc_url)
+                .arg("--legacy")
                 .output()
                 .context("failed to execute cast send for whitelistAddresses")?;
 
@@ -136,7 +172,7 @@ fn resolve_local_whitelist_sender(
 ) -> Result<String> {
     if private_key.is_some() {
         bail!(
-            "`--private-key` is not supported for `operator whitelist` in local/docker. Use `--from <address>` or rely on the default unlocked anvil account."
+            "`--private-key` is not supported for `operator whitelist` in local-anvil/docker-anvil. Use `--from <address>` or rely on the default unlocked anvil account."
         );
     }
 
@@ -151,11 +187,32 @@ fn resolve_remote_whitelist_private_key(
 ) -> Result<Option<String>> {
     if from_address.is_some() {
         bail!(
-            "`--from` is only supported for `operator whitelist` in local/docker. Use `--private-key <hex-key>` in remote mode."
+            "`--from` is only supported for `operator whitelist` in local-anvil/docker-anvil. Use `--private-key <hex-key>` in remote mode."
         );
     }
 
     private_key.map(normalize_private_key).transpose()
+}
+
+fn resolve_rskj_whitelist_private_key(
+    from_address: Option<&str>,
+    private_key: Option<&str>,
+) -> Result<String> {
+    if from_address.is_some() {
+        bail!(
+            "`--from` is not supported for `operator whitelist` in local-rskj/docker-rskj. Use `--private-key <hex-key>` or {LOCAL_RSKJ_DEPLOYER_PRIVATE_KEY_ENV}."
+        );
+    }
+
+    if let Some(private_key) = private_key {
+        return normalize_private_key(private_key);
+    }
+
+    let key = std::env::var(LOCAL_RSKJ_DEPLOYER_PRIVATE_KEY_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_LOCAL_RSKJ_DEPLOYER_PRIVATE_KEY.to_string());
+    normalize_private_key(&key)
 }
 
 fn validate_address(address: &str) -> Result<()> {
@@ -196,11 +253,14 @@ pub(crate) async fn handle_operator_funding(
     member_funding_info: &CollectedMemberFundingInfo,
 ) -> Result<()> {
     match env {
-        Environment::Local => {
-            fund_local(stream_id, member_funding_info).await?;
+        Environment::LocalAnvil => {
+            fund_local_anvil(stream_id, member_funding_info).await?;
         }
-        Environment::Docker => {
-            fund_local_docker(stream_id, member_funding_info).await?;
+        Environment::DockerAnvil => {
+            fund_docker_anvil(stream_id, member_funding_info).await?;
+        }
+        Environment::LocalRskj | Environment::DockerRskj => {
+            fund_rskj(env.clone(), stream_id, member_funding_info).await?;
         }
         Environment::Remote(_) => {
             print_instructions(&env, stream_id, stream_manager_address, roles, member_funding_info)
@@ -230,7 +290,7 @@ pub(crate) async fn handle_user_funding(env: Environment) -> Result<()> {
 
         let rpc_url = env.rpc_url()?;
         match env {
-            Environment::Local | Environment::Docker => {
+            Environment::LocalAnvil | Environment::DockerAnvil => {
                 println!("Fund using (local anvil):");
                 println!(
                     "  value should be: pegout amount in wei + {} wei gas buffer",
@@ -240,6 +300,19 @@ pub(crate) async fn handle_user_funding(env: Environment) -> Result<()> {
                     println!(
                         "  cast send --rpc-url {} --from {} {} --value <AMOUNT_IN_WEI_PLUS_BUFFER> --unlocked",
                         rpc_url, LOCAL_ANVIL_ADDRESS, address
+                    );
+                }
+            }
+            Environment::LocalRskj | Environment::DockerRskj => {
+                println!("Fund using local Rootstock regtest (regtest COW account):");
+                println!(
+                    "  value should be: pegout amount in wei + {} wei gas buffer",
+                    LOCAL_USER_RSK_GAS_BUFFER_WEI
+                );
+                for (_, address) in &user_addresses {
+                    println!(
+                        "  cast send {} --value <AMOUNT_IN_WEI_PLUS_BUFFER> --private-key {} --rpc-url {} --legacy",
+                        address, RSKJ_COW_PRIVATE_KEY, rpc_url
                     );
                 }
             }
@@ -257,19 +330,22 @@ pub(crate) async fn handle_user_funding(env: Environment) -> Result<()> {
 
     // print Bitcoin funding instructions
     println!("\n--- Bitcoin ---");
-    match derive_user_bitcoin_address_from_env(&env) {
-        Ok(address) => {
-            println!("User Bitcoin address to fund: {}", address);
-            println!();
-            println!("Use your bitcoin-wallet CLI:");
-            println!("  send_to_address <user_btc_address> [amount]");
-            println!();
-            println!("Note: Use the address of a Bitcoin private key you control");
+    let user_bitcoin_addresses = collect_user_bitcoin_addresses(&env, false)?;
+    if user_bitcoin_addresses.is_empty() {
+        println!("No user Bitcoin addresses found in staged operator env files.");
+        println!(
+            "Ensure USER_BITCOIN_WIF is available under ~/.union_bridge/op_N/docker-service.env."
+        );
+    } else {
+        println!("User Bitcoin addresses to fund:");
+        for (source, address) in &user_bitcoin_addresses {
+            println!("  {} -> {}", source, address);
         }
-        Err(e) => {
-            println!("Could not derive user Bitcoin address: {}", e);
-            println!("Ensure USER_BITCOIN_WIF is exported in your shell.");
-        }
+        println!();
+        println!("Use your bitcoin-wallet CLI:");
+        println!("  send_to_address <user_btc_address> [amount]");
+        println!();
+        println!("Note: Use the address of a Bitcoin private key you control");
     }
 
     Ok(())
@@ -336,11 +412,11 @@ async fn collect_rsk_addresses_from_user_api(
     Ok(addresses)
 }
 
-async fn fund_local(
+async fn fund_local_anvil(
     stream_id: u64,
     member_funding_info: &CollectedMemberFundingInfo,
 ) -> Result<()> {
-    println!("[cargo-fund] funding operator wallets via local anvil");
+    println!("[local-anvil-fund] funding operator wallets via local anvil");
     let member_signers = collect_member_rsk_addresses(member_funding_info);
     let unique_members = unique_addresses(&member_signers);
     let expected = operator_ids().len();
@@ -352,14 +428,16 @@ async fn fund_local(
         );
     }
 
-    let rpc_url = Environment::Local.rpc_url()?;
+    let env = Environment::LocalAnvil;
+    let rpc_url = env.rpc_url()?;
+    let stream_manager_address = contract_address_for_env(&env, STREAM_MANAGER_CONTRACT_NAME)?;
 
     for (index, (operator_id, address)) in member_signers.iter().enumerate() {
         println!("Processing coordinator-{}", operator_id);
         println!("  Funding member RSK address: {}", address);
         let required_balance = required_operator_rsk_balance(
             &rpc_url,
-            LOCAL_STREAM_MANAGER_ADDRESS,
+            &stream_manager_address,
             stream_id,
             role_for_operator_index(index),
         )?;
@@ -368,11 +446,11 @@ async fn fund_local(
             format_wei_as_rbtc(required_balance),
             required_balance
         );
-        run_cast_send_local(address, required_balance)?;
+        run_cast_send_unlocked(&rpc_url, address, required_balance)?;
     }
 
-    println!("\n[cargo-fund] funding user wallets via local anvil");
-    let user_signers = collect_user_rsk_addresses(&Environment::Local, false).await?;
+    println!("\n[local-anvil-fund] funding user wallets via local anvil");
+    let user_signers = collect_user_rsk_addresses(&Environment::LocalAnvil, false).await?;
     let unique_users = unique_addresses(&user_signers);
     if unique_users.len() < expected {
         bail!(
@@ -392,18 +470,18 @@ async fn fund_local(
             format_wei_as_rbtc(required_user_balance),
             required_user_balance
         );
-        run_cast_send_local(address, required_user_balance)?;
+        run_cast_send_unlocked(&rpc_url, address, required_user_balance)?;
     }
 
     println!("\nDone. Funded operator and user RSK addresses on local Anvil.");
     Ok(())
 }
 
-async fn fund_local_docker(
+async fn fund_docker_anvil(
     stream_id: u64,
     member_funding_info: &CollectedMemberFundingInfo,
 ) -> Result<()> {
-    println!("[docker-fund] funding operator wallets via local anvil");
+    println!("[docker-anvil-fund] funding operator wallets via local anvil");
     let member_signers = collect_member_rsk_addresses(member_funding_info);
     let unique_members = unique_addresses(&member_signers);
     let expected = operator_ids().len();
@@ -415,14 +493,16 @@ async fn fund_local_docker(
         );
     }
 
-    let rpc_url = Environment::Docker.rpc_url()?;
+    let env = Environment::DockerAnvil;
+    let rpc_url = env.rpc_url()?;
+    let stream_manager_address = contract_address_for_env(&env, STREAM_MANAGER_CONTRACT_NAME)?;
 
     for (index, (project, address)) in member_signers.iter().enumerate() {
         println!("Processing {}", project);
         println!("  Funding member RSK address: {}", address);
         let required_balance = required_operator_rsk_balance(
             &rpc_url,
-            LOCAL_STREAM_MANAGER_ADDRESS,
+            &stream_manager_address,
             stream_id,
             role_for_operator_index(index),
         )?;
@@ -431,11 +511,11 @@ async fn fund_local_docker(
             format_wei_as_rbtc(required_balance),
             required_balance
         );
-        run_cast_send_local(address, required_balance)?;
+        run_cast_send_unlocked(&rpc_url, address, required_balance)?;
     }
 
-    println!("\n[docker-fund] funding user wallets via local anvil");
-    let user_signers = collect_user_rsk_addresses(&Environment::Docker, false).await?;
+    println!("\n[docker-anvil-fund] funding user wallets via local anvil");
+    let user_signers = collect_user_rsk_addresses(&Environment::DockerAnvil, false).await?;
     let unique_users = unique_addresses(&user_signers);
     if unique_users.len() < expected {
         bail!(
@@ -455,10 +535,82 @@ async fn fund_local_docker(
             format_wei_as_rbtc(required_user_balance),
             required_user_balance
         );
-        run_cast_send_local(address, required_user_balance)?;
+        run_cast_send_unlocked(&rpc_url, address, required_user_balance)?;
     }
 
     println!("\nDone. Funded operator and user RSK addresses on local Anvil.");
+    Ok(())
+}
+
+async fn fund_rskj(
+    env: Environment,
+    stream_id: u64,
+    member_funding_info: &CollectedMemberFundingInfo,
+) -> Result<()> {
+    let env_name = env.get_name();
+    println!("[{env_name}-fund] funding operator wallets via Rootstock regtest COW account");
+    let member_signers = collect_member_rsk_addresses(member_funding_info);
+    let unique_members = unique_addresses(&member_signers);
+    let expected = operator_ids().len();
+    if unique_members.len() < expected {
+        bail!(
+            "expected {} member RSK address(es) but found {}. ensure coordinator and user-api services are running.",
+            expected,
+            unique_members.len()
+        );
+    }
+
+    let rpc_url = env.rpc_url()?;
+    let stream_manager_address = contract_address_for_env(&env, STREAM_MANAGER_CONTRACT_NAME)?;
+    let funding_private_key = rskj_cow_private_key()?;
+
+    for (index, (project, address)) in member_signers.iter().enumerate() {
+        println!("Processing {}", project);
+        println!("  Funding member RSK address: {}", address);
+        let required_balance = required_operator_rsk_balance(
+            &rpc_url,
+            &stream_manager_address,
+            stream_id,
+            role_for_operator_index(index),
+        )?;
+        println!(
+            "  Required RSK balance: {} RBTC ({} wei)",
+            format_wei_as_rbtc(required_balance),
+            required_balance
+        );
+        run_cast_send_with_private_key(&rpc_url, &funding_private_key, address, required_balance)?;
+    }
+
+    println!("\n[{env_name}-fund] funding user wallets via Rootstock regtest COW account");
+    let user_signers = collect_user_rsk_addresses(&env, false).await?;
+    let unique_users = unique_addresses(&user_signers);
+    if unique_users.len() < expected {
+        bail!(
+            "expected {} user RSK address(es) but found {}. ensure user-api services are running.",
+            expected,
+            unique_users.len()
+        );
+    }
+
+    let required_user_balance = required_user_rsk_balance(stream_id)?;
+
+    for (project, address) in &user_signers {
+        println!("Processing {} (user)", project);
+        println!("  Funding user RSK address: {}", address);
+        println!(
+            "  Required user RSK balance: {} RBTC ({} wei)",
+            format_wei_as_rbtc(required_user_balance),
+            required_user_balance
+        );
+        run_cast_send_with_private_key(
+            &rpc_url,
+            &funding_private_key,
+            address,
+            required_user_balance,
+        )?;
+    }
+
+    println!("\nDone. Funded operator and user RSK addresses on local Rootstock regtest.");
     Ok(())
 }
 
@@ -631,6 +783,87 @@ fn required_operator_rsk_balance(
     Ok(required_member_rsk_balance(min_deposit, slots_per_package()?, committee_member_count()?))
 }
 
+/// Returns the path to a profile TOML under `<repo>/config/`.
+///
+/// `CARGO_MANIFEST_DIR` for this crate is `<repo>/cli/operations`, so the
+/// repo root sits two levels up.
+fn project_config_path(profile: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .expect("CARGO_MANIFEST_DIR has fewer than two parent directories")
+        .join("config")
+        .join(format!("{profile}.toml"))
+}
+
+/// Resolve a contract address for the given `Environment`.
+///
+/// Each env's profile TOML owns its own `[[contracts]]` list — base.toml no
+/// longer carries one because Anvil and RSKj produce different deterministic
+/// CREATE addresses (the Anvil predeploy deploys a BridgeMock at nonce 0, the
+/// RSKj deploy doesn't). Remote envs aren't supported here — callers pass an
+/// explicit `--stream-manager-address` flag.
+fn contract_address_for_env(env: &Environment, contract_name: &str) -> Result<String> {
+    let profile: &str = match env {
+        Environment::LocalAnvil => "local-anvil",
+        Environment::DockerAnvil => "docker-anvil",
+        Environment::LocalRskj => "local-rskj",
+        Environment::DockerRskj => "docker-rskj",
+        Environment::Remote(_) => {
+            bail!("contract_address_for_env is not supported for remote environments")
+        }
+    };
+    match contract_address_from_toml(profile, contract_name)? {
+        Some(address) => Ok(address),
+        None => bail!("contract '{}' not found in config/{}.toml", contract_name, profile),
+    }
+}
+
+/// Tiny inline parser for `[[contracts]]` blocks in a config profile TOML.
+/// Mirrors the awk parser in `tests/run-flows.sh`. Returns `Ok(None)` when
+/// the contract isn't listed in the profile (so the caller can fall through
+/// to a base.toml lookup).
+fn contract_address_from_toml(profile: &str, contract_name: &str) -> Result<Option<String>> {
+    let path = project_config_path(profile);
+    let contents =
+        fs::read_to_string(&path).with_context(|| format!("failed to read {}", path.display()))?;
+
+    let mut in_block = false;
+    let mut name: Option<String> = None;
+    for line in contents.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("[[contracts]]") {
+            in_block = true;
+            name = None;
+            continue;
+        }
+        if !in_block {
+            continue;
+        }
+        if let Some(value) = parse_toml_string_field(trimmed, "name") {
+            name = Some(value);
+            continue;
+        }
+        if let Some(address) = parse_toml_string_field(trimmed, "address") {
+            if name.as_deref() == Some(contract_name) {
+                return Ok(Some(address));
+            }
+            in_block = false;
+        }
+    }
+
+    Ok(None)
+}
+
+/// Parses TOML lines like `key = "value"`. Returns `Some(value)` when the
+/// line starts with `key` and quotes match.
+fn parse_toml_string_field(line: &str, key: &str) -> Option<String> {
+    let rest = line.strip_prefix(key)?;
+    let after_eq = rest.trim_start().strip_prefix('=')?.trim();
+    let unquoted = after_eq.strip_prefix('"').and_then(|s| s.strip_suffix('"'))?;
+    Some(unquoted.to_string())
+}
+
 fn fetch_stream_min_deposit(
     rpc_url: &str,
     stream_manager_address: &str,
@@ -685,8 +918,11 @@ fn format_wei_as_rbtc(value: U256) -> String {
     format!("{}.{}", whole, trimmed)
 }
 
-fn run_cast_send_local(address: &str, value: U256) -> Result<()> {
-    let rpc_url = Environment::Local.rpc_url()?;
+fn rskj_cow_private_key() -> Result<String> {
+    normalize_private_key(RSKJ_COW_PRIVATE_KEY)
+}
+
+fn run_cast_send_unlocked(rpc_url: &str, address: &str, value: U256) -> Result<()> {
     eprintln!(
         "  Running: cast send --rpc-url {} --from {} {} --value {} --unlocked ({} RBTC)",
         rpc_url,
@@ -705,6 +941,40 @@ fn run_cast_send_local(address: &str, value: U256) -> Result<()> {
         .arg("--value")
         .arg(value.to_string())
         .arg("--unlocked")
+        .output()
+        .context("failed to execute cast send")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("cast send failed for {}: {}", address, stderr.trim());
+    }
+
+    Ok(())
+}
+
+fn run_cast_send_with_private_key(
+    rpc_url: &str,
+    private_key: &str,
+    address: &str,
+    value: U256,
+) -> Result<()> {
+    eprintln!(
+        "  Running: cast send {} --value {} --private-key <REDACTED> --rpc-url {} --legacy ({} RBTC)",
+        address,
+        value,
+        rpc_url,
+        format_wei_as_rbtc(value)
+    );
+    let output = Command::new("cast")
+        .arg("send")
+        .arg(address)
+        .arg("--value")
+        .arg(value.to_string())
+        .arg("--private-key")
+        .arg(private_key)
+        .arg("--rpc-url")
+        .arg(rpc_url)
+        .arg("--legacy")
         .output()
         .context("failed to execute cast send")?;
 

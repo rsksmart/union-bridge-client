@@ -6,6 +6,8 @@ use chrono::{SecondsFormat, Utc};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+use crate::{RUNTIME_ENV_LOCAL_ANVIL, RUNTIME_ENV_LOCAL_RSKJ};
+
 const COMPLETION_MARKER_DIR_NAME: &str = "union-bridge-flow-completion-markers";
 
 #[derive(Debug, Clone, Default)]
@@ -69,8 +71,8 @@ pub(crate) enum Signaling {
 
 impl Signaling {
     pub(crate) fn new(storage_root: impl AsRef<Path>, runtime_environment: &str) -> Self {
-        if runtime_environment.eq_ignore_ascii_case("local")
-            || runtime_environment.eq_ignore_ascii_case("docker")
+        if runtime_environment.eq_ignore_ascii_case(RUNTIME_ENV_LOCAL_ANVIL)
+            || runtime_environment.eq_ignore_ascii_case(RUNTIME_ENV_LOCAL_RSKJ)
         {
             Self::File(FileSignal::new(storage_root))
         } else {
