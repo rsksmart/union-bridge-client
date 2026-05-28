@@ -133,9 +133,8 @@ Concrete patterns this repository expects for areas where [`CONTRIBUTING.md`](CO
 ## Secrets in Types
 
 > See [`CONTRIBUTING.md` › Configuration and secrets](CONTRIBUTING.md#configuration-and-secrets) for the rule.
-> The bullets below are the concrete pattern reviewers expect new code to follow.
+> Reviewers check the concrete cases below when touching secret-holding types.
 
-- When a new type holds a secret value (private key, WIF, password, mnemonic, token), wrap the field with `secrecy::SecretString` (or `secrecy::SecretBox<T>` for non-string secrets) rather than using a plain `String` or byte slice. The wrapper redacts the value from `Debug` so accidental `{:?}` formatting cannot leak it.
-- Use `.expose_secret()` only at the boundary where the underlying value is consumed (e.g. building HTTP auth headers, signing a transaction). Avoid holding the exposed value in a local for longer than the consuming call.
-- Existing transient handling (a function parameter taking `password: &str` and discarding it after use) is acceptable as long as the parameter is not stored in a Debug-deriving struct. Prefer `&SecretString` parameters when the value crosses module boundaries.
-- External secret types without a redacted `Debug` (notably `bitcoin::PrivateKey`) must be wrapped before being stored in a workspace type that derives `Debug`.
+- Stored secrets use `SecretString` or `SecretBox<T>`, including external secret types without redacted `Debug`.
+- `.expose_secret()` appears only at the consuming boundary.
+- Transient secret parameters are not stored in `Debug`-deriving types; prefer `&SecretString` across module boundaries.

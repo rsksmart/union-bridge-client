@@ -256,6 +256,13 @@ exception, not the default.
 ## Configuration and secrets
 
 - All configurations are loaded at startup; no environment-variable lookups deep in business logic.
+- Types that store secret values (private keys, WIFs, passwords, mnemonics, tokens) wrap those fields with
+  `secrecy::SecretString` or `secrecy::SecretBox<T>` instead of plain strings, byte slices, or external secret types
+  with non-redacted `Debug`.
+- `.expose_secret()` is used only at the boundary where the underlying value is consumed, such as building an auth
+  header or signing a transaction. Avoid keeping the exposed value in a local longer than the consuming call needs it.
+- Transient secret parameters such as `password: &str` are acceptable only when the value is not stored in a
+  `Debug`-deriving type. Prefer `&SecretString` when a secret crosses module boundaries.
 
 ## Protocol compatibility
 

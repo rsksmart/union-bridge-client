@@ -174,7 +174,8 @@ UB__BLOCK_BROKER__PORT=5672
 
 - `.envrc` is your local override file — copy from `.envrc.sample` and fill in real values. **Never commit `.envrc`** (it is gitignored, but verify before staging).
 - Never paste `KEY_STORE_PASSWORD`, `USER_BITCOIN_WIF`, `MEMBER_BITCOIN_WIF`, or the contents of broker `.pem` files into issues, PRs, chat, or commit messages. Use placeholders (`<your-password>`) when reproducing commands.
-- For code-side handling of secrets (wrapping in `secrecy::SecretString`, redacting `Debug`), see [`AGENTS.md` › Secrets in Types](AGENTS.md#secrets-in-types).
+- For code-side handling of secrets (wrapping in `secrecy::SecretString`, redacting `Debug`), see
+  [`CONTRIBUTING.md` › Configuration and secrets](CONTRIBUTING.md#configuration-and-secrets).
 
 ## Local Development Modes
 
