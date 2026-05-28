@@ -1,27 +1,125 @@
-# General
+# Behavioral Guidelines
 
-> Rust coding patterns and codebase-specific guidance. For formal quality criteria (Quality Gate, scope and classification, sign-off bullets) see [`CONTRIBUTING.md`](CONTRIBUTING.md). For developer setup, environment, and workflow see [`LOCAL_SETUP.md`](LOCAL_SETUP.md).
->
-> Not all crates run the same Quality Gate. [`CONTRIBUTING.md` › Scope and classification](CONTRIBUTING.md#scope-and-classification) classifies each crate as production or non-production and describes the relaxed bar that applies to the latter.
+## Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+## Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If your diff is meaningfully larger than the smallest version that works, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+## Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
+- Preserve existing comments when refactoring or moving code — don't drop them as part of the move.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+## Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+When writing tests, default to covering the unhappy paths — invalid input, error returns from dependencies, edge cases. The bug usually lives in the case you didn't test.
+
+For multi-step tasks, state the plan briefly with the verification you'll use for each step — concrete checks ("cargo test passes", "endpoint returns 200") beat abstract milestones ("it works").
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+For Rust edits in this repo, "verified" includes both clippy and tests passing. Hooks enforce this on push, but earlier is cheaper — run them locally before declaring work done.
+
+# General
 
 ## Agent Style
 - Use brief and direct responses
-- If you don't know the response, state it
-- Please challenge me when appropriate, instead of just agreeing - I prefer critical thinking
-- Point out when you think my approach might be overcomplicating things, even if I didn’t ask explicitly
+- If you don't know the answer, state it — don't fabricate
+- I prefer critical thinking over agreement — challenge me, even when I haven't asked
 
 ## Team conventions
 - No new TODOs — use Jira tickets instead
+- Crate strictness varies — `cli/*` and `user-api` run a relaxed bar (`clippy::pedantic` allowed). See [`CONTRIBUTING.md` › Scope and classification](CONTRIBUTING.md#scope-and-classification).
 
-# Rust
+## Build and Verify
 
-## General Standards
-- Follow Rust API Guidelines and naming conventions (snake_case for functions/variables, PascalCase for types)
-- Workspace lints live in the root `Cargo.toml` under `[workspace.lints]`; fmt/sort/clippy invocations live in [`.hooks/`](.hooks/) and are shared between CI and the local git hooks. Treat both as source of truth.
-- Prefer composition over inheritance when designing structs and traits
-- Always handle `Result` and `Option` types explicitly - avoid `.unwrap()` in production code except where panic is intentional
-- Use `?` operator for error propagation instead of manual unwrap/match when appropriate
-- Prefer Rc, RefCell, Arc... etc. wrapping in inner fields rather than in parent struct
+Source of truth for fmt/sort/clippy is [`.hooks/`](.hooks/) — CI and pre-push call the same scripts, and they iterate across `.`, `cli/`, and `check-fork/zkp/guest/`. Call them when you need CI parity:
+
+```bash
+bash .hooks/format-code.sh --check   # canonical fmt + sort check across all workspaces
+bash .hooks/check-lints.sh           # canonical clippy check across all workspaces
+```
+
+For faster inner-loop checks against the root workspace only:
+
+```bash
+cargo build --workspace                                                                            # full build
+RISC0_SKIP_BUILD=1 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings   # lint (matches hooks except multi-workspace iteration)
+cargo test --workspace --locked                                                                    # all tests
+cargo test --package <crate> <test_name>                                                           # single test
+bash .hooks/format-code.sh                                                                         # write mode (rewrites files); add --check to verify only
+```
+
+**Don't build, test, or clippy after every edit.** Run them at meaningful milestones — after completing a logical change, before declaring work done, or when debugging a specific failure. Mid-edit verification slows the loop; pre-push hooks enforce clippy + tests at push time anyway.
+
+# Coordinator and Flows
+
+The `coordinator` crate is the orchestration daemon and the entry point for most flow-related questions. It dispatches four event types to every registered `EventProcessor` each tick:
+
+- Rootstock contract events (from `log-indexer`) — contract source in the `union-bridge-contracts` sibling repo: `src/`
+- BitVMX broker messages — protocol detail in the `rust-bitvmx-client` sibling repo: `examples/union/`, `src/program/protocols/union/`
+- New Rootstock block headers (from `block-indexer`)
+- User requests (forwarded from `user-api`)
+
+Each flow is an `EventProcessor` with a persistent state machine. Flows live under [`coordinator/src/flows/`](coordinator/src/flows/):
+
+- `committee/` — committee setup (member keys, communication data, BitVMX dispute channels)
+- `pegin/` — peg-in (Bitcoin deposit → Rootstock accepted pegin)
+- `pegout/` — pegout user-take (Rootstock request → Bitcoin user-take → Rootstock registration)
+- `operator_take/` — fallback when user-take signatures time out
+- `btc_signature/` — MuSig2 nonce/signature coordination subflow used by `pegin/` and `pegout/`
+
+Understanding a flow end-to-end usually requires reading across all three repos: this one (orchestration), `rust-bitvmx-client` (BitVMX side), and `union-bridge-contracts` (Rootstock side). The dispatch list above shows where each side enters the coordinator.
+
+See [`docs/e2e/`](docs/e2e/README.md) for sequence diagrams, BitVMX message catalogs, Rootstock event mappings, and timeout rules.
+
+# Project Pointers
+
+Agent guidance lives here. For everything else, consult the canonical docs — organized by when you need them:
+
+- **Before committing or opening a PR** — [`.hooks/README.md`](.hooks/README.md) (commit-message format, branch-name rules) and [`.github/pull_request_template.md`](.github/pull_request_template.md).
+- **Writing new code or unsure about a rule** — [`CONTRIBUTING.md`](CONTRIBUTING.md) (engineering standards: error handling, defensive coding, observability, concurrency, unsafe policy, codebase-specific rules).
+- **Local dev setup, env vars, troubleshooting** — [`LOCAL_SETUP.md`](LOCAL_SETUP.md).
+
+# Codebase-Specific Patterns
+
+Concrete patterns this repository expects for areas where [`CONTRIBUTING.md`](CONTRIBUTING.md) defines the rule.
 
 ## Visibility
 
@@ -32,79 +130,11 @@
 - The `unreachable_pub` lint is enforced workspace-wide and catches `pub` items that could be `pub(crate)`. The `pub(crate) → private` direction has no automated check; verify introduced or modified items by hand at review time.
 - Existing items in the codebase may be over-visible. When you touch a file, tighten the visibility of the items you modify rather than carrying their previous visibility forward.
 
-## Refactoring
-- Never remove code comments when refactoring and moving code around
-
-## Memory Safety & Ownership Review
-- Verify ownership semantics are correct - question unnecessary `.clone()` calls
-- Check that lifetime annotations make sense and aren't overly restrictive
-- Ensure borrowing patterns don't create unnecessary complexity
-- Look for potential use of `Cow<'_, T>` where data might be borrowed or owned
-- Review shared state usage - question if `Arc<Mutex<T>>` is truly necessary
-
-## Unsafe Code Review
-
-> See [`CONTRIBUTING.md` › Unsafe code policy](CONTRIBUTING.md#unsafe-code-policy) for the rule. The bullets
-> below are the concrete checks reviewers run when verifying compliance.
-
-- **Critical**: All `unsafe` blocks must have detailed comments explaining safety contracts
-- Document what invariants are assumed and under what conditions the code would break
-- Verify pointer arithmetic is bounds-checked and alignment requirements are met
-- Ensure FFI calls properly handle null pointers and buffer sizes
-- Check that unsafe code doesn't violate Rust's aliasing rules
-
-## Security Review
-- Validate all user inputs using proper parsing (avoid `.parse().unwrap()`)
-- Use parameterized queries or prepared statements for database operations
-- Implement proper authentication and authorization checks
-- Review sensitive data handling - ensure secrets aren't logged or exposed (the "Sensitive data" bullet in [`CONTRIBUTING.md` › Observability](CONTRIBUTING.md#observability) is the rule; this is the review check)
-- Check for integer overflow in arithmetic operations (use checked arithmetic where needed)
-- Audit dependencies regularly with `cargo audit`
-
 ## Secrets in Types
 
 > See [`CONTRIBUTING.md` › Configuration and secrets](CONTRIBUTING.md#configuration-and-secrets) for the rule.
-> The bullets below are the concrete pattern reviewers expect new code to follow.
+> Reviewers check the concrete cases below when touching secret-holding types.
 
-- When a new type holds a secret value (private key, WIF, password, mnemonic, token), wrap the field with `secrecy::SecretString` (or `secrecy::SecretBox<T>` for non-string secrets) rather than using a plain `String` or byte slice. The wrapper redacts the value from `Debug` so accidental `{:?}` formatting cannot leak it.
-- Use `.expose_secret()` only at the boundary where the underlying value is consumed (e.g. building HTTP auth headers, signing a transaction). Avoid holding the exposed value in a local for longer than the consuming call.
-- Existing transient handling (a function parameter taking `password: &str` and discarding it after use) is acceptable as long as the parameter is not stored in a Debug-deriving struct. Prefer `&SecretString` parameters when the value crosses module boundaries.
-- External secret types without a redacted `Debug` (notably `bitcoin::PrivateKey`) must be wrapped before being stored in a workspace type that derives `Debug`.
-
-## Bitcoin-Specific Considerations
-- **Critical**: Avoid `TxId::from_slice`, `TxId::from_byte_array`, or any other method that relies on `hashes::hash_newtype!` - these reverse the byte order
-- Any calls to those methods should be encapsulated in `common::types::TxIdParser` struct so it handles the reversal properly
-- If importing `use bitcoin::hashes::Hash;`, be extra cautious with its usage due to potential byte order reversal issues
-- When working with transaction IDs, be extremely careful about byte ordering to prevent silent data corruption
-
-## Performance Considerations
-- Identify unnecessary heap allocations and excessive cloning in hot paths
-- Check for long-held mutex locks that could cause contention
-- Review iterator chains for opportunities to avoid intermediate collections
-- Look for blocking operations in async contexts
-- Consider zero-copy optimizations where data is being unnecessarily copied
-- Profile-guided optimization opportunities (especially in tight loops)
-
-## Code Quality & Idioms
-- Check for code duplication and opportunities for abstraction
-- Ensure proper separation of concerns between modules
-- Validate that trait implementations are necessary - avoid over-abstraction
-- Use `match` expressions instead of complex `if let` chains when appropriate
-- Prefer `impl Trait` over `Box<dyn Trait>` when possible for better performance
-- Review error types — [`CONTRIBUTING.md` › Error handling](CONTRIBUTING.md#error-handling) specifies when `thiserror` is required (typed enum where callers branch) versus when `anyhow::Result` + `.context(...)` is the default
-- Ensure comprehensive test coverage, especially for error paths and edge cases
-
-## Concurrency & Async Review
-
-> See [`CONTRIBUTING.md` › Concurrency](CONTRIBUTING.md#concurrency) for the rule (tokio-only, cancellation,
-> `JoinHandle` retention, lock ordering). The bullets below are the concrete checks reviewers run when
-> verifying compliance.
-
-- Check for potential deadlocks in multi-threaded code
-- Verify proper use of atomic operations and memory ordering
-- Review async code for `.await` points that might cause blocking
-- Ensure channels are properly closed to avoid resource leaks
-- Look for race conditions in lockfree code patterns
-
-## Docker & Deployment
-- Docker setup should not depend on .envrc or direnv env vars.
+- Stored secrets use `SecretString` or `SecretBox<T>`, including external secret types without redacted `Debug`.
+- `.expose_secret()` appears only at the consuming boundary.
+- Transient secret parameters are not stored in `Debug`-deriving types; prefer `&SecretString` across module boundaries.

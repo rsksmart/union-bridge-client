@@ -1,7 +1,7 @@
 # Contributing
 
-> Engineering standards and team conventions for contributors to this repository. For Rust coding patterns and
-> codebase-specific guidance see [`AGENTS.md`](AGENTS.md). For developer setup, environment, and local workflow
+> Engineering standards and team conventions for contributors to this repository. For AI-agent guidance and
+> concrete review-time checks see [`AGENTS.md`](AGENTS.md). For developer setup, environment, and local workflow
 > see [`LOCAL_SETUP.md`](LOCAL_SETUP.md). Build/CI checks, release artefact rules, and review-process details
 > are tracked separately.
 
@@ -53,15 +53,15 @@ Every crate in this workspace is classified into one of two tiers:
 
 **Production code** — held to the strict bar in the rest of this document:
 
-- `common`
-- `protocol-params`
-- `op-funding`
-- `check-fork` (and its sub-crates)
-- `transaction-dispatcher`
-- `coordinator`
-- `block-indexer`
-- `log-indexer`
-- `key-manager`
+- `coordinator` — main orchestration daemon; drives all flows
+- `common` — shared types, broker wrappers, RSK provider utilities, `TxIdParser`
+- `transaction-dispatcher` — Rootstock transaction construction and submission; wraps contract bindings
+- `log-indexer` — subscribes to Rootstock contract logs and filters protocol events
+- `block-indexer` — subscribes to Rootstock block headers
+- `check-fork` (and its sub-crates) — fork detection via zk proofs (host + `zkp/guest` + tester)
+- `key-manager` — key generation and keystore management (binary)
+- `protocol-params` — shared protocol constants (committee size, slots, etc.)
+- `op-funding` — operator funding profile derivation
 
 **Non-production code** — operator and developer tooling, held to a relaxed bar:
 
@@ -75,6 +75,11 @@ The relaxed bar means `clippy::pedantic` is allowed (not denied) in these crates
 
 Any crate not listed above as non-production is production by default.
 
+**Broker.** Inter-component communication happens through a message broker (`bitvmx-broker` from
+`FairgateLabs/rust-bitvmx-broker`). The client maintains two clients on top of it: `BitVmxBrokerClientApi` for
+BitVMX protocol messages and `UnionBrokerClientApi` for user requests forwarded from `user-api`. Messages are
+routed by pubkey hash; `.pem` keys live under `$BASE_STORAGE_PATH/.union_bridge/op_N/union-client/broker/`.
+
 ## Build reproducibility
 
 - The toolchain is pinned via `rust-toolchain.toml`. CI and contributor checkouts use the same channel and
@@ -84,6 +89,7 @@ Any crate not listed above as non-production is production by default.
   the channel pinned in `rust-toolchain.toml`.
 - Crate `edition` is consistent across the workspace.
 - Dockerfile base images are pinned by digest, not a floating tag.
+- Docker setup must not depend on `.envrc` or `direnv` env vars. Containers build and run from explicit `ARG`/`ENV` declarations only — never from an implicit dependency on the host developer's shell environment.
 
 ## Format and lint
 
@@ -242,10 +248,21 @@ exception, not the default.
 - **Shared mutable state is owned by a single task and accessed via channels, or guarded by a `Mutex`/`RwLock`** (
   `tokio::sync` where state crosses `.await`, `std::sync` otherwise) with documented lock-ordering. Any nested-lock site
   carries a `// LOCK ORDER:` comment naming the acquisition order.
+- **Reference-counting wrappers wrap inner fields, not the parent struct.** Prefer `struct Foo { inner: Rc<Inner> }`
+  over `struct Foo(Rc<Inner>)` (and the same for `RefCell` and `Arc`). The inner-field pattern keeps the wrapping
+  localized to the part that actually needs shared ownership or interior mutability, instead of forcing every caller
+  through an indirection.
 
 ## Configuration and secrets
 
 - All configurations are loaded at startup; no environment-variable lookups deep in business logic.
+- Types that store secret values (private keys, WIFs, passwords, mnemonics, tokens) wrap those fields with
+  `secrecy::SecretString` or `secrecy::SecretBox<T>` instead of plain strings, byte slices, or external secret types
+  with non-redacted `Debug`.
+- `.expose_secret()` is used only at the boundary where the underlying value is consumed, such as building an auth
+  header or signing a transaction. Avoid keeping the exposed value in a local longer than the consuming call needs it.
+- Transient secret parameters such as `password: &str` are acceptable only when the value is not stored in a
+  `Debug`-deriving type. Prefer `&SecretString` when a secret crosses module boundaries.
 
 ## Protocol compatibility
 
@@ -260,6 +277,10 @@ exception, not the default.
 - **Force flags** (`/tmp/FORCE_*` or similar debug hooks): allowed only behind a compile-time feature flag that is not
   enabled in release builds, and the gating mechanism itself is reviewed on the PR that introduces it.
 - **Bitcoin transaction construction**: deterministic given inputs; fuzzed against the `bitcoin` crate's parser.
+- **Bitcoin `Txid` byte order**: never use `Txid::from_slice`, `Txid::from_byte_array`, or anything depending on
+  `hashes::hash_newtype!` — these reverse byte order and cause silent data corruption. Encapsulate all such calls
+  in `common::types::TxIdParser`, which handles the reversal. Be cautious with `use bitcoin::hashes::Hash;` for
+  the same reason.
 - **Aiming for:**
     - Consensus-sensitive code (fork detection, signing, signature aggregation): property-based tests covering reorg
       depth, equivocation handling, and replay-protection invariants are expected, not optional.

@@ -32,7 +32,9 @@ contract state, broker messaging, BitVMX interactions, and timeout handling.
 | If you need to...                                                            | Read                                                                                                                                                                                                                                         |
 |------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | get the recommended local setup, shared env rules, and runtime modes         | [Local Setup Guide](LOCAL_SETUP.md)                                                                                                                                                                                                          |
-| understand the engineering standards, commit conventions, and hook setup     | [Contributing Guide](CONTRIBUTING.md)                                                                                                                                                                                                        |
+| understand engineering standards and commit conventions                      | [Contributing Guide](CONTRIBUTING.md)                                                                                                                                                                                                        |
+| install or troubleshoot git hooks                                            | [Local Setup Guide](LOCAL_SETUP.md#install-git-hooks) and [Hooks Guide](.hooks/README.md)                                                                                                                                                    |
+| follow AI-agent guidance, project routing, and verification commands         | [Agent Guide](AGENTS.md)                                                                                                                                                                                                                     |
 | use the local wrappers and operations CLI                                    | [CLI Tools Guide](cli/README.md)                                                                                                                                                                                                             |
 | choose a Docker flow                                                         | [Docker Guide](docker/README.md)                                                                                                                                                                                                             |
 | run local blockchains and BitVMX in Docker                                   | [Local Infra Guide](docker/local-infra/README.md)                                                                                                                                                                                            |
@@ -43,9 +45,9 @@ contract state, broker messaging, BitVMX interactions, and timeout handling.
 
 ## Contributing
 
-Engineering standards, commit conventions, and hook setup live in the [Contributing Guide](CONTRIBUTING.md).
-Local setup, shared configuration, runtime modes, and the recommended development path live in the
-[Local Setup Guide](LOCAL_SETUP.md).
+Engineering standards and commit conventions live in the [Contributing Guide](CONTRIBUTING.md).
+Local setup, hook installation, shared configuration, runtime modes, and the recommended development path live in the
+[Local Setup Guide](LOCAL_SETUP.md). Per-hook details live in the [Hooks Guide](.hooks/README.md).
 
 ## License
 
