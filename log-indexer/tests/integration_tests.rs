@@ -19,7 +19,7 @@ use common::types::{Address, BlockHash, ContractInfo, LogInfo, RskLog, TxHash};
 use log_indexer::indexer::LogIndexer;
 use log_indexer::store::RawLogStore;
 use primitive_types::H256;
-use rand::Rng;
+use rand::RngExt;
 use tempfile::tempdir;
 use tracing::info;
 
