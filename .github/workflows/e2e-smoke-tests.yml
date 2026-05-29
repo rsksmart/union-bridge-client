@@ -2,7 +2,6 @@ name: E2E Smoke Tests
 
 permissions:
   contents: read
-  statuses: write
 
 on:
   pull_request:
@@ -29,6 +28,9 @@ jobs:
   trigger-e2e-tests:
     name: Trigger E2E Smoke Tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
     # Only run if PR is not a draft (or manual dispatch)
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
 
