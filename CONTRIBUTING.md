@@ -290,6 +290,10 @@ exception, not the default.
 ## Team conventions and hooks
 
 This repository follows [Conventional Commits](https://www.conventionalcommits.org/en/about/#tooling-for-conventional-commits).
+Prefer rebasing branches onto the target branch before review or merge to keep PR history linear and easier
+to audit. If rebasing becomes risky or unusually disruptive, merging the target branch is acceptable; call it out in
+the PR.
+
 Local git hooks enforce `fmt` / `sort` / `clippy` on commit, branch-name shape on push, and commit-message shape on
 the message itself. They shell out to the helper scripts in [`.hooks/`](.hooks/), which is the single source of truth
 and is also invoked by CI — so the bar is identical locally and on PRs.
