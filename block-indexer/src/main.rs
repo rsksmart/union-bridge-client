@@ -70,7 +70,7 @@ fn main() -> Result<()> {
     let broker_server = BrokerServer::new_with_storage_path(
         config.block_indexer_config.notifier.port,
         &config.block_indexer_config.broker_key_path,
-        &broker_queue_storage_path(&config.indexer.storage.path, BROKER_QUEUE_SERVICE_NAME),
+        broker_queue_storage_path(&config.indexer.storage.path, BROKER_QUEUE_SERVICE_NAME),
     )
     .context("Failed to create BrokerServer")?;
 

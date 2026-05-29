@@ -1,6 +1,6 @@
 use std::fs;
 use std::net::{IpAddr, Ipv4Addr, ToSocketAddrs};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
@@ -148,7 +148,7 @@ impl BrokerServer {
     pub fn new_with_storage_path(
         port: u16,
         key_path: &str,
-        storage_path: &str,
+        storage_path: impl AsRef<Path>,
     ) -> Result<Self, BrokerError> {
         debug!("Starting persistent BrokerServer on port {port}");
 
@@ -182,17 +182,22 @@ fn broker_server_config(
 pub fn broker_queue_storage_path(
     indexer_storage_path: impl AsRef<Path>,
     service_name: &str,
-) -> String {
-    indexer_storage_path.as_ref().join("broker").join(service_name).to_string_lossy().into_owned()
+) -> PathBuf {
+    indexer_storage_path.as_ref().join("broker").join(service_name)
 }
 
-fn persistent_broker_storage(storage_path: &str) -> Result<Arc<Mutex<BrokerStorage>>, BrokerError> {
-    let storage_path = Path::new(storage_path);
+fn persistent_broker_storage(
+    storage_path: impl AsRef<Path>,
+) -> Result<Arc<Mutex<BrokerStorage>>, BrokerError> {
+    let storage_path = storage_path.as_ref();
     fs::create_dir_all(storage_path).with_context(|| {
         format!("Failed to create broker queue storage directory at {}", storage_path.display())
     })?;
 
-    let storage_config = StorageConfig::new(storage_path.to_string_lossy().into_owned(), None);
+    let storage_path_str = storage_path.to_str().ok_or_else(|| {
+        anyhow::anyhow!("Broker queue storage path is not valid UTF-8: {}", storage_path.display())
+    })?;
+    let storage_config = StorageConfig::new(storage_path_str.to_owned(), None);
     let broker_backend = Storage::new(&storage_config).map_err(|error| {
         BrokerError::UnknownError(anyhow::anyhow!(
             "Failed to initialize broker queue storage at {}: {error}",
@@ -488,8 +493,8 @@ mod tests {
     #[test]
     fn test_broker_queue_storage_path() {
         assert_eq!(
-            "/tmp/indexer/broker/block-indexer",
-            broker_queue_storage_path("/tmp/indexer", "block-indexer")
+            PathBuf::from("/tmp/indexer/broker/block-indexer"),
+            broker_queue_storage_path("/tmp/indexer", "block-indexer"),
         );
     }
 
@@ -498,10 +503,8 @@ mod tests {
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
         let storage_path = temp_dir.path().join("broker").join("block-indexer");
 
-        let _storage = persistent_broker_storage(
-            storage_path.to_str().expect("Storage path is not valid UTF-8"),
-        )
-        .expect("Failed to create persistent broker storage");
+        let _storage = persistent_broker_storage(&storage_path)
+            .expect("Failed to create persistent broker storage");
 
         assert!(storage_path.is_dir());
     }
