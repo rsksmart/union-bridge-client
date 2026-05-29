@@ -19,8 +19,7 @@ alloy-transport = { workspace = true }
 anyhow = { workspace = true }
 bitcoin = { workspace = true }
 bitvmx-emulator = { git = "https://github.com/FairgateLabs/BitVMX-CPU.git", tag = "v0.5.11", package = "emulator" }
-# Corresponds to tag v0.6.1.
-broker-storage-backend = { package = "rust-bitvmx-storage-backend", git = "https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git", rev = "eb01167404c20564fcee9db2d641bf88fb4df927" }
+broker-storage-backend = { package = "rust-bitvmx-storage-backend", git = "https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git", tag = "v0.6.1" }
 chrono = { workspace = true }
 config = { workspace = true }
 hex = { workspace = true }

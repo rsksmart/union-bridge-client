@@ -1363,7 +1363,7 @@ dependencies = [
  "bitflags 2.11.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "regex",
@@ -1565,7 +1565,7 @@ dependencies = [
  "rcgen",
  "ring",
  "rsa",
- "rust-bitvmx-storage-backend 0.6.1 (git+https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git?tag=v0.6.1)",
+ "rust-bitvmx-storage-backend 0.6.1",
  "rustls",
  "rustls-pemfile",
  "serde",
@@ -2112,7 +2112,7 @@ dependencies = [
  "mockall",
  "musig2",
  "primitive-types 0.13.1",
- "rust-bitvmx-storage-backend 0.6.1 (git+https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git?rev=eb01167404c20564fcee9db2d641bf88fb4df927)",
+ "rust-bitvmx-storage-backend 0.6.1",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -2601,7 +2601,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 2.0.117",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -5712,24 +5712,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rust-bitvmx-storage-backend"
-version = "0.6.1"
-source = "git+https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git?rev=eb01167404c20564fcee9db2d641bf88fb4df927#eb01167404c20564fcee9db2d641bf88fb4df927"
-dependencies = [
- "age",
- "clap",
- "cocoon",
- "hex",
- "rand 0.9.4",
- "redact",
- "rocksdb",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "uuid 1.23.1",
-]
-
-[[package]]
 name = "rust-embed"
 version = "8.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5895,7 +5877,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
