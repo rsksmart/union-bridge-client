@@ -412,12 +412,14 @@ where
             .get_user_take_txid()
             .ok_or_else(|| anyhow!("Expected user take tx_id not found"))?;
         if expected_txid != tx_id {
-            bail!("Pegout state does not match received tx_id: {tx_id} from tx status message");
+            bail!(
+                "Pegout {flow_id} state does not match received tx_id: {tx_id} from tx status message"
+            );
         }
 
         if flow.current_step() != Steps::ConfirmUserTakeTransaction {
             bail!(
-                "Mismatch current step expected {:?} having {:?}",
+                "Pegout {flow_id} mismatch current step expected {:?} having {:?}",
                 Steps::ConfirmUserTakeTransaction,
                 flow.current_step()
             );

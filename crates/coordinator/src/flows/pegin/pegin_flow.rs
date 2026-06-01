@@ -971,7 +971,8 @@ where
             .ok_or_else(|| anyhow!("Expected accept pegin txid not found"))?;
         if tx_status.tx_id != expected_tx_id {
             bail!(
-                "Transaction status txId mismatch: got {:?}, expected {:?}",
+                "Pegin {} transaction status txId mismatch: got {:?}, expected {:?}",
+                self.flow_id(),
                 tx_status.tx_id,
                 expected_tx_id
             );
@@ -989,7 +990,11 @@ where
     /// state-machine bug.
     fn bitvmx_protocol_id(&self) -> Result<BitVmxProtocolId> {
         self.state.ctx.bitvmx_protocol_id.ok_or_else(|| {
-            anyhow!("bitvmx_protocol_id not yet set at step {:?}", self.state.ctx.step)
+            anyhow!(
+                "Pegin {} bitvmx_protocol_id not yet set at step {:?}",
+                self.flow_id(),
+                self.state.ctx.step
+            )
         })
     }
 

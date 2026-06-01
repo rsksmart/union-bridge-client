@@ -46,11 +46,10 @@ pub(crate) struct BaseBtcSignatureSubFlow<BSF: BtcSignatureLifecycleApi> {
     /// with the current phase to produce `{parent_log_id} ({phase})` for
     /// log lines.
     parent_log_id: String,
-    /// `pegin{pegin_id=…}` or `pegout{pegout_id=…}` span built once at
-    /// construction when this subflow was spawned from a parent flow.
-    /// Cloning the handle on each entry keeps the span id stable across the
-    /// subflow's lifetime; `None` for subflows without a parent context.
-    parent_span: Option<tracing::Span>,
+    /// Originating pegin/pegout flow, used to rebuild the `pegin{pegin_id=…}` /
+    /// `pegout{pegout_id=…}` span on each delegated event so subflow logs stay
+    /// traceable to the parent flow. `None` for subflows without a parent.
+    parent: Option<ParentSpan>,
 }
 
 impl<CG> BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>>
@@ -71,12 +70,7 @@ where
             flow_id,
             required_confirmations,
         );
-        let parent_span = parent.map(|p| match p {
-            ParentSpan::Pegin(id) => info_span!("pegin", pegin_id = %id),
-            ParentSpan::Pegout(id) => info_span!("pegout", pegout_id = %id),
-        });
-
-        Self { lifecycle, is_done: false, is_nonces_step_done: false, parent_log_id, parent_span }
+        Self { lifecycle, is_done: false, is_nonces_step_done: false, parent_log_id, parent }
     }
 
     #[cfg(test)]
@@ -93,13 +87,7 @@ where
             flow_id,
             required_confirmations,
         );
-        Self {
-            lifecycle,
-            is_done: true,
-            is_nonces_step_done: true,
-            parent_log_id,
-            parent_span: None,
-        }
+        Self { lifecycle, is_done: true, is_nonces_step_done: true, parent_log_id, parent: None }
     }
 }
 
@@ -114,12 +102,19 @@ where
         format!("{} ({phase})", self.parent_log_id)
     }
 
-    /// Enters the stored parent (`pegin`/`pegout`) span when this subflow was
-    /// spawned from a parent flow. Cloning the `Span` handle is cheap and
-    /// keeps the underlying span id stable across calls, so all btc-signature
-    /// log lines for one subflow share the same span id.
+    /// Builds and enters the parent (`pegin`/`pegout`) span for this subflow.
+    /// Created fresh on each call so it inherits the caller's current context
+    /// rather than the processor span stack active at construction time —
+    /// entering a span captured at construction would replay that stack and
+    /// duplicate the `pegin`/`pegout` segment. `None` without a parent context.
     fn enter_parent_span(&self) -> Option<tracing::span::EnteredSpan> {
-        self.parent_span.clone().map(tracing::Span::entered)
+        self.parent.map(|p| {
+            match p {
+                ParentSpan::Pegin(id) => info_span!("pegin", pegin_id = %id),
+                ParentSpan::Pegout(id) => info_span!("pegout", pegout_id = %id),
+            }
+            .entered()
+        })
     }
 }
 
@@ -271,7 +266,7 @@ mod tests {
                 is_done: false,
                 is_nonces_step_done: false,
                 parent_log_id: String::new(),
-                parent_span: None,
+                parent: None,
             }
         }
     }

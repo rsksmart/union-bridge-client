@@ -123,7 +123,7 @@ where
 
     /// Mark a setup committee flow as failed and stop pending local work for it.
     #[instrument(
-        skip(self, reason),
+        skip(self, flow_id, reason),
         name = "committee_setup",
         fields(committee_setup_id = %flow_id)
     )]
