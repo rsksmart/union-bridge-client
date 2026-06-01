@@ -57,6 +57,12 @@ case "$ENVIRONMENT" in
 esac
 
 MINE_PID_FILE="/tmp/union-bridge-${ENVIRONMENT}-mining.pids"
+# Unique marker embedded in each background miner's command line. Lets us find and
+# reap miners with pgrep/pkill even when MINE_PID_FILE is lost (e.g. wiped by --fresh
+# or a /tmp cleanup) while the miner processes keep running — the failure mode that
+# let duplicate miners accumulate and mine more than one block per interval. Scoped per
+# ENVIRONMENT so reaping one env's miners never touches the other env's.
+MINE_TAG="union-bridge-${ENVIRONMENT}-miner"
 BITCOIN_WALLET="mainwallet"
 BITCOIN_RPC_ARGS=(-regtest -rpcuser=foo -rpcpassword=rpcpassword -rpcwallet="${BITCOIN_WALLET}")
 
@@ -148,13 +154,36 @@ mine_anvil() {
     done
 }
 
+# RPC connection args are passed in ("$@") rather than read from a global so this
+# function can be relaunched in a tagged child shell via `bash -c "$(declare -f ...)"`.
 mine_bitcoin() {
-    local mine_address="$1"
+    local mine_address
+    mine_address=$(bitcoin-cli "$@" getnewaddress 2>/dev/null)
+    if [ -z "$mine_address" ]; then
+        echo -e "${YELLOW}[WARN]${NC} Failed to get Bitcoin address for mining" >&2
+        return 1
+    fi
 
     while true; do
-        bitcoin-cli "${BITCOIN_RPC_ARGS[@]}" generatetoaddress 1 "$mine_address" &>/dev/null || true
+        bitcoin-cli "$@" generatetoaddress 1 "$mine_address" &>/dev/null || true
         sleep 5
     done
+}
+
+# Kill any background miners we can find by tag, independent of MINE_PID_FILE. This is
+# the robust guard against duplicate miners: the PID file can disappear (--fresh, /tmp
+# cleanup) while the miners keep running, which otherwise lets a second set start on
+# top of the first and mine extra blocks per interval.
+reap_miners() {
+    local pids
+    pids=$(pgrep -f "$MINE_TAG" 2>/dev/null || true)
+    if [ -n "$pids" ]; then
+        warn "Reaping existing miner process(es): $(echo "$pids" | tr '\n' ' ')"
+        pkill -f "$MINE_TAG" 2>/dev/null || true
+        sleep 0.3
+        pkill -9 -f "$MINE_TAG" 2>/dev/null || true
+    fi
+    rm -f "$MINE_PID_FILE"
 }
 
 bitcoin_trusted_balance_btc() {
@@ -192,17 +221,10 @@ bootstrap_bitcoin_wallet() {
 }
 
 start_mining() {
-    cleanup_stale_mining_pid_file
-
-    if [ -f "$MINE_PID_FILE" ]; then
-        local anvil_pid bitcoin_pid
-        read -r anvil_pid bitcoin_pid < "$MINE_PID_FILE" 2>/dev/null || true
-        if pid_is_running "$anvil_pid" || pid_is_running "$bitcoin_pid"; then
-            warn "Mining already running (PIDs: $anvil_pid, $bitcoin_pid)"
-            warn "Use ./cli-infra.sh --stop-mining if mining is stuck, or ./cli-infra.sh --stop-blockchains to stop everything first"
-            exit 1
-        fi
-    fi
+    # Idempotent: reap any miners already running (found by tag, so this works even
+    # if the PID file was lost to --fresh or a /tmp cleanup) before starting a fresh
+    # set. This is what prevents duplicate miners stacking up.
+    reap_miners
 
     if ! command -v cast &> /dev/null; then
         warn "cast command not found (install Foundry)"
@@ -249,20 +271,19 @@ start_mining() {
     log "Starting background mining..."
     log "  Bitcoin: every 5s"
 
+    # Launch each miner under nohup in a tagged child shell: MINE_TAG is passed as the
+    # shell's $0 so it shows up in the command line and reap_miners/stop_mining can find
+    # the process with pgrep/pkill even after this script exits or the PID file is lost.
+    # Each miner writes to its own env-specific log file. RPC args / rpc-url are
+    # forwarded positionally to the relaunched function.
     local anvil_pid="-"
     if [[ "$ENVIRONMENT" == "local-anvil" ]]; then
         log "  Anvil: every 1s"
-        nohup bash -c "$(declare -f mine_anvil); mine_anvil \"\$1\"" _ "${ROOTSTOCK_RPC_URL}" >/tmp/union-bridge-${ENVIRONMENT}-anvil-mining.log 2>&1 &
+        nohup bash -c "$(declare -f mine_anvil); mine_anvil \"\$1\"" "${MINE_TAG}-anvil" "${ROOTSTOCK_RPC_URL}" >/tmp/union-bridge-${ENVIRONMENT}-anvil-mining.log 2>&1 &
         anvil_pid=$!
     fi
 
-    nohup bash -c '
-mine_address="$1"
-while true; do
-    bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword -rpcwallet=mainwallet generatetoaddress 1 "$mine_address" &>/dev/null || true
-    sleep 5
-done
-' _ "$test_address" >/tmp/union-bridge-${ENVIRONMENT}-bitcoin-mining.log 2>&1 &
+    nohup bash -c "$(declare -f mine_bitcoin); mine_bitcoin \"\$@\"" "${MINE_TAG}-bitcoin" "${BITCOIN_RPC_ARGS[@]}" >/tmp/union-bridge-${ENVIRONMENT}-bitcoin-mining.log 2>&1 &
     local bitcoin_pid=$!
 
     echo "$anvil_pid $bitcoin_pid" > "$MINE_PID_FILE"
@@ -271,8 +292,24 @@ done
 }
 
 stop_mining() {
+    # Sweep by tag first so orphaned miners are killed even when the PID file is
+    # missing (the case that let duplicates pile up). Don't remove the PID file here —
+    # the PID-based cleanup below still needs to read it.
+    local tagged
+    tagged=$(pgrep -f "$MINE_TAG" 2>/dev/null || true)
+    if [ -n "$tagged" ]; then
+        warn "Killing tagged miner process(es): $(echo "$tagged" | tr '\n' ' ')"
+        pkill -f "$MINE_TAG" 2>/dev/null || true
+        sleep 0.3
+        pkill -9 -f "$MINE_TAG" 2>/dev/null || true
+    fi
+
     if [ ! -f "$MINE_PID_FILE" ]; then
-        warn "No mining processes found (PID file missing)"
+        if [ -n "$tagged" ]; then
+            log "Mining stopped"
+        else
+            warn "No mining processes found (PID file missing)"
+        fi
         return 0
     fi
 
@@ -320,7 +357,11 @@ start_blockchains() {
     done
 
     cleanup_stale_mining_pid_file
-    if mining_is_running; then
+    # Also check by tag: an orphaned miner can outlive the PID file (--fresh, /tmp
+    # cleanup), and mining_is_running only reads MINE_PID_FILE. Without the tag check we'd
+    # skip stop_mining and let the orphan keep mining against the freshly restarted node
+    # during `up -d` and bootstrap, before start_mining finally reaps it.
+    if mining_is_running || pgrep -f "$MINE_TAG" &>/dev/null; then
         log "Stopping existing background mining before restarting blockchains"
         stop_mining
     fi
