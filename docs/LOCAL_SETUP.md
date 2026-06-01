@@ -70,14 +70,15 @@ git clone https://github.com/FairgateLabs/rust-bitvmx-client.git
 git clone https://github.com/rsksmart/union-bridge-contracts.git
 ```
 
-Temporary `local-rskj` note: until the native-bridge local-regtest deploy changes are available in
-`rsksmart/union-bridge-contracts`, use the fork branch below for the sibling contracts checkout:
+For `local-rskj` and `docker-rskj`, keep the sibling contracts checkout on
+`rsksmart/union-bridge-contracts` `main` until a released tag includes PR #33 (`68a10ae`):
 
 ```bash
 cd ../union-bridge-contracts
-git remote add fedejinich https://github.com/fedejinich/union-bridge-contracts.git
-git fetch fedejinich
-git checkout chore/local-regtest-native-bridge
+git remote set-url origin https://github.com/rsksmart/union-bridge-contracts.git
+git fetch origin
+git switch main
+git pull --ff-only origin main
 ```
 
 The `local-rskj` and `docker-rskj` flows deploy contracts from this local checkout, so the checked-out contracts branch

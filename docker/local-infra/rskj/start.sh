@@ -100,6 +100,55 @@ else
 fi
 export CONTRACTS_CONTEXT_PATH="$CONTRACTS_CONTEXT_CANDIDATE"
 
+print_contracts_context_error() {
+  echo "Error: union-bridge-contracts checkout at ${CONTRACTS_CONTEXT_PATH} does not include RSK regtest native bridge deploy support." >&2
+  echo "Use rsksmart/union-bridge-contracts main or a tag that includes PR #33 (68a10ae)." >&2
+}
+
+validate_contracts_context_supports_rsk_regtest_native_bridge() {
+  local deploy_script="${CONTRACTS_CONTEXT_PATH}/script/deploy/01_DeployImplAndProxy.s.sol"
+
+  if [[ ! -f "$deploy_script" ]]; then
+    echo "Error: expected contracts deploy script not found at ${deploy_script}." >&2
+    echo "Set CONTRACTS_CONTEXT_PATH to a union-bridge-contracts checkout and rerun." >&2
+    return 1
+  fi
+
+  if grep -Eq 'ChainIds\.LOCAL.*ChainIds\.RSK_REGTEST|ChainIds\.RSK_REGTEST.*ChainIds\.LOCAL' "$deploy_script"; then
+    print_contracts_context_error
+    return 1
+  fi
+
+  if ! awk '
+    /else if[[:space:]]*\(block\.chainid[[:space:]]*==[[:space:]]*ChainIds\.RSK_REGTEST\)/ {
+      in_regtest = 1
+      has_network = 0
+      has_bridge_mock = 0
+      next
+    }
+    in_regtest && /^[[:space:]]*} else/ {
+      exit (has_network && !has_bridge_mock) ? 0 : 1
+    }
+    in_regtest && /btcBtcNetwork[[:space:]]*=[[:space:]]*BtcNetwork\.REGTEST/ {
+      has_network = 1
+    }
+    in_regtest && /BridgeMock/ {
+      has_bridge_mock = 1
+    }
+    END {
+      if (in_regtest) {
+        exit (has_network && !has_bridge_mock) ? 0 : 1
+      }
+      exit 1
+    }
+  ' "$deploy_script"; then
+    print_contracts_context_error
+    return 1
+  fi
+}
+
+validate_contracts_context_supports_rsk_regtest_native_bridge
+
 echo "Using local-rskj images:"
 echo "  RSKj:        rsksmart/rskj:${RSKJ_TAG}"
 echo "  powpeg-node: rsksmart/powpeg-node:${POWPEG_TAG}"
