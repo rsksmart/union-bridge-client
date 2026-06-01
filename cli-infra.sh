@@ -357,7 +357,11 @@ start_blockchains() {
     done
 
     cleanup_stale_mining_pid_file
-    if mining_is_running; then
+    # Also check by tag: an orphaned miner can outlive the PID file (--fresh, /tmp
+    # cleanup), and mining_is_running only reads MINE_PID_FILE. Without the tag check we'd
+    # skip stop_mining and let the orphan keep mining against the freshly restarted node
+    # during `up -d` and bootstrap, before start_mining finally reaps it.
+    if mining_is_running || pgrep -f "$MINE_TAG" &>/dev/null; then
         log "Stopping existing background mining before restarting blockchains"
         stop_mining
     fi
