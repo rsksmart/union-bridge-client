@@ -760,7 +760,7 @@ where
             };
 
             if is_pegin_already_accepted(&err) {
-                warn!(
+                info!(
                     "Pegin already accepted on retry for accept_pegin for flow {flow_id}: {err:#}"
                 );
                 continue;
@@ -999,7 +999,7 @@ where
                     return Ok(());
                 }
                 if is_pegin_already_accepted(&err) {
-                    warn!("Pegin already accepted on accept_pegin for flow {flow_id}: {err:#}");
+                    info!("Pegin already accepted on accept_pegin for flow {flow_id}: {err:#}");
                     return Ok(());
                 }
                 return Err(err);

@@ -277,9 +277,7 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
         PegoutManagerErrors::InvalidSlotState(e) => {
             DomainErrors::InvalidSlotState { expected: e.expected, actual: e.actual }
         }
-        PegoutManagerErrors::InvalidPegStatus(e) => {
-            DomainErrors::InvalidPegStatus { actual: e.actual }
-        }
+        PegoutManagerErrors::InvalidPegStatus(e) => DomainErrors::from_invalid_peg_status(e.actual),
         // Unhandled
         _ => DomainErrors::UnhandledContractError(format!("{e:?}")),
     })

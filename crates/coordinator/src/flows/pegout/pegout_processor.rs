@@ -44,11 +44,11 @@ fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
     })
 }
 
-fn is_invalid_peg_status(err: &anyhow::Error) -> bool {
+fn is_peg_status_completed(err: &anyhow::Error) -> bool {
     use transaction_dispatcher::rsk_gateway::DomainErrors;
     err.chain().any(|cause| {
         if let Some(domain_err) = cause.downcast_ref::<DomainErrors>() {
-            matches!(domain_err, DomainErrors::InvalidPegStatus { actual: 9 })
+            matches!(domain_err, DomainErrors::PegStatusAlreadyCompleted)
         } else {
             false
         }
@@ -689,9 +689,9 @@ where
                 continue;
             };
 
-            if is_invalid_peg_status(&err) {
-                warn!(
-                    "Invalid peg status on retry for register_pegout for flow {flow_id}: {err:#}"
+            if is_peg_status_completed(&err) {
+                info!(
+                    "Peg already completed on retry for register_pegout for flow {flow_id}: {err:#}"
                 );
                 continue;
             }
@@ -918,8 +918,10 @@ where
                         );
                         return Ok(());
                     }
-                    if is_invalid_peg_status(&err) {
-                        warn!("Invalid peg status on register_pegout for flow {flow_id}: {err:#}");
+                    if is_peg_status_completed(&err) {
+                        info!(
+                            "Peg already completed on register_pegout for flow {flow_id}: {err:#}"
+                        );
                         return Ok(());
                     }
                     return Err(err);

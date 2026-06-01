@@ -159,9 +159,7 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
         PeginManagerErrors::InvalidLocktime(e) => {
             DomainErrors::InvalidBtcTxSpvProof(format!("{e:?}"))
         }
-        PeginManagerErrors::InvalidPegStatus(e) => {
-            DomainErrors::InvalidPegStatus { actual: e.actual }
-        }
+        PeginManagerErrors::InvalidPegStatus(e) => DomainErrors::from_invalid_peg_status(e.actual),
         // Unhandled
         _ => DomainErrors::UnhandledContractError(format!("{e:?}")),
     })
