@@ -51,6 +51,17 @@ fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
     })
 }
 
+pub(crate) fn subscribe_to_bitvmx_pegin_events<BC: BitVmxBrokerClientApi>(
+    bitvmx_broker: &BC,
+    confirmations: u32,
+) -> Result<()> {
+    if !bitvmx_broker.send(IncomingBitVMXApiMessages::SubscribeToRskPegin(Some(confirmations)))? {
+        bail!("Broker could not deliver SubscribeToRskPegin");
+    }
+
+    Ok(())
+}
+
 /// Processor that manages multiple pegin flow state machines
 pub(crate) struct PeginFlowProcessor<CG, BC, BSF, FactoryBSF, S>
 where
@@ -124,7 +135,7 @@ where
         );
 
         // Subscribe to BitVMX pegin events
-        Self::subscribe_to_bitvmx_pegin_events(&bitvmx_broker, btc_confirmations)
+        subscribe_to_bitvmx_pegin_events(bitvmx_broker.as_ref(), btc_confirmations)
             .expect("Failed to subscribe to BitVMX pegin events");
 
         info!("Successfully subscribed to BitVMX pegin events");
@@ -783,11 +794,6 @@ where
         Ok(())
     }
 
-    fn subscribe_to_bitvmx_pegin_events(bitvmx_broker: &BC, confirmations: u32) -> Result<()> {
-        bitvmx_broker.send(IncomingBitVMXApiMessages::SubscribeToRskPegin(Some(confirmations)))?;
-        Ok(())
-    }
-
     fn handle_pegin_transaction_found(&mut self, tx_id: Txid) -> Result<()> {
         let flow_id = flow_id_from_request_pegin_txid(tx_id);
         if self.pegin_request_tracker.contains(&tx_id) || self.pegin_flows.contains_key(&flow_id) {
@@ -1432,6 +1438,16 @@ mod tests {
                 5,
             )
         }
+    }
+
+    #[test]
+    fn test_subscribe_to_bitvmx_pegin_events_errors_when_broker_cannot_deliver() {
+        let mut broker = MockBitVmxBroker::new();
+        broker.expect_send().return_once(|_| Ok(false));
+
+        let err = subscribe_to_bitvmx_pegin_events(&broker, 6).expect_err("send should fail");
+
+        assert!(err.to_string().contains("Broker could not deliver SubscribeToRskPegin"));
     }
 
     fn test_txid(bytes: [u8; 32]) -> Txid {

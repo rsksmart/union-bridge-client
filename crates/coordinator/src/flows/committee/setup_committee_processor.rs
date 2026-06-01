@@ -8,7 +8,7 @@ use std::any::type_name_of_val;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use common::msg_broker::bitvmx_types::{
     GLOBAL_SETTINGS_UUID, IncomingBitVMXApiMessages, OP_COSIGN_UTXOS, OutgoingBitVMXApiMessages,
     UnionSettings, VariableTypes, WT_INIT_CHALLENGE_UTXOS,
@@ -48,6 +48,21 @@ where
     required_confirmations: u32,
 }
 
+pub(crate) fn send_union_settings<BC: BitVmxBrokerClientApi>(bitvmx_broker: &BC) -> Result<()> {
+    let settings = UnionSettings::with_defaults();
+    let settings_json = serde_json::to_string(&settings)?;
+
+    if !bitvmx_broker.send(IncomingBitVMXApiMessages::SetVar(
+        GLOBAL_SETTINGS_UUID,
+        UnionSettings::name().to_string(),
+        VariableTypes::String(settings_json),
+    ))? {
+        bail!("Broker could not deliver UnionSettings");
+    }
+
+    Ok(())
+}
+
 impl<CG, BC, FactoryBSF, S> SetupCommitteeProcessor<CG, BC, FactoryBSF, S>
 where
     CG: RskContractsGatewayApi,
@@ -63,7 +78,7 @@ where
         required_confirmations: u32,
     ) -> Self {
         // Send global UnionSettings to BitVMX (once at startup)
-        Self::send_union_settings(bitvmx_broker).expect("Failed to send UnionSettings to BitVMX");
+        send_union_settings(bitvmx_broker).expect("Failed to send UnionSettings to BitVMX");
 
         info!("Successfully sent UnionSettings to BitVMX");
 
@@ -87,19 +102,6 @@ where
                 .expect("Failed to load flows from store");
         processor.flows = restored.into_values().map(|flow| (flow.flow_id(), flow)).collect();
         processor
-    }
-
-    fn send_union_settings(bitvmx_broker: &BC) -> Result<()> {
-        let settings = UnionSettings::with_defaults();
-        let settings_json = serde_json::to_string(&settings)?;
-
-        bitvmx_broker.send(IncomingBitVMXApiMessages::SetVar(
-            GLOBAL_SETTINGS_UUID,
-            UnionSettings::name().to_string(),
-            VariableTypes::String(settings_json),
-        ))?;
-
-        Ok(())
     }
 
     fn cleanup_terminal_flows(&mut self) {
@@ -796,7 +798,7 @@ mod tests {
             .times(1)
             .returning(|_| Ok(true));
 
-        let result = TestProcessor::send_union_settings(&broker);
+        let result = send_union_settings(&broker);
         assert!(result.is_ok());
     }
 
