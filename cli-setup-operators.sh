@@ -641,7 +641,7 @@ create_or_reuse_local_keystore() {
   fi
 
   cmd_output="$(
-    cd "${PROJECT_ROOT}" && cargo run --quiet --manifest-path key-manager/Cargo.toml -- \
+    cd "${PROJECT_ROOT}" && cargo run --quiet --manifest-path crates/key-manager/Cargo.toml -- \
       new-key -p "${key_store_password}" -d "${keystore_dir}"
   )"
 

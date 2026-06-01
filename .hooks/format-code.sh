@@ -13,7 +13,7 @@ if [ "${1:-}" = "--check" ]; then
   EXTRA_SORT_ARGS=("--check")
 fi
 
-WORKSPACES=("." "cli" "check-fork/zkp/guest")
+WORKSPACES=("." "cli" "crates/check-fork/zkp/guest")
 
 echo "🦀 Formatting code..."
 for ws in "${WORKSPACES[@]}"; do

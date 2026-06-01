@@ -69,7 +69,7 @@ For Rust edits in this repo, "verified" includes both clippy and tests passing. 
 
 ## Build and Verify
 
-Source of truth for fmt/sort/clippy is [`.hooks/`](.hooks/) — CI and pre-push call the same scripts, and they iterate across `.`, `cli/`, and `check-fork/zkp/guest/`. Call them when you need CI parity:
+Source of truth for fmt/sort/clippy is [`.hooks/`](.hooks/) — CI and pre-push call the same scripts, and they iterate across `.`, `cli/`, and `crates/check-fork/zkp/guest/`. Call them when you need CI parity:
 
 ```bash
 bash .hooks/format-code.sh --check   # canonical fmt + sort check across all workspaces
@@ -97,7 +97,7 @@ The `coordinator` crate is the orchestration daemon and the entry point for most
 - New Rootstock block headers (from `block-indexer`)
 - User requests (forwarded from `user-api`)
 
-Each flow is an `EventProcessor` with a persistent state machine. Flows live under [`coordinator/src/flows/`](coordinator/src/flows/):
+Each flow is an `EventProcessor` with a persistent state machine. Flows live under [`crates/coordinator/src/flows/`](crates/coordinator/src/flows/):
 
 - `committee/` — committee setup (member keys, communication data, BitVMX dispute channels)
 - `pegin/` — peg-in (Bitcoin deposit → Rootstock accepted pegin)

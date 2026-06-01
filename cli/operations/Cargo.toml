@@ -11,8 +11,8 @@ bitcoin = { workspace = true }
 clap = { workspace = true, features = ["env"] }
 hex = { workspace = true }
 key-manager = { workspace = true }
-op-funding = { path = "../../op-funding" }
-protocol-params = { path = "../../protocol-params" }
+op-funding = { path = "../../crates/op-funding" }
+protocol-params = { path = "../../crates/protocol-params" }
 reqwest = { workspace = true }
 rpassword = { workspace = true }
 secrecy = { workspace = true }

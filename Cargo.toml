@@ -1,18 +1,18 @@
 [workspace]
 resolver = "2"
 members = [
-    "block-indexer",
-    "check-fork",
-    "check-fork/tester",
-    "check-fork/zkp",
-    "common",
-    "coordinator",
-    "key-manager",
-    "log-indexer",
-    "op-funding",
-    "protocol-params",
-    "transaction-dispatcher",
-    "user-api",
+    "crates/block-indexer",
+    "crates/check-fork",
+    "crates/check-fork/tester",
+    "crates/check-fork/zkp",
+    "crates/common",
+    "crates/coordinator",
+    "crates/key-manager",
+    "crates/log-indexer",
+    "crates/op-funding",
+    "crates/protocol-params",
+    "crates/transaction-dispatcher",
+    "crates/user-api",
 ]
 
 [workspace.package]
@@ -60,7 +60,7 @@ message-broker = { package = "bitvmx-broker", git = "https://github.com/Fairgate
 mockall = "0.13.1"
 musig2 = { version = "0.2.4", features = ["serde", "rand"] }
 primitive-types = { version = "0.13.1", features = ["std", "serde"] }
-protocol-params = { path = "protocol-params" }
+protocol-params = { path = "crates/protocol-params" }
 secrecy = { version = "0.10", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"

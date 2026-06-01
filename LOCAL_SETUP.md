@@ -525,7 +525,7 @@ FORCE_ADVANCE=0xOPERATOR_ADDRESS ./cli-run.sh
 `./cli-setup-operators.sh` is the standard way to prepare local keystores. If you need the crate-level commands
 directly, use:
 
-- [Key Manager Guide](key-manager/README.md)
+- [Key Manager Guide](crates/key-manager/README.md)
 - [Wallet CLI Guide](cli/bitcoin-wallet/README.md)
 
 ### CheckFork and ZKP Reference Flow
@@ -533,5 +533,5 @@ directly, use:
 The CheckFork tester and the Stark/Snark flow are preserved as reference material only. They are not part of the core
 local contributor happy path.
 
-Start from the [CheckFork Guide](check-fork/README.md) and the `check-fork/tester/` tooling when you specifically need
+Start from the [CheckFork Guide](crates/check-fork/README.md) and the `crates/check-fork/tester/` tooling when you specifically need
 that integration work.

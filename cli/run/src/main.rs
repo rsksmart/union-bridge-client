@@ -110,7 +110,7 @@ struct Cli {
     /// Run against the local-rskj Rootstock node instead of the default
     /// local-anvil. Selects `--config local-rskj` for each spawned service
     /// and skips the `--features anvil` cargo flag (which gates anvil-only
-    /// shims in common/src/alloy_rsk_provider/sub.rs and common/src/types.rs).
+    /// shims in crates/common/src/alloy_rsk_provider/sub.rs and crates/common/src/types.rs).
     #[arg(long = "rskj", action = ArgAction::SetTrue)]
     rskj: bool,
 }

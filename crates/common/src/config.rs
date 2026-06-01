@@ -387,8 +387,11 @@ impl CommonConfig {
     }
 
     fn project_root() -> String {
+        // This crate lives at `<repo>/crates/common`, so the repo root is two
+        // levels up from its manifest dir.
         let project_root = Path::new(CARGO_MANIFEST_DIR)
             .parent()
+            .and_then(|p| p.parent())
             .and_then(|p| p.to_str())
             .expect("Failed to get default_destination");
         project_root.to_string()
