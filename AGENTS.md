@@ -115,7 +115,7 @@ Agent guidance lives here. For everything else, consult the canonical docs — o
 
 - **Before committing or opening a PR** — [`.hooks/README.md`](.hooks/README.md) (commit-message format, branch-name rules) and [`.github/pull_request_template.md`](.github/pull_request_template.md).
 - **Writing new code or unsure about a rule** — [`CONTRIBUTING.md`](CONTRIBUTING.md) (engineering standards: error handling, defensive coding, observability, concurrency, unsafe policy, codebase-specific rules).
-- **Local dev setup, env vars, troubleshooting** — [`LOCAL_SETUP.md`](LOCAL_SETUP.md).
+- **Local dev setup, env vars, troubleshooting** — [`LOCAL_SETUP.md`](docs/LOCAL_SETUP.md).
 
 # Codebase-Specific Patterns
 

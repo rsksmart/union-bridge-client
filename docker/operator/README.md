@@ -3,12 +3,12 @@
 This doc owns the local operator Docker runtime driven from this repository.
 
 For the full local setup order, shared env semantics, and the recommended contributor path, start with the
-[Local Setup Guide](../../LOCAL_SETUP.md). This doc only covers operator-specific runtime detail.
+[Local Setup Guide](../../docs/LOCAL_SETUP.md). This doc only covers operator-specific runtime detail.
 
 ## Related Docs
 
 - [Docker Guide](../README.md): Docker flow routing
-- [Local Setup Guide](../../LOCAL_SETUP.md): canonical local workflow
+- [Local Setup Guide](../../docs/LOCAL_SETUP.md): canonical local workflow
 - [Local Infra Guide](../local-infra/README.md): local blockchains + BitVMX
 - [CLI Tools Guide](../../cli/README.md): CLI operations
 
@@ -87,7 +87,7 @@ Notes:
 - After the Docker operator runtime is up, you can use `bash scripts/test-flows.sh --env docker-anvil --setup`,
   then `--committee`, then the user-flow modes.
 
-For broader workflow context, go back to the [Local Setup Guide](../../LOCAL_SETUP.md) or the
+For broader workflow context, go back to the [Local Setup Guide](../../docs/LOCAL_SETUP.md) or the
 [Local Infra Guide](../local-infra/README.md).
 
 ## `start-operators.sh`

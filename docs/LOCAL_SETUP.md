@@ -4,10 +4,10 @@ This is the canonical local-setup runbook for this repository. Use it for setup 
 recommended local workflow, and troubleshooting.
 
 > Developer setup, environment, and local workflow live here. For engineering standards and team conventions
-> (commit conventions, hooks, classification) see [`CONTRIBUTING.md`](CONTRIBUTING.md). For Rust coding patterns
-> and codebase-specific guidance see [`AGENTS.md`](AGENTS.md).
+> (commit conventions, hooks, classification) see [`CONTRIBUTING.md`](../CONTRIBUTING.md). For Rust coding patterns
+> and codebase-specific guidance see [`AGENTS.md`](../AGENTS.md).
 >
-> Not all crates run the same Quality Gate. [`CONTRIBUTING.md` › Scope and classification](CONTRIBUTING.md#scope-and-classification) classifies each crate as production or non-production; a relaxed bar applies to the latter (`cli/*` and `user-api`).
+> Not all crates run the same Quality Gate. [`CONTRIBUTING.md` › Scope and classification](../CONTRIBUTING.md#scope-and-classification) classifies each crate as production or non-production; a relaxed bar applies to the latter (`cli/*` and `user-api`).
 
 ## First-Time Setup
 
@@ -87,7 +87,7 @@ controls what gets deployed to Rootstock regtest.
 
 Hook installation is automatic on a clean checkout. [cargo-husky](https://github.com/rhysd/cargo-husky) is declared as
 a dev-dependency of the `common` crate; the first time it compiles, its `build.rs` copies the hook entrypoints in
-[`.cargo-husky/hooks/`](.cargo-husky/hooks/) into `.git/hooks/`. Trigger it with:
+[`.cargo-husky/hooks/`](../.cargo-husky/hooks/) into `.git/hooks/`. Trigger it with:
 
 ```bash
 cargo test --no-run
@@ -101,7 +101,7 @@ cloned the repo before the cargo-husky migration and still have `rusty-hook` stu
 previously installed — the automatic install silently skips. In that case, use the
 [Reinstalling hooks](#reinstalling-hooks) recipe further down.
 
-The hooks shell out to the helper scripts in [`.hooks/`](.hooks/) (CI calls the same scripts) and rely on two
+The hooks shell out to the helper scripts in [`.hooks/`](../.hooks/) (CI calls the same scripts) and rely on two
 one-time tools:
 
 ```bash
@@ -114,7 +114,7 @@ cargo install cargo-sort
 
 ## Shared Configuration Model
 
-Use `direnv` plus a local `.envrc` for day-to-day development. Start from [.envrc.sample](.envrc.sample), keep only
+Use `direnv` plus a local `.envrc` for day-to-day development. Start from [.envrc.sample](../.envrc.sample), keep only
 the values you need locally, and run `direnv allow`.
 
 Configuration ownership is:
@@ -188,7 +188,7 @@ UB__BLOCK_BROKER__PORT=5672
 - `.envrc` is your local override file — copy from `.envrc.sample` and fill in real values. **Never commit `.envrc`** (it is gitignored, but verify before staging).
 - Never paste `KEY_STORE_PASSWORD`, `USER_BITCOIN_WIF`, `MEMBER_BITCOIN_WIF`, or the contents of broker `.pem` files into issues, PRs, chat, or commit messages. Use placeholders (`<your-password>`) when reproducing commands.
 - For code-side handling of secrets (wrapping in `secrecy::SecretString`, redacting `Debug`), see
-  [`CONTRIBUTING.md` › Configuration and secrets](CONTRIBUTING.md#configuration-and-secrets).
+  [`CONTRIBUTING.md` › Configuration and secrets](../CONTRIBUTING.md#configuration-and-secrets).
 
 ## Local Development Modes
 
@@ -196,9 +196,9 @@ There are three supported local modes:
 
 | Mode | When to use it | Main docs |
 | --- | --- | --- |
-| cargo client + Docker infra | default recommended path | this doc + [Local Infra Guide](docker/local-infra/README.md) + [CLI Tools Guide](cli/README.md) |
-| cargo client + external or repo BitVMX | advanced debugging or BitVMX development | this doc + [CLI Tools Guide](cli/README.md) |
-| all Docker | operator-focused container runtime | this doc + [Operator Docker Runtime Guide](docker/operator/README.md) |
+| cargo client + Docker infra | default recommended path | this doc + [Local Infra Guide](../docker/local-infra/README.md) + [CLI Tools Guide](../cli/README.md) |
+| cargo client + external or repo BitVMX | advanced debugging or BitVMX development | this doc + [CLI Tools Guide](../cli/README.md) |
+| all Docker | operator-focused container runtime | this doc + [Operator Docker Runtime Guide](../docker/operator/README.md) |
 
 ### Mode: Cargo Client + Docker Infra
 
@@ -217,7 +217,7 @@ export USER_BITCOIN_WIF=<your-user-wif>
 ./scripts/run-clients.sh --bitvmx-mode repo [--fresh]
 ```
 
-Use the [CLI Tools Guide](cli/README.md) for follow-up commands.
+Use the [CLI Tools Guide](../cli/README.md) for follow-up commands.
 
 ### Mode: All Docker
 
@@ -233,7 +233,7 @@ cd docker/operator
 bash start-operators.sh [--fresh] up -d
 ```
 
-Use the [Operator Docker Runtime Guide](docker/operator/README.md) for runtime flags and troubleshooting.
+Use the [Operator Docker Runtime Guide](../docker/operator/README.md) for runtime flags and troubleshooting.
 
 ## Local Development - Recommended Path
 
@@ -424,11 +424,11 @@ Full workspace tests and end-to-end flow tests still require the [Recommended Pa
 
 Use the narrow docs for localized problems:
 
-- ports, Docker compose state, local infra volumes: [Local Infra Guide](docker/local-infra/README.md)
-- missing `op_N`, `docker-compose.env`, or `docker-service.env`: [Operator Docker Runtime Guide](docker/operator/README.md)
-- wrapper flags and CLI examples: [CLI Tools Guide](cli/README.md)
-- operator Docker compose variants and `--op` / `--ops`: [Operator Docker Runtime Guide](docker/operator/README.md)
-- CI workflows and `act` notes: [Workflow Guide](.github/WORKFLOWS.md)
+- ports, Docker compose state, local infra volumes: [Local Infra Guide](../docker/local-infra/README.md)
+- missing `op_N`, `docker-compose.env`, or `docker-service.env`: [Operator Docker Runtime Guide](../docker/operator/README.md)
+- wrapper flags and CLI examples: [CLI Tools Guide](../cli/README.md)
+- operator Docker compose variants and `--op` / `--ops`: [Operator Docker Runtime Guide](../docker/operator/README.md)
+- CI workflows and `act` notes: [Workflow Guide](../.github/WORKFLOWS.md)
 
 Common local issues:
 
@@ -525,13 +525,13 @@ FORCE_ADVANCE=0xOPERATOR_ADDRESS ./scripts/run-clients.sh
 `./scripts/setup-operators.sh` is the standard way to prepare local keystores. If you need the crate-level commands
 directly, use:
 
-- [Key Manager Guide](crates/key-manager/README.md)
-- [Wallet CLI Guide](cli/bitcoin-wallet/README.md)
+- [Key Manager Guide](../crates/key-manager/README.md)
+- [Wallet CLI Guide](../cli/bitcoin-wallet/README.md)
 
 ### CheckFork and ZKP Reference Flow
 
 The CheckFork tester and the Stark/Snark flow are preserved as reference material only. They are not part of the core
 local contributor happy path.
 
-Start from the [CheckFork Guide](crates/check-fork/README.md) and the `crates/check-fork/tester/` tooling when you specifically need
+Start from the [CheckFork Guide](../crates/check-fork/README.md) and the `crates/check-fork/tester/` tooling when you specifically need
 that integration work.

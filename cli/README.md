@@ -7,7 +7,7 @@ Bitcoin wallet helper.
 
 ## Related Docs
 
-- [Local Setup Guide](../LOCAL_SETUP.md): canonical setup order, shared env rules, and the recommended local flow
+- [Local Setup Guide](../docs/LOCAL_SETUP.md): canonical setup order, shared env rules, and the recommended local flow
 - [Operator Docker Runtime Guide](../docker/operator/README.md): local Docker operator runtime
 - [Wallet CLI Guide](bitcoin-wallet/README.md): wallet-specific commands and behavior
 
@@ -15,7 +15,7 @@ Run the wrapper scripts below from the repository root.
 
 ## Workflow Entry Points
 
-- local cargo client + Docker-backed infra: follow the [Local Setup Guide](../LOCAL_SETUP.md) first, then use the wrapper
+- local cargo client + Docker-backed infra: follow the [Local Setup Guide](../docs/LOCAL_SETUP.md) first, then use the wrapper
   commands below
 - local Docker operator runtime: use `--env docker-anvil` (or `--env docker-rskj`) after following the [Operator Docker Runtime Guide](../docker/operator/README.md)
 - remote CLI profile: use `--env <profile>` with a matching `cli/.env.<profile>`

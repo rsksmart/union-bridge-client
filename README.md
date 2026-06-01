@@ -44,9 +44,9 @@ For funding, peg-in/peg-out, and wallet operations (`scripts/operations.sh`, `sc
 
 | If you need to...                                                            | Read                                                                                                                                                                                                                                         |
 |------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| get the recommended local setup, shared env rules, and runtime modes         | [Local Setup Guide](LOCAL_SETUP.md)                                                                                                                                                                                                          |
+| get the recommended local setup, shared env rules, and runtime modes         | [Local Setup Guide](docs/LOCAL_SETUP.md)                                                                                                                                                                                                          |
 | understand engineering standards and commit conventions                      | [Contributing Guide](CONTRIBUTING.md)                                                                                                                                                                                                        |
-| install or troubleshoot git hooks                                            | [Local Setup Guide](LOCAL_SETUP.md#install-git-hooks) and [Hooks Guide](.hooks/README.md)                                                                                                                                                    |
+| install or troubleshoot git hooks                                            | [Local Setup Guide](docs/LOCAL_SETUP.md#install-git-hooks) and [Hooks Guide](.hooks/README.md)                                                                                                                                                    |
 | follow AI-agent guidance, project routing, and verification commands         | [Agent Guide](AGENTS.md)                                                                                                                                                                                                                     |
 | use the local wrappers and operations CLI                                    | [CLI Tools Guide](cli/README.md)                                                                                                                                                                                                             |
 | choose a Docker flow                                                         | [Docker Guide](docker/README.md)                                                                                                                                                                                                             |
@@ -60,7 +60,7 @@ For funding, peg-in/peg-out, and wallet operations (`scripts/operations.sh`, `sc
 
 Engineering standards and commit conventions live in the [Contributing Guide](CONTRIBUTING.md).
 Local setup, hook installation, shared configuration, runtime modes, and the recommended development path live in the
-[Local Setup Guide](LOCAL_SETUP.md). Per-hook details live in the [Hooks Guide](.hooks/README.md).
+[Local Setup Guide](docs/LOCAL_SETUP.md). Per-hook details live in the [Hooks Guide](.hooks/README.md).
 
 ## License
 

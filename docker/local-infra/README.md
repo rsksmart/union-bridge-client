@@ -4,7 +4,7 @@ This doc owns the Docker-backed local infrastructure used when Union Bridge runs
 or against the Docker-first `local-rskj` stack.
 
 For the full startup order, shared env rules, and the recommended local workflow, start with the
-[Local Setup Guide](../../LOCAL_SETUP.md).
+[Local Setup Guide](../../docs/LOCAL_SETUP.md).
 
 Environment note:
 
@@ -14,7 +14,7 @@ Environment note:
 ## Related Docs
 
 - [Docker Guide](../README.md): Docker flow selection
-- [Local Setup Guide](../../LOCAL_SETUP.md): canonical local workflow
+- [Local Setup Guide](../../docs/LOCAL_SETUP.md): canonical local workflow
 - [Operator Docker Runtime Guide](../operator/README.md): local operator Docker runtime
 
 ## `scripts/run-infra.sh`
@@ -128,7 +128,7 @@ if the tag is not published. Use `--pull-contracts` to force a GHCR refresh.
 The contracts are deployed from the local `union-bridge-contracts` checkout resolved by `CONTRACTS_CONTEXT_PATH`
 (`../../../union-bridge-contracts` by default). Until the native-bridge local-regtest deploy changes land upstream, keep
 that sibling checkout on `fedejinich/chore/local-regtest-native-bridge`; see the required sibling repository setup in
-the [Local Setup Guide](../../LOCAL_SETUP.md#required-sibling-repositories).
+the [Local Setup Guide](../../docs/LOCAL_SETUP.md#required-sibling-repositories).
 
 The default tested tags live in [`rskj/.env`](./rskj/.env):
 
@@ -158,7 +158,7 @@ The documented local infra flow is still a 4-client BitVMX setup:
 - `op_3` -> `localhost:44444`
 - `op_4` -> `localhost:55554`
 
-If you need the full run sequence, do not rebuild it here. Use the [Local Setup Guide](../../LOCAL_SETUP.md) and come
+If you need the full run sequence, do not rebuild it here. Use the [Local Setup Guide](../../docs/LOCAL_SETUP.md) and come
 back to this doc for flags, ports, and troubleshooting.
 
 ## Useful Commands
