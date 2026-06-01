@@ -16,6 +16,7 @@ services:
     volumes:
       - ${CONFIG_DIR:-../../config}:/app/config/:ro
       - db-blocks:/app/db/blocks
+      - db-block-broker:/app/db/broker/block-indexer
     environment:
       - CONFIG=${CONFIG:-dummy-config-name}
       - UB_LOG_DIR=${UB_LOG_DIR:-/app/logs}
@@ -41,6 +42,7 @@ services:
     volumes:
       - ${CONFIG_DIR:-../../config}:/app/config/:ro
       - db-logs:/app/db/logs
+      - db-log-broker:/app/db/broker/log-indexer
     environment:
       - CONFIG=${CONFIG:-dummy-config-name}
       - UB_LOG_DIR=${UB_LOG_DIR:-/app/logs}
@@ -124,5 +126,7 @@ services:
 
 volumes:
   db-blocks:
+  db-block-broker:
   db-logs:
+  db-log-broker:
   db-coordinator:
