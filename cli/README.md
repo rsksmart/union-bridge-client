@@ -22,27 +22,27 @@ Run the wrapper scripts below from the repository root.
 
 For the automated happy-path script:
 
-- `bash tests/run-flows.sh --setup` prepares member/operator state only
-- `bash tests/run-flows.sh --committee` applies operators to the stream and waits for committee completion
-- `bash tests/run-flows.sh --pegin`, `--pegout`, and `--operator-take` reuse the prepared state
-- the script does not start `cli-infra.sh`, `cli-run.sh`, or `docker/operator/start-operators.sh` for you
+- `bash scripts/test-flows.sh --setup` prepares member/operator state only
+- `bash scripts/test-flows.sh --committee` applies operators to the stream and waits for committee completion
+- `bash scripts/test-flows.sh --pegin`, `--pegout`, and `--operator-take` reuse the prepared state
+- the script does not start `scripts/run-infra.sh`, `scripts/run-clients.sh`, or `docker/operator/start-operators.sh` for you
 
-## `cli-run.sh`
+## `scripts/run-clients.sh`
 
 Launch one or more Union Bridge clients locally for development and testing.
 
 ```bash
-./cli-run.sh --help
-./cli-run.sh                       # default: local-anvil (--features anvil, --config local-anvil)
-./cli-run.sh --id 1
-./cli-run.sh --rskj                # local-rskj: --config local-rskj, no anvil feature
-./cli-run.sh --fresh
-./cli-run.sh --bitvmx-mode docker
-./cli-run.sh --bitvmx-mode repo
-./cli-run.sh --kill
+./scripts/run-clients.sh --help
+./scripts/run-clients.sh                       # default: local-anvil (--features anvil, --config local-anvil)
+./scripts/run-clients.sh --id 1
+./scripts/run-clients.sh --rskj                # local-rskj: --config local-rskj, no anvil feature
+./scripts/run-clients.sh --fresh
+./scripts/run-clients.sh --bitvmx-mode docker
+./scripts/run-clients.sh --bitvmx-mode repo
+./scripts/run-clients.sh --kill
 ```
 
-## `cli-operations.sh`
+## `scripts/operations.sh`
 
 Operator and user operations for local, Docker-backed, and remote-profile environments.
 
@@ -74,21 +74,21 @@ For remote CLI access, copy `cli/.env.sample` to `cli/.env.<profile>` and fill i
 ### Usage Examples
 
 ```bash
-./cli-operations.sh --help
+./scripts/operations.sh --help
 
 # Docker operator funding
-./cli-operations.sh operator fund --env docker-anvil
+./scripts/operations.sh operator fund --env docker-anvil
 
 # Local operator apply-stream
-./cli-operations.sh operator apply-stream --stream 1
+./scripts/operations.sh operator apply-stream --stream 1
 
 # Local whitelist
-./cli-operations.sh operator whitelist --contract-address 0x742d35... --env local-anvil
+./scripts/operations.sh operator whitelist --contract-address 0x742d35... --env local-anvil
 
 # Local user flows
-./cli-operations.sh user fund --env local-anvil
-./cli-operations.sh user pegin --rsk-address 0x742d35... --value 1000000 --btc-pub-key 0x<32-byte-xonly-pubkey> --env local-anvil
-./cli-operations.sh user pegout --value 1000000 --usr-pub-key 0x<33-byte-compressed-pubkey> --env local-anvil
+./scripts/operations.sh user fund --env local-anvil
+./scripts/operations.sh user pegin --rsk-address 0x742d35... --value 1000000 --btc-pub-key 0x<32-byte-xonly-pubkey> --env local-anvil
+./scripts/operations.sh user pegout --value 1000000 --usr-pub-key 0x<33-byte-compressed-pubkey> --env local-anvil
 ```
 
 ### Remote CLI Notes
@@ -115,10 +115,10 @@ cli/
 ├── Cargo.toml
 ├── Cargo.lock
 ├── .env.sample         # Template for remote CLI profiles (copy to .env.<profile>)
-├── run/                # Local client launcher (cli-run.sh)
+├── run/                # Local client launcher (scripts/run-clients.sh)
 │   ├── src/main.rs
 │   └── Cargo.toml
-├── operations/         # Operations toolkit (cli-operations.sh)
+├── operations/         # Operations toolkit (scripts/operations.sh)
 │   ├── src/
 │   │   ├── main.rs
 │   │   ├── bitcoin_wallet.rs
@@ -131,7 +131,7 @@ cli/
 │   │   ├── constants.rs
 │   │   └── utils.rs
 │   └── Cargo.toml
-└── bitcoin-wallet/     # Interactive Bitcoin wallet (cli-bitcoin-wallet.sh)
+└── bitcoin-wallet/     # Interactive Bitcoin wallet (scripts/bitcoin-wallet.sh)
     ├── src/
     │   ├── main.rs
     │   ├── lib.rs
@@ -165,6 +165,6 @@ cli/bitcoin-wallet/
 ## Docker Integration
 
 `docker-compose.env` and `docker-service.env` are Docker operator runtime artifacts. They are not read by
-`./cli-run.sh`, which uses the local cargo-mode keystores staged under `BASE_STORAGE_PATH`.
+`./scripts/run-clients.sh`, which uses the local cargo-mode keystores staged under `BASE_STORAGE_PATH`.
 Docker operator mode reuses the same host `op_N/union-client/keystore/{user,member}` files via bind mounts, so the
-keystores created by `cli-setup-operators.sh` serve both local cargo mode and the operator containers.
+keystores created by `scripts/setup-operators.sh` serve both local cargo mode and the operator containers.

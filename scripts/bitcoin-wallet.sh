@@ -3,14 +3,14 @@
 # Bitcoin Wallet Launcher
 # Supports both interactive mode (no command) and command mode (with command)
 #
-# Interactive mode: ./cli-bitcoin-wallet.sh [network] <user|member>
-# Command mode:     ./cli-bitcoin-wallet.sh [network] <user|member> <command> [args...]
+# Interactive mode: ./scripts/bitcoin-wallet.sh [network] <user|member>
+# Command mode:     ./scripts/bitcoin-wallet.sh [network] <user|member> <command> [args...]
 #
 # Network defaults to regtest if not specified.
 
 set -e
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 # If no arguments, default to default mode on regtest
 if [ $# -eq 0 ]; then

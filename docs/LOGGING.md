@@ -18,7 +18,7 @@ flushes and closes the background file-writer thread.
 | Force JSON output            | `LOG_FORMAT=json`                                  |
 | Force human-readable output  | `LOG_FORMAT=pretty`                                |
 | Customize file location      | `--log-dir <DIR>` or `UB_LOG_DIR=<DIR>` (default: `./logs/`) |
-| Per-operator log file name   | `CLIENT_ID=<N>` (set automatically by `cli-run.sh`)|
+| Per-operator log file name   | `CLIENT_ID=<N>` (set automatically by `scripts/run-clients.sh`)|
 | Switch default format        | `ENVIRONMENT=local` (pretty) vs anything else (json) |
 
 ## Output format: pretty vs JSON
@@ -41,7 +41,7 @@ Default for local dev.
 2026-05-19 10:14:22.041 [ INFO] [block_indexer::sync] caught up height=8421
 ```
 
-When the multi-operator launcher (`cli-run.sh`) runs several services in
+When the multi-operator launcher (`scripts/run-clients.sh`) runs several services in
 parallel, their stdout lines interleave; operator identity is disambiguated by
 the per-operator log files (see [File output](#file-output)), not by a stdout
 prefix.
@@ -82,16 +82,16 @@ i.e. `debug` for our own code, `warn` for the noisy third-party crates.
 
 ```bash
 # Bump everything to trace
-RUST_LOG=trace ./cli-run.sh
+RUST_LOG=trace ./scripts/run-clients.sh
 
 # Only debug for our crates, keep dependencies at info
-RUST_LOG=info,block_indexer=debug,coordinator=debug ./cli-run.sh
+RUST_LOG=info,block_indexer=debug,coordinator=debug ./scripts/run-clients.sh
 
 # Silence a specific module
-RUST_LOG=debug,alloy_provider=off ./cli-run.sh
+RUST_LOG=debug,alloy_provider=off ./scripts/run-clients.sh
 
 # Re-enable a noisy third-party crate temporarily (overrides DEFAULT_FILTER)
-RUST_LOG=debug,hyper=debug ./cli-run.sh
+RUST_LOG=debug,hyper=debug ./scripts/run-clients.sh
 ```
 
 > Setting `RUST_LOG` **replaces** the default filter — it doesn't merge with it.
@@ -150,12 +150,12 @@ owns the worker thread. Drop it on shutdown to flush.
 
 **Local dev, more verbose (file written under `./logs/`):**
 ```bash
-RUST_LOG=trace ./cli-run.sh
+RUST_LOG=trace ./scripts/run-clients.sh
 ```
 
 **Local dev, write JSON to a file for inspection:**
 ```bash
-LOG_FORMAT=json UB_LOG_DIR=./logs/manual ./cli-run.sh
+LOG_FORMAT=json UB_LOG_DIR=./logs/manual ./scripts/run-clients.sh
 ```
 
 **Run a single service binary directly with a log file:**
@@ -165,6 +165,6 @@ cargo run -p block-indexer -- --log-dir ./logs --config local
 
 **Hunt down a noisy dependency (find which target to silence):**
 ```bash
-RUST_LOG=debug ./cli-run.sh 2>&1 | grep WARN | awk '{print $3}' | sort -u
+RUST_LOG=debug ./scripts/run-clients.sh 2>&1 | grep WARN | awk '{print $3}' | sort -u
 # then add `<target>=warn` (or `=off`) to RUST_LOG
 ```

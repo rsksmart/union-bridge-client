@@ -280,7 +280,7 @@ pub(crate) async fn handle_user_funding(env: Environment) -> Result<()> {
     println!("--- Rootstock (RSK) ---");
     if user_addresses.is_empty() {
         println!("No user RSK addresses found in staged keystores.");
-        println!("Ensure cli-setup-operators.sh has prepared ~/.union_bridge artifacts.\n");
+        println!("Ensure scripts/setup-operators.sh has prepared ~/.union_bridge artifacts.\n");
     } else {
         println!("User RSK addresses to fund:");
         for (source, address) in &user_addresses {

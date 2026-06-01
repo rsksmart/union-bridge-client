@@ -27,6 +27,19 @@ including requesting peg-in addresses and peg-outs, are exposed through the `use
 coordination of the different multi-step flows is handled by the `coordinator` crate, which connects blockchain events,
 contract state, broker messaging, BitVMX interactions, and timeout handling.
 
+## Quick Start
+
+Main local commands, run from the repo root after the one-time setup in the [Local Setup Guide](docs/LOCAL_SETUP.md):
+
+```bash
+bash scripts/run-infra.sh --start   # start local blockchains, BitVMX, and mining (Docker)
+bash scripts/run-clients.sh         # run the operator client services locally
+bash scripts/test-flows.sh          # run the automated end-to-end happy-path flows
+```
+
+For funding, peg-in/peg-out, and wallet operations (`scripts/operations.sh`, `scripts/bitcoin-wallet.sh`), see the
+[CLI Tools Guide](cli/README.md). The full recommended path lives in the [Local Setup Guide](docs/LOCAL_SETUP.md).
+
 ## Documentation Map
 
 | If you need to...                                                            | Read                                                                                                                                                                                                                                         |

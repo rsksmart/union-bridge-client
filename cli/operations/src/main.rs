@@ -1,13 +1,13 @@
 //! union bridge operator and user operations toolkit
 //!
 //! provides commands for interacting with the union bridge protocol.
-//! local bootstrap is handled by `cli-setup-operators.sh`.
+//! local bootstrap is handled by `scripts/setup-operators.sh`.
 //!
 //! ## operator
 //! commands for operator wallet management and committee registration
 //! - `fund`: displays operator bitcoin addresses and funds rootstock wallets
 //!   - prints bitcoin addresses that need to be funded manually in bitcoin-wallet cli
-//!   - with `--execute` flag: runs the wallet commands programmatically via cli-bitcoin-wallet.sh
+//!   - with `--execute` flag: runs the wallet commands programmatically via scripts/bitcoin-wallet.sh
 //!   - automatically funds rootstock addresses via anvil in local mode
 //! - `apply-stream`: registers operator(s) to a stream for committee participation
 //!   - local: applies all 4 operators automatically
@@ -21,7 +21,7 @@
 //!   - prints bitcoin-wallet instructions for funding bitcoin
 //! - `pegin`: initiates a bitcoin → rootstock transfer
 //!   - prints bitcoin-wallet cli command to execute the pegin transaction
-//!   - with `--execute` flag: runs the wallet command programmatically via cli-bitcoin-wallet.sh
+//!   - with `--execute` flag: runs the wallet command programmatically via scripts/bitcoin-wallet.sh
 //!   - requires: rootstock address, value in satoshis
 //!   - packet number is auto-calculated from StreamManager contract (can be overridden with -p)
 //! - `pegout`: initiates a rootstock → bitcoin withdrawal

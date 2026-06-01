@@ -20,14 +20,14 @@ pub(crate) fn confirm_operation(description: &str) -> Result<bool> {
 
 /// Runs a bitcoin-wallet CLI command and returns its stdout.
 pub(crate) fn run_wallet_command(args: &[&str]) -> Result<String> {
-    let wallet_script = "./cli-bitcoin-wallet.sh";
+    let wallet_script = "./scripts/bitcoin-wallet.sh";
     let mut cmd = Command::new(wallet_script);
     cmd.args(args);
 
     let rendered_args = args.join(" ");
     println!("Running: {} {}", wallet_script, rendered_args);
 
-    let output = cmd.output().context("failed to execute cli-bitcoin-wallet.sh")?;
+    let output = cmd.output().context("failed to execute scripts/bitcoin-wallet.sh")?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);

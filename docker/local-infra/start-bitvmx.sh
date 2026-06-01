@@ -27,7 +27,7 @@ print_help() {
   echo ""
   echo "Prerequisites: Start blockchains first"
   echo "  ./start-blockchains.sh --fresh up -d"
-  echo "  <project_root>/cli-setup-operators.sh --ops 4"
+  echo "  <project_root>/scripts/setup-operators.sh --ops 4"
   echo ""
   echo "Connect to:"
   echo "  op_1 -> localhost:22222"
@@ -72,18 +72,18 @@ ensure_generated_bitvmx_configs() {
     cfg_file="${config_dir}/op_${op_num}.yaml"
     if [[ ! -d "${config_dir}" ]]; then
       echo "Error: missing generated BitVMX config directory ${config_dir}" >&2
-      echo "Run <project_root>/cli-setup-operators.sh --ops 4 before starting BitVMX." >&2
+      echo "Run <project_root>/scripts/setup-operators.sh --ops 4 before starting BitVMX." >&2
       exit 1
     fi
     if [[ ! -f "${cfg_file}" ]]; then
       echo "Error: missing generated BitVMX config ${cfg_file}" >&2
-      echo "Run <project_root>/cli-setup-operators.sh --ops 4 before starting BitVMX." >&2
+      echo "Run <project_root>/scripts/setup-operators.sh --ops 4 before starting BitVMX." >&2
       exit 1
     fi
     if [[ ! -f "${config_dir}/broker_settings.yaml" ]] \
       || ! grep -q '^[[:space:]]*settings:[[:space:]]*config/broker_settings.yaml[[:space:]]*$' "${cfg_file}"; then
       echo "Error: generated BitVMX config ${cfg_file} is stale for the current BitVMX image." >&2
-      echo "Run <project_root>/cli-setup-operators.sh --ops 4 to refresh the host-side BitVMX configs." >&2
+      echo "Run <project_root>/scripts/setup-operators.sh --ops 4 to refresh the host-side BitVMX configs." >&2
       exit 1
     fi
   done

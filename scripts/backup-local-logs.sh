@@ -234,7 +234,7 @@ backup_bitvmx_container_database() {
   print_capture_result "${subject}" "${rc}"
 }
 
-# Mirrors cli-run.sh: UB_LOG_DIR overrides; else logs/latest (timestamped run); else logs/.
+# Mirrors scripts/run-clients.sh: UB_LOG_DIR overrides; else logs/latest (timestamped run); else logs/.
 resolve_local_union_logs_dir() {
   local logs_root="${PROJECT_ROOT}/logs"
 

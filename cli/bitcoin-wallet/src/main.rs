@@ -87,7 +87,7 @@ fn main() -> Result<()> {
             eprintln!("Reason: Programmatic access is restricted to regtest for safety.");
             eprintln!("For testnet/mainnet operations, please use interactive mode:");
             let env_name = network_name(wallet.network());
-            eprintln!("  ./cli-bitcoin-wallet.sh {} --env {}", config.mode, env_name);
+            eprintln!("  ./scripts/bitcoin-wallet.sh {} --env {}", config.mode, env_name);
             bail!("Command mode not allowed on network: {:?}", wallet.network());
         }
 

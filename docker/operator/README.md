@@ -31,7 +31,7 @@ export KEY_STORE_PASSWORD=<your-password>
 
 # Prepare fresh staged operator payloads from the repository root.
 # Add -y to skip the removal confirmation for existing op_N folders.
-./cli-setup-operators.sh --ops 4
+./scripts/setup-operators.sh --ops 4
 ```
 
 `USER_BITCOIN_WIF` is read directly from your shell by the user-facing CLIs at run
@@ -54,13 +54,13 @@ The setup flow also patches the generated local BitVMX YAMLs with the current `B
 and the required broker pubkey hashes. `KEY_STORE_PASSWORD` is written into each operator's `docker-service.env`
 from the current environment or interactive prompts.
 
-If selected operator folders already exist, `cli-setup-operators.sh` lists them and asks before removing them. Use
-`./cli-setup-operators.sh --ops 4 -y` for non-interactive reset and setup. Setup does not reuse secrets from a previous
+If selected operator folders already exist, `scripts/setup-operators.sh` lists them and asks before removing them. Use
+`./scripts/setup-operators.sh --ops 4 -y` for non-interactive reset and setup. Setup does not reuse secrets from a previous
 `docker-service.env`; export the intended `KEY_STORE_PASSWORD` before running non-interactively.
 
 The coordinator and user-api containers bind-mount
 `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/keystore/` as `/keystore`. The same keystores serve local
-cargo mode. Containers do not generate replacement keys; `cli-setup-operators.sh` creates them ahead of time via the
+cargo mode. Containers do not generate replacement keys; `scripts/setup-operators.sh` creates them ahead of time via the
 `key-manager` crate.
 
 ## Local Startup
@@ -70,10 +70,10 @@ operator Docker runtime in this directory.
 
 ```bash
 # 1. Start the local blockchains and background mining
-./cli-infra.sh --start-blockchains --fresh
+./scripts/run-infra.sh --start-blockchains --fresh
 
 # 2. Prepare operator runtime artifacts
-./cli-setup-operators.sh --ops 4
+./scripts/setup-operators.sh --ops 4
 
 # 3. Start the operator Docker runtime from docker/operator/
 bash start-operators.sh --fresh up -d
@@ -84,7 +84,7 @@ Notes:
 - This sequence starts the blockchains from `docker/local-infra` and the wrapper's background mining loop.
 - `start-operators.sh` includes the `bitvmx-client` service in the operator compose stack.
 - `bash start-operators.sh up -d` reuses the current operator containers and volumes.
-- After the Docker operator runtime is up, you can use `bash tests/run-flows.sh --env docker-anvil --setup`,
+- After the Docker operator runtime is up, you can use `bash scripts/test-flows.sh --env docker-anvil --setup`,
   then `--committee`, then the user-flow modes.
 
 For broader workflow context, go back to the [Local Setup Guide](../../LOCAL_SETUP.md) or the
@@ -107,7 +107,7 @@ bash start-operators.sh down
 ```
 
 `--fresh` removes Docker volumes and databases for the operator stack but does not rotate Rootstock keys, because the
-keystores come from the host `op_N/union-client/keystore/` directory prepared by `cli-setup-operators.sh`.
+keystores come from the host `op_N/union-client/keystore/` directory prepared by `scripts/setup-operators.sh`.
 
 Compose selection is derived from the effective operator count:
 
@@ -132,7 +132,7 @@ falls back to the tracked repo copies under `../../config` and `../../resources`
 entry point for one-operator-per-host deployments.
 
 `docker-compose.env` and `docker-service.env` are Docker operator runtime artifacts only. They are not read by the
-local cargo client launched with `./cli-run.sh`. The generated env files point Docker at the host keystore directory
+local cargo client launched with `./scripts/run-clients.sh`. The generated env files point Docker at the host keystore directory
 under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/keystore/`. `start-operators.sh` expects those
 keystore files to already exist and fails fast if they are missing. If you bypass `start-operators.sh` and run
 `docker compose` manually, export `KEYSTORE_DIR` yourself first.
@@ -160,12 +160,12 @@ cd ../bitvmx-client
 If `start-operators.sh` reports a missing `docker-compose.env` or `docker-service.env`, rerun:
 
 ```bash
-./cli-setup-operators.sh --ops 4
+./scripts/setup-operators.sh --ops 4
 ```
 
 ### Missing BitVMX Config
 
-If `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/` is missing or stale, rerun `./cli-setup-operators.sh`.
+If `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/bitvmx/` is missing or stale, rerun `./scripts/setup-operators.sh`.
 The setup script removes the affected selected operator directory before recreating it, using current exported values
 or prompts for required secrets.
 
