@@ -9,6 +9,7 @@ use tracing_subscriber::{EnvFilter, fmt};
 
 use crate::config::CommonConfig;
 
+const RUST_LOG_ENV_VAR: &str = "RUST_LOG";
 const LOG_DIR_ENV_VAR: &str = "UB_LOG_DIR";
 const CLIENT_ID_ENV_VAR: &str = "CLIENT_ID";
 const ENVIRONMENT_ENV_VAR: &str = "ENVIRONMENT";
@@ -91,8 +92,7 @@ impl CommonConfig {
         // installs `LogTracer` internally. An explicit call here would double-register it
         // and cause try_init() to return "logger already initialized".
 
-        let filter =
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(DEFAULT_FILTER));
+        let filter = Self::build_env_filter(std::env::var(RUST_LOG_ENV_VAR).ok().as_deref());
 
         let log_dir = Self::resolve_log_dir(
             log_dir_opt.map(String::as_str),
@@ -154,6 +154,24 @@ impl CommonConfig {
         Ok(guard)
     }
 
+    /// Builds the `EnvFilter` from the value of `RUST_LOG`. A missing **or empty**
+    /// value falls back to [`DEFAULT_FILTER`].
+    ///
+    /// `EnvFilter::try_from_default_env` treats a present-but-empty `RUST_LOG` (e.g.
+    /// `RUST_LOG=${RUST_LOG:-}` injected by the docker-compose files) as `Ok(empty filter)`,
+    /// which disables **all** output instead of falling back to the default — so the
+    /// `unwrap_or_else` default never fires. We read the variable ourselves and treat
+    /// blank as unset to avoid that footgun. A non-empty but invalid value also falls
+    /// back to the default rather than silencing logs.
+    fn build_env_filter(rust_log: Option<&str>) -> EnvFilter {
+        match rust_log.filter(|s| !s.trim().is_empty()) {
+            Some(dirs) => {
+                EnvFilter::try_new(dirs).unwrap_or_else(|_| EnvFilter::new(DEFAULT_FILTER))
+            }
+            None => EnvFilter::new(DEFAULT_FILTER),
+        }
+    }
+
     /// Resolves the log directory used by [`init_logger`]. CLI arg wins, then
     /// `UB_LOG_DIR`, then `DEFAULT_LOG_DIR`. Empty strings are treated as unset.
     fn resolve_log_dir(arg: Option<&str>, env: Option<&str>) -> String {
@@ -193,6 +211,40 @@ impl CommonConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_build_env_filter_unset_uses_default() {
+        assert_eq!(
+            EnvFilter::new(DEFAULT_FILTER).to_string(),
+            CommonConfig::build_env_filter(None).to_string()
+        );
+    }
+
+    #[test]
+    fn test_build_env_filter_blank_uses_default() {
+        // A present-but-empty RUST_LOG (e.g. `RUST_LOG=${RUST_LOG:-}` in docker-compose)
+        // must behave like unset. Otherwise EnvFilter yields an empty filter that disables
+        // all output — only the "Logging to file" println would reach stdout.
+        let expected = EnvFilter::new(DEFAULT_FILTER).to_string();
+        assert_eq!(expected, CommonConfig::build_env_filter(Some("")).to_string());
+        assert_eq!(expected, CommonConfig::build_env_filter(Some("   ")).to_string());
+    }
+
+    #[test]
+    fn test_build_env_filter_respects_explicit_value() {
+        let filter = CommonConfig::build_env_filter(Some("info,coordinator=trace")).to_string();
+        assert_eq!(EnvFilter::try_new("info,coordinator=trace").unwrap().to_string(), filter);
+        assert_ne!(EnvFilter::new(DEFAULT_FILTER).to_string(), filter);
+    }
+
+    #[test]
+    fn test_build_env_filter_invalid_value_falls_back_to_default() {
+        // A non-empty but unparseable directive must not silence logging.
+        assert_eq!(
+            EnvFilter::new(DEFAULT_FILTER).to_string(),
+            CommonConfig::build_env_filter(Some("=:::not a directive:::")).to_string()
+        );
+    }
 
     #[test]
     fn test_resolve_log_dir_prefers_cli_arg() {

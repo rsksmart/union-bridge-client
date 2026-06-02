@@ -1,7 +1,7 @@
 # Logging
 
 This project uses the [`tracing`](https://docs.rs/tracing) ecosystem. A single
-subscriber is built in [`crates/common/src/config.rs`](../crates/common/src/config.rs)
+subscriber is built in [`common/src/logging.rs`](../crates/common/src/logging.rs)
 (`CommonConfig::init_logger`) and reused by every service crate
 (`block-indexer`, `log-indexer`, `coordinator`, `transaction-dispatcher`,
 `user-api`).
@@ -93,8 +93,8 @@ Notes:
 Module-level filtering uses the standard `tracing-subscriber` `EnvFilter`
 syntax, read from `RUST_LOG`.
 
-When `RUST_LOG` is **unset**, the built-in default
-(`DEFAULT_FILTER` in `crates/common/src/config.rs`) is applied:
+When `RUST_LOG` is **unset or empty**, the built-in default
+(`DEFAULT_FILTER` in `crates/common/src/logging.rs`) is applied:
 
 ```
 debug,
@@ -125,6 +125,11 @@ RUST_LOG=debug,hyper=debug ./scripts/run-clients.sh
 > Setting `RUST_LOG` **replaces** the default filter — it doesn't merge with it.
 > If you want our defaults plus one tweak, copy the relevant pieces of
 > `DEFAULT_FILTER` into your `RUST_LOG`.
+
+> A **present-but-empty** `RUST_LOG` (e.g. `RUST_LOG=${RUST_LOG:-}` as injected by
+> the docker-compose files) is treated the same as unset — it falls back to
+> `DEFAULT_FILTER` rather than disabling all output. A non-empty but unparseable
+> value also falls back to the default.
 
 ### Filter syntax recap
 
