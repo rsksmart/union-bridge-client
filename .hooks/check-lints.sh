@@ -4,7 +4,7 @@
 
 set -e
 
-WORKSPACES=("." "cli" "check-fork/zkp/guest")
+WORKSPACES=("." "cli" "crates/check-fork/zkp/guest")
 
 echo "🦀 Checking clippy lints..."
 for ws in "${WORKSPACES[@]}"; do

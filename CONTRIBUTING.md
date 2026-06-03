@@ -2,7 +2,7 @@
 
 > Engineering standards and team conventions for contributors to this repository. For AI-agent guidance and
 > concrete review-time checks see [`AGENTS.md`](AGENTS.md). For developer setup, environment, and local workflow
-> see [`LOCAL_SETUP.md`](LOCAL_SETUP.md). Build/CI checks, release artefact rules, and review-process details
+> see [`LOCAL_SETUP.md`](docs/LOCAL_SETUP.md). Build/CI checks, release artefact rules, and review-process details
 > are tracked separately.
 
 This document is a living standard. Bullets may be added, refined, or retired over time; treat it as the current
@@ -298,5 +298,5 @@ Local git hooks enforce `fmt` / `sort` / `clippy` on commit, branch-name shape o
 the message itself. They shell out to the helper scripts in [`.hooks/`](.hooks/), which is the single source of truth
 and is also invoked by CI — so the bar is identical locally and on PRs.
 
-Hook installation and the reinstall recipe live in [`LOCAL_SETUP.md` › Install Git Hooks](LOCAL_SETUP.md#install-git-hooks).
+Hook installation and the reinstall recipe live in [`LOCAL_SETUP.md` › Install Git Hooks](docs/LOCAL_SETUP.md#install-git-hooks).
 See the [Hooks Guide](.hooks/README.md) for the per-hook detail.

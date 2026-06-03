@@ -22,7 +22,7 @@ print_help() {
   echo "Usage: $0 [OPTIONS] [DOCKER_COMPOSE_ARGS...]"
   echo ""
   echo "Before startup, prepare the operator env files on this host:"
-  echo "  <project_root>/cli-setup-operators.sh --ops 4"
+  echo "  <project_root>/scripts/setup-operators.sh --ops 4"
   echo ""
   echo "Options:"
   echo "  --op <ID>                Start only the prepared operator under .union_bridge/op_<ID> (1-10)"
@@ -179,7 +179,7 @@ require_operator_keystore_file() {
 
   if [[ ! -f "${file_path}" ]]; then
     echo "Error: missing operator keystore ${file_path}" >&2
-    echo "Run <project_root>/cli-setup-operators.sh --ops <N> to create or reuse the required host-side keys before starting containers." >&2
+    echo "Run <project_root>/scripts/setup-operators.sh --ops <N> to create or reuse the required host-side keys before starting containers." >&2
     return 1
   fi
 }

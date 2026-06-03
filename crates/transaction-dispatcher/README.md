@@ -1,7 +1,7 @@
 # Transaction Dispatcher
 
-For repository-level setup and workflow context, start with the [Repository README](../README.md) and the
-[Local Setup Guide](../LOCAL_SETUP.md). This README stays focused on transaction-dispatcher ownership.
+For repository-level setup and workflow context, start with the [Repository README](../../README.md) and the
+[Local Setup Guide](../../docs/LOCAL_SETUP.md). This README stays focused on transaction-dispatcher ownership.
 
 The `transaction-dispatcher` crate encapsulates the Rootstock transaction submission layer used by Union Bridge
 services. Its job is to hide chain-specific transaction construction and submission behind crate APIs instead of making

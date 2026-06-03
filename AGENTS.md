@@ -69,7 +69,7 @@ For Rust edits in this repo, "verified" includes both clippy and tests passing. 
 
 ## Build and Verify
 
-Source of truth for fmt/sort/clippy is [`.hooks/`](.hooks/) — CI and pre-push call the same scripts, and they iterate across `.`, `cli/`, and `check-fork/zkp/guest/`. Call them when you need CI parity:
+Source of truth for fmt/sort/clippy is [`.hooks/`](.hooks/) — CI and pre-push call the same scripts, and they iterate across `.`, `cli/`, and `crates/check-fork/zkp/guest/`. Call them when you need CI parity:
 
 ```bash
 bash .hooks/format-code.sh --check   # canonical fmt + sort check across all workspaces
@@ -97,7 +97,7 @@ The `coordinator` crate is the orchestration daemon and the entry point for most
 - New Rootstock block headers (from `block-indexer`)
 - User requests (forwarded from `user-api`)
 
-Each flow is an `EventProcessor` with a persistent state machine. Flows live under [`coordinator/src/flows/`](coordinator/src/flows/):
+Each flow is an `EventProcessor` with a persistent state machine. Flows live under [`crates/coordinator/src/flows/`](crates/coordinator/src/flows/):
 
 - `committee/` — committee setup (member keys, communication data, BitVMX dispute channels)
 - `pegin/` — peg-in (Bitcoin deposit → Rootstock accepted pegin)
@@ -115,7 +115,7 @@ Agent guidance lives here. For everything else, consult the canonical docs — o
 
 - **Before committing or opening a PR** — [`.hooks/README.md`](.hooks/README.md) (commit-message format, branch-name rules) and [`.github/pull_request_template.md`](.github/pull_request_template.md).
 - **Writing new code or unsure about a rule** — [`CONTRIBUTING.md`](CONTRIBUTING.md) (engineering standards: error handling, defensive coding, observability, concurrency, unsafe policy, codebase-specific rules).
-- **Local dev setup, env vars, troubleshooting** — [`LOCAL_SETUP.md`](LOCAL_SETUP.md).
+- **Local dev setup, env vars, troubleshooting** — [`LOCAL_SETUP.md`](docs/LOCAL_SETUP.md).
 
 # Codebase-Specific Patterns
 

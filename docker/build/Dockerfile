@@ -26,18 +26,8 @@ RUN apt-get update -y && \
 # copy only dependency files for better caching
 COPY Cargo.toml Cargo.lock ./
 
-# TODO create crates folder and move crates there, so we can copy it instead of the individual crates
 # copy workspace members:
-COPY common common
-COPY block-indexer block-indexer
-COPY log-indexer log-indexer
-COPY transaction-dispatcher transaction-dispatcher
-COPY key-manager key-manager
-COPY check-fork check-fork
-COPY op-funding op-funding
-COPY protocol-params protocol-params
-COPY coordinator coordinator
-COPY user-api user-api
+COPY crates crates
 
 ENV RUST_LOG=error
 ENV CARGO_TERM_QUIET=true

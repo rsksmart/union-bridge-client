@@ -4,60 +4,60 @@ This doc owns the Docker-backed local infrastructure used when Union Bridge runs
 or against the Docker-first `local-rskj` stack.
 
 For the full startup order, shared env rules, and the recommended local workflow, start with the
-[Local Setup Guide](../../LOCAL_SETUP.md).
+[Local Setup Guide](../../docs/LOCAL_SETUP.md).
 
 Environment note:
 
-- `./cli-infra.sh` reads `BASE_STORAGE_PATH` and any other exported variables from your current shell; it does not source `.envrc` itself.
+- `./scripts/run-infra.sh` reads `BASE_STORAGE_PATH` and any other exported variables from your current shell; it does not source `.envrc` itself.
 - For the Docker-backed local setup, the generated BitVMX configs are patched from `BITCOIND_URL` (read from your shell or `.envrc`). The expected local Docker value is `http://foo:rpcpassword@host.docker.internal:18443`.
 
 ## Related Docs
 
 - [Docker Guide](../README.md): Docker flow selection
-- [Local Setup Guide](../../LOCAL_SETUP.md): canonical local workflow
+- [Local Setup Guide](../../docs/LOCAL_SETUP.md): canonical local workflow
 - [Operator Docker Runtime Guide](../operator/README.md): local operator Docker runtime
 
-## `cli-infra.sh`
+## `scripts/run-infra.sh`
 
 Run this wrapper from the repository root when you want the quickest entry point for local blockchains, BitVMX, and
 background mining.
 
 ```text
 # Start all Docker infra (blockchains + bitvmx) + mining
-./cli-infra.sh --start [--fresh] [--contracts-tag TAG] [--pull-contracts]
+./scripts/run-infra.sh --start [--fresh] [--contracts-tag TAG] [--pull-contracts]
 
 # Stop mining + all Docker infra
-./cli-infra.sh --stop
+./scripts/run-infra.sh --stop
 
 # Start blockchains + background mining
-./cli-infra.sh --start-blockchains [--fresh] [--contracts-tag TAG] [--pull-contracts]
+./scripts/run-infra.sh --start-blockchains [--fresh] [--contracts-tag TAG] [--pull-contracts]
 
 # Stop background mining + blockchains
-./cli-infra.sh --stop-blockchains
+./scripts/run-infra.sh --stop-blockchains
 
 # Stop background mining only
-./cli-infra.sh --stop-mining
+./scripts/run-infra.sh --stop-mining
 
 # Start BitVMX only
-./cli-infra.sh --start-bitvmx [--fresh]
+./scripts/run-infra.sh --start-bitvmx [--fresh]
 
 # Stop BitVMX only
-./cli-infra.sh --stop-bitvmx
+./scripts/run-infra.sh --stop-bitvmx
 
 ``` 
 
 ## Scripts
 
 - `start-blockchains.sh`: starts bitcoind (regtest) + Anvil for `local-anvil`, or bitcoind + RSKj + powpeg-node for `local-rskj`
-- `cli-infra.sh --start-blockchains`: wraps blockchain startup, bootstraps the Bitcoin miner wallet with 101 blocks when needed, and then starts background mining
+- `scripts/run-infra.sh --start-blockchains`: wraps blockchain startup, bootstraps the Bitcoin miner wallet with 101 blocks when needed, and then starts background mining
 - `start-bitvmx.sh`: starts 4 BitVMX client instances
 
 Mining is coupled to the blockchain lifecycle in this wrapper:
 
-- `cli-infra.sh --start`: starts blockchains, BitVMX, and background mining
-- `cli-infra.sh --start-blockchains`: starts blockchains, ensures `mainwallet` has mature regtest funds, and starts background mining
-- `cli-infra.sh --stop-blockchains`: stops background mining and blockchains
-- `cli-infra.sh --stop-mining`: stops background mining only; run this if mining gets stuck
+- `scripts/run-infra.sh --start`: starts blockchains, BitVMX, and background mining
+- `scripts/run-infra.sh --start-blockchains`: starts blockchains, ensures `mainwallet` has mature regtest funds, and starts background mining
+- `scripts/run-infra.sh --stop-blockchains`: stops background mining and blockchains
+- `scripts/run-infra.sh --stop-mining`: stops background mining only; run this if mining gets stuck
 
 ## Contracts Version
 
@@ -114,7 +114,7 @@ In another terminal:
 cast rpc eth_chainId --rpc-url http://127.0.0.1:8545
 ```
 
-`./cli-infra.sh --start --fresh` can use the local image tag directly. If the
+`./scripts/run-infra.sh --start --fresh` can use the local image tag directly. If the
 selected image tag is not present locally, startup pulls it from GHCR and fails
 if the tag is not published. Use `--pull-contracts` to force a GHCR refresh.
 
@@ -128,7 +128,7 @@ if the tag is not published. Use `--pull-contracts` to force a GHCR refresh.
 The contracts are deployed from the local `union-bridge-contracts` checkout resolved by `CONTRACTS_CONTEXT_PATH`
 (`../../../union-bridge-contracts` by default). Until the native-bridge local-regtest deploy changes land upstream, keep
 that sibling checkout on `fedejinich/chore/local-regtest-native-bridge`; see the required sibling repository setup in
-the [Local Setup Guide](../../LOCAL_SETUP.md#required-sibling-repositories).
+the [Local Setup Guide](../../docs/LOCAL_SETUP.md#required-sibling-repositories).
 
 The default tested tags live in [`rskj/.env`](./rskj/.env):
 
@@ -137,10 +137,10 @@ RSKJ_TAG=VETIVER-9.0.1
 POWPEG_TAG=VETIVER-9.0.0.0
 ```
 
-For a one-off run, pass the tags to `cli-infra.sh`:
+For a one-off run, pass the tags to `scripts/run-infra.sh`:
 
 ```bash
-PLATFORM=linux/arm64 ./cli-infra.sh --env local-rskj \
+PLATFORM=linux/arm64 ./scripts/run-infra.sh --env local-rskj \
   --start-blockchains --fresh \
   --rskj-tag VETIVER-9.0.1 \
   --powpeg-tag VETIVER-9.0.0.0
@@ -158,7 +158,7 @@ The documented local infra flow is still a 4-client BitVMX setup:
 - `op_3` -> `localhost:44444`
 - `op_4` -> `localhost:55554`
 
-If you need the full run sequence, do not rebuild it here. Use the [Local Setup Guide](../../LOCAL_SETUP.md) and come
+If you need the full run sequence, do not rebuild it here. Use the [Local Setup Guide](../../docs/LOCAL_SETUP.md) and come
 back to this doc for flags, ports, and troubleshooting.
 
 ## Useful Commands
@@ -181,13 +181,13 @@ Run these from `docker/local-infra/`:
 
 ## Direct Script Entry Points
 
-If you need to debug the lower-level scripts directly instead of using `./cli-infra.sh`, the minimal sequence is:
+If you need to debug the lower-level scripts directly instead of using `./scripts/run-infra.sh`, the minimal sequence is:
 
 ```bash
 cd docker/local-infra
 ./start-blockchains.sh --fresh up -d
 cd ../..
-./cli-setup-operators.sh --ops 4
+./scripts/setup-operators.sh --ops 4
 cd docker/local-infra
 ./start-bitvmx.sh --fresh up -d
 ```

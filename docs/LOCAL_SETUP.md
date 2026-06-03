@@ -4,10 +4,10 @@ This is the canonical local-setup runbook for this repository. Use it for setup 
 recommended local workflow, and troubleshooting.
 
 > Developer setup, environment, and local workflow live here. For engineering standards and team conventions
-> (commit conventions, hooks, classification) see [`CONTRIBUTING.md`](CONTRIBUTING.md). For Rust coding patterns
-> and codebase-specific guidance see [`AGENTS.md`](AGENTS.md).
+> (commit conventions, hooks, classification) see [`CONTRIBUTING.md`](../CONTRIBUTING.md). For Rust coding patterns
+> and codebase-specific guidance see [`AGENTS.md`](../AGENTS.md).
 >
-> Not all crates run the same Quality Gate. [`CONTRIBUTING.md` › Scope and classification](CONTRIBUTING.md#scope-and-classification) classifies each crate as production or non-production; a relaxed bar applies to the latter (`cli/*` and `user-api`).
+> Not all crates run the same Quality Gate. [`CONTRIBUTING.md` › Scope and classification](../CONTRIBUTING.md#scope-and-classification) classifies each crate as production or non-production; a relaxed bar applies to the latter (`cli/*` and `user-api`).
 
 ## First-Time Setup
 
@@ -87,7 +87,7 @@ controls what gets deployed to Rootstock regtest.
 
 Hook installation is automatic on a clean checkout. [cargo-husky](https://github.com/rhysd/cargo-husky) is declared as
 a dev-dependency of the `common` crate; the first time it compiles, its `build.rs` copies the hook entrypoints in
-[`.cargo-husky/hooks/`](.cargo-husky/hooks/) into `.git/hooks/`. Trigger it with:
+[`.cargo-husky/hooks/`](../.cargo-husky/hooks/) into `.git/hooks/`. Trigger it with:
 
 ```bash
 cargo test --no-run
@@ -101,7 +101,7 @@ cloned the repo before the cargo-husky migration and still have `rusty-hook` stu
 previously installed — the automatic install silently skips. In that case, use the
 [Reinstalling hooks](#reinstalling-hooks) recipe further down.
 
-The hooks shell out to the helper scripts in [`.hooks/`](.hooks/) (CI calls the same scripts) and rely on two
+The hooks shell out to the helper scripts in [`.hooks/`](../.hooks/) (CI calls the same scripts) and rely on two
 one-time tools:
 
 ```bash
@@ -114,7 +114,7 @@ cargo install cargo-sort
 
 ## Shared Configuration Model
 
-Use `direnv` plus a local `.envrc` for day-to-day development. Start from [.envrc.sample](.envrc.sample), keep only
+Use `direnv` plus a local `.envrc` for day-to-day development. Start from [.envrc.sample](../.envrc.sample), keep only
 the values you need locally, and run `direnv allow`.
 
 Configuration ownership is:
@@ -128,14 +128,14 @@ Configuration ownership is:
 | Variable or file | Where it is set | Who consumes it | When it matters |
 | --- | --- | --- | --- |
 | `.envrc` | repo root, usually copied from `.envrc.sample` | your shell via `direnv` | recommended place for local developer env vars |
-| `BASE_STORAGE_PATH` | shell or `.envrc` | `./cli-run.sh`, `./cli-operations.sh`, `./cli-bitcoin-wallet.sh`, some local scripts | required for local cargo workflows and wallet DB resolution |
+| `BASE_STORAGE_PATH` | shell or `.envrc` | `./scripts/run-clients.sh`, `./scripts/operations.sh`, `./scripts/bitcoin-wallet.sh`, some local scripts | required for local cargo workflows and wallet DB resolution |
 | `KEY_STORE_PASSWORD` | shell or `.envrc`; written into generated `docker-service.env` during setup | local cargo client, setup helpers, Docker operator runtime | required when creating or unlocking member/user keystores |
 | `USER_BITCOIN_WIF` | shell or `.envrc` | user flows, wallet helpers, happy-path testing | required for user-facing Bitcoin operations |
-| `MEMBER_BITCOIN_WIF` | shell or `.envrc` | `./cli-bitcoin-wallet.sh`, happy-path testing | required for member wallet operations in local happy-path setup and automated flow tests |
-| `BITCOIND_URL` | shell or `.envrc` | `./cli-setup-operators.sh` while patching generated BitVMX configs | required before preparing operator artifacts for Docker-backed local flows |
-| `SLOTS_PER_PACKAGE` | shell or `.envrc` | coordinator, BitVMX dispute setup, and `./cli-operations.sh` | temporary workaround until sourced from contracts; optional; defaults to `100` |
-| `COMMITTEE_MEMBER_COUNT` | shell or `.envrc` | coordinator and `./cli-operations.sh`; passed into `op-funding` calculations | temporary workaround until sourced from contracts; optional; defaults to `4` |
-| `COMMITTEE_PROVER_COUNT` | shell or `.envrc` | coordinator and `./cli-operations.sh`; passed into `op-funding` calculations | temporary workaround until sourced from contracts; optional; defaults to `2` |
+| `MEMBER_BITCOIN_WIF` | shell or `.envrc` | `./scripts/bitcoin-wallet.sh`, happy-path testing | required for member wallet operations in local happy-path setup and automated flow tests |
+| `BITCOIND_URL` | shell or `.envrc` | `./scripts/setup-operators.sh` while patching generated BitVMX configs | required before preparing operator artifacts for Docker-backed local flows |
+| `SLOTS_PER_PACKAGE` | shell or `.envrc` | coordinator, BitVMX dispute setup, and `./scripts/operations.sh` | temporary workaround until sourced from contracts; optional; defaults to `100` |
+| `COMMITTEE_MEMBER_COUNT` | shell or `.envrc` | coordinator and `./scripts/operations.sh`; passed into `op-funding` calculations | temporary workaround until sourced from contracts; optional; defaults to `4` |
+| `COMMITTEE_PROVER_COUNT` | shell or `.envrc` | coordinator and `./scripts/operations.sh`; passed into `op-funding` calculations | temporary workaround until sourced from contracts; optional; defaults to `2` |
 | `docker-compose.env` | generated under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/` | `docker/operator/start-operators.sh` / Docker compose | Docker operator runtime only |
 | `docker-service.env` | generated under `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/` | operator containers | Docker operator runtime only |
 | `UB__...` overrides | shell, `.envrc`, CI, or container env | application config loader | use when you need to override TOML config without editing files |
@@ -143,8 +143,8 @@ Configuration ownership is:
 
 Wrapper script note:
 
-- `./cli-infra.sh` and `./cli-run.sh` read environment variables from your current shell, so load `.envrc` with `direnv allow` or export the variables manually before running them.
-- `bash tests/run-flows.sh` sources repo-root `.envrc` automatically when `direnv` is not active.
+- `./scripts/run-infra.sh` and `./scripts/run-clients.sh` read environment variables from your current shell, so load `.envrc` with `direnv allow` or export the variables manually before running them.
+- `bash scripts/test-flows.sh` sources repo-root `.envrc` automatically when `direnv` is not active.
 
 ### `BASE_STORAGE_PATH` Contract
 
@@ -188,7 +188,7 @@ UB__BLOCK_BROKER__PORT=5672
 - `.envrc` is your local override file — copy from `.envrc.sample` and fill in real values. **Never commit `.envrc`** (it is gitignored, but verify before staging).
 - Never paste `KEY_STORE_PASSWORD`, `USER_BITCOIN_WIF`, `MEMBER_BITCOIN_WIF`, or the contents of broker `.pem` files into issues, PRs, chat, or commit messages. Use placeholders (`<your-password>`) when reproducing commands.
 - For code-side handling of secrets (wrapping in `secrecy::SecretString`, redacting `Debug`), see
-  [`CONTRIBUTING.md` › Configuration and secrets](CONTRIBUTING.md#configuration-and-secrets).
+  [`CONTRIBUTING.md` › Configuration and secrets](../CONTRIBUTING.md#configuration-and-secrets).
 
 ## Local Development Modes
 
@@ -196,9 +196,9 @@ There are three supported local modes:
 
 | Mode | When to use it | Main docs |
 | --- | --- | --- |
-| cargo client + Docker infra | default recommended path | this doc + [Local Infra Guide](docker/local-infra/README.md) + [CLI Tools Guide](cli/README.md) |
-| cargo client + external or repo BitVMX | advanced debugging or BitVMX development | this doc + [CLI Tools Guide](cli/README.md) |
-| all Docker | operator-focused container runtime | this doc + [Operator Docker Runtime Guide](docker/operator/README.md) |
+| cargo client + Docker infra | default recommended path | this doc + [Local Infra Guide](../docker/local-infra/README.md) + [CLI Tools Guide](../cli/README.md) |
+| cargo client + external or repo BitVMX | advanced debugging or BitVMX development | this doc + [CLI Tools Guide](../cli/README.md) |
+| all Docker | operator-focused container runtime | this doc + [Operator Docker Runtime Guide](../docker/operator/README.md) |
 
 ### Mode: Cargo Client + Docker Infra
 
@@ -212,12 +212,12 @@ Use this when BitVMX runs outside the default Docker-backed local stack.
 export BASE_STORAGE_PATH="$HOME"
 export KEY_STORE_PASSWORD=<your-password>
 export USER_BITCOIN_WIF=<your-user-wif>
-./cli-infra.sh --start-blockchains [--fresh]
+./scripts/run-infra.sh --start-blockchains [--fresh]
 # start BitVMX outside this repo
-./cli-run.sh --bitvmx-mode repo [--fresh]
+./scripts/run-clients.sh --bitvmx-mode repo [--fresh]
 ```
 
-Use the [CLI Tools Guide](cli/README.md) for follow-up commands.
+Use the [CLI Tools Guide](../cli/README.md) for follow-up commands.
 
 ### Mode: All Docker
 
@@ -227,23 +227,23 @@ Use this mode when the Union Bridge services run from the operator Docker runtim
 export BITCOIND_URL=http://user:password@localhost:18443
 export KEY_STORE_PASSWORD=<your-password>
 export USER_BITCOIN_WIF=<your-user-wif>
-./cli-infra.sh --start-blockchains [--fresh]
-./cli-setup-operators.sh --ops 4
+./scripts/run-infra.sh --start-blockchains [--fresh]
+./scripts/setup-operators.sh --ops 4
 cd docker/operator
 bash start-operators.sh [--fresh] up -d
 ```
 
-Use the [Operator Docker Runtime Guide](docker/operator/README.md) for runtime flags and troubleshooting.
+Use the [Operator Docker Runtime Guide](../docker/operator/README.md) for runtime flags and troubleshooting.
 
 ## Local Development - Recommended Path
 
 This is the canonical local flow for contributors:
 
 1. Export shared env vars.
-2. Generate fresh operator artifacts with `./cli-setup-operators.sh`.
-3. Start blockchains and BitVMX in Docker with `./cli-infra.sh`.
-4. Run the Union Bridge client locally with `./cli-run.sh`.
-5. Use `./cli-operations.sh` for funding, whitelisting, and stream setup.
+2. Generate fresh operator artifacts with `./scripts/setup-operators.sh`.
+3. Start blockchains and BitVMX in Docker with `./scripts/run-infra.sh`.
+4. Run the Union Bridge client locally with `./scripts/run-clients.sh`.
+5. Use `./scripts/operations.sh` for funding, whitelisting, and stream setup.
 
 Use repo-root commands only:
 
@@ -260,37 +260,37 @@ export COMMITTEE_MEMBER_COUNT=4
 export COMMITTEE_PROVER_COUNT=2
 
 # Generate fresh operator runtime artifacts
-./cli-setup-operators.sh --ops 4
+./scripts/setup-operators.sh --ops 4
 
 # Start the local blockchain and BitVMX stack
-./cli-infra.sh --start --fresh
+./scripts/run-infra.sh --start --fresh
 
 # Start the Rust client against the local stack
-./cli-run.sh --fresh
+./scripts/run-clients.sh --fresh
 
 # Fund operators for the happy path
-./cli-operations.sh operator fund
+./scripts/operations.sh operator fund
 
 # Whitelist operator committee member addresses
-./cli-operations.sh operator whitelist --contract-address <COMMITTEE_REGISTRY_ADDRESS>
+./scripts/operations.sh operator whitelist --contract-address <COMMITTEE_REGISTRY_ADDRESS>
 
 # Apply operators to the stream
-./cli-operations.sh operator apply-stream -s 1
+./scripts/operations.sh operator apply-stream -s 1
 ```
 
 Notes:
 
-- `./cli-run.sh` defaults to the Docker-backed BitVMX identity mode; use `--bitvmx-mode repo` only for the advanced
+- `./scripts/run-clients.sh` defaults to the Docker-backed BitVMX identity mode; use `--bitvmx-mode repo` only for the advanced
   repo-mode path.
-- `./cli-setup-operators.sh --help` currently supports `--ops 1-10` and `-y/--yes`, but the documented local infra
+- `./scripts/setup-operators.sh --help` currently supports `--ops 1-10` and `-y/--yes`, but the documented local infra
   flow remains centered on 4 prepared operators and 4 local BitVMX instances.
-- `./cli-infra.sh --help` is the quickest entry point for local blockchains, BitVMX, and background mining.
-- for local debugging snapshots, use [backup-local-logs.sh](scripts/backup-local-logs.sh)
+- `./scripts/run-infra.sh --help` is the quickest entry point for local blockchains, BitVMX, and background mining.
+- for local debugging snapshots, use [backup-local-logs.sh](../scripts/backup-local-logs.sh)
   with `local` or `docker` mode to collect Union Client's coordinator and BitVMX client logs into a timestamped directory
 
 ### What the Setup Step Produces
 
-`./cli-setup-operators.sh --ops 4` removes the selected existing operator folders after confirmation, then creates
+`./scripts/setup-operators.sh --ops 4` removes the selected existing operator folders after confirmation, then creates
 fresh host-side runtime artifacts under
 `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/`, including:
 
@@ -303,9 +303,9 @@ fresh host-side runtime artifacts under
 
 Host-side `keystore/{member,user}` is used by both local cargo mode and Docker operator runs. Docker operator
 containers bind-mount the host keystore directory and reuse the existing files; they do not generate replacement keys.
-`cli-setup-operators.sh` creates these files via the `key-manager` crate before Docker startup. Setup does not read
+`scripts/setup-operators.sh` creates these files via the `key-manager` crate before Docker startup. Setup does not read
 secrets back from an old `docker-service.env`; export the intended `KEY_STORE_PASSWORD` before running it, or enter
-it when prompted. Use `./cli-setup-operators.sh --ops 4 -y` for non-interactive reset and setup.
+it when prompted. Use `./scripts/setup-operators.sh --ops 4 -y` for non-interactive reset and setup.
 
 ### DRP Program Files
 
@@ -319,7 +319,7 @@ The repository ships sample files under `resources/`:
 For the recommended Docker-backed local path, `config/local-anvil.toml` already points to `/app/resources/union-verifier.yaml`,
 which matches the Docker mounts used by the local BitVMX flow.
 
-For repo-mode BitVMX, `./cli-run.sh --bitvmx-mode repo` injects:
+For repo-mode BitVMX, `./scripts/run-clients.sh --bitvmx-mode repo` injects:
 
 ```bash
 UB__FLOWS__COMMITTEE__DRP_PROGRAM_DEFINITION=<project_root>/resources/union-verifier.yaml
@@ -332,17 +332,17 @@ peg-in and peg-out flows.
 
 ```bash
 # Fund operators
-./cli-operations.sh operator fund
+./scripts/operations.sh operator fund
 
 # Whitelist committee member addresses
-./cli-operations.sh operator whitelist --contract-address <COMMITTEE_REGISTRY_ADDRESS>
+./scripts/operations.sh operator whitelist --contract-address <COMMITTEE_REGISTRY_ADDRESS>
 
 # Apply operators to the stream
-./cli-operations.sh operator apply-stream -s 1
+./scripts/operations.sh operator apply-stream -s 1
 
 # User flow help
-./cli-operations.sh user pegin --help
-./cli-operations.sh user pegout --help
+./scripts/operations.sh user pegin --help
+./scripts/operations.sh user pegout --help
 ```
 
 The `CommitteeRegistry` contract address comes from the deployed contracts configuration used by your environment.
@@ -352,39 +352,39 @@ The `CommitteeRegistry` contract address comes from the deployed contracts confi
 For the automated local happy-path flow:
 
 ```bash
-./cli-infra.sh --start-blockchains [--fresh]
-./cli-infra.sh --start-bitvmx [--fresh]
-./cli-run.sh [--fresh]
-bash tests/run-flows.sh
-bash tests/run-flows.sh --ops 4
-bash tests/run-flows.sh --setup
-bash tests/run-flows.sh --committee
-bash tests/run-flows.sh --pegin
-bash tests/run-flows.sh --pegout
-bash tests/run-flows.sh --operator-take
-./cli-infra.sh --stop
+./scripts/run-infra.sh --start-blockchains [--fresh]
+./scripts/run-infra.sh --start-bitvmx [--fresh]
+./scripts/run-clients.sh [--fresh]
+bash scripts/test-flows.sh
+bash scripts/test-flows.sh --ops 4
+bash scripts/test-flows.sh --setup
+bash scripts/test-flows.sh --committee
+bash scripts/test-flows.sh --pegin
+bash scripts/test-flows.sh --pegout
+bash scripts/test-flows.sh --operator-take
+./scripts/run-infra.sh --stop
 ```
 
-`./cli-infra.sh --start-blockchains` now bootstraps the regtest Bitcoin miner wallet once (101 blocks when needed)
+`./scripts/run-infra.sh --start-blockchains` now bootstraps the regtest Bitcoin miner wallet once (101 blocks when needed)
 before background mining starts, so the automated happy path only needs to fund the user/member wallet UTXOs.
 
 Notes:
 
-- `./cli-infra.sh --start-blockchains` starts Anvil + bitcoind and background mining.
-- Start `./cli-run.sh` for local mode or `docker/operator/start-operators.sh` for docker mode before using the happy-path script.
-- Local happy-path runs require `USER_BITCOIN_WIF` and `MEMBER_BITCOIN_WIF`; `tests/run-flows.sh` uses the user wallet for pegin and pegout and the member wallet during setup funding.
-- If mining gets stuck, run `./cli-infra.sh --stop-mining` before restarting it.
-- `bash tests/run-flows.sh` runs the default `happy` mode.
-- `bash tests/run-flows.sh --ops 4` does the same, but shows the optional operator-count override.
-- `bash tests/run-flows.sh --setup` runs only the preparation phases: member wallet prep, operator funding, and whitelist.
-- `bash tests/run-flows.sh --committee` runs only the committee creation phases: apply-stream and committee completion wait.
-- `bash tests/run-flows.sh --pegin` runs only the pegin flow and reuses existing setup and committee state.
-- `bash tests/run-flows.sh --pegout` runs only the pegout flow and reuses existing setup and committee state.
-- `bash tests/run-flows.sh --operator-take` runs a pegout that forces the operator-take path, writes the selected operator address to `/tmp/FORCE_ADVANCE` in the active runtime, and reuses existing setup and committee state.
-- Use `./cli-infra.sh --start --fresh` instead when you want the all-in-one stack, including BitVMX, from the outset.
+- `./scripts/run-infra.sh --start-blockchains` starts Anvil + bitcoind and background mining.
+- Start `./scripts/run-clients.sh` for local mode or `docker/operator/start-operators.sh` for docker mode before using the happy-path script.
+- Local happy-path runs require `USER_BITCOIN_WIF` and `MEMBER_BITCOIN_WIF`; `scripts/test-flows.sh` uses the user wallet for pegin and pegout and the member wallet during setup funding.
+- If mining gets stuck, run `./scripts/run-infra.sh --stop-mining` before restarting it.
+- `bash scripts/test-flows.sh` runs the default `happy` mode.
+- `bash scripts/test-flows.sh --ops 4` does the same, but shows the optional operator-count override.
+- `bash scripts/test-flows.sh --setup` runs only the preparation phases: member wallet prep, operator funding, and whitelist.
+- `bash scripts/test-flows.sh --committee` runs only the committee creation phases: apply-stream and committee completion wait.
+- `bash scripts/test-flows.sh --pegin` runs only the pegin flow and reuses existing setup and committee state.
+- `bash scripts/test-flows.sh --pegout` runs only the pegout flow and reuses existing setup and committee state.
+- `bash scripts/test-flows.sh --operator-take` runs a pegout that forces the operator-take path, writes the selected operator address to `/tmp/FORCE_ADVANCE` in the active runtime, and reuses existing setup and committee state.
+- Use `./scripts/run-infra.sh --start --fresh` instead when you want the all-in-one stack, including BitVMX, from the outset.
 
 The user flows now require explicit Bitcoin public keys in the request body. For manual testing, the same derivation
-used by `tests/run-flows.sh` is:
+used by `scripts/test-flows.sh` is:
 
 ```bash
 # 32-byte x-only pubkey for pegin
@@ -418,23 +418,23 @@ RISC0_SKIP_BUILD=1 cargo clippy -p <crate> --all-targets --all-features --locked
 cargo test -p <crate> --locked
 ```
 
-Full workspace tests and end-to-end flow tests still require the [Recommended Path](#local-development---recommended-path) or [`tests/run-flows.sh`](#automated-happy-path).
+Full workspace tests and end-to-end flow tests still require the [Recommended Path](#local-development---recommended-path) or [`scripts/test-flows.sh`](#automated-happy-path).
 
 ## Troubleshooting Index
 
 Use the narrow docs for localized problems:
 
-- ports, Docker compose state, local infra volumes: [Local Infra Guide](docker/local-infra/README.md)
-- missing `op_N`, `docker-compose.env`, or `docker-service.env`: [Operator Docker Runtime Guide](docker/operator/README.md)
-- wrapper flags and CLI examples: [CLI Tools Guide](cli/README.md)
-- operator Docker compose variants and `--op` / `--ops`: [Operator Docker Runtime Guide](docker/operator/README.md)
-- CI workflows and `act` notes: [Workflow Guide](.github/WORKFLOWS.md)
+- ports, Docker compose state, local infra volumes: [Local Infra Guide](../docker/local-infra/README.md)
+- missing `op_N`, `docker-compose.env`, or `docker-service.env`: [Operator Docker Runtime Guide](../docker/operator/README.md)
+- wrapper flags and CLI examples: [CLI Tools Guide](../cli/README.md)
+- operator Docker compose variants and `--op` / `--ops`: [Operator Docker Runtime Guide](../docker/operator/README.md)
+- CI workflows and `act` notes: [Workflow Guide](../.github/WORKFLOWS.md)
 
 Common local issues:
 
-- wrong keystore password: export the intended `KEY_STORE_PASSWORD`, then rerun `./cli-setup-operators.sh --ops 4`
-- stale local databases: use `./cli-run.sh --fresh`
-- BitVMX or blockchain containers out of sync: use `./cli-infra.sh --start --fresh`
+- wrong keystore password: export the intended `KEY_STORE_PASSWORD`, then rerun `./scripts/setup-operators.sh --ops 4`
+- stale local databases: use `./scripts/run-clients.sh --fresh`
+- BitVMX or blockchain containers out of sync: use `./scripts/run-infra.sh --start --fresh`
 - git hooks not running on commit/push (you can commit/push without `fmt` / `sort` / `clippy` / branch-name /
   commit-message checks firing): see [Reinstalling hooks](#reinstalling-hooks) below.
 
@@ -517,21 +517,21 @@ rm /tmp/FORCE_ADVANCE
 Startup-only alternative:
 
 ```bash
-FORCE_ADVANCE=0xOPERATOR_ADDRESS ./cli-run.sh
+FORCE_ADVANCE=0xOPERATOR_ADDRESS ./scripts/run-clients.sh
 ```
 
 ### Manual Wallet and Key Setup
 
-`./cli-setup-operators.sh` is the standard way to prepare local keystores. If you need the crate-level commands
+`./scripts/setup-operators.sh` is the standard way to prepare local keystores. If you need the crate-level commands
 directly, use:
 
-- [Key Manager Guide](key-manager/README.md)
-- [Wallet CLI Guide](cli/bitcoin-wallet/README.md)
+- [Key Manager Guide](../crates/key-manager/README.md)
+- [Wallet CLI Guide](../cli/bitcoin-wallet/README.md)
 
 ### CheckFork and ZKP Reference Flow
 
 The CheckFork tester and the Stark/Snark flow are preserved as reference material only. They are not part of the core
 local contributor happy path.
 
-Start from the [CheckFork Guide](check-fork/README.md) and the `check-fork/tester/` tooling when you specifically need
+Start from the [CheckFork Guide](../crates/check-fork/README.md) and the `crates/check-fork/tester/` tooling when you specifically need
 that integration work.

@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT_DIR="${PROJECT_ROOT}/docker/operator"
 
 cd "${SCRIPT_DIR}" || {
@@ -67,7 +67,7 @@ ensure_dependencies() {
   fi
   if ! python3 -c "import mnemonic" >/dev/null 2>&1; then
     echo "Error: python3 module 'mnemonic' is required to generate BitVMX mnemonics." >&2
-    echo "Install it with 'pip install mnemonic' or 'pip3 install mnemonic' and rerun cli-setup-operators.sh." >&2
+    echo "Install it with 'pip install mnemonic' or 'pip3 install mnemonic' and rerun scripts/setup-operators.sh." >&2
     exit 1
   fi
 }
@@ -75,7 +75,7 @@ ensure_dependencies() {
 check_bitcoind_url() {
   if [[ -z "${BITCOIND_URL:-}" ]]; then
     echo "Error: BITCOIND_URL is required." >&2
-    echo "Export BITCOIND_URL and rerun <project_root>/cli-setup-operators.sh." >&2
+    echo "Export BITCOIND_URL and rerun <project_root>/scripts/setup-operators.sh." >&2
     echo "The generated BitVMX operator YAMLs are patched from the current shell environment." >&2
     exit 1
   fi
@@ -396,7 +396,7 @@ ensure_operator_bitvmx_config_tree() {
 
   if [[ ! -f "${cfg_file}" ]]; then
     echo "Error: missing generated BitVMX operator config ${cfg_file}" >&2
-    echo "Delete $(operator_root_path "${op_num}") and rerun cli-setup-operators.sh from a clean state." >&2
+    echo "Delete $(operator_root_path "${op_num}") and rerun scripts/setup-operators.sh from a clean state." >&2
     exit 1
   fi
 }
@@ -641,7 +641,7 @@ create_or_reuse_local_keystore() {
   fi
 
   cmd_output="$(
-    cd "${PROJECT_ROOT}" && cargo run --quiet --manifest-path key-manager/Cargo.toml -- \
+    cd "${PROJECT_ROOT}" && cargo run --quiet --manifest-path crates/key-manager/Cargo.toml -- \
       new-key -p "${key_store_password}" -d "${keystore_dir}"
   )"
 

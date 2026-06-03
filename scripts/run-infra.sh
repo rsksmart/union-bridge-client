@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 
 # wrapper script for local infrastructure management
-# usage: ./cli-infra.sh --start [--fresh] [--contracts-tag TAG] [--pull-contracts]
-#        ./cli-infra.sh --stop
-#        ./cli-infra.sh --start-blockchains [--fresh] [--contracts-tag TAG] [--pull-contracts]
-#        ./cli-infra.sh --stop-blockchains
-#        ./cli-infra.sh --stop-mining
-#        ./cli-infra.sh --start-bitvmx [--fresh]
-#        ./cli-infra.sh --stop-bitvmx
+# usage: ./scripts/run-infra.sh --start [--fresh] [--contracts-tag TAG] [--pull-contracts]
+#        ./scripts/run-infra.sh --stop
+#        ./scripts/run-infra.sh --start-blockchains [--fresh] [--contracts-tag TAG] [--pull-contracts]
+#        ./scripts/run-infra.sh --stop-blockchains
+#        ./scripts/run-infra.sh --stop-mining
+#        ./scripts/run-infra.sh --start-bitvmx [--fresh]
+#        ./scripts/run-infra.sh --stop-bitvmx
 set -euo pipefail
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 readonly ROOTSTOCK_RPC_URL="http://localhost:8545"
 
@@ -237,12 +237,12 @@ start_mining() {
 
     if ! cast rpc eth_chainId --rpc-url "${ROOTSTOCK_RPC_URL}" &> /dev/null; then
         warn "Blockchains not started - $(rootstock_label) not running on ${ROOTSTOCK_RPC_URL}"
-        warn "Start blockchains first with: ./cli-infra.sh --start-blockchains"
+        warn "Start blockchains first with: ./scripts/run-infra.sh --start-blockchains"
         exit 1
     fi
     if ! bitcoin-cli "${BITCOIN_RPC_ARGS[@]}" getblockcount &> /dev/null; then
         warn "Blockchains not started - Bitcoin regtest node not accessible"
-        warn "Start blockchains first with: ./cli-infra.sh --start-blockchains"
+        warn "Start blockchains first with: ./scripts/run-infra.sh --start-blockchains"
         exit 1
     fi
 

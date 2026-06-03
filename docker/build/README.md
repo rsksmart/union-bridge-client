@@ -2,21 +2,21 @@
 
 This directory only covers image build and registry operations. It does not own local runtime setup.
 
-For the full local development procedure, start with the [Local Setup Guide](../../LOCAL_SETUP.md). For local Docker
+For the full local development procedure, start with the [Local Setup Guide](../../docs/LOCAL_SETUP.md). For local Docker
 runtime usage after building images, use the [Operator Docker Runtime Guide](../operator/README.md).
 
 ## Related Docs
 
 - [Docker Guide](../README.md): Docker doc index
 - [Operator Docker Runtime Guide](../operator/README.md): run operators with the built images
-- [Local Setup Guide](../../LOCAL_SETUP.md): shared configuration rules and runtime map
+- [Local Setup Guide](../../docs/LOCAL_SETUP.md): shared configuration rules and runtime map
 
 ## Config
 
 No local `.env` file is required for the supported build flow in this directory.
 
 The build compose uses the repository `config/` tree. Runtime overrides still follow the shared `UB__...`
-configuration model documented in the [Local Setup Guide](../../LOCAL_SETUP.md).
+configuration model documented in the [Local Setup Guide](../../docs/LOCAL_SETUP.md).
 
 For GHCR authentication, this directory uses the local shell variable `GITHUB_REGISTRY_TOKEN`. That local variable is
 separate from the OOTB GitHub Actions GITHUB_TOKEN used in workflows.

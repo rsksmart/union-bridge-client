@@ -3,7 +3,7 @@
 For repository-level setup and the recommended local flow, start with:
 
 - [Repository README](../../README.md)
-- [Local Setup Guide](../../LOCAL_SETUP.md)
+- [Local Setup Guide](../../docs/LOCAL_SETUP.md)
 - [CLI Tools Guide](../README.md)
 
 This README only covers wallet-specific commands and behavior.
@@ -95,11 +95,11 @@ Command mode is regtest-only and is intended for scripted local usage.
 
 ```bash
 # From the repository root, use the wrapper
-./cli-bitcoin-wallet.sh user mine_block
-./cli-bitcoin-wallet.sh user mine_utxo 50000000
-./cli-bitcoin-wallet.sh user send_to_address bcrt1q... 10000
-./cli-bitcoin-wallet.sh user create_pegin_tx 50000000 1 bcrt1p... 0x1234...
-./cli-bitcoin-wallet.sh user list_funds
+./scripts/bitcoin-wallet.sh user mine_block
+./scripts/bitcoin-wallet.sh user mine_utxo 50000000
+./scripts/bitcoin-wallet.sh user send_to_address bcrt1q... 10000
+./scripts/bitcoin-wallet.sh user create_pegin_tx 50000000 1 bcrt1p... 0x1234...
+./scripts/bitcoin-wallet.sh user list_funds
 
 # Or from cli/bitcoin-wallet/, call the binary directly
 cargo run --release --bin ub-wallet -- --mode user mine_block
@@ -122,18 +122,18 @@ What does not work:
 
 ```bash
 # terminal 1
-./cli-bitcoin-wallet.sh user
+./scripts/bitcoin-wallet.sh user
 
 # terminal 2
-./cli-bitcoin-wallet.sh user mine_block
+./scripts/bitcoin-wallet.sh user mine_block
 ```
 
 What works:
 
 ```bash
-./cli-bitcoin-wallet.sh user mine_block
-./cli-bitcoin-wallet.sh user list_funds
-./cli-bitcoin-wallet.sh user mine_block
+./scripts/bitcoin-wallet.sh user mine_block
+./scripts/bitcoin-wallet.sh user list_funds
+./scripts/bitcoin-wallet.sh user mine_block
 ```
 
 ## Troubleshooting

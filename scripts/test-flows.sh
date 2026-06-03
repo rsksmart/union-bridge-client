@@ -9,11 +9,16 @@
 #   - USER_BITCOIN_WIF environment variable set (for bitcoin-wallet operations)
 #   - MEMBER_BITCOIN_WIF environment variable set (for member operations)
 #
-# usage: bash tests/run-flows.sh [--env <local-anvil|docker-anvil|local-rskj|docker-rskj>] [--ops <1-10>] [--stream <0-4>] [--happy|--setup|--committee|--pegin|--pegout|--operator-take]
+# usage: bash scripts/test-flows.sh [--env <local-anvil|docker-anvil|local-rskj|docker-rskj>] [--ops <1-10>] [--stream <0-4>] [--happy|--setup|--committee|--pegin|--pegout|--operator-take]
 
 set -euo pipefail
 
 readonly ROOTSTOCK_RPC_URL="http://localhost:8545"
+
+# Absolute path to this script's directory, so sibling cli-*.sh calls resolve
+# regardless of the caller's working directory.
+SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPTS_DIR
 
 MODE="happy"
 SCRIPT_ENV=""
@@ -89,15 +94,15 @@ Guides:
   4. Run --pegin, --pegout, or --operator-take against that prepared state.
 
 Examples:
-  bash tests/run-flows.sh
-  bash tests/run-flows.sh --env docker-anvil --setup
-  bash tests/run-flows.sh --env docker-anvil --committee
-  bash tests/run-flows.sh --happy --env docker-rskj
-  bash tests/run-flows.sh --pegin
-  bash tests/run-flows.sh --operator-take
+  bash scripts/test-flows.sh
+  bash scripts/test-flows.sh --env docker-anvil --setup
+  bash scripts/test-flows.sh --env docker-anvil --committee
+  bash scripts/test-flows.sh --happy --env docker-rskj
+  bash scripts/test-flows.sh --pegin
+  bash scripts/test-flows.sh --operator-take
 
 Notes:
-  - This script does not start cli-infra.sh, cli-run.sh, or docker/operator/start-operators.sh.
+  - This script does not start scripts/run-infra.sh, scripts/run-clients.sh, or docker/operator/start-operators.sh.
   - --happy is the only mode that runs both --setup and --committee automatically.
   - --setup does not create a committee; use --committee for apply-stream + committee completion.
   - --pegin, --pegout, and --operator-take assume setup/committee state already exists.
@@ -426,7 +431,7 @@ derived_member_wallet_utxo_value() {
     local committee_member_count="$2"
     local wallet_fee_buffer=10000
     local per_member_funding
-    per_member_funding=$(bash cli-operations.sh operator funding-amount --env "$SCRIPT_ENV" --stream "$stream_id")
+    per_member_funding=$(bash "${SCRIPTS_DIR}/operations.sh" operator funding-amount --env "$SCRIPT_ENV" --stream "$stream_id")
 
     echo $((per_member_funding * committee_member_count + wallet_fee_buffer))
 }
@@ -887,7 +892,7 @@ user_rsk_balance_wei() {
 }
 
 user_active_bitcoin_address() {
-    bash cli-bitcoin-wallet.sh user list_addresses 2>/dev/null | awk '/\(active\)/ { print $1; exit }'
+    bash "${SCRIPTS_DIR}/bitcoin-wallet.sh" user list_addresses 2>/dev/null | awk '/\(active\)/ { print $1; exit }'
 }
 
 user_btc_balance_sat() {
@@ -928,7 +933,7 @@ run_user_pegin_and_capture_txid() {
     local value="$2"
     local output=""
 
-    if ! output=$(bash cli-operations.sh user pegin -a "$rsk_address" -v "$value" --env "$SCRIPT_ENV" --execute 2>&1); then
+    if ! output=$(bash "${SCRIPTS_DIR}/operations.sh" user pegin -a "$rsk_address" -v "$value" --env "$SCRIPT_ENV" --execute 2>&1); then
         echo -e "${YELLOW}[!]${NC} Command failed!" >&2
         printf '%s\n' "$output" >&2
         return 1
@@ -950,7 +955,7 @@ run_user_pegout_and_capture_request_tx_hash() {
     local user_compressed_pubkey="$2"
     local output=""
 
-    if ! output=$(bash cli-operations.sh user pegout -v "$value" -k "$user_compressed_pubkey" --env "$SCRIPT_ENV" 2>&1); then
+    if ! output=$(bash "${SCRIPTS_DIR}/operations.sh" user pegout -v "$value" -k "$user_compressed_pubkey" --env "$SCRIPT_ENV" 2>&1); then
         echo -e "${YELLOW}[!]${NC} Command failed! Output:" >&2
         printf '%s\n' "$output" >&2
         return 1
@@ -1520,10 +1525,10 @@ run_wallet_prep_phase() {
     echo ""
 
     log "Member wallet: clear_db"
-    bash cli-bitcoin-wallet.sh member clear_db || warn "Member wallet clear_db failed (may be expected if db is empty)"
+    bash "${SCRIPTS_DIR}/bitcoin-wallet.sh" member clear_db || warn "Member wallet clear_db failed (may be expected if db is empty)"
 
     log "Member wallet: mine_utxo $MEMBER_UTXO_VALUE"
-    if ! bash cli-bitcoin-wallet.sh member mine_utxo "$MEMBER_UTXO_VALUE"; then
+    if ! bash "${SCRIPTS_DIR}/bitcoin-wallet.sh" member mine_utxo "$MEMBER_UTXO_VALUE"; then
         warn "Member wallet mine_utxo failed!"
         return 1
     fi
@@ -1534,10 +1539,10 @@ run_wallet_prep_phase() {
 
 prepare_user_wallet_for_pegin() {
     log "User wallet: clear_db"
-    bash cli-bitcoin-wallet.sh user clear_db || warn "User wallet clear_db failed (may be expected if db is empty)"
+    bash "${SCRIPTS_DIR}/bitcoin-wallet.sh" user clear_db || warn "User wallet clear_db failed (may be expected if db is empty)"
 
     log "User wallet: mine_utxo $USER_UTXO_VALUE"
-    if ! bash cli-bitcoin-wallet.sh user mine_utxo "$USER_UTXO_VALUE"; then
+    if ! bash "${SCRIPTS_DIR}/bitcoin-wallet.sh" user mine_utxo "$USER_UTXO_VALUE"; then
         warn "User wallet mine_utxo failed!"
         return 1
     fi
@@ -1548,9 +1553,9 @@ prepare_user_wallet_for_pegin() {
 
 run_operator_funding_phase() {
     step "Step 1: Fund Operator Wallets"
-    log "Command: bash cli-operations.sh operator fund --env $SCRIPT_ENV --stream $STREAM_ID --execute"
+    log "Command: bash scripts/operations.sh operator fund --env $SCRIPT_ENV --stream $STREAM_ID --execute"
     echo ""
-    if ! bash cli-operations.sh operator fund --env "$SCRIPT_ENV" --stream "$STREAM_ID" --execute; then
+    if ! bash "${SCRIPTS_DIR}/operations.sh" operator fund --env "$SCRIPT_ENV" --stream "$STREAM_ID" --execute; then
         warn "Command failed!"
         return 1
     fi
@@ -1565,9 +1570,9 @@ run_operator_funding_phase() {
 
 run_whitelist_phase() {
     step "Step 2: Whitelist Member Addresses"
-    log "Command: bash cli-operations.sh operator whitelist --env $SCRIPT_ENV --contract-address $COMMITTEE_REGISTRY_ADDRESS"
+    log "Command: bash scripts/operations.sh operator whitelist --env $SCRIPT_ENV --contract-address $COMMITTEE_REGISTRY_ADDRESS"
     echo ""
-    if ! bash cli-operations.sh operator whitelist --env "$SCRIPT_ENV" --contract-address "$COMMITTEE_REGISTRY_ADDRESS"; then
+    if ! bash "${SCRIPTS_DIR}/operations.sh" operator whitelist --env "$SCRIPT_ENV" --contract-address "$COMMITTEE_REGISTRY_ADDRESS"; then
         warn "Whitelist command failed!"
         return 1
     fi
@@ -1579,9 +1584,9 @@ run_committee_phase() {
     step "Step 3: Apply Operators to Stream"
     EXPECTED_SETUP_STREAM_ID="$STREAM_ID"
     EXPECTED_SETUP_STARTED_AT_EPOCH="$(date +%s)"
-    log "Command: bash cli-operations.sh operator apply-stream -s $STREAM_ID --env $SCRIPT_ENV"
+    log "Command: bash scripts/operations.sh operator apply-stream -s $STREAM_ID --env $SCRIPT_ENV"
     echo ""
-    if ! bash cli-operations.sh operator apply-stream -s "$STREAM_ID" --env "$SCRIPT_ENV" > /tmp/apply-operators-$$ 2>&1; then
+    if ! bash "${SCRIPTS_DIR}/operations.sh" operator apply-stream -s "$STREAM_ID" --env "$SCRIPT_ENV" > /tmp/apply-operators-$$ 2>&1; then
         warn "Command failed! Output:"
         cat /tmp/apply-operators-$$
         rm -f /tmp/apply-operators-$$
@@ -1640,7 +1645,7 @@ run_pegin_phase() {
 
     log "RSK Address: $RSK_ADDRESS"
     log "Amount: $VALUE sats"
-    log "Command: bash cli-operations.sh user pegin -a $RSK_ADDRESS -v $VALUE --env $SCRIPT_ENV --execute"
+    log "Command: bash scripts/operations.sh user pegin -a $RSK_ADDRESS -v $VALUE --env $SCRIPT_ENV --execute"
     echo ""
     if ! EXPECTED_PEGIN_TXID=$(run_user_pegin_and_capture_txid "$RSK_ADDRESS" "$VALUE"); then
         return 1
@@ -1690,7 +1695,7 @@ run_pegout_phase() {
         return 1
     fi
 
-    log "Command: bash cli-operations.sh user pegout -v $VALUE -k $user_compressed_pubkey --env $SCRIPT_ENV"
+    log "Command: bash scripts/operations.sh user pegout -v $VALUE -k $user_compressed_pubkey --env $SCRIPT_ENV"
     log "Amount: $VALUE sats"
     log "USR Pub Key: $user_compressed_pubkey"
     echo ""
@@ -1758,7 +1763,7 @@ run_operator_take_phase() {
     enable_force_advance "$target_address" || return 1
 
     log "Target operator: $target_address"
-    log "Command: bash cli-operations.sh user pegout -v $VALUE -k $user_compressed_pubkey --env $SCRIPT_ENV"
+    log "Command: bash scripts/operations.sh user pegout -v $VALUE -k $user_compressed_pubkey --env $SCRIPT_ENV"
     log "Amount: $VALUE sats"
     log "USR Pub Key: $user_compressed_pubkey"
     echo ""

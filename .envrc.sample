@@ -21,7 +21,7 @@ export COMMITTEE_PROVER_COUNT=2
 ############################################################
 # Deployment and Operations (Multi-host environments)
 ############################################################
-# Default environment for start_operators.sh and cli-operations.sh
+# Default environment for start_operators.sh and scripts/operations.sh
 # Options: local, docker, or a remote profile name such as alphanet
 # export UC_ENV="local"
 # Deployment variables (can be overridden via command-line flags)

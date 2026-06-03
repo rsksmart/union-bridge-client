@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 
 # wrapper script for run to run local operators
-# usage: ./cli-run.sh --id 1 --fresh
-#        ./cli-run.sh --features anvil
-#        ./cli-run.sh --bitvmx-mode repo
-#        ./cli-run.sh --help
-#        ./cli-run.sh --logs         # follow logs from latest run
-#        ./cli-run.sh --kill          # kill all existing running services and exit
+# usage: ./scripts/run-clients.sh --id 1 --fresh
+#        ./scripts/run-clients.sh --features anvil
+#        ./scripts/run-clients.sh --bitvmx-mode repo
+#        ./scripts/run-clients.sh --help
+#        ./scripts/run-clients.sh --logs         # follow logs from latest run
+#        ./scripts/run-clients.sh --kill          # kill all existing running services and exit
 
 set -euo pipefail
 
-# change to script directory to ensure relative paths work
-cd "$(dirname "$0")"
+# change to repo root (parent of scripts/) to ensure relative paths work
+cd "$(dirname "$0")/.."
 
 notify_terminal_bell() {
   printf '\a'

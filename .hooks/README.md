@@ -15,7 +15,7 @@ re-running `cargo build`.
 
 Each helper:
 
-- runs in workspace-aware fashion across `.`, `cli/`, and `check-fork/zkp/guest`;
+- runs in workspace-aware fashion across `.`, `cli/`, and `crates/check-fork/zkp/guest`;
 - can be invoked manually at any time (e.g. `bash .hooks/format-code.sh --check`).
 
 Editing any of these takes effect on the next hook fire. The cargo-husky entrypoints
