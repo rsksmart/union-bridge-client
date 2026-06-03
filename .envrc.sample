@@ -48,9 +48,22 @@ export BITCOIN_NETWORK=regtest
 # docker/local-infra/bitcoind-rpc-env.sh, talking to 127.0.0.1:18443 (host-side tools use the regtest
 # default host/port; BitVMX and the wallet CLI honor a non-default host/port via their own URLs). Use
 # host.docker.internal in the URL so the in-container BitVMX clients can reach the host's bitcoind.
-# Point it at a bring-your-own bitcoind to switch (e.g. a test-chain-miner stack:
-# http://reorgtest:reorgtest@host.docker.internal:18443).
+# Point it at a bring-your-own bitcoind to switch (e.g. http://user:password@host.docker.internal:18443).
 export BITCOIND_URL="http://foo:rpcpassword@host.docker.internal:18443"
 # Bitcoind wallet name for host-side bitcoin-cli ops (not part of the URL). Override for a
-# bring-your-own bitcoind whose funded wallet differs (a test-chain-miner stack uses "reorg").
+# bring-your-own bitcoind whose funded wallet differs.
 export BITCOIN_WALLET=mainwallet
+# Optional: bring your own blockchains. Point this at a published compose reference (an OCI artifact
+# such as oci://ghcr.io/org/stack:tag, or a local compose path) and
+# ./scripts/run-infra.sh --start-blockchains brings that stack up instead of the bundled chains. The
+# external stack runs its own bitcoind/Rootstock and block production; set BITCOIND_URL + BITCOIN_WALLET
+# above to match its RPC creds + funded wallet. Leave unset to use the bundled stack.
+# export BYO_BLOCKCHAINS_COMPOSE="oci://ghcr.io/org/your-stack:tag"
+# bitcoin-wallet CLI RPC credentials. The wallet CLI (used by scripts/test-flows.sh's mine_utxo) does
+# NOT follow BITCOIND_URL yet; it falls back to foo/rpcpassword from cli/bitcoin-wallet/config/regtest.toml.
+# Leave these UNSET for the bundled stack. For a bring-your-own node with different creds, set USER +
+# PASSWORD to match (and URL if its host/port differs from 127.0.0.1:18443). Unset them again when you
+# switch back to the bundled stack, or the wallet CLI hits bundled bitcoind with the wrong creds (HTTP 401).
+# export WALLET_RPC_URL="http://127.0.0.1:18443/"
+# export WALLET_RPC_USER="<rpc-user>"
+# export WALLET_RPC_PASSWORD="<rpc-password>"

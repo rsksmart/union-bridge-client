@@ -49,6 +49,47 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# ─── Bring-your-own published compose ─────────────────────────────────────────
+# When BYO_BLOCKCHAINS_COMPOSE names a compose reference (an OCI artifact such as
+# oci://ghcr.io/org/stack:tag, or a local compose path), bring that up instead of the
+# bundled bitcoind + anvil/rskj stack and exit. The external stack owns its own chains,
+# wallet, and mining; union only talks to it over BITCOIND_URL. The bundled-only flags
+# (--env, --contracts-tag, --pull-contracts, --rskj-tag, --powpeg-tag) don't apply here.
+if [[ -n "${BYO_BLOCKCHAINS_COMPOSE:-}" ]]; then
+  byo_project="byo-blockchains"
+  byo_args=()
+  byo_fresh=false
+  skip_value=false
+  for arg in "${REMAINING_ARGS[@]}"; do
+    if [[ "$skip_value" == true ]]; then
+      skip_value=false
+      continue
+    fi
+    case "$arg" in
+      --fresh) byo_fresh=true ;;
+      --contracts-tag|--rskj-tag|--powpeg-tag) skip_value=true ;;
+      --pull-contracts) ;;
+      *) byo_args+=("$arg") ;;
+    esac
+  done
+
+  byo_is_up=false
+  for arg in "${byo_args[@]}"; do
+    if [[ "$arg" == "up" ]]; then
+      byo_is_up=true
+      break
+    fi
+  done
+
+  if [[ "$byo_is_up" == true && "$byo_fresh" == true ]]; then
+    echo "Cleaning external blockchains stack (down --volumes)..."
+    docker compose -p "$byo_project" -f "$BYO_BLOCKCHAINS_COMPOSE" down --volumes --remove-orphans --timeout 5 || true
+  fi
+
+  echo "Bring-your-own blockchains: ${BYO_BLOCKCHAINS_COMPOSE} (compose project '${byo_project}')."
+  exec docker compose -p "$byo_project" -f "$BYO_BLOCKCHAINS_COMPOSE" "${byo_args[@]}"
+fi
+
 case "$ENVIRONMENT" in
   local-anvil)
     COMPOSE_FILE="${SCRIPT_DIR}/anvil/docker-compose.yaml"

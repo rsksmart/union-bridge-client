@@ -377,6 +377,14 @@ start_blockchains() {
     fi
     blockchains_cmd+=("$@" up -d)
     docker/local-infra/start-blockchains.sh "${blockchains_cmd[@]}"
+
+    # A bring-your-own published compose (BYO_BLOCKCHAINS_COMPOSE) owns its own bitcoind
+    # wallet and block production, so skip union's wallet bootstrap + background mining.
+    if [[ -n "${BYO_BLOCKCHAINS_COMPOSE:-}" ]]; then
+        log "External blockchains up (${BYO_BLOCKCHAINS_COMPOSE}); skipping wallet bootstrap + mining (the external stack manages its own chains)"
+        return 0
+    fi
+
     bootstrap_bitcoin_wallet
     start_mining
 }
@@ -495,6 +503,12 @@ case "${1:-}" in
         echo "  --pull-contracts                                     Pull predeployed Anvil image from registry even if it exists locally"
         echo "  --rskj-tag TAG                                       Official rsksmart/rskj tag for --env local-rskj"
         echo "  --powpeg-tag TAG                                     Official rsksmart/powpeg-node tag for --env local-rskj"
+        echo ""
+        echo "Bring your own blockchains:"
+        echo "  Set BYO_BLOCKCHAINS_COMPOSE to a compose reference (e.g. oci://ghcr.io/org/stack:tag or a"
+        echo "  local path) and --start-blockchains / --start-all bring that published stack up instead of the"
+        echo "  bundled chains; union skips its own wallet bootstrap + mining and just talks to it over"
+        echo "  BITCOIND_URL. --stop-blockchains / --stop-all bring the same compose down."
         exit 1
         ;;
 esac

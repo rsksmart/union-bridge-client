@@ -56,33 +56,58 @@ Rootstock/Anvil node), point the tooling at them with environment variables — 
 | --- | --- | --- |
 | Bitcoin RPC URL + creds | `BITCOIND_URL` | `http://foo:rpcpassword@host.docker.internal:18443` |
 | Bitcoin wallet name | `BITCOIN_WALLET` | `mainwallet` |
+| Published compose to launch (optional) | `BYO_BLOCKCHAINS_COMPOSE` | unset (use the bundled stack) |
 | Wallet CLI RPC | `WALLET_RPC_URL`, `WALLET_RPC_USER`, `WALLET_RPC_PASSWORD` | `http://127.0.0.1:18443/`, `foo`, `rpcpassword` (from `cli/bitcoin-wallet/config/regtest.toml`) |
 | Rootstock/Anvil RPC | `provider.rootstock.url` (config profile) | `ws://127.0.0.1:8545` |
 
-`BITCOIND_URL` is the single source of the Bitcoin RPC credentials for **everything**: BitVMX
-connects with it as-is (via `scripts/setup-operators.sh`); the bundled bitcoind server + bring-up scripts
-(`docker-compose` / `start-blockchains.sh`) and the host-side tooling (`scripts/run-infra.sh`,
-`scripts/test-flows.sh`) resolve the `user:password` from it via
-[`bitcoind-rpc-env.sh`](./bitcoind-rpc-env.sh), talking to `127.0.0.1:18443`. (Only the credentials
-are derived — host-side tools use the regtest default host/port; BitVMX and the wallet CLI honor a
-non-default host/port via their own full URLs.) The chain `.env` files no longer carry credentials.
-So for a bring-your-own bitcoind you typically set just `BITCOIND_URL` + `BITCOIN_WALLET`.
+`BITCOIND_URL` is the single source of the Bitcoin RPC credentials for the bundled bitcoind server +
+bring-up scripts (`docker-compose` / `start-blockchains.sh`), the host-side tooling
+(`scripts/run-infra.sh`, `scripts/test-flows.sh`), and BitVMX: BitVMX connects with it as-is (via
+`scripts/setup-operators.sh`), and the bring-up + host tooling resolve the `user:password` from it via
+[`bitcoind-rpc-env.sh`](./bitcoind-rpc-env.sh), talking to `127.0.0.1:18443`. (Only the credentials are
+derived — host-side tools use the regtest default host/port; BitVMX honors a non-default host/port via
+its own full URL.) The chain `.env` files no longer carry credentials.
 
-The BYO flow mirrors the bundled local flow, just with **you** providing the chains instead of
-`--start-blockchains`. End to end:
+The **one exception** is the bitcoin-wallet CLI (used by `scripts/test-flows.sh` to fund the user/member
+wallets via `mine_utxo`): it reads its own `WALLET_RPC_URL` / `WALLET_RPC_USER` / `WALLET_RPC_PASSWORD`,
+falling back to `foo` / `rpcpassword` from `cli/bitcoin-wallet/config/regtest.toml`, and does **not**
+follow `BITCOIND_URL` yet (wiring it is tracked as a follow-up). So when you switch chains:
 
-1. **Start your own chains**, published on the host loopback at the expected ports: bitcoind RPC at
+- **Bundled stack** (creds `foo` / `rpcpassword`): leave `WALLET_RPC_*` unset.
+- **BYO node with non-default creds**: set `WALLET_RPC_USER` + `WALLET_RPC_PASSWORD` to match the node
+  (and `WALLET_RPC_URL` if its host/port differs from `127.0.0.1:18443`). **Unset them again when you
+  switch back to the bundled stack** — a stale `WALLET_RPC_USER` / `WALLET_RPC_PASSWORD` makes the wallet
+  CLI hit the bundled bitcoind with the wrong creds and fail with `HTTP 401`.
+
+So for a bring-your-own bitcoind whose creds match the regtest default you set just `BITCOIND_URL` +
+`BITCOIN_WALLET`; for one with different creds you also set `WALLET_RPC_USER` + `WALLET_RPC_PASSWORD`.
+
+**Launching a published stack for you.** Set `BYO_BLOCKCHAINS_COMPOSE` to a compose reference (an OCI
+artifact such as `oci://ghcr.io/org/stack:tag`, or a local compose path) and `--start-blockchains`
+brings *that* stack up instead of the bundled chains: it runs `docker compose -f <ref> up -d` (project
+`byo-blockchains`), and `--stop-blockchains` brings it down. Because the external stack owns its own
+bitcoind wallet and block production, union skips its own wallet bootstrap + background mining in this
+mode. (Requires Docker Compose v2.32+ for `oci://` references.) Leave the variable unset to start the
+chains yourself instead.
+
+The BYO flow mirrors the bundled local flow, just with **you** (or `BYO_BLOCKCHAINS_COMPOSE`) providing
+the chains. End to end:
+
+1. **Get your chains running**, published on the host loopback at the expected ports: bitcoind RPC at
    the `BITCOIND_URL` port (containers reach it via `host.docker.internal`, host tooling via
    `127.0.0.1`), Rootstock/Anvil RPC at `:8545`. The bitcoind wallet (`BITCOIN_WALLET`) must be
    loaded with mature funds, `txindex=1` enabled, and the chain must match the expected chain-id +
-   predeployed contracts. (A test-chain-miner stack provides all of this.)
+   predeployed contracts. Either start them yourself,
+   or set `BYO_BLOCKCHAINS_COMPOSE` and run `./scripts/run-infra.sh --start-blockchains` to have union
+   launch the published compose.
 2. **Reuse the `local-anvil` profile** if your Anvil uses the same predeployed contracts — the
    contract addresses live in that profile; a different deployment needs its own `[[contracts]]`.
 3. `./scripts/setup-operators.sh --ops 4` — generate the BitVMX operator artifacts. The current
    `BITCOIND_URL` is **baked into** the generated `op_*.yaml` here (see the callout below).
-4. `./scripts/run-infra.sh --start-bitvmx` — the **only** `run-infra` step needed (skip `--start-blockchains`;
-   you brought the chains). BitVMX reaches bitcoind purely over `host.docker.internal`, so no shared
-   docker network with your chains is required.
+4. `./scripts/run-infra.sh --start-bitvmx` — start BitVMX. (If you set `BYO_BLOCKCHAINS_COMPOSE`, run
+   `--start-blockchains` first to launch your stack; if you started the chains yourself, `--start-bitvmx`
+   is the only `run-infra` step needed.) BitVMX reaches bitcoind purely over `host.docker.internal`, so
+   no shared docker network with your chains is required.
 5. `./scripts/run-clients.sh` — start the Union Bridge clients / coordinator.
 6. `bash scripts/test-flows.sh …` — runs a flow. It funds the user/member wallets itself via the
    bitcoin-wallet CLI's `mine_utxo`, which draws from `BITCOIN_WALLET` **and registers the UTXO** (a
