@@ -5,6 +5,7 @@
 # Invoked by start-blockchains.sh AFTER bitcoind is up and `mainwallet` exists.
 # Reads COMPOSE_FILE, ENV_PATH, ENVIRONMENT, FRESH from env (exported by the
 # parent). Anvil-specific responsibilities:
+#   - Resolve CONTRACTS_CONTEXT_PATH for local-build docker compose context
 #   - Parse --contracts-tag / --pull-contracts
 #   - Resolve the predeployed Anvil image tag (from arg or Cargo.toml)
 #   - For registry tags: pull / refresh the image; detect digest changes that
@@ -72,6 +73,21 @@ if [[ -z "${BITCOIND_USER:-}" ]]; then
   # shellcheck disable=SC1090
   source "$ENV_PATH"
 fi
+
+# Resolve the contracts source directory for local-build docker compose context.
+CONTRACTS_CONTEXT_CANDIDATE=""
+if CONTRACTS_CONTEXT_CANDIDATE=$(cd "$SCRIPT_DIR" && cd "${CONTRACTS_CONTEXT_PATH:-}" 2>/dev/null && pwd); then
+  :
+elif [[ -d "$(cd "$SCRIPT_DIR/../../.." && pwd)/../union-bridge-contracts" ]]; then
+  CONTRACTS_CONTEXT_CANDIDATE="$(cd "$SCRIPT_DIR/../../.." && pwd)/../union-bridge-contracts"
+elif [[ -d "$HOME/Projects/rootstock/union/union-bridge-contracts" ]]; then
+  CONTRACTS_CONTEXT_CANDIDATE="$HOME/Projects/rootstock/union/union-bridge-contracts"
+else
+  echo "Error: could not resolve CONTRACTS_CONTEXT_PATH '${CONTRACTS_CONTEXT_PATH:-}'." >&2
+  echo "Set CONTRACTS_CONTEXT_PATH to a union-bridge-contracts checkout and rerun." >&2
+  exit 1
+fi
+export CONTRACTS_CONTEXT_PATH="$CONTRACTS_CONTEXT_CANDIDATE"
 
 wait_for_anvil_rpc() {
   local timeout_secs="${1:-60}"
