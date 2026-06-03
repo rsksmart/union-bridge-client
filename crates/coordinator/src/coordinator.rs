@@ -523,22 +523,25 @@ impl<
         }
 
         // send ping if we have not received any message from BitVMX for a while and there is no pending ping
-        if bitvmx_last_msg.elapsed() > self.bitvmx_ping_after_silence && bitvmx_ping.is_none() {
-            self.send_bitvmx_ping();
+        if bitvmx_last_msg.elapsed() > self.bitvmx_ping_after_silence
+            && bitvmx_ping.is_none()
+            && self.send_bitvmx_ping()
+        {
             *bitvmx_ping = Some(Instant::now());
         }
     }
 
-    fn send_bitvmx_ping(&mut self) {
+    fn send_bitvmx_ping(&mut self) -> bool {
         let ping_id = uuid::Uuid::new_v4();
         trace!("Sending Ping to BitVMX with uuid: {ping_id}");
 
         match self.bitvmx_broker.send(IncomingBitVMXApiMessages::Ping(ping_id)) {
-            Ok(true) => {}
+            Ok(true) => true,
             Ok(false) => {
                 warn!("Broker could not deliver BitVMX ping; scheduling BitVMX recovery");
                 self.runtime_broker_recovery
                     .mark_pending(RuntimeBrokerRecoveryScope::BitvmxSession);
+                false
             }
             Err(error) if is_recoverable_transport_error(&error) => {
                 warn!(
@@ -547,9 +550,11 @@ impl<
                 );
                 self.runtime_broker_recovery
                     .mark_pending(RuntimeBrokerRecoveryScope::BitvmxSession);
+                false
             }
             Err(error) => {
                 error!("Failed to send Ping to BitVMX: {error:?}");
+                false
             }
         }
     }
@@ -1037,6 +1042,66 @@ pub(crate) mod tests {
             .mark_pending(super::RuntimeBrokerRecoveryScope::BitvmxSession);
 
         assert!(coordinator.recover_runtime_broker_state().is_err());
+        assert!(coordinator.runtime_broker_recovery.bitvmx_session_pending);
+    }
+
+    #[test]
+    fn test_bitvmx_liveness_does_not_record_ping_when_broker_does_not_deliver() {
+        let mut bitvmx_broker = MockBitVmxBroker::new();
+        bitvmx_broker
+            .expect_send()
+            .with(function(|req: &IncomingBitVMXApiMessages| {
+                matches!(req, IncomingBitVMXApiMessages::Ping(_))
+            }))
+            .return_once(|_| Ok(false));
+
+        let mut coordinator = Coordinator::new_for_tests(
+            MockMonitorApi::new(),
+            bitvmx_broker,
+            MockUnionBroker::new(),
+            vec![],
+            ShutdownFlag::init(),
+            MockCoordinatorStoreApi::new(),
+        );
+        let mut bitvmx_ping = None;
+        let mut bitvmx_liveness = super::BitvmxLiveness::Unknown;
+        let bitvmx_last_msg = Instant::now()
+            .checked_sub(coordinator.bitvmx_ping_after_silence + Duration::from_secs(1))
+            .expect("silence duration fits");
+
+        coordinator.check_bitvmx_liveness(&mut bitvmx_ping, &mut bitvmx_liveness, bitvmx_last_msg);
+
+        assert!(bitvmx_ping.is_none());
+        assert!(coordinator.runtime_broker_recovery.bitvmx_session_pending);
+    }
+
+    #[test]
+    fn test_bitvmx_liveness_does_not_record_ping_after_recoverable_send_error() {
+        let mut bitvmx_broker = MockBitVmxBroker::new();
+        bitvmx_broker
+            .expect_send()
+            .with(function(|req: &IncomingBitVMXApiMessages| {
+                matches!(req, IncomingBitVMXApiMessages::Ping(_))
+            }))
+            .return_once(|_| Err(BrokerError::disconnected()));
+
+        let mut coordinator = Coordinator::new_for_tests(
+            MockMonitorApi::new(),
+            bitvmx_broker,
+            MockUnionBroker::new(),
+            vec![],
+            ShutdownFlag::init(),
+            MockCoordinatorStoreApi::new(),
+        );
+        let mut bitvmx_ping = None;
+        let mut bitvmx_liveness = super::BitvmxLiveness::Unknown;
+        let bitvmx_last_msg = Instant::now()
+            .checked_sub(coordinator.bitvmx_ping_after_silence + Duration::from_secs(1))
+            .expect("silence duration fits");
+
+        coordinator.check_bitvmx_liveness(&mut bitvmx_ping, &mut bitvmx_liveness, bitvmx_last_msg);
+
+        assert!(bitvmx_ping.is_none());
         assert!(coordinator.runtime_broker_recovery.bitvmx_session_pending);
     }
 
