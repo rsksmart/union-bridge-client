@@ -23,11 +23,11 @@ Run this wrapper from the repository root when you want the quickest entry point
 background mining.
 
 ```text
-# Start all Docker infra (blockchains + bitvmx) + mining
-./scripts/run-infra.sh --start [--fresh] [--contracts-tag TAG] [--pull-contracts]
+# Start all Docker infra (blockchains + bitvmx) + mining  (--start is an accepted alias)
+./scripts/run-infra.sh --start-all [--fresh] [--contracts-tag TAG] [--pull-contracts]
 
-# Stop mining + all Docker infra
-./scripts/run-infra.sh --stop
+# Stop mining + all Docker infra  (--stop is an accepted alias)
+./scripts/run-infra.sh --stop-all
 
 # Start blockchains + background mining
 ./scripts/run-infra.sh --start-blockchains [--fresh] [--contracts-tag TAG] [--pull-contracts]
@@ -120,7 +120,7 @@ that cadence.
 
 Mining is coupled to the blockchain lifecycle in this wrapper:
 
-- `scripts/run-infra.sh --start`: starts blockchains, BitVMX, and background mining
+- `scripts/run-infra.sh --start-all`: starts blockchains, BitVMX, and background mining
 - `scripts/run-infra.sh --start-blockchains`: starts blockchains, ensures `mainwallet` has mature regtest funds, and starts background mining
 - `scripts/run-infra.sh --stop-blockchains`: stops background mining and blockchains
 - `scripts/run-infra.sh --stop-mining`: stops background mining only; run this if mining gets stuck
@@ -180,7 +180,7 @@ In another terminal:
 cast rpc eth_chainId --rpc-url http://127.0.0.1:8545
 ```
 
-`./scripts/run-infra.sh --start --fresh` can use the local image tag directly. If the
+`./scripts/run-infra.sh --start-all --fresh` can use the local image tag directly. If the
 selected image tag is not present locally, startup pulls it from GHCR and fails
 if the tag is not published. Use `--pull-contracts` to force a GHCR refresh.
 

@@ -263,7 +263,7 @@ export COMMITTEE_PROVER_COUNT=2
 ./scripts/setup-operators.sh --ops 4
 
 # Start the local blockchain and BitVMX stack
-./scripts/run-infra.sh --start --fresh
+./scripts/run-infra.sh --start-all --fresh
 
 # Start the Rust client against the local stack
 ./scripts/run-clients.sh --fresh
@@ -362,7 +362,7 @@ bash scripts/test-flows.sh --committee
 bash scripts/test-flows.sh --pegin
 bash scripts/test-flows.sh --pegout
 bash scripts/test-flows.sh --operator-take
-./scripts/run-infra.sh --stop
+./scripts/run-infra.sh --stop-all
 ```
 
 `./scripts/run-infra.sh --start-blockchains` now bootstraps the regtest Bitcoin miner wallet once (101 blocks when needed)
@@ -381,7 +381,7 @@ Notes:
 - `bash scripts/test-flows.sh --pegin` runs only the pegin flow and reuses existing setup and committee state.
 - `bash scripts/test-flows.sh --pegout` runs only the pegout flow and reuses existing setup and committee state.
 - `bash scripts/test-flows.sh --operator-take` runs a pegout that forces the operator-take path, writes the selected operator address to `/tmp/FORCE_ADVANCE` in the active runtime, and reuses existing setup and committee state.
-- Use `./scripts/run-infra.sh --start --fresh` instead when you want the all-in-one stack, including BitVMX, from the outset.
+- Use `./scripts/run-infra.sh --start-all --fresh` instead when you want the all-in-one stack, including BitVMX, from the outset.
 
 The user flows now require explicit Bitcoin public keys in the request body. For manual testing, the same derivation
 used by `scripts/test-flows.sh` is:
@@ -435,7 +435,7 @@ Common local issues:
 - wrong keystore password: export the intended `KEY_STORE_PASSWORD`, then rerun `./scripts/setup-operators.sh --ops 4`
 - switching chains / changing `BITCOIND_URL` (e.g. bundled ↔ a bring-your-own node): two chain-tied states must be reset, so rerun `./scripts/setup-operators.sh --ops 4` (re-patches the URL into the BitVMX `op_*.yaml`, else `HTTP 401`) **and** start BitVMX with `./scripts/run-infra.sh --start-bitvmx --fresh` (wipes the `db-bitvmx-*` volumes, else "Inconsistent blockchain state"). A plain restart fixes neither.
 - stale local databases: use `./scripts/run-clients.sh --fresh`
-- BitVMX or blockchain containers out of sync: use `./scripts/run-infra.sh --start --fresh`
+- BitVMX or blockchain containers out of sync: use `./scripts/run-infra.sh --start-all --fresh`
 - git hooks not running on commit/push (you can commit/push without `fmt` / `sort` / `clippy` / branch-name /
   commit-message checks firing): see [Reinstalling hooks](#reinstalling-hooks) below.
 

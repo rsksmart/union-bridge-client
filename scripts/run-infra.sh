@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 
 # wrapper script for local infrastructure management
-# usage: ./scripts/run-infra.sh --start [--fresh] [--contracts-tag TAG] [--pull-contracts]
-#        ./scripts/run-infra.sh --stop
+# usage: ./scripts/run-infra.sh --start-all [--fresh] [--contracts-tag TAG] [--pull-contracts]
+#        ./scripts/run-infra.sh --stop-all
 #        ./scripts/run-infra.sh --start-blockchains [--fresh] [--contracts-tag TAG] [--pull-contracts]
 #        ./scripts/run-infra.sh --stop-blockchains
 #        ./scripts/run-infra.sh --stop-mining
 #        ./scripts/run-infra.sh --start-bitvmx [--fresh]
 #        ./scripts/run-infra.sh --stop-bitvmx
+# (--start / --stop are still accepted as aliases for --start-all / --stop-all.)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -452,10 +453,10 @@ stop_all() {
 }
 
 case "${1:-}" in
-    --start)
+    --start-all|--start)
         start_all "$@"
         ;;
-    --stop)
+    --stop-all|--stop)
         stop_all
         ;;
     --start-blockchains)
@@ -474,12 +475,12 @@ case "${1:-}" in
         stop_bitvmx
         ;;
     *)
-        echo "Usage: $0 [--env local-anvil|local-rskj] {--start|--stop|--start-blockchains|--stop-blockchains|--stop-mining|--start-bitvmx|--stop-bitvmx}"
+        echo "Usage: $0 [--env local-anvil|local-rskj] {--start-all|--stop-all|--start-blockchains|--stop-blockchains|--stop-mining|--start-bitvmx|--stop-bitvmx}"
         echo ""
-        echo "Local Docker Infrastructure:"
-        echo "  --start [--fresh] [--contracts-tag TAG] [--pull-contracts] [--rskj-tag TAG] [--powpeg-tag TAG]"
-        echo "                                                       Start all blockchains + bitvmx + mining"
-        echo "  --stop                                               Stop mining + bitvmx + blockchains"
+        echo "Local Docker Infrastructure (--start / --stop are accepted aliases for --start-all / --stop-all):"
+        echo "  --start-all [--fresh] [--contracts-tag TAG] [--pull-contracts] [--rskj-tag TAG] [--powpeg-tag TAG]"
+        echo "                                                       Start all infra: blockchains + bitvmx + mining"
+        echo "  --stop-all                                           Stop mining + bitvmx + blockchains"
         echo "  --start-blockchains [--fresh] [--contracts-tag TAG] [--pull-contracts] [--rskj-tag TAG] [--powpeg-tag TAG]"
         echo "                                                       Start blockchains + mining"
         echo "  --stop-blockchains                                   Stop mining + blockchains"
