@@ -5,5 +5,5 @@
 
 # needed for transaction-dispatcher
 -s KEY_STORE_PASSWORD=<key_password>
-# if you lost it, you can get it with `cd key-manager && cargo run derive-public-data -p test -k <path_to_your_key>`
+# if you lost it, you can get it with `cargo run --bin key-manager -- derive-public-data -p test -k <path_to_your_key>`
 --var KEY_STORE_ADDRESS=<key_address>
