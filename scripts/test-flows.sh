@@ -517,18 +517,18 @@ log_startup_configuration() {
 # get current bitcoin block height
 get_current_bitcoin_height() {
     local height
-    height=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount 2>/dev/null || echo "0")
+    height=$(bitcoin-cli -regtest -rpcuser="$BITCOIND_USER" -rpcpassword="$BITCOIND_PASSWORD" getblockcount 2>/dev/null || echo "0")
     height=${height:-0}
     echo "$height"
 }
 
 # check if bitcoin node is accessible
 check_bitcoin_connectivity() {
-    bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockcount &> /dev/null
+    bitcoin-cli -regtest -rpcuser="$BITCOIND_USER" -rpcpassword="$BITCOIND_PASSWORD" getblockcount &> /dev/null
 }
 
 check_bitcoin_wallet() {
-    bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword -rpcwallet=mainwallet getwalletinfo &> /dev/null
+    bitcoin-cli -regtest -rpcuser="$BITCOIND_USER" -rpcpassword="$BITCOIND_PASSWORD" -rpcwallet="$BITCOIN_WALLET" getwalletinfo &> /dev/null
 }
 
 wait_for_condition() {
@@ -617,13 +617,13 @@ wait_for_test_prereqs() {
 
     if ! wait_for_condition "Bitcoin RPC" 30 check_bitcoin_connectivity; then
         echo "Error: Bitcoin regtest node not accessible" >&2
-        echo "Please ensure Bitcoin Core is running with:" >&2
-        echo "  bitcoind -regtest -rpcuser=foo -rpcpassword=rpcpassword" >&2
+        echo "Please ensure Bitcoin Core is running with the credentials from BITCOIND_URL" >&2
+        echo "  bitcoind -regtest -rpcuser=$BITCOIND_USER -rpcpassword=<password from BITCOIND_URL>" >&2
         return 1
     fi
 
-    if ! wait_for_condition "Bitcoin wallet 'mainwallet'" 30 check_bitcoin_wallet; then
-        echo "Error: Bitcoin wallet 'mainwallet' is not loaded" >&2
+    if ! wait_for_condition "Bitcoin wallet '${BITCOIN_WALLET}'" 30 check_bitcoin_wallet; then
+        echo "Error: Bitcoin wallet '${BITCOIN_WALLET}' is not loaded" >&2
         return 1
     fi
 
@@ -646,7 +646,7 @@ user_compressed_pubkey_from_wif() {
         return 1
     fi
     local desc pubkey
-    desc=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getdescriptorinfo "wpkh(${USER_BITCOIN_WIF})" 2>/dev/null | jq -r '.descriptor')
+    desc=$(bitcoin-cli -regtest -rpcuser="$BITCOIND_USER" -rpcpassword="$BITCOIND_PASSWORD" getdescriptorinfo "wpkh(${USER_BITCOIN_WIF})" 2>/dev/null | jq -r '.descriptor')
     if [[ -z "$desc" || "$desc" == "null" ]]; then
         echo "Error: Failed to derive descriptor from USER_BITCOIN_WIF" >&2
         return 1
@@ -903,7 +903,7 @@ user_btc_balance_sat() {
         return 1
     fi
 
-    bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword \
+    bitcoin-cli -regtest -rpcuser="$BITCOIND_USER" -rpcpassword="$BITCOIND_PASSWORD" \
         scantxoutset start "[\"addr(${address})\"]" \
         | jq -r '(.total_amount * 100000000 | round) // 0'
 }
@@ -1165,7 +1165,7 @@ count_transactions_in_blocks() {
     local h
     for ((h=start_height + 1; h<=end_height; h++)); do
         local stats
-        stats=$(bitcoin-cli -regtest -rpcuser=foo -rpcpassword=rpcpassword getblockstats "$h" 2>/dev/null) || continue
+        stats=$(bitcoin-cli -regtest -rpcuser="$BITCOIND_USER" -rpcpassword="$BITCOIND_PASSWORD" getblockstats "$h" 2>/dev/null) || continue
         local total_tx_count
         total_tx_count=$(jq -r '.txs // empty' 2>/dev/null <<<"$stats" || echo "$stats" | tr -d '\n' | sed -E 's/.*"txs"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/')
         if [ -n "$total_tx_count" ] && [ "$total_tx_count" -gt 1 ]; then
@@ -1845,6 +1845,12 @@ print_success_summary() {
 
 main() {
     load_envrc_if_needed
+    # Resolve Bitcoin RPC creds from BITCOIND_URL AFTER .envrc is loaded, so a bring-your-own
+    # bitcoind's credentials take effect even when direnv isn't active (single source, also used by
+    # scripts/run-infra.sh). Host-side bitcoin-cli talks to localhost:18443; BITCOIN_WALLET isn't in the URL.
+    # shellcheck source=/dev/null
+    source "$(dirname "${BASH_SOURCE[0]}")/../docker/local-infra/bitcoind-rpc-env.sh"
+    BITCOIN_WALLET="${BITCOIN_WALLET:-mainwallet}"
     initialize_script_env_default
     parse_args "$@" || return 1
     validate_script_env || return 1

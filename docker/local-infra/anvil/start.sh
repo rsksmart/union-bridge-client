@@ -63,15 +63,17 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# If invoked standalone, source the env file so BITCOIND_* are in scope.
-if [[ -z "${BITCOIND_USER:-}" ]]; then
-  if [[ ! -f "$ENV_PATH" ]]; then
-    echo "Error: env file not found at $ENV_PATH" >&2
-    exit 1
-  fi
-  # shellcheck disable=SC1090
-  source "$ENV_PATH"
+# Load the chain env (image base, chain id, …) for this script's own vars. Bitcoin RPC creds are not
+# here — they come from BITCOIND_URL via the shared resolver (already in scope when invoked by
+# start-blockchains.sh; the resolver honors inherited values, so re-sourcing is safe for standalone).
+if [[ ! -f "$ENV_PATH" ]]; then
+  echo "Error: env file not found at $ENV_PATH" >&2
+  exit 1
 fi
+# shellcheck disable=SC1090
+source "$ENV_PATH"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/../bitcoind-rpc-env.sh"
 
 wait_for_anvil_rpc() {
   local timeout_secs="${1:-60}"
@@ -200,7 +202,7 @@ if [[ "${IS_UP_COMMAND}" == true && "${IMPLICIT_FRESH}" == true ]]; then
     docker exec "${BITCOIND_CONTAINER}" bitcoin-cli -regtest -rpcuser="${BITCOIND_USER}" -rpcpassword="${BITCOIND_PASSWORD}" getblockcount >/dev/null 2>&1 && break
     sleep 1
   done
-  docker exec "${BITCOIND_CONTAINER}" bitcoin-cli -regtest -rpcuser="${BITCOIND_USER}" -rpcpassword="${BITCOIND_PASSWORD}" createwallet mainwallet false false "" false true >/dev/null 2>&1 || true
+  docker exec "${BITCOIND_CONTAINER}" bitcoin-cli -regtest -rpcuser="${BITCOIND_USER}" -rpcpassword="${BITCOIND_PASSWORD}" createwallet "${BITCOIN_WALLET:-mainwallet}" false false "" false true >/dev/null 2>&1 || true
 
   wait_for_anvil_rpc
   exit 0

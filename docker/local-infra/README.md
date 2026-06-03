@@ -46,6 +46,72 @@ background mining.
 
 ``` 
 
+## Bring your own blockchains (external chains)
+
+You don't have to use the bundled bitcoind + Anvil/RSKj stack. To run the client, operators, and
+flow tests against chains you started yourself (any regtest bitcoind + any compatible
+Rootstock/Anvil node), point the tooling at them with environment variables — no code changes:
+
+| What | Variable(s) | Default |
+| --- | --- | --- |
+| Bitcoin RPC URL + creds | `BITCOIND_URL` | `http://foo:rpcpassword@host.docker.internal:18443` |
+| Bitcoin wallet name | `BITCOIN_WALLET` | `mainwallet` |
+| Wallet CLI RPC | `WALLET_RPC_URL`, `WALLET_RPC_USER`, `WALLET_RPC_PASSWORD` | `http://127.0.0.1:18443/`, `foo`, `rpcpassword` (from `cli/bitcoin-wallet/config/regtest.toml`) |
+| Rootstock/Anvil RPC | `provider.rootstock.url` (config profile) | `ws://127.0.0.1:8545` |
+
+`BITCOIND_URL` is the single source of the Bitcoin RPC credentials for **everything**: BitVMX
+connects with it as-is (via `scripts/setup-operators.sh`); the bundled bitcoind server + bring-up scripts
+(`docker-compose` / `start-blockchains.sh`) and the host-side tooling (`scripts/run-infra.sh`,
+`scripts/test-flows.sh`) resolve the `user:password` from it via
+[`bitcoind-rpc-env.sh`](./bitcoind-rpc-env.sh), talking to `127.0.0.1:18443`. (Only the credentials
+are derived — host-side tools use the regtest default host/port; BitVMX and the wallet CLI honor a
+non-default host/port via their own full URLs.) The chain `.env` files no longer carry credentials.
+So for a bring-your-own bitcoind you typically set just `BITCOIND_URL` + `BITCOIN_WALLET`.
+
+The BYO flow mirrors the bundled local flow, just with **you** providing the chains instead of
+`--start-blockchains`. End to end:
+
+1. **Start your own chains**, published on the host loopback at the expected ports: bitcoind RPC at
+   the `BITCOIND_URL` port (containers reach it via `host.docker.internal`, host tooling via
+   `127.0.0.1`), Rootstock/Anvil RPC at `:8545`. The bitcoind wallet (`BITCOIN_WALLET`) must be
+   loaded with mature funds, `txindex=1` enabled, and the chain must match the expected chain-id +
+   predeployed contracts. (A test-chain-miner stack provides all of this.)
+2. **Reuse the `local-anvil` profile** if your Anvil uses the same predeployed contracts — the
+   contract addresses live in that profile; a different deployment needs its own `[[contracts]]`.
+3. `./scripts/setup-operators.sh --ops 4` — generate the BitVMX operator artifacts. The current
+   `BITCOIND_URL` is **baked into** the generated `op_*.yaml` here (see the callout below).
+4. `./scripts/run-infra.sh --start-bitvmx` — the **only** `run-infra` step needed (skip `--start-blockchains`;
+   you brought the chains). BitVMX reaches bitcoind purely over `host.docker.internal`, so no shared
+   docker network with your chains is required.
+5. `./scripts/run-clients.sh` — start the Union Bridge clients / coordinator.
+6. `bash scripts/test-flows.sh …` — runs a flow. It funds the user/member wallets itself via the
+   bitcoin-wallet CLI's `mine_utxo`, which draws from `BITCOIN_WALLET` **and registers the UTXO** (a
+   plain `sendtoaddress` won't — the wallet only spends UTXOs in its own DB). For a manual run
+   without `scripts/test-flows.sh`, fund them first:
+
+   ```bash
+   ./scripts/bitcoin-wallet.sh member mine_utxo <sats>
+   ./scripts/bitcoin-wallet.sh user mine_utxo <sats>
+   ```
+
+Steps 3, 5, and 6 are identical to the bundled flow — the only BYO deltas are step 1 (you run the
+chains) and pointing `BITCOIND_URL` / `BITCOIN_WALLET` at them. If your setup mines on its own
+schedule, flows that depend on deterministic block production (some `scripts/test-flows.sh` paths) rely on
+that cadence.
+
+> ⚠️ **Switching chains? Re-run setup AND restart BitVMX with `--fresh`.** Two pieces of state are
+> tied to the chain, and a plain restart fixes neither:
+>
+> - **The bitcoin URL** is patched into the BitVMX `op_*.yaml` at setup time — *not* read live. Re-run
+>   `./scripts/setup-operators.sh --ops 4` with the new `BITCOIND_URL` loaded, or BitVMX keeps using the
+>   old creds and fails with `HTTP 401`.
+> - **BitVMX's monitor/indexer DB** (the `db-bitvmx-*` volumes) holds the *old* chain's blocks. Start
+>   with `./scripts/run-infra.sh --start-bitvmx --fresh` (which does `down --volumes`), or you hit
+>   "Inconsistent blockchain state".
+>
+> `scripts/setup-operators.sh` regenerates the host configs but doesn't clear those volumes, and updating
+> `.envrc` + a plain restart clears neither — so on a chain switch you need both steps.
+
 ## Scripts
 
 - `start-blockchains.sh`: starts bitcoind (regtest) + Anvil for `local-anvil`, or bitcoind + RSKj + powpeg-node for `local-rskj`

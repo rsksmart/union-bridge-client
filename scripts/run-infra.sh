@@ -63,8 +63,12 @@ MINE_PID_FILE="/tmp/union-bridge-${ENVIRONMENT}-mining.pids"
 # let duplicate miners accumulate and mine more than one block per interval. Scoped per
 # ENVIRONMENT so reaping one env's miners never touches the other env's.
 MINE_TAG="union-bridge-${ENVIRONMENT}-miner"
-BITCOIN_WALLET="mainwallet"
-BITCOIN_RPC_ARGS=(-regtest -rpcuser=foo -rpcpassword=rpcpassword -rpcwallet="${BITCOIN_WALLET}")
+# Bitcoin RPC target for host-side bitcoin-cli (mining, wallet bootstrap). Creds come from
+# BITCOIND_URL via the shared resolver (single source, also used by scripts/test-flows.sh); host + port
+# are the regtest default (127.0.0.1:18443). BITCOIN_WALLET is the one piece not carried in the URL.
+source docker/local-infra/bitcoind-rpc-env.sh
+BITCOIN_WALLET="${BITCOIN_WALLET:-mainwallet}"
+BITCOIN_RPC_ARGS=(-regtest -rpcuser="${BITCOIND_USER}" -rpcpassword="${BITCOIND_PASSWORD}" -rpcwallet="${BITCOIN_WALLET}")
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'

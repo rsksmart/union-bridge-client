@@ -80,6 +80,11 @@ fi
 # shellcheck disable=SC1090
 source "$ENV_PATH"
 
+# Bitcoin RPC creds come from BITCOIND_URL (single source); the resolver exports the user and
+# password so docker compose, the bitcoind helpers, and the Rootstock-node script share them.
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/bitcoind-rpc-env.sh"
+
 # Forbid docker compose `build` invocations from the user — anvil injects --build
 # only when using the local-build contracts tag; rskj never needs it.
 for arg in "${REMAINING_ARGS[@]}"; do
@@ -184,7 +189,10 @@ fi
 echo "Starting ${BITCOIND_CONTAINER}..."
 docker compose -p blockchains --env-file "$ENV_PATH" -f "$COMPOSE_FILE" up -d "${BITCOIND_CONTAINER}"
 wait_for_bitcoind_rpc 120
-create_bitcoin_wallet_if_needed mainwallet
+# Wallet name is read from the environment (export it in your .envrc to override);
+# defaults to mainwallet when unset. docker compose and the Rootstock-node script
+# inherit the exported value, so no re-export is needed here.
+create_bitcoin_wallet_if_needed "${BITCOIN_WALLET:-mainwallet}"
 
 # Export what the Rootstock-node script needs to know.
 export COMPOSE_FILE ENV_PATH ENVIRONMENT FRESH

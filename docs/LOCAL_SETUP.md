@@ -132,7 +132,7 @@ Configuration ownership is:
 | `KEY_STORE_PASSWORD` | shell or `.envrc`; written into generated `docker-service.env` during setup | local cargo client, setup helpers, Docker operator runtime | required when creating or unlocking member/user keystores |
 | `USER_BITCOIN_WIF` | shell or `.envrc` | user flows, wallet helpers, happy-path testing | required for user-facing Bitcoin operations |
 | `MEMBER_BITCOIN_WIF` | shell or `.envrc` | `./scripts/bitcoin-wallet.sh`, happy-path testing | required for member wallet operations in local happy-path setup and automated flow tests |
-| `BITCOIND_URL` | shell or `.envrc` | `./scripts/setup-operators.sh` while patching generated BitVMX configs | required before preparing operator artifacts for Docker-backed local flows |
+| `BITCOIND_URL` | shell or `.envrc` | `./scripts/setup-operators.sh` while patching generated BitVMX configs | required before preparing operator artifacts for Docker-backed local flows; the value is baked into the BitVMX `op_*.yaml` at setup (not read live), so **re-run `./scripts/setup-operators.sh` and restart BitVMX whenever you change it** |
 | `SLOTS_PER_PACKAGE` | shell or `.envrc` | coordinator, BitVMX dispute setup, and `./scripts/operations.sh` | temporary workaround until sourced from contracts; optional; defaults to `100` |
 | `COMMITTEE_MEMBER_COUNT` | shell or `.envrc` | coordinator and `./scripts/operations.sh`; passed into `op-funding` calculations | temporary workaround until sourced from contracts; optional; defaults to `4` |
 | `COMMITTEE_PROVER_COUNT` | shell or `.envrc` | coordinator and `./scripts/operations.sh`; passed into `op-funding` calculations | temporary workaround until sourced from contracts; optional; defaults to `2` |
@@ -433,6 +433,7 @@ Use the narrow docs for localized problems:
 Common local issues:
 
 - wrong keystore password: export the intended `KEY_STORE_PASSWORD`, then rerun `./scripts/setup-operators.sh --ops 4`
+- switching chains / changing `BITCOIND_URL` (e.g. bundled ↔ a bring-your-own node): two chain-tied states must be reset, so rerun `./scripts/setup-operators.sh --ops 4` (re-patches the URL into the BitVMX `op_*.yaml`, else `HTTP 401`) **and** start BitVMX with `./scripts/run-infra.sh --start-bitvmx --fresh` (wipes the `db-bitvmx-*` volumes, else "Inconsistent blockchain state"). A plain restart fixes neither.
 - stale local databases: use `./scripts/run-clients.sh --fresh`
 - BitVMX or blockchain containers out of sync: use `./scripts/run-infra.sh --start --fresh`
 - git hooks not running on commit/push (you can commit/push without `fmt` / `sort` / `clippy` / branch-name /

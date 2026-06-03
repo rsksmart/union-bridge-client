@@ -40,5 +40,17 @@ export USER_BITCOIN_WIF="<user_wif_private_key>"
 # Member/Operator WIF for BitVMX operations
 export MEMBER_BITCOIN_WIF="<member_wif_private_key>"
 export BITCOIN_NETWORK=regtest
-# Bitcoind url
-export BITCOIND_URL="<to_set_in_local>"
+# Bitcoind connection URL. THE single source of the Bitcoin RPC credentials for everything:
+#   - BitVMX configs (patched as-is by scripts/setup-operators.sh),
+#   - the bundled bitcoind server + bring-up scripts (docker-compose / start-blockchains), and
+#   - host-side tooling (scripts/run-infra.sh, scripts/test-flows.sh).
+# The bring-up + host tooling resolve only the user:password from it via
+# docker/local-infra/bitcoind-rpc-env.sh, talking to 127.0.0.1:18443 (host-side tools use the regtest
+# default host/port; BitVMX and the wallet CLI honor a non-default host/port via their own URLs). Use
+# host.docker.internal in the URL so the in-container BitVMX clients can reach the host's bitcoind.
+# Point it at a bring-your-own bitcoind to switch (e.g. a test-chain-miner stack:
+# http://reorgtest:reorgtest@host.docker.internal:18443).
+export BITCOIND_URL="http://foo:rpcpassword@host.docker.internal:18443"
+# Bitcoind wallet name for host-side bitcoin-cli ops (not part of the URL). Override for a
+# bring-your-own bitcoind whose funded wallet differs (a test-chain-miner stack uses "reorg").
+export BITCOIN_WALLET=mainwallet
