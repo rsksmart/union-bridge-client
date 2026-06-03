@@ -76,7 +76,7 @@ fi
 
 # Resolve the contracts source directory for local-build docker compose context.
 CONTRACTS_CONTEXT_CANDIDATE=""
-if CONTRACTS_CONTEXT_CANDIDATE=$(cd "$SCRIPT_DIR" && cd "${CONTRACTS_CONTEXT_PATH:-}" 2>/dev/null && pwd); then
+if [[ -n "${CONTRACTS_CONTEXT_PATH:-}" ]] && CONTRACTS_CONTEXT_CANDIDATE=$(cd "$SCRIPT_DIR" && cd "$CONTRACTS_CONTEXT_PATH" 2>/dev/null && pwd); then
   :
 elif [[ -d "$(cd "$SCRIPT_DIR/../../.." && pwd)/../union-bridge-contracts" ]]; then
   CONTRACTS_CONTEXT_CANDIDATE="$(cd "$SCRIPT_DIR/../../.." && pwd)/../union-bridge-contracts"
