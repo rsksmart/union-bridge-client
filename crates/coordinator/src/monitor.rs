@@ -409,8 +409,8 @@ where
     }
 
     fn request_event_subscriptions(&mut self) -> Result<()> {
-        let addresses = self.peg_manager_addresses.clone();
-        for addr in addresses {
+        for index in 0..self.peg_manager_addresses.len() {
+            let addr = self.peg_manager_addresses[index];
             let result = self
                 .send_to_log_broker(ToServer::SubscribeLogs(addr))
                 .context("Broker error on SubscribeLogs")?;
