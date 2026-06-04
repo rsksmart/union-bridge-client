@@ -38,9 +38,6 @@ pub trait MonitorApi {
     /// Returns an error if broker communication fails.
     fn try_bitvmx_event(&mut self) -> Result<Option<OutgoingBitVMXApiMessages>>;
     /// # Errors
-    /// Returns an error if an active subscription cannot be replayed.
-    fn recover_active_subscriptions(&mut self) -> Result<()>;
-    /// # Errors
     /// Returns an error if monitoring is not active or if broker communication fails.
     fn cancel_event_monitoring(&mut self) -> Result<()>;
     /// # Errors
@@ -104,10 +101,6 @@ where
 
     fn try_bitvmx_event(&mut self) -> Result<Option<OutgoingBitVMXApiMessages>> {
         self.try_bitvmx_event()
-    }
-
-    fn recover_active_subscriptions(&mut self) -> Result<()> {
-        self.recover_active_subscriptions()
     }
 
     fn cancel_event_monitoring(&mut self) -> Result<()> {
@@ -317,22 +310,6 @@ where
             trace!("No messages from BitVMX broker");
             Ok(None)
         }
-    }
-
-    /// # Errors
-    /// Returns an error if an active subscription cannot be replayed.
-    pub fn recover_active_subscriptions(&mut self) -> Result<()> {
-        if self.block_monitoring_active {
-            info!("Recovering active Block monitoring subscription");
-            self.request_block_subscription()?;
-        }
-
-        if self.log_monitoring_active {
-            info!("Recovering active Logs monitoring subscriptions");
-            self.request_event_subscriptions()?;
-        }
-
-        Ok(())
     }
 
     /// # Errors
@@ -808,66 +785,6 @@ mod tests {
 
         let result = monitor.try_bitvmx_event().expect("Failed to receive BitVMX event");
         assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_recover_active_subscriptions_replays_active_block_and_log_subscriptions() {
-        let address_1 = get_fake_address_1();
-        let address_2 = get_fake_address_2();
-
-        let mut log_broker = MockUnionBroker::new();
-        expect_subscribe_logs(&mut log_broker, address_1);
-        expect_subscribe_logs(&mut log_broker, address_2);
-
-        let mut block_broker = MockUnionBroker::new();
-        expect_subscribe_blocks(&mut block_broker, 1);
-
-        let mut monitor = Monitor::new(
-            log_broker,
-            block_broker,
-            Rc::new(MockUnionBroker::new()),
-            Rc::new(MockBitVmxBroker::new()),
-            vec![address_1, address_2],
-        );
-        monitor.block_monitoring_active = true;
-        monitor.log_monitoring_active = true;
-
-        assert!(monitor.recover_active_subscriptions().is_ok());
-    }
-
-    #[test]
-    fn test_recover_active_subscriptions_skips_inactive_subscriptions() {
-        let mut monitor = Monitor::new(
-            MockUnionBroker::new(),
-            MockUnionBroker::new(),
-            Rc::new(MockUnionBroker::new()),
-            Rc::new(MockBitVmxBroker::new()),
-            vec![get_fake_address_1()],
-        );
-
-        assert!(monitor.recover_active_subscriptions().is_ok());
-    }
-
-    #[test]
-    fn test_recover_active_subscriptions_returns_broker_error() {
-        let mut block_broker = MockUnionBroker::new();
-        block_broker
-            .expect_send()
-            .with(function(|req: &ToServer| matches!(req, ToServer::SubscribeBlocks)))
-            .return_once(|_| Err(BrokerError::UnknownError(anyhow!("fake error"))));
-
-        let mut monitor = Monitor::new(
-            MockUnionBroker::new(),
-            block_broker,
-            Rc::new(MockUnionBroker::new()),
-            Rc::new(MockBitVmxBroker::new()),
-            vec![get_fake_address_1()],
-        );
-        monitor.block_monitoring_active = true;
-
-        let err = monitor.recover_active_subscriptions();
-        assert!(err.is_err());
-        assert!(err.as_ref().unwrap_err().to_string().contains("Broker error on SubscribeBlocks"));
     }
 
     #[test]
