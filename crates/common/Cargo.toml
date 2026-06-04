@@ -23,7 +23,7 @@ broker-storage-backend = { package = "rust-bitvmx-storage-backend", git = "https
 chrono = { workspace = true }
 config = { workspace = true }
 hex = { workspace = true }
-lru = "0.16"
+lru = "0.18"
 message-broker = { workspace = true, features = ["storagebackend"] }
 mockall = { workspace = true }
 musig2 = { workspace = true }
