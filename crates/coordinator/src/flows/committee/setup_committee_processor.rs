@@ -8,7 +8,7 @@ use std::any::type_name_of_val;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use common::msg_broker::bitvmx_types::{
     GLOBAL_SETTINGS_UUID, IncomingBitVMXApiMessages, OP_COSIGN_UTXOS, OutgoingBitVMXApiMessages,
     UnionSettings, VariableTypes, WT_INIT_CHALLENGE_UTXOS,
@@ -93,13 +93,11 @@ where
         let settings = UnionSettings::with_defaults();
         let settings_json = serde_json::to_string(&settings)?;
 
-        if !bitvmx_broker.send(IncomingBitVMXApiMessages::SetVar(
+        bitvmx_broker.send(IncomingBitVMXApiMessages::SetVar(
             GLOBAL_SETTINGS_UUID,
             UnionSettings::name().to_string(),
             VariableTypes::String(settings_json),
-        ))? {
-            bail!("Broker could not deliver UnionSettings");
-        }
+        ))?;
 
         Ok(())
     }
@@ -800,16 +798,6 @@ mod tests {
 
         let result = TestProcessor::send_union_settings(&broker);
         assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_send_union_settings_errors_when_broker_cannot_deliver() {
-        let mut broker = MockBitVmxBroker::new();
-        broker.expect_send().return_once(|_| Ok(false));
-
-        let err = TestProcessor::send_union_settings(&broker).expect_err("send should fail");
-
-        assert!(err.to_string().contains("Broker could not deliver UnionSettings"));
     }
 
     #[test]

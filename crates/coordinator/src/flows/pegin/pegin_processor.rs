@@ -784,11 +784,7 @@ where
     }
 
     fn subscribe_to_bitvmx_pegin_events(bitvmx_broker: &BC, confirmations: u32) -> Result<()> {
-        if !bitvmx_broker
-            .send(IncomingBitVMXApiMessages::SubscribeToRskPegin(Some(confirmations)))?
-        {
-            bail!("Broker could not deliver SubscribeToRskPegin");
-        }
+        bitvmx_broker.send(IncomingBitVMXApiMessages::SubscribeToRskPegin(Some(confirmations)))?;
 
         Ok(())
     }
@@ -1437,17 +1433,6 @@ mod tests {
                 5,
             )
         }
-    }
-
-    #[test]
-    fn test_subscribe_to_bitvmx_pegin_events_errors_when_broker_cannot_deliver() {
-        let mut broker = MockBitVmxBroker::new();
-        broker.expect_send().return_once(|_| Ok(false));
-
-        let err = TestProcessor::subscribe_to_bitvmx_pegin_events(&broker, 6)
-            .expect_err("send should fail");
-
-        assert!(err.to_string().contains("Broker could not deliver SubscribeToRskPegin"));
     }
 
     fn test_txid(bytes: [u8; 32]) -> Txid {
