@@ -44,7 +44,7 @@ alloy-rpc-client = "1.0.42"
 alloy-rpc-types = "1.0.42"
 alloy-signer = "1.0.42"
 alloy-signer-local = { version = "1.0.42" }
-alloy-sol-types = "1.4.1"
+alloy-sol-types = "1.6.0"
 alloy-transport = "1.0.42"
 #
 anyhow = "1.0.102"
