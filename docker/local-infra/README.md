@@ -68,19 +68,17 @@ bring-up scripts (`docker-compose` / `start-blockchains.sh`), the host-side tool
 derived — host-side tools use the regtest default host/port; BitVMX honors a non-default host/port via
 its own full URL.) The chain `.env` files no longer carry credentials.
 
-The **one exception** is the bitcoin-wallet CLI (used by `scripts/test-flows.sh` to fund the user/member
-wallets via `mine_utxo`): it reads its own `WALLET_RPC_URL` / `WALLET_RPC_USER` / `WALLET_RPC_PASSWORD`,
-falling back to `foo` / `rpcpassword` from `cli/bitcoin-wallet/config/regtest.toml`, and does **not**
-follow `BITCOIND_URL` yet (wiring it is tracked as a follow-up). So when you switch chains:
+The bitcoin-wallet CLI (which `scripts/test-flows.sh` uses to fund the user/member wallets via
+`mine_utxo`) is the one piece that doesn't read `BITCOIND_URL` — it has its own `WALLET_RPC_URL` /
+`WALLET_RPC_USER` / `WALLET_RPC_PASSWORD`, defaulting to `127.0.0.1:18443` + `foo` / `rpcpassword`
+(from `cli/bitcoin-wallet/config/regtest.toml`).
 
-- **Bundled stack** (creds `foo` / `rpcpassword`): leave `WALLET_RPC_*` unset.
-- **BYO node with non-default creds**: set `WALLET_RPC_USER` + `WALLET_RPC_PASSWORD` to match the node
-  (and `WALLET_RPC_URL` if its host/port differs from `127.0.0.1:18443`). **Unset them again when you
-  switch back to the bundled stack** — a stale `WALLET_RPC_USER` / `WALLET_RPC_PASSWORD` makes the wallet
-  CLI hit the bundled bitcoind with the wrong creds and fail with `HTTP 401`.
-
-So for a bring-your-own bitcoind whose creds match the regtest default you set just `BITCOIND_URL` +
-`BITCOIN_WALLET`; for one with different creds you also set `WALLET_RPC_USER` + `WALLET_RPC_PASSWORD`.
+**A BYO stack on the regtest defaults — `foo` / `rpcpassword` creds and a `mainwallet` wallet — already
+matches every default here, so you set nothing but `BYO_BLOCKCHAINS_COMPOSE` (or just start the node).**
+Only a node that differs needs overrides: `BITCOIND_URL` (creds; keep `host.docker.internal` so BitVMX
+can reach it), `BITCOIN_WALLET` (wallet name), and `WALLET_RPC_USER` / `WALLET_RPC_PASSWORD` (the wallet
+CLI's creds — plus `WALLET_RPC_URL` for a non-default host/port). Unset the `WALLET_RPC_*` ones again
+when you switch back to a default-creds node, or the wallet CLI hits the wrong creds and fails (`HTTP 401`).
 
 **Launching a published stack for you.** Set `BYO_BLOCKCHAINS_COMPOSE` to a compose reference (an OCI
 artifact such as `oci://ghcr.io/org/stack:tag`, or a local compose path) and `--start-blockchains`
@@ -119,10 +117,10 @@ the chains. End to end:
    ./scripts/bitcoin-wallet.sh user mine_utxo <sats>
    ```
 
-Steps 3, 5, and 6 are identical to the bundled flow — the only BYO deltas are step 1 (you run the
-chains) and pointing `BITCOIND_URL` / `BITCOIN_WALLET` at them. If your setup mines on its own
-schedule, flows that depend on deterministic block production (some `scripts/test-flows.sh` paths) rely on
-that cadence.
+Steps 3, 5, and 6 are identical to the bundled flow — the only BYO delta is step 1 (you run the chains);
+creds/wallet need pointing only if your node differs from the regtest defaults. If your setup mines on
+its own schedule, flows that depend on deterministic block production (some `scripts/test-flows.sh`
+paths) rely on that cadence.
 
 > ⚠️ **Switching chains? Re-run setup AND restart BitVMX with `--fresh`.** Two pieces of state are
 > tied to the chain, and a plain restart fixes neither:

@@ -56,14 +56,15 @@ export BITCOIN_WALLET=mainwallet
 # Optional: bring your own blockchains. Point this at a published compose reference (an OCI artifact
 # such as oci://ghcr.io/org/stack:tag, or a local compose path) and
 # ./scripts/run-infra.sh --start-blockchains brings that stack up instead of the bundled chains. The
-# external stack runs its own bitcoind/Rootstock and block production; set BITCOIND_URL + BITCOIN_WALLET
-# above to match its RPC creds + funded wallet. Leave unset to use the bundled stack.
+# external stack runs its own bitcoind/Rootstock and block production; it needs no extra config if it
+# uses the regtest defaults (foo/rpcpassword, mainwallet) — otherwise set BITCOIND_URL + BITCOIN_WALLET
+# above to match. Leave unset to use the bundled stack.
 # export BYO_BLOCKCHAINS_COMPOSE="oci://ghcr.io/org/your-stack:tag"
-# bitcoin-wallet CLI RPC credentials. The wallet CLI (used by scripts/test-flows.sh's mine_utxo) does
-# NOT follow BITCOIND_URL yet; it falls back to foo/rpcpassword from cli/bitcoin-wallet/config/regtest.toml.
-# Leave these UNSET for the bundled stack. For a bring-your-own node with different creds, set USER +
-# PASSWORD to match (and URL if its host/port differs from 127.0.0.1:18443). Unset them again when you
-# switch back to the bundled stack, or the wallet CLI hits bundled bitcoind with the wrong creds (HTTP 401).
+
+# bitcoin-wallet CLI RPC credentials. The wallet CLI (scripts/test-flows.sh's mine_utxo) has its own
+# creds, defaulting to foo/rpcpassword from cli/bitcoin-wallet/config/regtest.toml. Leave these UNSET
+# unless your BYO node's creds differ from foo/rpcpassword (or its host/port differs, via WALLET_RPC_URL);
+# unset them again when switching back to a default-creds node, or the wallet CLI hits the wrong creds (HTTP 401).
 # export WALLET_RPC_URL="http://127.0.0.1:18443/"
 # export WALLET_RPC_USER="<rpc-user>"
 # export WALLET_RPC_PASSWORD="<rpc-password>"

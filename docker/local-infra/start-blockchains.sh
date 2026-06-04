@@ -81,6 +81,12 @@ if [[ -n "${BYO_BLOCKCHAINS_COMPOSE:-}" ]]; then
     fi
   done
 
+  # `up` from an oci:// remote compose prompts to confirm the interpolation variables;
+  # assume "yes" so CI / non-interactive runs don't hang. (down has no equivalent flag.)
+  if [[ "$byo_is_up" == true ]]; then
+    byo_args+=(--yes)
+  fi
+
   if [[ "$byo_is_up" == true && "$byo_fresh" == true ]]; then
     echo "Cleaning external blockchains stack (down --volumes)..."
     docker compose -p "$byo_project" -f "$BYO_BLOCKCHAINS_COMPOSE" down --volumes --remove-orphans --timeout 5 || true
