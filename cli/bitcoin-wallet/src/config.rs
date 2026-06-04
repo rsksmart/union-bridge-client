@@ -155,7 +155,10 @@ fn load_file(config_name: Option<&str>) -> Result<(FileConfig, Option<PathBuf>)>
     };
 
     if !path.exists() {
-        bail!("config file {} not found", path.display());
+        bail!(
+            "config file {} not found — copy config/sample.toml to it and fill in the RPC creds",
+            path.display()
+        );
     }
 
     let config = read_config_file(&path)?;

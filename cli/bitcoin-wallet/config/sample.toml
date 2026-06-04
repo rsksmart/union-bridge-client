@@ -1,0 +1,16 @@
+# Template for a bitcoin-wallet network config. Copy to config/<network>.toml (e.g. config/testnet.toml)
+# and fill in the RPC creds. Configs that carry real node credentials are gitignored; regtest.toml is the
+# exception (it ships the standard local creds and stays tracked).
+#
+# The Bitcoin network is the `network` field below, NOT the file name — so several deployments on the same
+# network (e.g. multiple Testnet3 nodes) can each keep their own config file.
+
+network = "testnet"          # bitcoin | testnet | testnet4 | signet | regtest
+sats_per_byte = 5
+
+rpc_url = "http://<bitcoin-rpc-host>:<port>"
+rpc_user = "<rpc-user>"
+rpc_password = "<rpc-password>"
+
+# Wallet DB root (resolved under BASE_STORAGE_PATH unless --db-path/WALLET_DB_PATH is set)
+db_path = ".union_bridge/bitcoin-wallet"
