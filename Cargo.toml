@@ -72,7 +72,7 @@ storage-backend = { package = "rust-bitvmx-storage-backend", git = "https://gith
 tempfile = "3.16.0"
 thiserror = "2.0.18"
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
-tokio = { version = "1.47.1" }
+tokio = { version = "1.52.3" }
 tower-http = { version = "0.6.11", features = ["timeout", "trace"] }
 tracing = "=0.1.43"
 tracing-appender = "=0.2.4"
