@@ -48,21 +48,6 @@ where
     required_confirmations: u32,
 }
 
-pub(crate) fn send_union_settings<BC: BitVmxBrokerClientApi>(bitvmx_broker: &BC) -> Result<()> {
-    let settings = UnionSettings::with_defaults();
-    let settings_json = serde_json::to_string(&settings)?;
-
-    if !bitvmx_broker.send(IncomingBitVMXApiMessages::SetVar(
-        GLOBAL_SETTINGS_UUID,
-        UnionSettings::name().to_string(),
-        VariableTypes::String(settings_json),
-    ))? {
-        bail!("Broker could not deliver UnionSettings");
-    }
-
-    Ok(())
-}
-
 impl<CG, BC, FactoryBSF, S> SetupCommitteeProcessor<CG, BC, FactoryBSF, S>
 where
     CG: RskContractsGatewayApi,
@@ -78,7 +63,7 @@ where
         required_confirmations: u32,
     ) -> Self {
         // Send global UnionSettings to BitVMX (once at startup)
-        send_union_settings(bitvmx_broker).expect("Failed to send UnionSettings to BitVMX");
+        Self::send_union_settings(bitvmx_broker).expect("Failed to send UnionSettings to BitVMX");
 
         info!("Successfully sent UnionSettings to BitVMX");
 
@@ -102,6 +87,21 @@ where
                 .expect("Failed to load flows from store");
         processor.flows = restored.into_values().map(|flow| (flow.flow_id(), flow)).collect();
         processor
+    }
+
+    fn send_union_settings(bitvmx_broker: &BC) -> Result<()> {
+        let settings = UnionSettings::with_defaults();
+        let settings_json = serde_json::to_string(&settings)?;
+
+        if !bitvmx_broker.send(IncomingBitVMXApiMessages::SetVar(
+            GLOBAL_SETTINGS_UUID,
+            UnionSettings::name().to_string(),
+            VariableTypes::String(settings_json),
+        ))? {
+            bail!("Broker could not deliver UnionSettings");
+        }
+
+        Ok(())
     }
 
     fn cleanup_terminal_flows(&mut self) {
@@ -798,7 +798,7 @@ mod tests {
             .times(1)
             .returning(|_| Ok(true));
 
-        let result = send_union_settings(&broker);
+        let result = TestProcessor::send_union_settings(&broker);
         assert!(result.is_ok());
     }
 
@@ -807,7 +807,7 @@ mod tests {
         let mut broker = MockBitVmxBroker::new();
         broker.expect_send().return_once(|_| Ok(false));
 
-        let err = send_union_settings(&broker).expect_err("send should fail");
+        let err = TestProcessor::send_union_settings(&broker).expect_err("send should fail");
 
         assert!(err.to_string().contains("Broker could not deliver UnionSettings"));
     }
