@@ -155,7 +155,15 @@ where
 
         info!("Starting Logs monitoring");
 
-        self.request_event_subscriptions()?;
+        for index in 0..self.peg_manager_addresses.len() {
+            let addr = self.peg_manager_addresses[index];
+            let result = self
+                .send_to_log_broker(ToServer::SubscribeLogs(addr))
+                .context("Broker error on SubscribeLogs")?;
+            if !result {
+                bail!("Broker could not deliver SubscribeLogs for {addr}");
+            }
+        }
 
         self.log_monitoring_active = true;
 
@@ -175,7 +183,13 @@ where
 
         info!("Starting Block monitoring");
 
-        self.request_block_subscription()?;
+        let result = self
+            .send_to_block_broker(ToServer::SubscribeBlocks)
+            .context("Broker error on SubscribeBlocks")?;
+
+        if !result {
+            bail!("Broker could not deliver SubscribeBlocks")
+        }
 
         self.block_monitoring_active = true;
 
@@ -383,32 +397,6 @@ where
                 Ok(None)
             }
         }
-    }
-
-    fn request_event_subscriptions(&mut self) -> Result<()> {
-        for index in 0..self.peg_manager_addresses.len() {
-            let addr = self.peg_manager_addresses[index];
-            let result = self
-                .send_to_log_broker(ToServer::SubscribeLogs(addr))
-                .context("Broker error on SubscribeLogs")?;
-            if !result {
-                bail!("Broker could not deliver SubscribeLogs for {addr}");
-            }
-        }
-
-        Ok(())
-    }
-
-    fn request_block_subscription(&mut self) -> Result<()> {
-        let result = self
-            .send_to_block_broker(ToServer::SubscribeBlocks)
-            .context("Broker error on SubscribeBlocks")?;
-
-        if !result {
-            bail!("Broker could not deliver SubscribeBlocks")
-        }
-
-        Ok(())
     }
 
     fn request_cancel_event_monitoring(&mut self) -> Result<bool> {
