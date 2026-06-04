@@ -60,11 +60,3 @@ export BITCOIN_WALLET=mainwallet
 # uses the regtest defaults (foo/rpcpassword, mainwallet) — otherwise set BITCOIND_URL + BITCOIN_WALLET
 # above to match. Leave unset to use the bundled stack.
 # export BYO_BLOCKCHAINS_COMPOSE="oci://ghcr.io/org/your-stack:tag"
-
-# bitcoin-wallet CLI RPC credentials. The wallet CLI (scripts/test-flows.sh's mine_utxo) has its own
-# creds, defaulting to foo/rpcpassword from cli/bitcoin-wallet/config/regtest.toml. Leave these UNSET
-# unless your BYO node's creds differ from foo/rpcpassword (or its host/port differs, via WALLET_RPC_URL);
-# unset them again when switching back to a default-creds node, or the wallet CLI hits the wrong creds (HTTP 401).
-# export WALLET_RPC_URL="http://127.0.0.1:18443/"
-# export WALLET_RPC_USER="<rpc-user>"
-# export WALLET_RPC_PASSWORD="<rpc-password>"

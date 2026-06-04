@@ -69,16 +69,15 @@ derived — host-side tools use the regtest default host/port; BitVMX honors a n
 its own full URL.) The chain `.env` files no longer carry credentials.
 
 The bitcoin-wallet CLI (which `scripts/test-flows.sh` uses to fund the user/member wallets via
-`mine_utxo`) is the one piece that doesn't read `BITCOIND_URL` — it has its own `WALLET_RPC_URL` /
-`WALLET_RPC_USER` / `WALLET_RPC_PASSWORD`, defaulting to `127.0.0.1:18443` + `foo` / `rpcpassword`
-(from `cli/bitcoin-wallet/config/regtest.toml`).
+`mine_utxo`) takes its creds per environment from `cli/bitcoin-wallet/config/<env>.toml`, not from
+`BITCOIND_URL`. Local flows use `regtest.toml`, which bakes in `foo` / `rpcpassword` — so a local or BYO
+run needs no wallet-creds env at all. (Non-local environments — testnet, alphanet — supply their creds
+in that environment's config or via `WALLET_RPC_*`.)
 
-**A BYO stack on the regtest defaults — `foo` / `rpcpassword` creds and a `mainwallet` wallet — already
-matches every default here, so you set nothing but `BYO_BLOCKCHAINS_COMPOSE` (or just start the node).**
-Only a node that differs needs overrides: `BITCOIND_URL` (creds; keep `host.docker.internal` so BitVMX
-can reach it), `BITCOIN_WALLET` (wallet name), and `WALLET_RPC_USER` / `WALLET_RPC_PASSWORD` (the wallet
-CLI's creds — plus `WALLET_RPC_URL` for a non-default host/port). Unset the `WALLET_RPC_*` ones again
-when you switch back to a default-creds node, or the wallet CLI hits the wrong creds and fails (`HTTP 401`).
+**A BYO stack on the regtest defaults — `foo` / `rpcpassword` creds and a `mainwallet` wallet — matches
+every default here, so you set nothing but `BYO_BLOCKCHAINS_COMPOSE` (or just start the node).** A node
+whose host or funded wallet differ needs `BITCOIND_URL` (keep `host.docker.internal` so BitVMX can reach
+it) and/or `BITCOIN_WALLET`.
 
 **Launching a published stack for you.** Set `BYO_BLOCKCHAINS_COMPOSE` to a compose reference (an OCI
 artifact such as `oci://ghcr.io/org/stack:tag`, or a local compose path) and `--start-blockchains`
