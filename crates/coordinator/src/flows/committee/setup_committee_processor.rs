@@ -803,6 +803,16 @@ mod tests {
     }
 
     #[test]
+    fn test_send_union_settings_errors_when_broker_cannot_deliver() {
+        let mut broker = MockBitVmxBroker::new();
+        broker.expect_send().return_once(|_| Ok(false));
+
+        let err = send_union_settings(&broker).expect_err("send should fail");
+
+        assert!(err.to_string().contains("Broker could not deliver UnionSettings"));
+    }
+
+    #[test]
     fn test_build_new_pending_committee_event_info_includes_pending_suffix() {
         let event = test_pending_event(123, true);
         let (id, removed, block_number, wrapped) =
