@@ -92,3 +92,6 @@ broker_key_path = "/app/broker.pem"
 
 [flows.committee]
 drp_program_definition = "/app/resources/union-verifier.yaml"
+
+[flows.pegout]
+advance_funds_timeout_secs = 120

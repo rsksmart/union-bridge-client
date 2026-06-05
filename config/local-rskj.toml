@@ -52,3 +52,6 @@ address = "0x0000000000000000000000000000000001000006"
 
 # Start from current provider tip in local runs; base initial_block_hash is ignored.
 start_from = "best"
+
+[flows.pegout]
+advance_funds_timeout_secs = 120
