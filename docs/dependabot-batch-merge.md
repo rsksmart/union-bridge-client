@@ -38,7 +38,9 @@ crates that must bump together) — reject and move on.
   stacked PRs to pinpoint the breaker, drop it, and re-run on the rest.
 - **Docker image:** build whichever image the PR actually changed and run the flow that exercises it, not just
   the defaults. For `docker/build/*`, build the builder **and** service images (see
-  [`docker/build/README.md`](../docker/build/README.md)) and run the docker-anvil happy-path (see
+  [`docker/build/README.md`](../docker/build/README.md)) **with the tag the stack runs**
+  (`d-build-client.sh --tag=latest-anvil`, or pass `--tag` to `start-operators.sh`) so the docker-anvil
+  happy-path exercises the image you just built, not a cached one (see
   [`LOCAL_SETUP.md` › Mode: All Docker](LOCAL_SETUP.md#mode-all-docker)); for `docker/local-infra/*` (e.g.
   `anvil/Dockerfile_predeployed`, `rskj/Dockerfile_deploy`), build that image and run the local-infra flow that
   consumes it (see [Local Infra Guide](../docker/local-infra/README.md)). (The builder image is `linux/amd64`;
