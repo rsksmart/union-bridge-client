@@ -1,6 +1,6 @@
 # Dependabot Batch Merge
 
-Process a backlog of open Dependabot PRs in one pass. Trigger: **"follow the dependabot batch merge."**
+Process a backlog of open Dependabot PRs in one pass. Trigger: **"follow the dependabot batch merge"**.
 
 > This is a decision spec, not a tutorial — work out the obvious mechanics yourself,
 > but follow the explicit rules below; they're the parts that change the outcome.
@@ -15,7 +15,7 @@ Process a backlog of open Dependabot PRs in one pass. Trigger: **"follow the dep
 
 | Kind | Touches | Validation |
 | --- | --- | --- |
-| Rust dep | `Cargo.toml` / `Cargo.lock` | build + test, then the happy-path (step 2) |
+| Rust dep | `Cargo.toml` / `Cargo.lock` | build + test + lint, then the happy-path (step 2) |
 | Docker image | a `Dockerfile` | build the images + docker-anvil happy-path (step 2) |
 | CI workflow | `.github/workflows/*` only | confirm the bump only (e.g. pinned SHA matches its tag); no build |
 
@@ -25,7 +25,9 @@ Stack candidates onto a throwaway branch off `main` (**don't push it**). Drop an
 that fails and record why; **don't try to fix ecosystem-wide skews** (e.g. `alloy-*`
 crates that must bump together) — reject and move on.
 
-- **Rust:** build + test after each merge (this isolates build/test breakers per PR), then
+- **Rust:** after each merge run build + test **and the lint/style hooks** (`bash .hooks/format-code.sh --check`
+  + `bash .hooks/check-lints.sh` — fmt/sort/clippy `--locked` across all workspaces, mirroring the required
+  `style` check; this also catches per-workspace lockfile drift), isolating breakers per PR; then
   run the Automated Happy-Path **once** on the assembled branch — see
   [`LOCAL_SETUP.md`](LOCAL_SETUP.md#automated-happy-path). If the combined happy-path fails
   (a PR that built + tested fine but breaks the flow only in combination), **bisect** the
@@ -43,7 +45,7 @@ Resolve `Cargo.lock` conflicts by **regenerating** (`cargo update -p <crate> --p
 
 Read the repo's branch protection / rulesets, then:
 
-- merge queue enabled → add PRs via the `enqueuePullRequest` GraphQL mutation
+- merge queue enabled → add PRs through the queue (e.g. the `enqueuePullRequest` GraphQL mutation — verify it's still current)
 - else auto-merge allowed → `gh pr merge <n> --auto`
 - else → `gh pr merge <n>`
 

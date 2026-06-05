@@ -233,8 +233,8 @@ cd docker/operator
 bash start-operators.sh [--fresh] up -d
 ```
 
-`start-operators.sh` defaults to `docker-anvil.env`. Once the stack is up, run the happy-path against it in
-docker-anvil mode with `bash scripts/test-flows.sh --env docker-anvil` (see [Automated Happy-Path](#automated-happy-path)).
+`start-operators.sh` defaults to `docker-anvil.env`. Once the stack is up, run the happy-path against it **from the
+repo root** in docker-anvil mode: `bash scripts/test-flows.sh --env docker-anvil` (see [Automated Happy-Path](#automated-happy-path)).
 
 Use the [Operator Docker Runtime Guide](../docker/operator/README.md) for runtime flags and troubleshooting.
 
