@@ -1677,7 +1677,7 @@ dependencies = [
  "clap",
  "common",
  "mockall",
- "primitive-types 0.13.1",
+ "primitive-types 0.14.0",
  "rust-bitvmx-storage-backend 0.1.1",
  "serde",
  "serde_json",
@@ -1922,7 +1922,7 @@ dependencies = [
  "alloy-rlp",
  "check-fork-tester",
  "hex",
- "primitive-types 0.13.1",
+ "primitive-types 0.14.0",
  "serde",
  "serde_json",
  "sha3 0.11.0",
@@ -1939,7 +1939,7 @@ dependencies = [
  "clap",
  "cli_serde",
  "hex",
- "primitive-types 0.13.1",
+ "primitive-types 0.14.0",
  "reqwest",
  "serde",
  "serde_json",
@@ -2111,7 +2111,7 @@ dependencies = [
  "lru 0.18.0",
  "mockall",
  "musig2",
- "primitive-types 0.13.1",
+ "primitive-types 0.14.0",
  "rust-bitvmx-storage-backend 0.6.1",
  "serde",
  "serde_json",
@@ -2277,7 +2277,7 @@ dependencies = [
  "mockall",
  "musig2",
  "op-funding",
- "primitive-types 0.13.1",
+ "primitive-types 0.14.0",
  "protocol-params",
  "rust-bitvmx-storage-backend 0.1.1",
  "secrecy",
@@ -4238,7 +4238,7 @@ dependencies = [
  "clap",
  "common",
  "mockall",
- "primitive-types 0.13.1",
+ "primitive-types 0.14.0",
  "rand 0.10.1",
  "rust-bitvmx-storage-backend 0.1.1",
  "serde",
@@ -5051,9 +5051,9 @@ dependencies = [
 
 [[package]]
 name = "primitive-types"
-version = "0.13.1"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d15600a7d856470b7d278b3fe0e311fe28c2526348549f8ef2ff7db3299c87f5"
+checksum = "721a1da530b5a2633218dc9f75713394c983c352be88d2d7c9ee85e2c4c21794"
 dependencies = [
  "fixed-hash",
  "impl-codec 0.7.1",
@@ -7225,7 +7225,7 @@ dependencies = [
  "mockall",
  "multiaddr",
  "musig2",
- "primitive-types 0.13.1",
+ "primitive-types 0.14.0",
  "secrecy",
  "serde",
  "serde_json",
