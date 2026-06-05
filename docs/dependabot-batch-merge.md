@@ -16,7 +16,7 @@ Process a backlog of open Dependabot PRs in one pass. Trigger: **"follow the dep
 | Kind | Touches | Validation |
 | --- | --- | --- |
 | Rust dep | `Cargo.toml` / `Cargo.lock` | build + test + lint, then the happy-path (step 2) |
-| Docker image | a `Dockerfile` | build the images + docker-anvil happy-path (step 2) |
+| Docker image | a `Dockerfile` (in `docker/build` or `docker/local-infra`) | build the changed image + run the flow that uses it (step 2) |
 | GitHub Actions | `.github/workflows/*` or `.github/actions/*` | confirm the bump only (e.g. pinned SHA matches its tag); no build |
 
 ## 2. Validate locally
@@ -33,11 +33,13 @@ crates that must bump together) — reject and move on.
   [`LOCAL_SETUP.md`](LOCAL_SETUP.md#automated-happy-path). If the combined happy-path fails
   (a PR that built + tested fine but breaks the flow only in combination), **bisect** the
   stacked PRs to pinpoint the breaker, drop it, and re-run on the rest.
-- **Docker image:** build the builder **and** service images (see
-  [`docker/build/README.md`](../docker/build/README.md)) and run the happy-path against
-  the docker stack — see [`LOCAL_SETUP.md` › Mode: All Docker](LOCAL_SETUP.md#mode-all-docker).
-  (The builder image is `linux/amd64`; risc0/`rzup` can't build on arm64, so that part
-  is CI-only.)
+- **Docker image:** build whichever image the PR actually changed and run the flow that exercises it, not just
+  the defaults. For `docker/build/*`, build the builder **and** service images (see
+  [`docker/build/README.md`](../docker/build/README.md)) and run the docker-anvil happy-path (see
+  [`LOCAL_SETUP.md` › Mode: All Docker](LOCAL_SETUP.md#mode-all-docker)); for `docker/local-infra/*` (e.g.
+  `anvil/Dockerfile_predeployed`, `rskj/Dockerfile_deploy`), build that image and run the local-infra flow that
+  consumes it (see [Local Infra Guide](../docker/local-infra/README.md)). (The builder image is `linux/amd64`;
+  risc0/`rzup` can't build on arm64, so that part is CI-only.)
 
 Resolve `Cargo.lock` conflicts by **regenerating** (`cargo update -p <crate> --precise <ver>`), never by
 hand-merging lines — a line-merged lockfile can look clean but be invalid.
