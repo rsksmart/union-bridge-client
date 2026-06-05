@@ -17,7 +17,7 @@ Process a backlog of open Dependabot PRs in one pass. Trigger: **"follow the dep
 | --- | --- | --- |
 | Rust dep | `Cargo.toml` / `Cargo.lock` | build + test + lint, then the happy-path (step 2) |
 | Docker image | a `Dockerfile` | build the images + docker-anvil happy-path (step 2) |
-| CI workflow | `.github/workflows/*` only | confirm the bump only (e.g. pinned SHA matches its tag); no build |
+| GitHub Actions | `.github/workflows/*` or `.github/actions/*` | confirm the bump only (e.g. pinned SHA matches its tag); no build |
 
 ## 2. Validate locally
 
@@ -25,9 +25,10 @@ Stack candidates onto a throwaway branch off `main` (**don't push it**). Drop an
 that fails and record why; **don't try to fix ecosystem-wide skews** (e.g. `alloy-*`
 crates that must bump together) — reject and move on.
 
-- **Rust:** after each merge run build + test **and the lint/style hooks** (`bash .hooks/format-code.sh --check`
-  + `bash .hooks/check-lints.sh` — fmt/sort/clippy `--locked` across all workspaces, mirroring the required
-  `style` check; this also catches per-workspace lockfile drift), isolating breakers per PR; then
+- **Rust:** after each merge run build, test, the lint/style hooks (`bash .hooks/format-code.sh --check` and
+  `bash .hooks/check-lints.sh` — fmt/sort/clippy `--locked` across all workspaces, mirroring the required
+  `style` check, and catching per-workspace lockfile drift), plus `cargo audit` on the root and `cli`
+  lockfiles (the `audit.yml` gate). That isolates breakers per PR; then
   run the Automated Happy-Path **once** on the assembled branch — see
   [`LOCAL_SETUP.md`](LOCAL_SETUP.md#automated-happy-path). If the combined happy-path fails
   (a PR that built + tested fine but breaks the flow only in combination), **bisect** the
@@ -38,8 +39,8 @@ crates that must bump together) — reject and move on.
   (The builder image is `linux/amd64`; risc0/`rzup` can't build on arm64, so that part
   is CI-only.)
 
-Resolve `Cargo.lock` conflicts by **regenerating** (`cargo update -p <crate> --precise
-<ver>`), never by hand-merging lines — a line-merged lockfile can look clean but be invalid.
+Resolve `Cargo.lock` conflicts by **regenerating** (`cargo update -p <crate> --precise <ver>`), never by
+hand-merging lines — a line-merged lockfile can look clean but be invalid.
 
 ## 3. Pick the merge mechanism — discover, don't assume
 
