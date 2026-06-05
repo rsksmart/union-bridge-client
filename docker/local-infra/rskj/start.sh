@@ -100,55 +100,6 @@ else
 fi
 export CONTRACTS_CONTEXT_PATH="$CONTRACTS_CONTEXT_CANDIDATE"
 
-print_contracts_context_error() {
-  echo "Error: union-bridge-contracts checkout at ${CONTRACTS_CONTEXT_PATH} does not include RSK regtest native bridge deploy support." >&2
-  echo "Use rsksmart/union-bridge-contracts main or a tag that includes PR #33 (68a10ae)." >&2
-}
-
-validate_contracts_context_supports_rsk_regtest_native_bridge() {
-  local deploy_script="${CONTRACTS_CONTEXT_PATH}/script/deploy/01_DeployImplAndProxy.s.sol"
-
-  if [[ ! -f "$deploy_script" ]]; then
-    echo "Error: expected contracts deploy script not found at ${deploy_script}." >&2
-    echo "Set CONTRACTS_CONTEXT_PATH to a union-bridge-contracts checkout and rerun." >&2
-    return 1
-  fi
-
-  if grep -Eq 'ChainIds\.LOCAL.*ChainIds\.RSK_REGTEST|ChainIds\.RSK_REGTEST.*ChainIds\.LOCAL' "$deploy_script"; then
-    print_contracts_context_error
-    return 1
-  fi
-
-  if ! awk '
-    /else if[[:space:]]*\(block\.chainid[[:space:]]*==[[:space:]]*ChainIds\.RSK_REGTEST\)/ {
-      in_regtest = 1
-      has_network = 0
-      has_bridge_mock = 0
-      next
-    }
-    in_regtest && /^[[:space:]]*} else/ {
-      exit (has_network && !has_bridge_mock) ? 0 : 1
-    }
-    in_regtest && /btcBtcNetwork[[:space:]]*=[[:space:]]*BtcNetwork\.REGTEST/ {
-      has_network = 1
-    }
-    in_regtest && /BridgeMock/ {
-      has_bridge_mock = 1
-    }
-    END {
-      if (in_regtest) {
-        exit (has_network && !has_bridge_mock) ? 0 : 1
-      }
-      exit 1
-    }
-  ' "$deploy_script"; then
-    print_contracts_context_error
-    return 1
-  fi
-}
-
-validate_contracts_context_supports_rsk_regtest_native_bridge
-
 echo "Using local-rskj images:"
 echo "  RSKj:        rsksmart/rskj:${RSKJ_TAG}"
 echo "  powpeg-node: rsksmart/powpeg-node:${POWPEG_TAG}"
@@ -272,6 +223,28 @@ normalize_hex_lower() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
 }
 
+validate_rbtc_bridge_uses_native_precompile() {
+  local rbtc_bridge="$1"
+  local bridge_precompile="$2"
+  local configured=""
+  local configured_lower=""
+  local bridge_precompile_lower=""
+
+  configured=$(cast call --rpc-url "${RSKJ_HOST_HTTP_URL}" "$rbtc_bridge" "bridge()(address)" 2>/dev/null || true)
+  if [[ -z "$configured" ]]; then
+    echo "Error: failed to read RbtcBridge.bridge() from ${rbtc_bridge}." >&2
+    return 1
+  fi
+
+  configured_lower=$(normalize_hex_lower "$configured")
+  bridge_precompile_lower=$(normalize_hex_lower "$bridge_precompile")
+  if [[ "$configured_lower" != "$bridge_precompile_lower" ]]; then
+    echo "Error: RbtcBridge.bridge()=${configured} is not the RSK native bridge precompile (${bridge_precompile})." >&2
+    echo "Use rsksmart/union-bridge-contracts main or a tag that includes PR #33 (68a10ae)." >&2
+    return 1
+  fi
+}
+
 require_env_var() {
   local name="$1"
 
@@ -366,6 +339,7 @@ authorize_native_bridge() {
   fi
 
   rbtc_bridge_lower=$(normalize_hex_lower "$rbtc_bridge")
+  validate_rbtc_bridge_uses_native_precompile "$rbtc_bridge" "$bridge_precompile" || return 1
 
   authorizer_private_key=$(cast keccak "changeUnionBridgeContractAddressAuthorizer")
   authorizer_address=$(cast wallet address --private-key "$authorizer_private_key")
