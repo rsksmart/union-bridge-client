@@ -227,6 +227,7 @@ Use this mode when the Union Bridge services run from the operator Docker runtim
 export BITCOIND_URL=http://user:password@localhost:18443
 export KEY_STORE_PASSWORD=<your-password>
 export USER_BITCOIN_WIF=<your-user-wif>
+export MEMBER_BITCOIN_WIF=<your-member-wif>
 ./scripts/run-infra.sh --start-blockchains [--fresh]
 ./scripts/setup-operators.sh --ops 4
 cd docker/operator
