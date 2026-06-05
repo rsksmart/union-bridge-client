@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use std::error::Error;
 use std::fmt::Write as _;
 use std::fs;
@@ -58,6 +60,8 @@ pub struct TesterRskBlockHeader {
     pub minimum_gas_price: Option<U256>,
     #[serde(rename = "rskPteEdges", default, deserialize_with = "deserialize_optional_u16_vec")]
     pub rsk_pte_edges: Option<Vec<u16>>,
+    #[serde(rename = "baseEvent", default, deserialize_with = "deserialize_optional_hex_bytes")]
+    pub base_event: Option<Vec<u8>>,
     #[serde(rename = "uncles", deserialize_with = "deserialize_vec_hex_h256", default)]
     pub uncles: Vec<H256>,
     #[serde(rename = "bitcoinMergedMiningHeader", deserialize_with = "deserialize_hex_bytes")]
@@ -66,8 +70,9 @@ pub struct TesterRskBlockHeader {
 
 impl From<&TesterRskBlockHeader> for RskBlockHeader {
     fn from(t: &TesterRskBlockHeader) -> Self {
+        let version = if t.base_event.is_some() { 2 } else { 1 };
         RskBlockHeader {
-            version: 1,
+            version,
             number: t.number,
             hash: t.hash,
             parent: t.parent,
@@ -86,7 +91,7 @@ impl From<&TesterRskBlockHeader> for RskBlockHeader {
             minimum_gas_price: t.minimum_gas_price,
             uncles: t.uncles.clone(),
             rsk_pte_edges: t.rsk_pte_edges.clone(),
-            base_event: None,
+            base_event: t.base_event.clone(),
             bitcoin_merged_mining_header: t.bitcoin_merged_mining_header.clone(),
         }
     }
@@ -105,6 +110,18 @@ where
     D: serde::Deserializer<'de>,
 {
     Option::<Vec<u16>>::deserialize(deserializer)
+}
+
+fn deserialize_optional_hex_bytes<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let Some(value) = Option::<String>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+
+    let value = value.strip_prefix("0x").unwrap_or(&value);
+    hex::decode(value).map(Some).map_err(serde::de::Error::custom)
 }
 
 impl From<&TesterRskBlock> for RskBlock {
@@ -184,13 +201,19 @@ pub fn apply_base_event_fixture(
         block.uncles.clear();
     }
 
-    for (index, block) in blocks.iter_mut().enumerate() {
+    for index in 0..blocks.len() {
+        let block = &mut blocks[index];
         if index >= 2 {
             block.header.version = 2;
             block.header.base_event = Some(pegout_id.as_bytes().to_vec());
         } else {
             block.header.version = 1;
             block.header.base_event = None;
+        }
+        block.header.hash = block.header.calculate_block_hash()?;
+        let block_hash = block.header.hash;
+        if let Some(next_block) = blocks.get_mut(index + 1) {
+            next_block.header.parent = block_hash;
         }
     }
 

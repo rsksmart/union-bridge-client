@@ -37,6 +37,9 @@ pub struct CheckForkArgs {
     pub init_block_number: u64,
     pub required_effort: U256,
     pub required_num_blocks: u32,
+    // `pegOutEventBlockNumber` is absorbed by the ordered-list convention:
+    // index 0 is the `blockList0` tail, index 1 is the first `blockList1`
+    // block, and indexes >= 2 must carry the PegOutID base event.
     pub block_list: Vec<RskBlock>,
 }
 

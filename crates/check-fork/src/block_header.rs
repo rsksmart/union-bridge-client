@@ -9,6 +9,8 @@ use sha3::{Digest, Keccak256};
 use crate::rlp::{encode_coin_value, encode_signed_coin_value_as_byte};
 
 const RSK_HEADER_EXTENSION_TYPE_V1: u8 = 1_u8;
+const RSK_HEADER_EXTENSION_TYPE_V2: u8 = 2_u8;
+const BASE_EVENT_MAX_SIZE: usize = 128;
 const MAX_RSK_PTE_EDGES: usize = 0; // for the moment is better to keep zero because parallel tx is not fully activated
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -78,10 +80,9 @@ impl RskBlockHeader {
             return Err("minimum_gas_price is None");
         };
 
-        // TODO: once `base_event` exists in the source header, version 2 must hash its own
-        // extension payload instead of reusing the legacy v1 hashing path.
         let extension_field = match self.version {
-            2 | 1 if self.rsk_pte_edges.is_some() => self.compressed_extension_data_v1()?,
+            2 => self.compressed_extension_data_v2()?,
+            1 if self.rsk_pte_edges.is_some() => self.compressed_extension_data_v1()?,
             _ => self.logs_bloom_v0()?.to_vec(),
         };
 
@@ -122,20 +123,8 @@ impl RskBlockHeader {
         let logs_bloom_hash = Keccak256::digest(logs_bloom);
         let mut extension_for_hash_fields = vec![alloy_rlp::encode(logs_bloom_hash.as_slice())];
 
-        if let Some(edges) = &self.rsk_pte_edges {
-            let edge_bytes_len = edges
-                .len()
-                .checked_mul(std::mem::size_of::<u16>())
-                .ok_or("rsk_pte_edges byte length overflow")?;
-            if edge_bytes_len > MAX_RSK_PTE_EDGES {
-                return Err("rsk_pte_edges exceeds maximum allowed length");
-            }
-
-            let mut edges_little_endian = Vec::with_capacity(edge_bytes_len);
-            for edge in edges {
-                edges_little_endian.extend_from_slice(&edge.to_le_bytes());
-            }
-            extension_for_hash_fields.push(alloy_rlp::encode(edges_little_endian.as_slice()));
+        if let Some(edges_field) = self.encoded_rsk_pte_edges()? {
+            extension_for_hash_fields.push(edges_field);
         }
 
         let extension_for_hash = encode_list(extension_for_hash_fields);
@@ -145,6 +134,51 @@ impl RskBlockHeader {
             alloy_rlp::encode(RSK_HEADER_EXTENSION_TYPE_V1),
             alloy_rlp::encode(extension_hash.as_slice()),
         ]))
+    }
+
+    fn compressed_extension_data_v2(&self) -> Result<Vec<u8>, &'static str> {
+        let logs_bloom = self.logs_bloom_v0()?;
+        let base_event = self.base_event.as_deref().unwrap_or_default();
+        if base_event.len() > BASE_EVENT_MAX_SIZE {
+            return Err("base_event exceeds maximum allowed length");
+        }
+
+        let logs_bloom_hash = Keccak256::digest(logs_bloom);
+        let mut extension_for_hash_fields =
+            vec![alloy_rlp::encode(logs_bloom_hash.as_slice()), alloy_rlp::encode(base_event)];
+
+        if let Some(edges_field) = self.encoded_rsk_pte_edges()? {
+            extension_for_hash_fields.push(edges_field);
+        }
+
+        let extension_for_hash = encode_list(extension_for_hash_fields);
+        let extension_hash = Keccak256::digest(&extension_for_hash);
+
+        Ok(encode_list(vec![
+            alloy_rlp::encode(RSK_HEADER_EXTENSION_TYPE_V2),
+            alloy_rlp::encode(extension_hash.as_slice()),
+        ]))
+    }
+
+    fn encoded_rsk_pte_edges(&self) -> Result<Option<Vec<u8>>, &'static str> {
+        let Some(edges) = &self.rsk_pte_edges else {
+            return Ok(None);
+        };
+
+        let edge_bytes_len = edges
+            .len()
+            .checked_mul(std::mem::size_of::<u16>())
+            .ok_or("rsk_pte_edges byte length overflow")?;
+        if edge_bytes_len > MAX_RSK_PTE_EDGES {
+            return Err("rsk_pte_edges exceeds maximum allowed length");
+        }
+
+        let mut edges_little_endian = Vec::with_capacity(edge_bytes_len);
+        for edge in edges {
+            edges_little_endian.extend_from_slice(&edge.to_le_bytes());
+        }
+
+        Ok(Some(alloy_rlp::encode(edges_little_endian.as_slice())))
     }
 
     #[must_use]

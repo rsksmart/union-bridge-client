@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use check_fork::{CheckForkArgs, build_check_fork_journal_from_args, check_fork};
 use risc0_zkvm::guest::env;
 

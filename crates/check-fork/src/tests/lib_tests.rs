@@ -353,6 +353,11 @@ fn fails_when_continuation_block_is_missing_the_pegout_event() {
     let block = &mut args.block_list[2];
     block.header.version = 1;
     block.header.base_event = None;
+    block.header.hash =
+        block.header.calculate_block_hash().expect("could not calculate block hash");
+    args.block_list[3].header.parent = block.header.hash;
+    args.block_list[3].header.hash =
+        args.block_list[3].header.calculate_block_hash().expect("could not calculate block hash");
 
     let result = check_fork(&args);
     assert_eq!(result, Err("Continuation block is missing the expected PegOutID base event"));
@@ -498,7 +503,7 @@ fn fails_when_uncle_difficulty_is_different_from_trunk() {
 }
 
 #[test]
-fn block_hash_ignores_base_event_for_now() {
+fn block_hash_includes_base_event_for_v2() {
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
     let second_block = create_child_block(&first_block);
     let third_block = create_child_block(&second_block);
@@ -519,7 +524,18 @@ fn block_hash_ignores_base_event_for_now() {
     rhs.version = 2;
     rhs.hash = rhs.calculate_block_hash().expect("rhs hash");
 
-    assert_eq!(lhs.hash, rhs.hash);
+    assert_ne!(lhs.hash, rhs.hash);
+}
+
+#[test]
+fn fails_when_base_event_exceeds_vetiver_limit() {
+    let mut header = create_first_block(DEFAULT_INIT_BLOCK_NUMBER).header;
+    header.version = 2;
+    header.base_event = Some(vec![0xaa; 129]);
+
+    let err = header.calculate_block_hash().expect_err("oversized base_event must fail");
+
+    assert_eq!(err, "base_event exceeds maximum allowed length");
 }
 
 #[test]
@@ -627,6 +643,13 @@ fn decorate_required_pegout_events(args: &mut CheckForkArgs) {
     for index in 2..args.block_list.len() {
         args.block_list[index].header.version = 2;
         args.block_list[index].header.base_event = Some(pegout_id.as_bytes().to_vec());
+        args.block_list[index].header.hash = args.block_list[index]
+            .header
+            .calculate_block_hash()
+            .expect("could not calculate block hash");
+        if index + 1 < args.block_list.len() {
+            args.block_list[index + 1].header.parent = args.block_list[index].header.hash;
+        }
     }
 }
 
