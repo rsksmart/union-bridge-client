@@ -6,7 +6,9 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 use bitcoin::Network;
 use common::msg_broker::bitvmx_types::IncomingBitVMXApiMessages;
-use common::msg_broker::broker::{BitVmxBrokerClientApi, UnionBrokerClientApi};
+use common::msg_broker::broker::{
+    BitVmxBrokerClientApi, UnionBrokerClientApi, is_recoverable_transport_error,
+};
 use common::msg_broker::types::ToServer;
 use common::runtime_sync::RuntimeSync;
 use common::shutdown_flag::ShutdownFlag;
@@ -242,6 +244,7 @@ impl<
 
     /// # Errors
     /// Returns an error if the coordinator run loop fails.
+    #[allow(clippy::too_many_lines)]
     #[instrument(skip_all)]
     pub fn run(&mut self) -> Result<()> {
         self.monitor.start_event_monitoring().context("Failed to start event monitoring")?;
@@ -270,8 +273,10 @@ impl<
 
                 let mut message_received = false;
 
+                let user_request_result =
+                    self.monitor.try_user_request().context("Error getting User request");
                 if let Some(req) =
-                    self.monitor.try_user_request().context("Error getting User request")?
+                    Self::handle_runtime_broker_result(user_request_result, "getting User request")?
                 {
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
@@ -290,8 +295,10 @@ impl<
                     message_received = true;
                 }
 
+                let bitvmx_event_result =
+                    self.monitor.try_bitvmx_event().context("Error getting BitVMX event");
                 if let Some(event) =
-                    self.monitor.try_bitvmx_event().context("Error getting BitVMX event")?
+                    Self::handle_runtime_broker_result(bitvmx_event_result, "getting BitVMX event")?
                 {
                     bitvmx_ping = None;
                     bitvmx_last_msg = Instant::now();
@@ -308,7 +315,10 @@ impl<
                     message_received = true;
                 }
 
-                if let Some(event) = self.monitor.try_rsk_event().context("Error getting event")? {
+                let rsk_event_result = self.monitor.try_rsk_event().context("Error getting event");
+                if let Some(event) =
+                    Self::handle_runtime_broker_result(rsk_event_result, "getting RSK event")?
+                {
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_new_rsk_event(&event) {
@@ -320,7 +330,10 @@ impl<
                     message_received = true;
                 }
 
-                if let Some(block) = self.monitor.try_block().context("Error getting block")? {
+                let block_result = self.monitor.try_block().context("Error getting block");
+                if let Some(block) =
+                    Self::handle_runtime_broker_result(block_result, "getting block")?
+                {
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_new_block(&block) {
                             error!("Error processing block {block:?}: {e:?}");
@@ -364,6 +377,24 @@ impl<
         result
     }
 
+    fn handle_runtime_broker_result<T>(
+        result: Result<Option<T>>,
+        operation: &'static str,
+    ) -> Result<Option<T>> {
+        match result {
+            Ok(value) => Ok(value),
+            Err(error) if Self::is_recoverable_broker_error(&error) => {
+                warn!(?error, operation, "Recoverable broker transport error; continuing");
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    fn is_recoverable_broker_error(error: &anyhow::Error) -> bool {
+        error.chain().any(is_recoverable_transport_error)
+    }
+
     fn check_bitvmx_liveness(
         &self,
         bitvmx_ping: &mut Option<Instant>,
@@ -381,20 +412,32 @@ impl<
         }
 
         // send ping if we have not received any message from BitVMX for a while and there is no pending ping
-        if bitvmx_last_msg.elapsed() > self.bitvmx_ping_after_silence && bitvmx_ping.is_none() {
-            self.send_bitvmx_ping();
+        if bitvmx_last_msg.elapsed() > self.bitvmx_ping_after_silence
+            && bitvmx_ping.is_none()
+            && self.send_bitvmx_ping()
+        {
             *bitvmx_ping = Some(Instant::now());
         }
     }
 
-    fn send_bitvmx_ping(&self) {
+    fn send_bitvmx_ping(&self) -> bool {
         let ping_id = uuid::Uuid::new_v4();
         trace!("Sending Ping to BitVMX with uuid: {ping_id}");
 
-        let result = self.bitvmx_broker.send(IncomingBitVMXApiMessages::Ping(ping_id));
-
-        if result.is_err() {
-            error!("Failed to send Ping to BitVMX: {result:?}");
+        match self.bitvmx_broker.send(IncomingBitVMXApiMessages::Ping(ping_id)) {
+            Ok(true) => true,
+            Ok(false) => {
+                warn!("Broker could not deliver BitVMX ping");
+                false
+            }
+            Err(error) if is_recoverable_transport_error(&error) => {
+                warn!(?error, "Recoverable broker error sending BitVMX ping");
+                false
+            }
+            Err(error) => {
+                error!("Failed to send Ping to BitVMX: {error:?}");
+                false
+            }
         }
     }
 
@@ -419,8 +462,15 @@ impl<
         // A transient user-api disconnect (or backpressure) should not take down
         // the coordinator. We log and drop the reply; the user-api side has its
         // own request timeout and will surface the failure to the caller.
-        if !self.user_broker.send(reply)? {
-            warn!("Broker could not deliver user reply; dropping");
+        match self.user_broker.send(reply) {
+            Ok(true) => {}
+            Ok(false) => {
+                warn!("Broker could not deliver user reply; dropping reply");
+            }
+            Err(error) if is_recoverable_transport_error(&error) => {
+                warn!(?error, "Recoverable broker error sending user reply; dropping reply");
+            }
+            Err(error) => return Err(error.into()),
         }
         Ok(())
     }
@@ -435,10 +485,11 @@ impl<
 #[cfg(test)]
 pub(crate) mod tests {
     use std::thread::{self, JoinHandle, sleep};
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
+    use anyhow::anyhow;
     use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
-    use common::msg_broker::broker::MockBrokerClientApi;
+    use common::msg_broker::broker::{BrokerError, MockBrokerClientApi};
     use common::msg_broker::types::{FromServer, ToServer};
     use common::shutdown_flag::ShutdownFlag;
     use common::test_utils::rsk_block_generator::{
@@ -474,6 +525,10 @@ pub(crate) mod tests {
     use crate::store::MockCoordinatorStoreApi;
     use crate::types::RskPegManagerEvents;
     use crate::{RUNTIME_ENV_LOCAL_ANVIL, RUNTIME_ENV_LOCAL_RSKJ};
+
+    type MockUnionBroker = MockBrokerClientApi<ToServer, FromServer>;
+    type MockBitVmxBroker =
+        MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
 
     #[test]
     fn test_uses_fake_native_bridge_only_for_anvil_tier() {
@@ -686,6 +741,172 @@ pub(crate) mod tests {
         );
 
         assert!(coordinator.run().is_ok());
+    }
+
+    #[test]
+    fn test_coordinator_run_continues_after_recoverable_bitvmx_receive_error() {
+        let mut mock_monitor = MockMonitorApi::new();
+        expect_monitor_start_stop_ok(&mut mock_monitor);
+        mock_monitor.expect_try_user_request().returning(|| Ok(None));
+        mock_monitor.expect_try_bitvmx_event().returning_st({
+            let mut calls = 0_u8;
+            move || {
+                calls = calls.saturating_add(1);
+                if calls == 1 { Err(BrokerError::disconnected().into()) } else { Ok(None) }
+            }
+        });
+        mock_monitor.expect_try_rsk_event().returning(|| Ok(None));
+        mock_monitor.expect_try_block().returning(|| Ok(None));
+
+        let shutdown_flag = ShutdownFlag::init();
+        handle_shutdown(shutdown_flag.clone());
+
+        let mut bitvmx_broker = MockBitVmxBroker::new();
+        expect_bitvmx_ping(&mut bitvmx_broker, 1);
+
+        let mut mock_store = MockCoordinatorStoreApi::new();
+        mock_store.expect_save_context().with(always()).returning(|_| Ok(()));
+
+        let mut coordinator = Coordinator::new_for_tests(
+            mock_monitor,
+            bitvmx_broker,
+            MockUnionBroker::new(),
+            generate_idle_processors(),
+            shutdown_flag,
+            mock_store,
+        );
+
+        assert!(coordinator.run().is_ok());
+    }
+
+    #[test]
+    fn test_coordinator_run_propagates_non_recoverable_receive_errors() {
+        let mut mock_monitor = MockMonitorApi::new();
+        expect_monitor_start_stop_ok(&mut mock_monitor);
+        mock_monitor.expect_try_user_request().returning(|| Ok(None));
+        mock_monitor
+            .expect_try_bitvmx_event()
+            .return_once(|| Err(BrokerError::UnknownError(anyhow!("serialization failed")).into()));
+
+        let mut bitvmx_broker = MockBitVmxBroker::new();
+        expect_bitvmx_ping(&mut bitvmx_broker, 1);
+
+        let mut mock_store = MockCoordinatorStoreApi::new();
+        mock_store.expect_save_context().with(always()).returning(|_| Ok(()));
+
+        let mut coordinator = Coordinator::new_for_tests(
+            mock_monitor,
+            bitvmx_broker,
+            MockUnionBroker::new(),
+            generate_idle_processors(),
+            ShutdownFlag::init(),
+            mock_store,
+        );
+
+        let result = coordinator.run();
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_bitvmx_liveness_does_not_record_ping_when_broker_does_not_deliver() {
+        let mut bitvmx_broker = MockBitVmxBroker::new();
+        bitvmx_broker
+            .expect_send()
+            .with(function(|req: &IncomingBitVMXApiMessages| {
+                matches!(req, IncomingBitVMXApiMessages::Ping(_))
+            }))
+            .return_once(|_| Ok(false));
+
+        let coordinator = Coordinator::new_for_tests(
+            MockMonitorApi::new(),
+            bitvmx_broker,
+            MockUnionBroker::new(),
+            vec![],
+            ShutdownFlag::init(),
+            MockCoordinatorStoreApi::new(),
+        );
+        let mut bitvmx_ping = None;
+        let mut bitvmx_liveness = super::BitvmxLiveness::Unknown;
+        let bitvmx_last_msg = Instant::now()
+            .checked_sub(coordinator.bitvmx_ping_after_silence + Duration::from_secs(1))
+            .expect("silence duration fits");
+
+        coordinator.check_bitvmx_liveness(&mut bitvmx_ping, &mut bitvmx_liveness, bitvmx_last_msg);
+
+        assert!(bitvmx_ping.is_none());
+    }
+
+    #[test]
+    fn test_bitvmx_liveness_does_not_record_ping_after_recoverable_send_error() {
+        let mut bitvmx_broker = MockBitVmxBroker::new();
+        bitvmx_broker
+            .expect_send()
+            .with(function(|req: &IncomingBitVMXApiMessages| {
+                matches!(req, IncomingBitVMXApiMessages::Ping(_))
+            }))
+            .return_once(|_| Err(BrokerError::disconnected()));
+
+        let coordinator = Coordinator::new_for_tests(
+            MockMonitorApi::new(),
+            bitvmx_broker,
+            MockUnionBroker::new(),
+            vec![],
+            ShutdownFlag::init(),
+            MockCoordinatorStoreApi::new(),
+        );
+        let mut bitvmx_ping = None;
+        let mut bitvmx_liveness = super::BitvmxLiveness::Unknown;
+        let bitvmx_last_msg = Instant::now()
+            .checked_sub(coordinator.bitvmx_ping_after_silence + Duration::from_secs(1))
+            .expect("silence duration fits");
+
+        coordinator.check_bitvmx_liveness(&mut bitvmx_ping, &mut bitvmx_liveness, bitvmx_last_msg);
+
+        assert!(bitvmx_ping.is_none());
+    }
+
+    #[test]
+    fn test_send_user_reply_drops_recoverable_send_errors() {
+        let mut user_broker = MockUnionBroker::new();
+        user_broker.expect_send().return_once(|_| Err(BrokerError::disconnected()));
+
+        let mut coordinator = Coordinator::new_for_tests(
+            MockMonitorApi::new(),
+            MockBitVmxBroker::new(),
+            user_broker,
+            vec![],
+            ShutdownFlag::init(),
+            MockCoordinatorStoreApi::new(),
+        );
+
+        assert!(coordinator.send_user_reply(ToServer::SubscribeBlocks).is_ok());
+    }
+
+    fn expect_monitor_start_stop_ok(mock_monitor: &mut MockMonitorApi) {
+        mock_monitor.expect_start_event_monitoring().return_once(|| Ok(()));
+        mock_monitor.expect_start_block_monitoring().return_once(|| Ok(()));
+        mock_monitor.expect_start_bitvmx_monitoring().return_once(|| Ok(()));
+        mock_monitor.expect_start_user_monitoring().return_once(|| Ok(()));
+        mock_monitor.expect_cancel_event_monitoring().return_once(|| Ok(()));
+        mock_monitor.expect_cancel_block_monitoring().return_once(|| Ok(()));
+        mock_monitor.expect_cancel_bitvmx_monitoring().return_once(|| Ok(()));
+    }
+
+    fn expect_bitvmx_ping(bitvmx_broker: &mut MockBitVmxBroker, times: usize) {
+        bitvmx_broker
+            .expect_send()
+            .with(function(|req: &IncomingBitVMXApiMessages| {
+                matches!(req, IncomingBitVMXApiMessages::Ping(_))
+            }))
+            .times(times)
+            .returning(|_| Ok(true));
+    }
+
+    fn generate_idle_processors() -> Vec<Box<dyn EventProcessor>> {
+        let mut processor = MockEventProcessor::new();
+        processor.expect_shutdown().return_once(|| ());
+        vec![Box::new(processor)]
     }
 
     fn handle_shutdown(shutdown_flag: ShutdownFlag) -> JoinHandle<()> {

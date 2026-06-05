@@ -14,6 +14,7 @@ pub use message_broker::identification::allow_list::AllowList;
 pub use message_broker::identification::identifier::Identifier;
 pub use message_broker::identification::routing::RoutingTable;
 use message_broker::rpc::BrokerConfig;
+use message_broker::rpc::errors::BrokerError as RpcBrokerError;
 use message_broker::rpc::sync_server::BrokerSync;
 pub use message_broker::rpc::tls_helper::Cert;
 use mockall::automock;
@@ -475,6 +476,34 @@ pub enum BrokerError {
     UnknownError(#[from] anyhow::Error),
 }
 
+impl BrokerError {
+    #[must_use]
+    pub const fn disconnected() -> Self {
+        Self::BrokerServerError(RpcBrokerError::Disconnected)
+    }
+
+    #[must_use]
+    fn is_recoverable_transport_error(&self) -> bool {
+        matches!(self, Self::BrokerServerError(error) if is_recoverable_rpc_broker_error(error))
+    }
+}
+
+#[must_use]
+pub fn is_recoverable_transport_error(error: &(dyn std::error::Error + 'static)) -> bool {
+    error.downcast_ref::<BrokerError>().is_some_and(BrokerError::is_recoverable_transport_error)
+        || error.downcast_ref::<RpcBrokerError>().is_some_and(is_recoverable_rpc_broker_error)
+}
+
+const fn is_recoverable_rpc_broker_error(error: &RpcBrokerError) -> bool {
+    matches!(
+        error,
+        RpcBrokerError::Disconnected
+            | RpcBrokerError::IoError(_)
+            | RpcBrokerError::RpcError(_)
+            | RpcBrokerError::ClosedChannel
+    )
+}
+
 fn resolve_ip(name: String, port: u16) -> std::io::Result<IpAddr> {
     // ToSocketAddrs triggers DNS lookup via /etc/resolv.conf inside the container
     (name, port)
@@ -507,5 +536,31 @@ mod tests {
             .expect("Failed to create persistent broker storage");
 
         assert!(storage_path.is_dir());
+    }
+
+    #[test]
+    fn test_recoverable_broker_transport_error_accepts_runtime_disconnects() {
+        let disconnected = BrokerError::BrokerServerError(RpcBrokerError::Disconnected);
+        let closed_channel = BrokerError::BrokerServerError(RpcBrokerError::ClosedChannel);
+        let io_error = BrokerError::BrokerServerError(RpcBrokerError::IoError(
+            std::io::Error::new(std::io::ErrorKind::ConnectionReset, "reset"),
+        ));
+
+        assert!(is_recoverable_transport_error(&disconnected));
+        assert!(is_recoverable_transport_error(&closed_channel));
+        assert!(is_recoverable_transport_error(&io_error));
+    }
+
+    #[test]
+    fn test_recoverable_broker_transport_error_rejects_non_runtime_failures() {
+        let serialization_error =
+            serde_json::from_str::<serde_json::Value>("{").expect_err("invalid JSON should fail");
+        let serialization = BrokerError::SerializationError(serialization_error);
+        let tls = BrokerError::BrokerServerError(RpcBrokerError::TlsError("bad cert".to_string()));
+        let unknown = BrokerError::UnknownError(anyhow::anyhow!("unexpected"));
+
+        assert!(!is_recoverable_transport_error(&serialization));
+        assert!(!is_recoverable_transport_error(&tls));
+        assert!(!is_recoverable_transport_error(&unknown));
     }
 }
