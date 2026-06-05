@@ -15,7 +15,7 @@ Process a backlog of open Dependabot PRs in one pass. Trigger: **"follow the dep
 
 | Kind | Touches | Validation |
 | --- | --- | --- |
-| Rust dep | `Cargo.toml` / `Cargo.lock` | build + test + lint, then the happy-path (step 2) |
+| Rust dep | `Cargo.toml` / `Cargo.lock` | reproduce the required CI checks, then the happy-path (step 2) |
 | Docker image | a `Dockerfile` (in `docker/build` or `docker/local-infra`) | build the changed image + run the flow that uses it (step 2) |
 | GitHub Actions | `.github/workflows/*` or `.github/actions/*` | confirm the bump only (e.g. pinned SHA matches its tag); no build |
 
@@ -25,10 +25,13 @@ Stack candidates onto a throwaway branch off `main` (**don't push it**). Drop an
 that fails and record why; **don't try to fix ecosystem-wide skews** (e.g. `alloy-*`
 crates that must bump together) — reject and move on.
 
-- **Rust:** after each merge run build, test, the lint/style hooks (`bash .hooks/format-code.sh --check` and
-  `bash .hooks/check-lints.sh` — fmt/sort/clippy `--locked` across all workspaces, mirroring the required
-  `style` check, and catching per-workspace lockfile drift), plus `cargo audit` on the root and `cli`
-  lockfiles (the `audit.yml` gate). That isolates breakers per PR; then
+- **Rust:** after each merge, reproduce the repo's **required CI checks** locally before treating the PR as
+  validated — don't rely on `build` + `cargo test` alone. Run the `.hooks/` scripts (fmt/sort/clippy `--locked`
+  across all workspaces, which also catches per-workspace lockfile drift) and the commands the required workflows
+  run (tests with all features + the `cli` workspace, `cargo check --all-targets --all-features --locked`,
+  rustdoc, `cargo audit`). Source of truth is [`AGENTS.md` › Build and Verify](../AGENTS.md#build-and-verify),
+  [`.hooks/`](../.hooks/), and [`.github/workflows/`](../.github/workflows/) — mirror whatever they currently
+  require. That isolates breakers per PR; then
   run the Automated Happy-Path **once** on the assembled branch — see
   [`LOCAL_SETUP.md`](LOCAL_SETUP.md#automated-happy-path). If the combined happy-path fails
   (a PR that built + tested fine but breaks the flow only in combination), **bisect** the
