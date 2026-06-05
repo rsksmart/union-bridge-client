@@ -52,7 +52,7 @@ You don't have to use the bundled bitcoind + Anvil/RSKj stack. To run the client
 flow tests against chains you started yourself (any regtest bitcoind + any compatible
 Rootstock/Anvil node), point the tooling at them with environment variables — no code changes:
 
-| What | Variable(s) | Default |
+| What | Variable(s) | Default / example |
 | --- | --- | --- |
 | Bitcoin RPC URL + creds | `BITCOIND_URL` | `http://foo:rpcpassword@host.docker.internal:18443` |
 | Bitcoin wallet name | `BITCOIN_WALLET` | `mainwallet` |
@@ -76,8 +76,10 @@ in that environment's config or via `WALLET_RPC_*`.)
 
 **A BYO stack on the regtest defaults — `foo` / `rpcpassword` creds and a `mainwallet` wallet — matches
 every default here, so you set nothing but `BYO_BLOCKCHAINS_COMPOSE` (or just start the node).** A node
-whose host or funded wallet differ needs `BITCOIND_URL` (keep `host.docker.internal` so BitVMX can reach
-it) and/or `BITCOIN_WALLET`.
+whose host, RPC creds, or funded wallet differ needs `BITCOIND_URL` (keep `host.docker.internal` so
+BitVMX can reach it) and/or `BITCOIN_WALLET` — and, because the bitcoin-wallet CLI reads its creds from
+`regtest.toml` (not `BITCOIND_URL`), non-default creds also need `WALLET_RPC_USER` / `WALLET_RPC_PASSWORD`
+(or a `regtest.toml` edit) so `mine_utxo` can fund.
 
 **Launching a published stack for you.** Set `BYO_BLOCKCHAINS_COMPOSE` to a compose reference (an OCI
 artifact such as `oci://ghcr.io/org/stack:tag`, or a local compose path) and `--start-blockchains`
