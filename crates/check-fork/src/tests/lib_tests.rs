@@ -539,6 +539,16 @@ fn fails_when_base_event_exceeds_vetiver_limit() {
 }
 
 #[test]
+fn fails_when_header_version_is_not_supported() {
+    let mut header = create_first_block(DEFAULT_INIT_BLOCK_NUMBER).header;
+    header.version = 3;
+
+    let err = header.calculate_block_hash().expect_err("unsupported header version must fail");
+
+    assert_eq!(err, "unsupported RSK block header version");
+}
+
+#[test]
 fn succeed_if_block_hash_eq_expected_hash() {
     let test_case = serde_json::from_slice::<TestCaseBlockHashValidation>(
         &fs::read("src/tests/block-regtest-min-gas-price-zero.json").unwrap(),

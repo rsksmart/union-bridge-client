@@ -81,9 +81,12 @@ impl RskBlockHeader {
         };
 
         let extension_field = match self.version {
-            2 => self.compressed_extension_data_v2()?,
-            1 if self.rsk_pte_edges.is_some() => self.compressed_extension_data_v1()?,
-            _ => self.logs_bloom_v0()?.to_vec(),
+            RSK_HEADER_EXTENSION_TYPE_V2 => self.compressed_extension_data_v2()?,
+            RSK_HEADER_EXTENSION_TYPE_V1 if self.rsk_pte_edges.is_some() => {
+                self.compressed_extension_data_v1()?
+            }
+            RSK_HEADER_EXTENSION_TYPE_V1 => self.logs_bloom_v0()?.to_vec(),
+            _ => return Err("unsupported RSK block header version"),
         };
 
         let encoded_fields: Vec<Vec<u8>> = vec![
@@ -118,34 +121,30 @@ impl RskBlockHeader {
     }
 
     fn compressed_extension_data_v1(&self) -> Result<Vec<u8>, &'static str> {
-        let logs_bloom = self.logs_bloom_v0()?;
-
-        let logs_bloom_hash = Keccak256::digest(logs_bloom);
-        let mut extension_for_hash_fields = vec![alloy_rlp::encode(logs_bloom_hash.as_slice())];
-
-        if let Some(edges_field) = self.encoded_rsk_pte_edges()? {
-            extension_for_hash_fields.push(edges_field);
-        }
-
-        let extension_for_hash = encode_list(extension_for_hash_fields);
-        let extension_hash = Keccak256::digest(&extension_for_hash);
-
-        Ok(encode_list(vec![
-            alloy_rlp::encode(RSK_HEADER_EXTENSION_TYPE_V1),
-            alloy_rlp::encode(extension_hash.as_slice()),
-        ]))
+        self.compressed_extension_data(RSK_HEADER_EXTENSION_TYPE_V1, Vec::new())
     }
 
     fn compressed_extension_data_v2(&self) -> Result<Vec<u8>, &'static str> {
-        let logs_bloom = self.logs_bloom_v0()?;
         let base_event = self.base_event.as_deref().unwrap_or_default();
         if base_event.len() > BASE_EVENT_MAX_SIZE {
             return Err("base_event exceeds maximum allowed length");
         }
 
+        self.compressed_extension_data(
+            RSK_HEADER_EXTENSION_TYPE_V2,
+            vec![alloy_rlp::encode(base_event)],
+        )
+    }
+
+    fn compressed_extension_data(
+        &self,
+        extension_type: u8,
+        mut extra_fields: Vec<Vec<u8>>,
+    ) -> Result<Vec<u8>, &'static str> {
+        let logs_bloom = self.logs_bloom_v0()?;
         let logs_bloom_hash = Keccak256::digest(logs_bloom);
-        let mut extension_for_hash_fields =
-            vec![alloy_rlp::encode(logs_bloom_hash.as_slice()), alloy_rlp::encode(base_event)];
+        let mut extension_for_hash_fields = vec![alloy_rlp::encode(logs_bloom_hash.as_slice())];
+        extension_for_hash_fields.append(&mut extra_fields);
 
         if let Some(edges_field) = self.encoded_rsk_pte_edges()? {
             extension_for_hash_fields.push(edges_field);
@@ -155,7 +154,7 @@ impl RskBlockHeader {
         let extension_hash = Keccak256::digest(&extension_for_hash);
 
         Ok(encode_list(vec![
-            alloy_rlp::encode(RSK_HEADER_EXTENSION_TYPE_V2),
+            alloy_rlp::encode(extension_type),
             alloy_rlp::encode(extension_hash.as_slice()),
         ]))
     }
@@ -207,7 +206,7 @@ where
     D: Deserializer<'de>,
 {
     let s: String = Deserialize::deserialize(deserializer)?;
-    let s = s.strip_prefix("0x").unwrap_or(&s);
+    let s = strip_hex_prefix(&s);
     u64::from_str_radix(s, 16).map_err(serde::de::Error::custom)
 }
 
@@ -216,7 +215,7 @@ where
     D: Deserializer<'de>,
 {
     let s: String = Deserialize::deserialize(deserializer)?;
-    let s = s.strip_prefix("0x").unwrap_or(&s);
+    let s = strip_hex_prefix(&s);
     let bytes = hex::decode(s).map_err(serde::de::Error::custom)?;
     from_bytes_vec_to_h256(&bytes)
 }
@@ -226,7 +225,7 @@ where
     D: Deserializer<'de>,
 {
     let s: String = Deserialize::deserialize(deserializer)?;
-    let s = s.strip_prefix("0x").unwrap_or(&s);
+    let s = strip_hex_prefix(&s);
     hex::decode(s).map_err(serde::de::Error::custom)
 }
 
@@ -235,7 +234,7 @@ where
     D: Deserializer<'de>,
 {
     let s: String = Deserialize::deserialize(deserializer)?;
-    let s = s.strip_prefix("0x").unwrap_or(&s);
+    let s = strip_hex_prefix(&s);
     U256::from_str_radix(s, 16).map_err(serde::de::Error::custom)
 }
 
@@ -244,7 +243,7 @@ where
     D: Deserializer<'de>,
 {
     let s: String = Deserialize::deserialize(deserializer)?;
-    let s = s.strip_prefix("0x").unwrap_or(&s);
+    let s = strip_hex_prefix(&s);
     u32::from_str_radix(s, 16).map_err(serde::de::Error::custom)
 }
 
@@ -256,11 +255,15 @@ where
     strings
         .iter()
         .map(|s| {
-            let s = s.strip_prefix("0x").unwrap_or(s);
+            let s = strip_hex_prefix(s);
             let bytes = hex::decode(s).map_err(serde::de::Error::custom)?;
             from_bytes_vec_to_h256(&bytes)
         })
         .collect()
+}
+
+fn strip_hex_prefix(s: &str) -> &str {
+    s.strip_prefix("0x").unwrap_or(s)
 }
 
 fn from_bytes_vec_to_h256<E>(bytes: &[u8]) -> Result<H256, E>
@@ -279,7 +282,7 @@ where
     D: Deserializer<'de>,
 {
     let s: String = Deserialize::deserialize(deserializer)?;
-    let s = s.strip_prefix("0x").unwrap_or(&s);
+    let s = strip_hex_prefix(&s);
     let bytes = hex::decode(s).map_err(serde::de::Error::custom)?;
     if bytes.len() != 20 {
         return Err(serde::de::Error::custom(format!("expected 20 bytes, got {}", bytes.len())));
@@ -296,7 +299,7 @@ where
     let s: Option<String> = Option::deserialize(deserializer)?;
     match s {
         Some(s) => {
-            let s = s.strip_prefix("0x").unwrap_or(&s);
+            let s = strip_hex_prefix(&s);
             U256::from_str_radix(s, 16).map(Some).map_err(serde::de::Error::custom)
         }
         None => Ok(None),
