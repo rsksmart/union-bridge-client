@@ -331,6 +331,36 @@ mod tests {
     }
 
     #[test]
+    fn test_duplicate_subscribe_logs_is_idempotent() {
+        let client_id = make_test_identifier(2);
+
+        let (_tx, rx) = mpsc::channel();
+        let shutdown_flag = ShutdownFlag::init();
+        let address_1 = generate_fake_address(1);
+        let expected_log =
+            FakeLogGenerator::new().generate_log("Transfer(address,address,uint256)", address_1);
+
+        let client_requests = vec![
+            ClientRequest { id: client_id.clone(), request: ToServer::SubscribeLogs(address_1) },
+            ClientRequest { id: client_id.clone(), request: ToServer::SubscribeLogs(address_1) },
+        ];
+
+        let mut mock_broker_server = MockBrokerServerApi::new();
+        expect_try_recv_subscribe(client_requests, &mut mock_broker_server);
+        expect_send_log(&client_id, &expected_log, &mut mock_broker_server);
+
+        let mut notifier =
+            Notifier::new_for_tests(rx, mock_broker_server, monitored(&[address_1]), shutdown_flag);
+
+        notifier.update_consumers().expect("first subscribe should be accepted");
+        notifier.update_consumers().expect("duplicate subscribe should be accepted");
+
+        assert_eq!(1, notifier.contracts_with_consumers[&address_1].len());
+
+        notifier.notify_consumers(expected_log).expect("duplicate subscription should notify once");
+    }
+
+    #[test]
     fn test_run_new_log_received_with_multiple_consumers() {
         let client_id_1 = make_test_identifier(2);
         let client_id_2 = make_test_identifier(3);

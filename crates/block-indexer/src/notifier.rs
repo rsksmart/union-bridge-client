@@ -259,6 +259,35 @@ mod tests {
     }
 
     #[test]
+    fn test_duplicate_subscribe_blocks_is_idempotent() {
+        let client_id = make_test_identifier(2);
+
+        let (_tx, rx) = mpsc::channel();
+        let shutdown_flag = ShutdownFlag::init();
+        let expected_block = get_first_default_rsk_block();
+
+        let client_requests = vec![
+            ClientRequest { id: client_id.clone(), request: ToServer::SubscribeBlocks },
+            ClientRequest { id: client_id.clone(), request: ToServer::SubscribeBlocks },
+        ];
+
+        let mut mock_broker_server = MockBrokerServerApi::new();
+        expect_try_recv(client_requests, &mut mock_broker_server);
+        expect_send_block(&client_id, &expected_block, &[], &mut mock_broker_server);
+
+        let mut notifier = Notifier::new_for_tests(rx, mock_broker_server, shutdown_flag);
+
+        notifier.update_consumers().expect("first subscribe should be accepted");
+        notifier.update_consumers().expect("duplicate subscribe should be accepted");
+
+        assert_eq!(1, notifier.consumers.len());
+
+        notifier
+            .notify_consumers(RskBlockAndUncles::new_no_uncles(expected_block))
+            .expect("duplicate subscription should notify once");
+    }
+
+    #[test]
     fn test_run_new_block_received_with_multiple_consumers() {
         let client_id_1 = make_test_identifier(2);
         let client_id_2 = make_test_identifier(3);
