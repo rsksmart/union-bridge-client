@@ -149,10 +149,6 @@ where
             bail!("Start Log monitoring requested, but it was already active");
         }
 
-        // clean up a potential remaining connection
-        self.request_cancel_event_monitoring()
-            .context("Cleaning up potentially stalled log connection")?;
-
         info!("Starting Logs monitoring");
 
         for index in 0..self.peg_manager_addresses.len() {
@@ -176,10 +172,6 @@ where
         if self.block_monitoring_active {
             bail!("Start Block monitoring requested, but it was already active");
         }
-
-        // clean up a potential remaining connection
-        self.request_cancel_block_monitoring()
-            .context("Cleaning up potentially stalled block connection")?;
 
         info!("Starting Block monitoring");
 
@@ -524,8 +516,6 @@ mod tests {
         let address_2 = get_fake_address_2();
 
         let mut log_broker = MockUnionBroker::new();
-        expect_unsubscribe_logs(&mut log_broker, address_1);
-        expect_unsubscribe_logs(&mut log_broker, address_2);
         expect_subscribe_logs(&mut log_broker, address_1);
         expect_subscribe_logs(&mut log_broker, address_2);
 
@@ -546,7 +536,6 @@ mod tests {
         let address_1 = get_fake_address_1();
 
         let mut log_broker = MockUnionBroker::new();
-        expect_unsubscribe_logs(&mut log_broker, address_1);
 
         log_broker
             .expect_send()
@@ -585,7 +574,6 @@ mod tests {
     #[test]
     fn test_start_block_monitoring_success() {
         let mut block_broker = MockUnionBroker::new();
-        expect_unsubscribe_blocks(&mut block_broker, 1);
         expect_subscribe_blocks(&mut block_broker, 1);
 
         let mut monitor = Monitor::new(
@@ -602,7 +590,6 @@ mod tests {
     #[test]
     fn test_start_block_monitoring_fails_on_broker_error() {
         let mut block_broker = MockUnionBroker::new();
-        expect_unsubscribe_blocks(&mut block_broker, 1);
 
         block_broker
             .expect_send()
