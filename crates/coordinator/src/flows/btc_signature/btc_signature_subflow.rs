@@ -5,17 +5,20 @@ use common::runtime_sync::RuntimeSync;
 use common::types::RskBlockAndUncles;
 #[cfg(test)]
 use mockall::automock;
+use serde::{Deserialize, Serialize};
 use tracing::{debug, info_span, trace};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
 
-use super::btc_signature_lifecycle::{BtcSignatureLifeCycle, BtcSignatureLifecycleApi};
+use super::btc_signature_lifecycle::{
+    BtcSignatureLifeCycle, BtcSignatureLifecycleApi, BtcSignatureLifecycleSnapshot,
+};
 use crate::types::{RegisterSignaturesBitVmxData, RskPegManagerEvents};
 
 /// Origin of a btc-signature subflow, used to tag its tracing span with the
 /// originating pegin or pegout id so all subflow logs are traceable back to
 /// the parent flow.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub(crate) enum ParentSpan {
     Pegin(Uuid),
     Pegout(Uuid),
@@ -31,11 +34,22 @@ pub(crate) trait BtcSignatureSubFlowApi {
     fn delegate_rsk_event(&mut self, flow_id: Uuid, event: &RskPegManagerEvents) -> Result<()>;
     fn delegate_block(&mut self, block: &RskBlockAndUncles) -> Result<()>;
     fn is_done(&self) -> bool;
+    fn snapshot(&self) -> Option<BtcSignatureSubFlowSnapshot>;
 }
 
 #[cfg_attr(test, automock)]
 pub(crate) trait BtcSignatureSubFlowFactoryApi<BSF: BtcSignatureSubFlowApi> {
     fn create_flow(&self, flow_id: Uuid, parent_log_id: String, parent: Option<ParentSpan>) -> BSF;
+    fn create_flow_from_snapshot(&self, snapshot: BtcSignatureSubFlowSnapshot) -> Result<BSF>;
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct BtcSignatureSubFlowSnapshot {
+    pub(crate) lifecycle: BtcSignatureLifecycleSnapshot,
+    pub(crate) is_done: bool,
+    pub(crate) is_nonces_step_done: bool,
+    pub(crate) parent_log_id: String,
+    pub(crate) parent: Option<ParentSpan>,
 }
 
 pub(crate) struct BaseBtcSignatureSubFlow<BSF: BtcSignatureLifecycleApi> {
@@ -71,6 +85,27 @@ where
             required_confirmations,
         );
         Self { lifecycle, is_done: false, is_nonces_step_done: false, parent_log_id, parent }
+    }
+
+    pub(crate) fn from_snapshot(
+        contracts_gateway: &Rc<CG>,
+        rt_sync: &RuntimeSync,
+        snapshot: BtcSignatureSubFlowSnapshot,
+        required_confirmations: u32,
+    ) -> Result<Self> {
+        let lifecycle = BtcSignatureLifeCycle::from_snapshot(
+            contracts_gateway.clone(),
+            rt_sync.clone(),
+            snapshot.lifecycle,
+            required_confirmations,
+        )?;
+        Ok(Self {
+            lifecycle,
+            is_done: snapshot.is_done,
+            is_nonces_step_done: snapshot.is_nonces_step_done,
+            parent_log_id: snapshot.parent_log_id,
+            parent: snapshot.parent,
+        })
     }
 
     #[cfg(test)]
@@ -203,6 +238,16 @@ where
     fn is_done(&self) -> bool {
         self.is_done
     }
+
+    fn snapshot(&self) -> Option<BtcSignatureSubFlowSnapshot> {
+        Some(BtcSignatureSubFlowSnapshot {
+            lifecycle: self.lifecycle.snapshot(),
+            is_done: self.is_done,
+            is_nonces_step_done: self.is_nonces_step_done,
+            parent_log_id: self.parent_log_id.clone(),
+            parent: self.parent,
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -239,6 +284,18 @@ impl<CG: RskContractsGatewayApi>
             parent_log_id,
             self.required_confirmations,
             parent,
+        )
+    }
+
+    fn create_flow_from_snapshot(
+        &self,
+        snapshot: BtcSignatureSubFlowSnapshot,
+    ) -> Result<BaseBtcSignatureSubFlow<BtcSignatureLifeCycle<CG>>> {
+        BaseBtcSignatureSubFlow::<BtcSignatureLifeCycle<CG>>::from_snapshot(
+            &self.contracts_gateway,
+            &self.rt_sync,
+            snapshot,
+            self.required_confirmations,
         )
     }
 }

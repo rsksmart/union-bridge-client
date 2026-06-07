@@ -10,6 +10,7 @@ use common::msg_broker::bitvmx_types::{
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::{Hash256, TxHash};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{debug, info, trace};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
@@ -37,7 +38,7 @@ pub(crate) fn flow_id_from_operator_take_triggered_tx_hash(tx_hash: TxHash) -> F
     FlowId::from_tx("operator_take_flow", tx_hash.value().as_bytes())
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub(crate) enum Steps {
     /// Entry point; no fast-forward.
     #[default]
@@ -155,8 +156,8 @@ pub(crate) enum StepOutcome {
     Retry { reason: String },
 }
 
-#[derive(Debug, Clone)]
-struct FlowContext {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct FlowContext {
     flow_id: FlowId,
     /// Cached `BitVMX` protocol id for this advance-funds protocol instance.
     /// Derived from `(committee_id, slot_index)` via `advance_funds_protocol_id`
@@ -231,6 +232,21 @@ where
                 created_at: Some(chrono::Utc::now()),
             },
         }
+    }
+
+    pub(crate) fn from_saved_state(
+        contracts: Rc<CG>,
+        rt_sync: RuntimeSync,
+        bitvmx_broker: Rc<BC>,
+        native_bridge_verifier: NativeBridgeVerifier<CG>,
+        signaling: Rc<Signaling>,
+        state: FlowContext,
+    ) -> Self {
+        Self { contracts, rt_sync, bitvmx_broker, native_bridge_verifier, signaling, state }
+    }
+
+    pub(crate) fn snapshot(&self) -> FlowContext {
+        self.state.clone()
     }
 
     #[cfg(test)]

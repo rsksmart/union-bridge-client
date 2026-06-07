@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use anyhow::Result;
 use common::types::{BlockNumber, RskBlock, RskBlockAndUncles};
+use serde::{Deserialize, Serialize};
 use tracing::{debug, info, trace, warn};
 
 use crate::types::RskPegManagerEvents;
@@ -325,6 +326,19 @@ pub struct ConfirmableEventWithData {
     data: RskPegManagerEvents,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ConfirmableEventSnapshot {
+    id: String,
+    start_block: BlockNumber,
+    required_confirmations: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ConfirmableEventWithDataSnapshot {
+    confirmation: ConfirmableEventSnapshot,
+    data: RskPegManagerEvents,
+}
+
 impl ConfirmableEventWithData {
     pub fn new(
         id: String,
@@ -357,6 +371,26 @@ impl ConfirmableEventWithData {
 
     pub fn get_data(&self) -> &RskPegManagerEvents {
         &self.data
+    }
+
+    #[must_use]
+    pub(crate) fn snapshot(&self) -> Option<ConfirmableEventWithDataSnapshot> {
+        self.confirmation.snapshot().map(|confirmation| ConfirmableEventWithDataSnapshot {
+            confirmation,
+            data: self.data.clone(),
+        })
+    }
+
+    /// # Errors
+    /// Returns an error if confirmation observer reconstruction fails.
+    pub(crate) fn from_snapshot(
+        snapshot: ConfirmableEventWithDataSnapshot,
+        chain_view: BlockchainView,
+    ) -> Result<Self> {
+        Ok(Self {
+            confirmation: ConfirmableEvent::from_snapshot(snapshot.confirmation, chain_view)?,
+            data: snapshot.data,
+        })
     }
 }
 
@@ -413,6 +447,29 @@ impl ConfirmableEvent {
 
     fn remove_observer(&self) {
         self.chain_view.remove_observer(&self.id);
+    }
+
+    #[must_use]
+    pub(crate) fn snapshot(&self) -> Option<ConfirmableEventSnapshot> {
+        self.confirmations.as_ref().map(|confirmations| {
+            let confirmations = confirmations.borrow();
+            ConfirmableEventSnapshot {
+                id: self.id.clone(),
+                start_block: confirmations.init,
+                required_confirmations: self.req_confirmations,
+            }
+        })
+    }
+
+    /// # Errors
+    /// Returns an error if confirmation observer reconstruction fails.
+    pub(crate) fn from_snapshot(
+        snapshot: ConfirmableEventSnapshot,
+        chain_view: BlockchainView,
+    ) -> Result<Self> {
+        let mut event = Self::new(snapshot.id, snapshot.required_confirmations, chain_view);
+        event.start_confirming(snapshot.start_block)?;
+        Ok(event)
     }
 }
 

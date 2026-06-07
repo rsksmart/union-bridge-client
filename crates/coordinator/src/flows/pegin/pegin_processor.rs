@@ -13,18 +13,21 @@ use common::msg_broker::bitvmx_types::{
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles, TxIdParser};
+use serde::{Deserialize, Serialize};
 use tracing::span::Span;
 use tracing::{debug, error, info, info_span, instrument, trace, warn};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use union_contracts::bindings::pegin_manager::PeginManager::PeginRequested;
 use uuid::Uuid;
 
-use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
+use crate::blockchain_tracker::{
+    BlockchainView, ConfirmableEventWithData, ConfirmableEventWithDataSnapshot,
+};
 use crate::event_processor::EventProcessor;
 use crate::flows::btc_signature::btc_signature_lifecycle::BtcSignatureLifeCycle;
 use crate::flows::btc_signature::btc_signature_subflow::{
     BaseBtcSignatureSubFlow, BtcSignatureSubFlowApi, BtcSignatureSubFlowFactory,
-    BtcSignatureSubFlowFactoryApi, ParentSpan,
+    BtcSignatureSubFlowFactoryApi, BtcSignatureSubFlowSnapshot, ParentSpan,
 };
 use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
 use crate::flows::common::{FlowId, GlobalContext, Signaling};
@@ -41,6 +44,21 @@ use crate::types::{
 const PEGIN_ACCEPTED_INPUT_MSG: &str = "pegin_accepted";
 const OPERATOR_TAKE_TX_PREFIX: &str = "OPERATOR_TAKE_TX";
 const OPERATOR_WON_TX_PREFIX: &str = "OPERATOR_WON_TX";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PeginProcessorState {
+    events_confirming: HashMap<String, ConfirmableEventWithDataSnapshot>,
+    tx_status_scheduler: TickScheduler<FlowId>,
+    pegin_request_tracker: HashSet<Txid>,
+    pending_pegin_requested: HashMap<Txid, PeginRequestedEvent>,
+    pending_all_operator_take_txids_added: HashMap<Txid, AllOperatorTakeTxidsAddedEvent>,
+    pending_pegin_accepted: HashMap<Txid, PeginAcceptedEvent>,
+    unconfirmed_pegin_requests: HashMap<String, (BtcTxSPVProof, i16)>,
+    pegin_retry_scheduler: TickScheduler<String>,
+    unconfirmed_accept_pegin: HashMap<FlowId, i16>,
+    accept_pegin_retry_scheduler: TickScheduler<FlowId>,
+    signature_flows: HashMap<Uuid, BtcSignatureSubFlowSnapshot>,
+}
 
 fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
     err.chain().any(|cause| {
@@ -189,6 +207,9 @@ where
             restore_flows(store.as_ref(), StorePrefix::PeginFlow, flow_factory)
                 .expect("Failed to load flows from store");
         processor.pegin_flows = restored.into_values().map(|flow| (flow.flow_id(), flow)).collect();
+        processor
+            .restore_processor_state()
+            .expect("Failed to load pegin processor state from store");
 
         processor
     }
@@ -212,6 +233,99 @@ where
         self.pegin_flows
             .values()
             .find(|flow| flow.bitvmx_protocol_id_opt().map(|p| p.value()) == Some(*protocol_id))
+    }
+
+    fn snapshot_processor_state(&self) -> PeginProcessorState {
+        PeginProcessorState {
+            events_confirming: self
+                .events_confirming
+                .iter()
+                .filter_map(|(id, event)| event.snapshot().map(|snapshot| (id.clone(), snapshot)))
+                .collect(),
+            tx_status_scheduler: self.tx_status_scheduler.clone(),
+            pegin_request_tracker: self.pegin_request_tracker.clone(),
+            pending_pegin_requested: self.pending_pegin_requested.clone(),
+            pending_all_operator_take_txids_added: self
+                .pending_all_operator_take_txids_added
+                .clone(),
+            pending_pegin_accepted: self.pending_pegin_accepted.clone(),
+            unconfirmed_pegin_requests: self.unconfirmed_pegin_requests.clone(),
+            pegin_retry_scheduler: self.pegin_retry_scheduler.clone(),
+            unconfirmed_accept_pegin: self.unconfirmed_accept_pegin.clone(),
+            accept_pegin_retry_scheduler: self.accept_pegin_retry_scheduler.clone(),
+            signature_flows: self
+                .signature_flows
+                .iter()
+                .filter_map(|(id, flow)| flow.snapshot().map(|snapshot| (*id, snapshot)))
+                .collect(),
+        }
+    }
+
+    fn restore_processor_state(&mut self) -> Result<()> {
+        if let Some(state) =
+            self.store.load_flow::<PeginProcessorState>(&StoreKey::PeginProcessorState)?
+        {
+            self.apply_processor_state(state)?;
+            return Ok(());
+        }
+
+        self.reconstruct_runtime_state_from_flows();
+        Ok(())
+    }
+
+    fn apply_processor_state(&mut self, state: PeginProcessorState) -> Result<()> {
+        let blockchain_view = BlockchainView::new();
+        self.events_confirming = state
+            .events_confirming
+            .into_iter()
+            .map(|(id, snapshot)| {
+                ConfirmableEventWithData::from_snapshot(snapshot, blockchain_view.clone())
+                    .map(|event| (id, event))
+            })
+            .collect::<Result<HashMap<_, _>>>()?;
+        self.blockchain_view = blockchain_view;
+        self.tx_status_scheduler = state.tx_status_scheduler;
+        self.pegin_request_tracker = state.pegin_request_tracker;
+        self.pending_pegin_requested = state.pending_pegin_requested;
+        self.pending_all_operator_take_txids_added = state.pending_all_operator_take_txids_added;
+        self.pending_pegin_accepted = state.pending_pegin_accepted;
+        self.unconfirmed_pegin_requests = state.unconfirmed_pegin_requests;
+        self.pegin_retry_scheduler = state.pegin_retry_scheduler;
+        self.unconfirmed_accept_pegin = state.unconfirmed_accept_pegin;
+        self.accept_pegin_retry_scheduler = state.accept_pegin_retry_scheduler;
+        self.signature_flows = state
+            .signature_flows
+            .into_iter()
+            .map(|(id, snapshot)| {
+                self.btc_sig_subflow_factory
+                    .create_flow_from_snapshot(snapshot)
+                    .map(|flow| (id, flow))
+            })
+            .collect::<Result<HashMap<_, _>>>()?;
+        Ok(())
+    }
+
+    fn reconstruct_runtime_state_from_flows(&mut self) {
+        for (flow_id, flow) in &self.pegin_flows {
+            match flow.current_step() {
+                Steps::RequestPeginSpvProof => {
+                    self.pegin_request_tracker.insert(flow.request_pegin_btc_tx_id());
+                }
+                Steps::ConfirmAcceptPeginTransaction => {
+                    self.tx_status_scheduler.schedule(*flow_id, self.btc_status_retry_blocks);
+                }
+                Steps::AcceptPegin => {
+                    self.unconfirmed_accept_pegin.insert(*flow_id, 0);
+                    self.accept_pegin_retry_scheduler
+                        .schedule(*flow_id, self.btc_status_retry_blocks);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn persist_processor_state(&self) -> Result<()> {
+        self.store.save_flow(&StoreKey::PeginProcessorState, self.snapshot_processor_state())
     }
 
     /// Handle `PeginRequested` event by finding and updating existing flow.
@@ -1235,7 +1349,6 @@ where
                             flow_id,
                             flow.current_step()
                         );
-                        return Ok(());
                     }
                 }
             }
@@ -1257,7 +1370,7 @@ where
             }
         }
 
-        Ok(())
+        self.persist_processor_state()
     }
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
@@ -1270,7 +1383,7 @@ where
                 for (flow_id, sig_flow) in &mut self.signature_flows {
                     sig_flow.delegate_rsk_event(*flow_id, event)?;
                 }
-                return Ok(());
+                return self.persist_processor_state();
             }
             _ => {
                 // Continue with the normal flow
@@ -1287,7 +1400,8 @@ where
 
         // useful for testing purposes
         if self.required_confirmations == 0 {
-            return self.process_confirmed_rsk_event(event);
+            self.process_confirmed_rsk_event(event)?;
+            return self.persist_processor_state();
         }
 
         let (id, is_removal, block_num, managed_event) = match event {
@@ -1325,7 +1439,7 @@ where
             debug!("Waiting Rootstock confirmations for {id}");
         }
 
-        Ok(())
+        self.persist_processor_state()
     }
 
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
@@ -1336,7 +1450,7 @@ where
         self.handle_pegin_retry_tick()?;
         self.process_block_confirmations(block)?;
 
-        Ok(())
+        self.persist_processor_state()
     }
 
     fn shutdown(&mut self) {
@@ -1439,6 +1553,7 @@ mod tests {
 
             let mut store = MockCoordinatorStoreApi::new();
             store.expect_save_flow::<State>().returning(|_, _| Ok(()));
+            store.expect_save_flow::<PeginProcessorState>().returning(|_, _| Ok(()));
             store.expect_delete_flow().returning(|_| Ok(()));
             let store = Rc::new(store);
 
@@ -1676,6 +1791,68 @@ mod tests {
             removed: false,
             tx_hash: TxHash::from(H256::from_low_u64_be(62)),
         }
+    }
+
+    #[test]
+    fn processor_state_snapshot_restores_pegin_runtime_context() {
+        let mut harness = TestHarness::new();
+        let request_txid = test_txid([9u8; 32]);
+        let accept_pegin_txid = test_txid([8u8; 32]);
+        let flow_id = flow_id_from_request_pegin_txid(request_txid);
+        let retry_key = "request-pegin-retry-key".to_string();
+        let protocol_id = Uuid::new_v4();
+
+        let mut confirmable_event = ConfirmableEventWithData::new(
+            "pegin-requested-test".to_string(),
+            5,
+            harness.processor.blockchain_view.clone(),
+            RskPegManagerEvents::PeginRequested(test_pegin_requested_event(request_txid)),
+        );
+        confirmable_event.start_confirming(BlockNumber::from(1)).unwrap();
+        harness.processor.events_confirming.insert(confirmable_event.id(), confirmable_event);
+        harness.processor.tx_status_scheduler.schedule(flow_id, 7);
+        harness.processor.pegin_request_tracker.insert(request_txid);
+        harness
+            .processor
+            .pending_pegin_requested
+            .insert(request_txid, test_pegin_requested_event(request_txid));
+        harness
+            .processor
+            .pending_all_operator_take_txids_added
+            .insert(accept_pegin_txid, test_all_operator_take_txids_added_event(accept_pegin_txid));
+        harness
+            .processor
+            .pending_pegin_accepted
+            .insert(accept_pegin_txid, test_pegin_accepted_event(accept_pegin_txid));
+        harness
+            .processor
+            .unconfirmed_pegin_requests
+            .insert(retry_key.clone(), (test_spv_proof(), 3));
+        harness.processor.pegin_retry_scheduler.schedule(retry_key.clone(), 11);
+        harness.processor.unconfirmed_accept_pegin.insert(flow_id, 4);
+        harness.processor.accept_pegin_retry_scheduler.schedule(flow_id, 13);
+        harness
+            .processor
+            .signature_flows
+            .insert(protocol_id, harness.create_completed_sig_flow(protocol_id));
+
+        let snapshot = harness.processor.snapshot_processor_state();
+        let mut restored = TestHarness::new().processor;
+        restored.apply_processor_state(snapshot).unwrap();
+
+        assert_eq!(restored.events_confirming.len(), 1);
+        restored.blockchain_view.update(&test_block());
+        assert!(restored.events_confirming.values().next().unwrap().is_confirmed());
+        assert!(restored.tx_status_scheduler.is_scheduled(&flow_id));
+        assert!(restored.pegin_request_tracker.contains(&request_txid));
+        assert!(restored.pending_pegin_requested.contains_key(&request_txid));
+        assert!(restored.pending_all_operator_take_txids_added.contains_key(&accept_pegin_txid));
+        assert!(restored.pending_pegin_accepted.contains_key(&accept_pegin_txid));
+        assert_eq!(restored.unconfirmed_pegin_requests.get(&retry_key).unwrap().1, 3);
+        assert!(restored.pegin_retry_scheduler.is_scheduled(&retry_key));
+        assert_eq!(restored.unconfirmed_accept_pegin.get(&flow_id), Some(&4));
+        assert!(restored.accept_pegin_retry_scheduler.is_scheduled(&flow_id));
+        assert!(restored.signature_flows.get(&protocol_id).unwrap().is_done());
     }
 
     #[test]

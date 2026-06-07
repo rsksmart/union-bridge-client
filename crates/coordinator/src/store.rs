@@ -21,7 +21,10 @@ pub enum StoreKey {
     GlobalContext,
     SetupCommitteeFlow(Uuid),
     PeginFlow(Uuid),
+    PeginProcessorState,
     PegoutFlow(Uuid),
+    PegoutProcessorState,
+    AdvanceFundsProcessorState,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -41,9 +44,12 @@ impl StoreKey {
             StoreKey::PeginFlow(id) => {
                 format!("{}/{}", StorePrefix::PeginFlow.value(), id)
             }
+            StoreKey::PeginProcessorState => "pegin_processor_state".to_string(),
             StoreKey::PegoutFlow(id) => {
                 format!("{}/{}", StorePrefix::PegoutFlow.value(), id)
             }
+            StoreKey::PegoutProcessorState => "pegout_processor_state".to_string(),
+            StoreKey::AdvanceFundsProcessorState => "advance_funds_processor_state".to_string(),
         }
     }
 }
