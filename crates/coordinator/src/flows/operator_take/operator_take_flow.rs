@@ -24,7 +24,6 @@ use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_
 use crate::flows::common::{FlowId, Signaling};
 use crate::flows::operator_take::types::OperatorTakeTriggerData;
 use crate::flows::pegout::pegout_flow::flow_id_from_pegout_requested_tx_hash;
-use crate::store::{CoordinatorStoreApi, StoreKey};
 
 pub(crate) const PROGRAM_TYPE_ADVANCE_FUNDS: &str = "advance_funds";
 pub(crate) const ADVANCE_FUNDS_REQUEST_VAR_NAME: &str = "advance_funds_request";
@@ -179,41 +178,32 @@ pub(crate) struct FlowContext {
     operator_take_spv: Option<BtcTxSPVProof>,
     accept_pegin_pid: Option<Uuid>,
     created_at: Option<chrono::DateTime<chrono::Utc>>,
-    /// True while the current (register) step is parked on a retryable
-    /// `MissingConfirmationsOnNativeBridge` outcome. Persisted so a restart can
-    /// re-arm the in-memory retry; a successful submission resets it to false.
-    pending_retry: bool,
 }
 
-pub(crate) struct AdvanceFundsFlow<CG, BC, S>
+pub(crate) struct AdvanceFundsFlow<CG, BC>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
-    S: CoordinatorStoreApi,
 {
     contracts: Rc<CG>,
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
     native_bridge_verifier: NativeBridgeVerifier<CG>,
     signaling: Rc<Signaling>,
-    store: Rc<S>,
     state: FlowContext,
 }
 
-impl<CG, BC, S> AdvanceFundsFlow<CG, BC, S>
+impl<CG, BC> AdvanceFundsFlow<CG, BC>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
-    S: CoordinatorStoreApi,
 {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         contracts: Rc<CG>,
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
         signaling: Rc<Signaling>,
-        store: Rc<S>,
         flow_id: FlowId,
         trigger_data: OperatorTakeTriggerData,
     ) -> Self {
@@ -225,7 +215,6 @@ where
             bitvmx_broker,
             native_bridge_verifier,
             signaling,
-            store,
             state: FlowContext {
                 flow_id,
                 bitvmx_protocol_id,
@@ -241,7 +230,6 @@ where
                 operator_take_spv: None,
                 accept_pegin_pid: None,
                 created_at: Some(chrono::Utc::now()),
-                pending_retry: false,
             },
         }
     }
@@ -252,16 +240,48 @@ where
         bitvmx_broker: Rc<BC>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
         signaling: Rc<Signaling>,
-        store: Rc<S>,
         state: FlowContext,
     ) -> Self {
-        Self { contracts, rt_sync, bitvmx_broker, native_bridge_verifier, signaling, store, state }
+        Self { contracts, rt_sync, bitvmx_broker, native_bridge_verifier, signaling, state }
     }
 
-    fn persist_state(&self) -> Result<()> {
-        debug!("Persisting state for step: {:?}", self.state.step);
-        self.store
-            .save_flow(&StoreKey::OperatorTakeFlow(self.state.flow_id.value()), self.state.clone())
+    pub(crate) fn snapshot(&self) -> FlowContext {
+        self.state.clone()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_for_test(
+        contracts: Rc<CG>,
+        bitvmx_broker: Rc<BC>,
+        flow_id: FlowId,
+        trigger_data: OperatorTakeTriggerData,
+        step: Steps,
+    ) -> Self {
+        let committee_uuid = Uuid::from_u128(*trigger_data.committee_id);
+        let bitvmx_protocol_id = advance_funds_protocol_id(committee_uuid, trigger_data.slot_index);
+        Self {
+            contracts,
+            rt_sync: RuntimeSync::new().expect("Failed to create runtime sync for test flow"),
+            bitvmx_broker,
+            native_bridge_verifier: NativeBridgeVerifier::Dummy,
+            signaling: Rc::new(Signaling::new("/tmp", "disabled")),
+            state: FlowContext {
+                flow_id,
+                bitvmx_protocol_id,
+                step,
+                trigger_data,
+                my_p2p_address: None,
+                accept_pegin_txid: None,
+                my_committee_index: None,
+                operator_take_txid: None,
+                advance_funds_spv: None,
+                advance_funds_registered: None,
+                reimbursement_kickoff_spv: None,
+                operator_take_spv: None,
+                accept_pegin_pid: None,
+                created_at: None,
+            },
+        }
     }
 
     #[allow(clippy::too_many_lines)]
@@ -276,87 +296,58 @@ where
             format_step(next_step)
         );
 
-        let outcome = match next_step {
+        match next_step {
             Steps::WaitRskOperatorTakeTriggered => unreachable!(
                 "OperatorTakeTriggered is the initial step and should not be started explicitly"
             ),
-            Steps::GetBitVmxCommInfo => {
-                self.enter_request_comm_info()?;
-                StepOutcome::Done
-            }
+            Steps::GetBitVmxCommInfo => self.enter_request_comm_info()?,
             Steps::RequestBitVmxOperatorTakeTransactionInfo => {
                 self.enter_request_transaction_info()?;
-                StepOutcome::Done
             }
-            Steps::SetupBitVmxAdvanceFundsProtocol => {
-                self.enter_setup_protocol()?;
-                StepOutcome::Done
-            }
-            Steps::WaitBitVmxAdvanceFundsSpv => {
-                info!(
-                    "Waiting for advance-funds SPV proof for flow_id: {}, operator_take_txid: {}",
-                    self.state.flow_id,
-                    self.state
-                        .operator_take_txid
-                        .map_or_else(|| "n/a".to_string(), |txid| txid.to_string()),
-                );
-                StepOutcome::Done
-            }
+            Steps::SetupBitVmxAdvanceFundsProtocol => self.enter_setup_protocol()?,
+            Steps::WaitBitVmxAdvanceFundsSpv => info!(
+                "Waiting for advance-funds SPV proof for flow_id: {}, operator_take_txid: {}",
+                self.state.flow_id,
+                self.state
+                    .operator_take_txid
+                    .map_or_else(|| "n/a".to_string(), |txid| txid.to_string()),
+            ),
             Steps::RegisterOrWaitRskAdvanceFunds => {
                 if self.was_selected_operator() {
-                    self.enter_register_advance_funds()?
-                } else {
-                    info!(
-                        "Waiting for advance-funds confirmations on Rootstock for flow_id: {}",
-                        self.state.flow_id
-                    );
-                    StepOutcome::Done
+                    return self.enter_register_advance_funds();
                 }
+                info!(
+                    "Waiting for advance-funds confirmations on Rootstock for flow_id: {}",
+                    self.state.flow_id
+                );
             }
-            Steps::SetVarBitVmxAdvanceFundsRegistered => {
-                self.enter_notify_registered()?;
-                StepOutcome::Done
-            }
+            Steps::SetVarBitVmxAdvanceFundsRegistered => self.enter_notify_registered()?,
             Steps::RegisterOrWaitRskReimbursementKickoff => {
                 if self.was_selected_operator() {
-                    self.enter_register_reimbursement_kickoff()?
-                } else {
-                    info!(
-                        "Waiting for reimbursement-kickoff confirmations on Rootstock for flow_id: {}",
-                        self.state.flow_id
-                    );
-                    StepOutcome::Done
+                    return self.enter_register_reimbursement_kickoff();
                 }
+                info!(
+                    "Waiting for reimbursement-kickoff confirmations on Rootstock for flow_id: {}",
+                    self.state.flow_id
+                );
             }
             Steps::WaitBitVmxOperatorTakeSpv => {
                 info!("Waiting for operator take SPV proof for flow_id: {}", self.state.flow_id);
-                StepOutcome::Done
             }
             Steps::RegisterOrWaitRskOperatorTake => {
                 if self.was_selected_operator() {
-                    self.enter_register_operator_take()?
-                } else {
-                    info!(
-                        "Waiting for operator-take confirmations on Rootstock for flow_id: {}",
-                        self.state.flow_id
-                    );
-                    StepOutcome::Done
+                    return self.enter_register_operator_take();
                 }
+                info!(
+                    "Waiting for operator-take confirmations on Rootstock for flow_id: {}",
+                    self.state.flow_id
+                );
             }
-            Steps::Done => {
-                self.enter_write_completion_marker()?;
-                StepOutcome::Done
-            }
-            Steps::Failed => {
-                info!("AdvanceFundsFlow {}: Failed", self.state.flow_id);
-                StepOutcome::Done
-            }
-        };
+            Steps::Done => self.enter_write_completion_marker()?,
+            Steps::Failed => info!("AdvanceFundsFlow {}: Failed", self.state.flow_id),
+        }
 
-        self.state.pending_retry = matches!(outcome, StepOutcome::Retry { .. });
-        self.persist_state()?;
-
-        Ok(outcome)
+        Ok(StepOutcome::Done)
     }
 
     /// Deliver an event (`StepData`) to the flow. Dispatches to the
@@ -935,14 +926,6 @@ where
         matches!(self.state.step, Steps::Done | Steps::Failed)
     }
 
-    /// True when a restored flow was persisted mid-retry (register step parked
-    /// on missing native-bridge confirmations). The retry lives only in the
-    /// processor's in-memory `RetryTracker`, so it must be re-armed after a
-    /// restart or the submission would never be re-attempted.
-    pub(crate) fn pending_retry(&self) -> bool {
-        self.state.pending_retry
-    }
-
     /// Snapshot used by `Coordinator::log_active_flows` for periodic
     /// observability of in-flight flows.
     pub(crate) fn get_flow_details(&self) -> crate::event_processor::FlowDetails {
@@ -968,59 +951,6 @@ where
     pub(crate) fn matches_committee_slot(&self, committee_id: u128, slot_id: u64) -> bool {
         *self.state.trigger_data.committee_id == committee_id
             && self.state.trigger_data.slot_id == slot_id
-    }
-}
-
-#[cfg(test)]
-impl<CG, BC> AdvanceFundsFlow<CG, BC, crate::store::MockCoordinatorStoreApi>
-where
-    CG: RskContractsGatewayApi,
-    BC: BitVmxBrokerClientApi,
-{
-    pub(crate) fn new_for_test(
-        contracts: Rc<CG>,
-        bitvmx_broker: Rc<BC>,
-        flow_id: FlowId,
-        trigger_data: OperatorTakeTriggerData,
-        step: Steps,
-    ) -> Self {
-        let committee_uuid = Uuid::from_u128(*trigger_data.committee_id);
-        let bitvmx_protocol_id = advance_funds_protocol_id(committee_uuid, trigger_data.slot_index);
-        let mut store = crate::store::MockCoordinatorStoreApi::new();
-        store.expect_save_flow::<FlowContext>().returning(|_, _| Ok(()));
-        Self {
-            contracts,
-            rt_sync: RuntimeSync::new().expect("Failed to create runtime sync for test flow"),
-            bitvmx_broker,
-            native_bridge_verifier: NativeBridgeVerifier::Dummy,
-            signaling: Rc::new(Signaling::new("/tmp", "disabled")),
-            store: Rc::new(store),
-            state: FlowContext {
-                flow_id,
-                bitvmx_protocol_id,
-                step,
-                trigger_data,
-                my_p2p_address: None,
-                accept_pegin_txid: None,
-                my_committee_index: None,
-                operator_take_txid: None,
-                advance_funds_spv: None,
-                advance_funds_registered: None,
-                reimbursement_kickoff_spv: None,
-                operator_take_spv: None,
-                accept_pegin_pid: None,
-                created_at: None,
-                pending_retry: false,
-            },
-        }
-    }
-
-    /// Consume the flow and return its persisted state with `pending_retry`
-    /// set, mirroring a flow that was checkpointed mid-retry. Used to seed the
-    /// processor restore path.
-    pub(crate) fn into_saved_state_pending_retry(mut self) -> FlowContext {
-        self.state.pending_retry = true;
-        self.state
     }
 }
 
@@ -1471,58 +1401,5 @@ mod tests {
             );
         }
         assert_eq!(Steps::Failed.pos(), u32::MAX);
-    }
-
-    #[test]
-    fn flow_context_survives_persistence_round_trip() {
-        // Guards the persistence wiring: every FlowContext field must round-trip
-        // through serde (the same path CoordinatorStore uses), and
-        // from_saved_state must reconstruct the flow at the same step with its
-        // populated state intact.
-        let committee_id = Uuid::new_v4();
-        let flow_id = FlowId::from_random();
-        let trigger_data = test_trigger_data(committee_id, 3);
-
-        let mut contracts = MockRskContractsGatewayApi::new();
-        contracts.expect_my_address().return_const(Address::from(H160::from_low_u64_be(33)));
-
-        let mut flow = AdvanceFundsFlow::new_for_test(
-            Rc::new(contracts),
-            Rc::new(MockBitVmxBroker::new()),
-            flow_id,
-            trigger_data,
-            Steps::RegisterOrWaitRskOperatorTake,
-        );
-
-        // Populate the optional fields so the round-trip exercises the Some(..)
-        // arms, not just the defaults from construction.
-        flow.state.operator_take_txid = Some(test_spv_proof_value().tx.compute_txid());
-        flow.state.operator_take_spv = Some(test_spv_proof_value());
-        flow.state.my_committee_index = Some(2);
-        flow.state.pending_retry = true;
-
-        let json = serde_json::to_string(&flow.state).expect("FlowContext serializes");
-        let restored_ctx: FlowContext =
-            serde_json::from_str(&json).expect("FlowContext deserializes");
-
-        let mut store = crate::store::MockCoordinatorStoreApi::new();
-        store.expect_save_flow::<FlowContext>().returning(|_, _| Ok(()));
-        let restored = AdvanceFundsFlow::from_saved_state(
-            Rc::new(MockRskContractsGatewayApi::new()),
-            RuntimeSync::new().expect("runtime"),
-            Rc::new(MockBitVmxBroker::new()),
-            NativeBridgeVerifier::Dummy,
-            Rc::new(Signaling::new("/tmp", "disabled")),
-            Rc::new(store),
-            restored_ctx,
-        );
-
-        assert_eq!(restored.current_step(), Steps::RegisterOrWaitRskOperatorTake);
-        assert_eq!(restored.flow_id(), flow_id);
-        assert_eq!(restored.slot_index(), 3);
-        assert_eq!(restored.state.my_committee_index, Some(2));
-        assert!(restored.state.operator_take_spv.is_some());
-        assert!(restored.state.operator_take_txid.is_some());
-        assert!(restored.pending_retry());
     }
 }

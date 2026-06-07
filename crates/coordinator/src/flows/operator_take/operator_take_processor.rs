@@ -9,11 +9,14 @@ use common_bitvmx::bitvmx_types::{
 use common_core::types::{CommitteeId, Hash256, RskBlockAndUncles};
 use common_runtime::runtime_sync::RuntimeSync;
 use primitive_types::H256;
+use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, info_span, trace, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
 
-use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
+use crate::blockchain_tracker::{
+    BlockchainView, ConfirmableEventWithData, ConfirmableEventWithDataSnapshot,
+};
 use crate::event_processor::EventProcessor;
 use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
 use crate::flows::common::{FlowId, GlobalContext, Signaling};
@@ -26,11 +29,19 @@ use crate::flows::operator_take::operator_take_flow::{
 use crate::flows::operator_take::types::{
     OperatorTakeTriggerData, advance_funds_registered_from_event,
 };
-use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix, restore_flows};
+use crate::store::{CoordinatorStoreApi, StoreKey};
 use crate::types::{
     AdminRequest, EventStatus, FlowKind, OperatorTakeTriggeredEvent, PegoutRegisteredEvent,
     RetryTracker, RskPegManagerEvents, UserRequests,
 };
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AdvanceFundsProcessorState {
+    flows: HashMap<FlowId, FlowContext>,
+    events_confirming: HashMap<String, ConfirmableEventWithDataSnapshot>,
+    retries: RetryTracker<FlowId>,
+    request_pegout_tx_hashes: HashMap<(CommitteeId, u64), String>,
+}
 
 pub(crate) struct AdvanceFundsFlowProcessor<CG, BC, S>
 where
@@ -42,7 +53,7 @@ where
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
     global_context: GlobalContext,
-    flows: HashMap<FlowId, AdvanceFundsFlow<CG, BC, S>>,
+    flows: HashMap<FlowId, AdvanceFundsFlow<CG, BC>>,
     blockchain_view: BlockchainView,
     events_confirming: HashMap<String, ConfirmableEventWithData>,
     required_confirmations: u32,
@@ -54,15 +65,15 @@ where
     retries: RetryTracker<FlowId>,
     btc_status_retry_blocks: u32,
     signaling: Rc<Signaling>,
-    store: Rc<S>,
     request_pegout_tx_hashes: HashMap<(CommitteeId, u64), String>,
+    store: Rc<S>,
 }
 
 impl<CG, BC, S> AdvanceFundsFlowProcessor<CG, BC, S>
 where
     CG: RskContractsGatewayApi,
     BC: common_broker::broker::BitVmxBrokerClientApi,
-    S: CoordinatorStoreApi + 'static,
+    S: CoordinatorStoreApi,
 {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
@@ -89,50 +100,31 @@ where
             retries: RetryTracker::new(),
             btc_status_retry_blocks,
             signaling,
-            store: Rc::clone(store),
             request_pegout_tx_hashes: HashMap::new(),
+            store: Rc::clone(store),
         };
-
-        let flow_factory = |saved_state: FlowContext| {
-            AdvanceFundsFlow::from_saved_state(
-                Rc::clone(&processor.contracts_gateway),
-                processor.rt_sync.clone(),
-                Rc::clone(&processor.bitvmx_broker),
-                processor.native_bridge_verifier.clone(),
-                processor.signaling.clone(),
-                Rc::clone(&processor.store),
-                saved_state,
-            )
-        };
-
-        let restored: HashMap<Uuid, AdvanceFundsFlow<CG, BC, S>> =
-            restore_flows(store.as_ref(), StorePrefix::OperatorTakeFlow, flow_factory)
-                .expect("Failed to load operator-take flows from store");
-        processor.flows = restored.into_values().map(|flow| (flow.flow_id(), flow)).collect();
-
-        // Retries live only in the in-memory `RetryTracker`, so a flow parked
-        // on a retryable register step would otherwise never re-submit after a
-        // restart. Re-arm those retries from the persisted `pending_retry` flag.
-        let to_retry: Vec<FlowId> = processor
-            .flows
-            .values()
-            .filter(|flow| flow.pending_retry())
-            .map(AdvanceFundsFlow::flow_id)
-            .collect();
-        for flow_id in to_retry {
-            processor.schedule_retry(flow_id, 1, "re-arming retry for restored flow");
-        }
-
+        processor
+            .restore_processor_state()
+            .expect("Failed to load advance funds processor state from store");
         processor
     }
+}
 
-    #[cfg(test)]
+#[cfg(test)]
+impl<CG, BC> AdvanceFundsFlowProcessor<CG, BC, crate::store::MockCoordinatorStoreApi>
+where
+    CG: RskContractsGatewayApi,
+    BC: common_broker::broker::BitVmxBrokerClientApi,
+{
     pub(crate) fn new_for_test(
         contracts_gateway: Rc<CG>,
         bitvmx_broker: Rc<BC>,
         global_context: GlobalContext,
-        store: Rc<S>,
     ) -> Self {
+        let mut store = crate::store::MockCoordinatorStoreApi::new();
+        store.expect_save_flow::<AdvanceFundsProcessorState>().returning(|_, _| Ok(()));
+        let store = Rc::new(store);
+
         Self {
             contracts_gateway,
             rt_sync: RuntimeSync::new().expect("Failed to create runtime sync for test processor"),
@@ -146,9 +138,78 @@ where
             retries: RetryTracker::new(),
             btc_status_retry_blocks: 20,
             signaling: Rc::new(Signaling::new("/tmp", "disabled")),
-            store,
             request_pegout_tx_hashes: HashMap::new(),
+            store,
         }
+    }
+}
+
+impl<CG, BC, S> AdvanceFundsFlowProcessor<CG, BC, S>
+where
+    CG: RskContractsGatewayApi,
+    BC: common_broker::broker::BitVmxBrokerClientApi,
+    S: CoordinatorStoreApi,
+{
+    fn snapshot_processor_state(&self) -> AdvanceFundsProcessorState {
+        AdvanceFundsProcessorState {
+            flows: self.flows.iter().map(|(id, flow)| (*id, flow.snapshot())).collect(),
+            events_confirming: self
+                .events_confirming
+                .iter()
+                .filter_map(|(id, event)| event.snapshot().map(|snapshot| (id.clone(), snapshot)))
+                .collect(),
+            retries: self.retries.clone(),
+            request_pegout_tx_hashes: self.request_pegout_tx_hashes.clone(),
+        }
+    }
+
+    fn restore_processor_state(&mut self) -> Result<()> {
+        let Some(state) = self
+            .store
+            .load_flow::<AdvanceFundsProcessorState>(&StoreKey::AdvanceFundsProcessorState)?
+        else {
+            return Ok(());
+        };
+
+        self.apply_processor_state(state)
+    }
+
+    fn apply_processor_state(&mut self, state: AdvanceFundsProcessorState) -> Result<()> {
+        self.flows = state
+            .flows
+            .into_iter()
+            .map(|(flow_id, flow_state)| {
+                (
+                    flow_id,
+                    AdvanceFundsFlow::from_saved_state(
+                        self.contracts_gateway.clone(),
+                        self.rt_sync.clone(),
+                        self.bitvmx_broker.clone(),
+                        self.native_bridge_verifier.clone(),
+                        self.signaling.clone(),
+                        flow_state,
+                    ),
+                )
+            })
+            .collect();
+
+        let blockchain_view = BlockchainView::new();
+        self.events_confirming = state
+            .events_confirming
+            .into_iter()
+            .map(|(id, snapshot)| {
+                ConfirmableEventWithData::from_snapshot(snapshot, blockchain_view.clone())
+                    .map(|event| (id, event))
+            })
+            .collect::<Result<HashMap<_, _>>>()?;
+        self.blockchain_view = blockchain_view;
+        self.retries = state.retries;
+        self.request_pegout_tx_hashes = state.request_pegout_tx_hashes;
+        Ok(())
+    }
+
+    fn persist_processor_state(&self) -> Result<()> {
+        self.store.save_flow(&StoreKey::AdvanceFundsProcessorState, self.snapshot_processor_state())
     }
 
     fn schedule_retry(&mut self, flow_id: FlowId, attempt: i16, reason: &str) {
@@ -212,7 +273,7 @@ where
         &mut self,
         committee_id: Uuid,
         slot_index: usize,
-    ) -> Result<Option<&mut AdvanceFundsFlow<CG, BC, S>>> {
+    ) -> Result<Option<&mut AdvanceFundsFlow<CG, BC>>> {
         let target = advance_funds_protocol_id(committee_id, slot_index);
         let mut matches =
             self.flows.values_mut().filter(|flow| flow.bitvmx_protocol_id() == target);
@@ -277,7 +338,6 @@ where
             self.bitvmx_broker.clone(),
             self.native_bridge_verifier.clone(),
             self.signaling.clone(),
-            Rc::clone(&self.store),
             flow_id,
             trigger_data,
         );
@@ -360,12 +420,12 @@ where
         &mut self,
         committee_id: u128,
         slot_id: u64,
-    ) -> Option<&mut AdvanceFundsFlow<CG, BC, S>> {
+    ) -> Option<&mut AdvanceFundsFlow<CG, BC>> {
         self.flows.values_mut().find(|flow| flow.matches_committee_slot(committee_id, slot_id))
     }
 
     fn cleanup_terminal_flow_state(&mut self) {
-        let terminal_flows: Vec<&AdvanceFundsFlow<CG, BC, S>> =
+        let terminal_flows: Vec<&AdvanceFundsFlow<CG, BC>> =
             self.flows.values().filter(|flow| flow.is_terminal()).collect();
 
         for flow in terminal_flows {
@@ -379,22 +439,19 @@ where
     fn cleanup_terminal_flows(&mut self) {
         self.cleanup_terminal_flow_state();
 
-        // Delete terminal entries from the store directly via the typed
-        // constructor in `StoreKey`, then drop them from memory.
-        let terminal_flow_ids: Vec<FlowId> = self
+        // Advance-funds flows are not persisted just yet, so this processor removes
+        // terminal flows from memory directly instead of using cleanup_flows_matching.
+        let terminal_flow_ids: Vec<_> = self
             .flows
-            .values()
-            .filter(|flow| flow.is_terminal())
-            .map(AdvanceFundsFlow::flow_id)
+            .iter()
+            .filter(|(_, flow)| flow.is_terminal())
+            .map(|(flow_id, _)| *flow_id)
             .collect();
 
         for flow_id in terminal_flow_ids {
             debug!("Removing terminal advance funds flow {flow_id}");
-            if let Err(err) = self.store.delete_flow(&StoreKey::OperatorTakeFlow(flow_id.value())) {
-                error!("Failed to remove operator-take flow {flow_id} from persistence: {err}");
-            }
+            self.flows.remove(&flow_id);
         }
-        self.flows.retain(|_, flow| !flow.is_terminal());
     }
 
     fn process_confirmed_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
@@ -632,7 +689,7 @@ impl<CG, BC, S> EventProcessor for AdvanceFundsFlowProcessor<CG, BC, S>
 where
     CG: RskContractsGatewayApi,
     BC: common_broker::broker::BitVmxBrokerClientApi,
-    S: CoordinatorStoreApi + 'static,
+    S: CoordinatorStoreApi,
 {
     fn process_user_request(&mut self, req: &UserRequests) -> Result<()> {
         self.cleanup_terminal_flows();
@@ -644,7 +701,7 @@ where
         {
             self.fail_flow(*flow_id, reason)?;
         }
-        Ok(())
+        self.persist_processor_state()
     }
 
     #[allow(clippy::too_many_lines)]
@@ -752,14 +809,15 @@ where
                 trace!("AdvanceFundsFlowProcessor ignoring BitVMX event {event:?}");
             }
         }
-        Ok(())
+        self.persist_processor_state()
     }
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
         self.cleanup_terminal_flows();
 
         if self.required_confirmations == 0 {
-            return self.process_confirmed_rsk_event(event);
+            self.process_confirmed_rsk_event(event)?;
+            return self.persist_processor_state();
         }
 
         let (id, is_removal, block_num, managed_event) = match event {
@@ -841,7 +899,7 @@ where
             self.events_confirming.insert(confirmable_event.id(), confirmable_event);
         }
 
-        Ok(())
+        self.persist_processor_state()
     }
 
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
@@ -849,7 +907,7 @@ where
 
         self.process_block_confirmations(block)?;
         self.handle_retry_tick();
-        Ok(())
+        self.persist_processor_state()
     }
 
     fn shutdown(&mut self) {
@@ -882,25 +940,15 @@ mod tests {
         OutgoingBitVMXApiMessages, UnionSPVNotification, UnionTxType,
     };
     use common_broker::broker::MockBrokerClientApi;
-    use common_core::types::{Address, CommitteeId, Hash256};
+    use common_core::types::{Address, BlockNumber, CommitteeId, Hash256};
     use primitive_types::{H160, H256};
     use uuid::Uuid;
 
     use super::*;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
-    use crate::store::MockCoordinatorStoreApi;
 
     type MockBitVmxBroker =
         MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
-
-    /// Store mock for processor tests. `save_flow`/`delete_flow` are exercised
-    /// by step persistence and terminal cleanup, so both are stubbed to succeed.
-    fn test_store() -> Rc<MockCoordinatorStoreApi> {
-        let mut store = MockCoordinatorStoreApi::new();
-        store.expect_save_flow::<FlowContext>().returning(|_, _| Ok(()));
-        store.expect_delete_flow().returning(|_| Ok(()));
-        Rc::new(store)
-    }
 
     /// Build a contracts mock whose `my_address()` matches (selected operator)
     /// or differs from (non-selected operator) the trigger's `take_operator_address`.
@@ -946,6 +994,64 @@ mod tests {
     }
 
     #[test]
+    fn processor_state_snapshot_restores_advance_funds_runtime_context() {
+        let committee_id = Uuid::new_v4();
+        let slot_index = 4;
+        let flow_id = FlowId::from_random();
+        let trigger_data = test_trigger_data(committee_id, slot_index);
+
+        let flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(test_contracts(false)),
+            Rc::new(MockBitVmxBroker::new()),
+            flow_id,
+            trigger_data,
+            Steps::RegisterOrWaitRskAdvanceFunds,
+        );
+
+        let mut processor = AdvanceFundsFlowProcessor::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+        );
+        processor.flows.insert(flow_id, flow);
+        processor.retries.schedule(flow_id, 3, 7);
+        processor
+            .request_pegout_tx_hashes
+            .insert((CommitteeId::from(committee_id.as_u128()), slot_index as u64), "0xabc".into());
+
+        let mut confirmable_event = ConfirmableEventWithData::new(
+            "operator-take-triggered-test".to_string(),
+            5,
+            processor.blockchain_view.clone(),
+            RskPegManagerEvents::UnknownEvent,
+        );
+        confirmable_event.start_confirming(BlockNumber::from(1)).unwrap();
+        processor.events_confirming.insert(confirmable_event.id(), confirmable_event);
+
+        let snapshot = processor.snapshot_processor_state();
+        let mut restored = AdvanceFundsFlowProcessor::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+        );
+        restored.apply_processor_state(snapshot).unwrap();
+
+        assert_eq!(restored.events_confirming.len(), 1);
+        assert_eq!(
+            restored.flows.get(&flow_id).unwrap().current_step(),
+            Steps::RegisterOrWaitRskAdvanceFunds
+        );
+        assert!(restored.retries.is_scheduled(&flow_id));
+        assert_eq!(restored.retries.current_attempt(&flow_id), 3);
+        assert_eq!(
+            restored
+                .request_pegout_tx_hashes
+                .get(&(CommitteeId::from(committee_id.as_u128()), slot_index as u64)),
+            Some(&"0xabc".to_string())
+        );
+    }
+
+    #[test]
     fn advance_funds_confirmation_notifies_passive_followers() {
         let committee_id = Uuid::new_v4();
         let slot_index = 4;
@@ -967,7 +1073,6 @@ mod tests {
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             GlobalContext::new(),
-            test_store(),
         );
         processor.flows.insert(flow_id, flow);
 
@@ -1015,7 +1120,6 @@ mod tests {
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             GlobalContext::new(),
-            test_store(),
         );
         processor.flows.insert(flow_id, flow);
 
@@ -1051,7 +1155,6 @@ mod tests {
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             GlobalContext::new(),
-            test_store(),
         );
         processor.flows.insert(flow_id, flow);
 
@@ -1093,7 +1196,6 @@ mod tests {
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             GlobalContext::new(),
-            test_store(),
         );
         processor.flows.insert(flow_id, flow);
 
@@ -1132,7 +1234,6 @@ mod tests {
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             GlobalContext::new(),
-            test_store(),
         );
         processor.flows.insert(flow_id, flow);
 
@@ -1166,7 +1267,6 @@ mod tests {
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             GlobalContext::new(),
-            test_store(),
         );
         processor.flows.insert(flow_id, flow);
 
@@ -1200,7 +1300,6 @@ mod tests {
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             GlobalContext::new(),
-            test_store(),
         );
         processor.flows.insert(flow_id, flow);
         processor.retries.schedule(flow_id, 1, 1);
@@ -1217,52 +1316,6 @@ mod tests {
             !processor
                 .request_pegout_tx_hashes
                 .contains_key(&(CommitteeId::from(committee_id.as_u128()), slot_index as u64))
-        );
-    }
-
-    #[test]
-    fn restore_rearms_retry_for_flow_parked_mid_retry() {
-        // A selected-operator flow checkpointed at a register step with a
-        // pending retry must have that retry re-armed on restart — the
-        // RetryTracker is in-memory only, so otherwise the register tx would
-        // never be re-submitted and the flow would hang forever.
-        let committee_id = Uuid::new_v4();
-        let slot_index = 4;
-        let flow_id = FlowId::from_random();
-        let trigger_data = test_trigger_data(committee_id, slot_index);
-
-        let saved_state = AdvanceFundsFlow::new_for_test(
-            Rc::new(test_contracts(true)),
-            Rc::new(MockBitVmxBroker::new()),
-            flow_id,
-            trigger_data,
-            Steps::RegisterOrWaitRskAdvanceFunds,
-        )
-        .into_saved_state_pending_retry();
-
-        let mut store = MockCoordinatorStoreApi::new();
-        store.expect_load_all_flows::<FlowContext>().returning(move |_| {
-            let mut flows = HashMap::new();
-            flows.insert(flow_id.value(), saved_state.clone());
-            Ok(flows)
-        });
-
-        let processor = AdvanceFundsFlowProcessor::new(
-            Rc::new(MockRskContractsGatewayApi::new()),
-            RuntimeSync::new().expect("runtime"),
-            Rc::new(MockBitVmxBroker::new()),
-            GlobalContext::new(),
-            Rc::new(Signaling::new("/tmp", "disabled")),
-            &Rc::new(store),
-            5,
-            20,
-            NativeBridgeVerifier::Dummy,
-        );
-
-        assert!(processor.flows.contains_key(&flow_id), "flow restored");
-        assert!(
-            processor.retries.is_scheduled(&flow_id),
-            "pending retry must be re-armed after restore"
         );
     }
 
@@ -1292,7 +1345,6 @@ mod tests {
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             GlobalContext::new(),
-            test_store(),
         );
         processor.flows.insert(flow_id, flow);
 
@@ -1339,7 +1391,6 @@ mod tests {
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             GlobalContext::new(),
-            test_store(),
         );
         processor.flows.insert(terminal_flow_id, terminal_flow);
         processor.flows.insert(active_flow_id, active_flow);

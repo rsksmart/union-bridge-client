@@ -41,7 +41,7 @@ use uuid::Uuid;
 use crate::flows::common::FlowId;
 use crate::user_requests::ApplyToStream;
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum RskPegManagerEvents {
     PeginRequested(PeginRequestedEvent),
     PeginAccepted(PeginAcceptedEvent),
@@ -547,7 +547,7 @@ impl TryFrom<PeginAcceptedMessage> for RegisterSignaturesBitVmxData {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub(crate) struct TickScheduler<K: Eq + Hash + Clone> {
     pending: HashMap<K, u32>,
 }
@@ -601,7 +601,7 @@ impl<K: Eq + Hash + Clone> TickScheduler<K> {
 /// are tracked as `i16`. The invariant is that an entry in the scheduler has
 /// a matching entry in `attempts`; `tick()` returns matured items together
 /// with their attempt and removes both sides.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub(crate) struct RetryTracker<K: Eq + Hash + Clone> {
     attempts: HashMap<K, i16>,
     scheduler: TickScheduler<K>,
@@ -658,6 +658,7 @@ impl<K: Eq + Hash + Clone> RetryTracker<K> {
 }
 
 /// Time-based scheduler that uses block timestamps to track expiration times
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub(crate) struct TimeBasedScheduler<K: Eq + Hash + Clone> {
     pending: HashMap<K, u64>, // flow_id -> expiration_timestamp (in seconds)
 }
