@@ -4,12 +4,11 @@ use std::str::FromStr;
 use check_fork_tester::TesterRskBlockHeader;
 use primitive_types::{H256, U256};
 use serde::{Deserialize, Serialize};
-use sha3::{Digest, Keccak256};
 
 use crate::block_header::{RskBlockHeader, encode_list};
 use crate::{
     CheckForkArgs, RskBlock, SUPERBLOCK_TIMES_DIFFICULTY, build_check_fork_journal_from_args,
-    check_fork, compute_pegout_id,
+    build_pegout_base_event, build_pegout_id_preimage, check_fork, compute_pegout_id,
 };
 
 const DEFAULT_DIFFICULTY: u128 = 5_904_436_352_267_687_415_636;
@@ -17,12 +16,13 @@ const DEFAULT_TIMESTAMP: u64 = 1000;
 const DEFAULT_INIT_BLOCK_NUMBER: u64 = 100;
 const DEFAULT_REQ_NUMBER_OF_BLOCKS: u32 = 2;
 const DEFAULT_VERSION: u8 = 1;
-const DEFAULT_SEQ_ID: u32 = 1;
-const DEFAULT_RAND: u32 = 0xA2C0_FFEE;
-const DEFAULT_STREAM_ID: u32 = 1;
-const DEFAULT_PACKET_ID: u32 = 1;
-const DEFAULT_UTXO_ID: u32 = 4;
-const DEFAULT_OPERATOR_ID: [u8; 32] = [0x11; 32];
+const DEFAULT_SEQUENCE_NUMBER: u64 = 1;
+const DEFAULT_STREAM_ID: u64 = 1;
+const DEFAULT_PACKET_NUMBER: u64 = 1;
+const DEFAULT_SLOT_ID: u64 = 4;
+const DEFAULT_OPERATOR_TAKE_PUBKEY_PARITY: u8 = 0x02;
+const DEFAULT_OPERATOR_TAKE_PUBKEY_XONLY: [u8; 32] = [0x11; 32];
+const DEFAULT_BEST_BLOCK_HASH: [u8; 32] = [0x22; 32];
 
 impl From<&TesterRskBlockHeader> for RskBlockHeader {
     fn from(t: &TesterRskBlockHeader) -> Self {
@@ -65,7 +65,7 @@ struct TestCaseMiniChainHashValidation {
 }
 
 #[test]
-fn succeeds_with_two_blocks_when_all_conditions_met() {
+fn fails_with_two_blocks_because_a2_requires_a_checked_continuation_event() {
     let mut actual_effort = U256::zero();
 
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
@@ -79,11 +79,15 @@ fn succeeds_with_two_blocks_when_all_conditions_met() {
     let args = CheckForkArgsBuilder::new(block_list).required_effort(actual_effort).build();
     let result = check_fork(&args);
 
-    assert_eq!(result, Ok(actual_effort), "Expected to succeed for valid input");
+    assert_eq!(
+        result,
+        Err("Check-fork A2 requires at least one continuation block with the PegOutID base event"),
+        "Expected to fail because A2 needs a checked continuation event"
+    );
 }
 
 #[test]
-fn succeeds_with_two_blocks_and_one_uncle_when_all_conditions_met() {
+fn fails_with_two_blocks_and_one_uncle_because_a2_requires_a_checked_continuation_event() {
     let mut actual_effort = U256::zero();
 
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
@@ -102,7 +106,11 @@ fn succeeds_with_two_blocks_and_one_uncle_when_all_conditions_met() {
     let args = CheckForkArgsBuilder::new(block_list).required_effort(actual_effort).build();
     let result = check_fork(&args);
 
-    assert_eq!(result, Ok(actual_effort), "Expected to succeed for valid input");
+    assert_eq!(
+        result,
+        Err("Check-fork A2 requires at least one continuation block with the PegOutID base event"),
+        "Expected to fail because A2 needs a checked continuation event"
+    );
 }
 
 #[test]
@@ -118,12 +126,9 @@ fn succeeds_with_required_pegout_event_in_continuation_blocks() {
     let third_block = create_child_block(&second_block);
     actual_effort += calculate_effort_from_pow(third_block.pow);
 
-    let fourth_block = create_child_block(&third_block);
-    actual_effort += calculate_effort_from_pow(fourth_block.pow);
-
-    let block_list = vec![first_block, second_block, third_block, fourth_block];
+    let block_list = vec![first_block, second_block, third_block];
     let mut args = CheckForkArgsBuilder::new(block_list)
-        .required_num_blocks(4)
+        .required_num_blocks(3)
         .required_effort(actual_effort)
         .build();
     decorate_required_pegout_events(&mut args);
@@ -134,24 +139,45 @@ fn succeeds_with_required_pegout_event_in_continuation_blocks() {
 }
 
 #[test]
-fn compute_pegout_id_matches_public_input_encoding() {
-    let args = CheckForkArgsBuilder::new(vec![
-        create_first_block(DEFAULT_INIT_BLOCK_NUMBER),
-        create_child_block(&create_first_block(DEFAULT_INIT_BLOCK_NUMBER)),
-    ])
-    .build();
+fn compute_pegout_id_matches_contract_generate_pegout_id_encoding() {
+    let sequence_number_bytes =
+        hex::decode("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20").unwrap();
+    let operator_take_pubkey_xonly =
+        hex_32("393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758");
+    let best_block_hash = H256::from_slice(&hex_32(
+        "595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778",
+    ));
+    let args = CheckForkArgs {
+        version: 1,
+        sequence_number: U256::from_big_endian(&sequence_number_bytes),
+        stream_id: 0x2122_2324_2526_2728,
+        packet_number: 0x292a_2b2c_2d2e_2f30,
+        slot_id: 0x3132_3334_3536_3738,
+        operator_take_pubkey_parity: 0x02,
+        operator_take_pubkey_xonly,
+        best_block_hash,
+        init_block_time: DEFAULT_TIMESTAMP,
+        init_block_number: DEFAULT_INIT_BLOCK_NUMBER,
+        required_effort: U256::MAX,
+        required_num_blocks: DEFAULT_REQ_NUMBER_OF_BLOCKS,
+        block_list: Vec::new(),
+    };
+    let expected_preimage = hex::decode(concat!(
+        "010102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+        "2122232425262728292a2b2c2d2e2f30313233343536373802",
+        "393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758",
+        "595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778",
+    ))
+    .unwrap();
+    let expected_pegout_id =
+        H256::from_str("b4b063cb0c5ed4c2d1751165c2f759c5da3607421d7c40a2884401d416a6f7a6").unwrap();
 
-    let mut hasher = Keccak256::new();
-    hasher.update([args.version]);
-    hasher.update(args.seq_id.to_be_bytes());
-    hasher.update(args.stream_id.to_be_bytes());
-    hasher.update(args.packet_id.to_be_bytes());
-    hasher.update(args.utxo_id.to_be_bytes());
-    hasher.update(args.operator_id);
-    hasher.update(args.rand.to_be_bytes());
-    let expected = H256::from_slice(&hasher.finalize());
-
-    assert_eq!(compute_pegout_id(&args), expected);
+    assert_eq!(
+        build_pegout_id_preimage(&args).as_slice(),
+        expected_preimage.as_slice(),
+        "preimage must match OperatorTakeManager._generatePegoutId abi.encodePacked bytes"
+    );
+    assert_eq!(compute_pegout_id(&args), expected_pegout_id);
 }
 
 #[test]
@@ -162,19 +188,18 @@ fn journal_layout_is_exactly_76_bytes() {
             create_child_block(&create_first_block(DEFAULT_INIT_BLOCK_NUMBER)),
         ])
         .build();
-        args.utxo_id = 0x0102_0304;
+        args.slot_id = 0x0102_0304_0506_0708;
 
         let journal = build_check_fork_journal_from_args(&args, accepted).to_bytes();
         let pegout_id = compute_pegout_id(&args);
 
         assert_eq!(journal.len(), 76);
-        assert_eq!(&journal[0..32], &args.operator_id);
-        assert_eq!(&journal[32..36], &[0; 4]);
-        assert_eq!(&journal[36..68], pegout_id.as_bytes());
-        assert_eq!(&journal[68..72], &args.utxo_id.to_be_bytes());
-        assert_eq!(journal[72], accepted_byte);
-        assert_eq!(&journal[73..75], &u16::from(args.version).to_be_bytes());
-        assert_eq!(journal[75], 0);
+        assert_eq!(journal[0], args.operator_take_pubkey_parity);
+        assert_eq!(&journal[1..33], &args.operator_take_pubkey_xonly);
+        assert_eq!(&journal[33..65], pegout_id.as_bytes());
+        assert_eq!(&journal[65..73], &args.slot_id.to_be_bytes());
+        assert_eq!(journal[73], accepted_byte);
+        assert_eq!(&journal[74..76], &u16::from(args.version).to_be_bytes());
     }
 }
 
@@ -195,7 +220,7 @@ fn fails_when_required_block_number_is_invalid() {
 }
 
 #[test]
-fn fails_when_block_list_has_less_than_two_blocks() {
+fn fails_when_block_list_has_less_than_three_blocks() {
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
     let block_list = vec![first_block];
 
@@ -204,8 +229,8 @@ fn fails_when_block_list_has_less_than_two_blocks() {
     let result = check_fork(&args);
     assert_eq!(
         result,
-        Err("Check-fork requires at least two blocks"),
-        "Expected to fail if block_list has less than two blocks"
+        Err("Check-fork A2 requires at least one continuation block with the PegOutID base event"),
+        "Expected to fail if block_list has less than three blocks"
     );
 }
 
@@ -213,9 +238,10 @@ fn fails_when_block_list_has_less_than_two_blocks() {
 fn fails_when_provided_blocks_are_less_than_required() {
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
     let second_block = create_child_block(&first_block);
-    let block_list = vec![first_block, second_block];
+    let third_block = create_child_block(&second_block);
+    let block_list = vec![first_block, second_block, third_block];
 
-    let args = CheckForkArgsBuilder::new(block_list).required_num_blocks(3).build();
+    let args = CheckForkArgsBuilder::new(block_list).required_num_blocks(4).build();
 
     let result = check_fork(&args);
     assert_eq!(
@@ -229,7 +255,8 @@ fn fails_when_provided_blocks_are_less_than_required() {
 fn fails_when_first_block_timestamp_is_lower_than_min_requested() {
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
     let second_block = create_child_block(&first_block);
-    let block_list = vec![first_block, second_block];
+    let third_block = create_child_block(&second_block);
+    let block_list = vec![first_block, second_block, third_block];
 
     let args = CheckForkArgsBuilder::new(block_list).init_block_time(1_000_000).build();
 
@@ -245,7 +272,8 @@ fn fails_when_first_block_timestamp_is_lower_than_min_requested() {
 fn fails_when_first_block_number_is_lower_than_min_requested() {
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
     let second_block = create_child_block(&first_block);
-    let block_list = vec![first_block, second_block];
+    let third_block = create_child_block(&second_block);
+    let block_list = vec![first_block, second_block, third_block];
 
     let args = CheckForkArgsBuilder::new(block_list).init_block_number(1_000_000).build();
 
@@ -271,9 +299,13 @@ fn fails_when_cumulative_effort_below_expected() {
     second_block.uncles = vec![second_block_uncle];
     actual_effort += calculate_effort_from_pow(second_block.pow);
 
-    let block_list = vec![first_block, second_block];
+    let third_block = create_child_block(&second_block);
+    actual_effort += calculate_effort_from_pow(third_block.pow);
+
+    let block_list = vec![first_block, second_block, third_block];
     let expected_effort = actual_effort + 1;
-    let args = CheckForkArgsBuilder::new(block_list).required_effort(expected_effort).build();
+    let mut args = CheckForkArgsBuilder::new(block_list).required_effort(expected_effort).build();
+    decorate_required_pegout_events(&mut args);
 
     let result = check_fork(&args);
     assert_eq!(
@@ -290,7 +322,8 @@ fn fails_when_blocks_are_not_consecutive() {
     let mut second_block = create_child_block(&first_block);
     second_block.header.number = first_block.header.number + 2;
 
-    let block_list = vec![first_block, second_block];
+    let third_block = create_child_block(&second_block);
+    let block_list = vec![first_block, second_block, third_block];
     let args = CheckForkArgsBuilder::new(block_list).build();
 
     let result = check_fork(&args);
@@ -308,7 +341,8 @@ fn fails_when_consecutive_blocks_are_not_parent_child() {
     let mut second_block = create_child_block(&first_block);
     second_block.header.parent = H256::from_low_u64_be(1);
 
-    let block_list = vec![first_block, second_block];
+    let third_block = create_child_block(&second_block);
+    let block_list = vec![first_block, second_block, third_block];
     let args = CheckForkArgsBuilder::new(block_list).build();
 
     let result = check_fork(&args);
@@ -364,10 +398,8 @@ fn fails_when_continuation_block_is_missing_the_pegout_event() {
 }
 
 #[test]
-fn fails_when_base_event_fields_do_not_match_args() {
-    for (case, offset) in
-        [("operator_id", 0), ("pegout_id", 32), ("stream_id", 64), ("utxo_id", 68)]
-    {
+fn fails_when_base_event_pegout_id_does_not_match_args() {
+    for (case, offset) in [("pegout_id_first_byte", 0), ("pegout_id_last_byte", 31)] {
         let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
         let second_block = create_child_block(&first_block);
         let third_block = create_child_block(&second_block);
@@ -391,7 +423,7 @@ fn fails_when_base_event_fields_do_not_match_args() {
         assert_eq!(
             result,
             Err("Continuation block is missing the expected PegOutID base event"),
-            "Expected to fail when {case} does not match args"
+            "Expected to fail when {case} does not match the computed pegout ID"
         );
     }
 }
@@ -423,7 +455,8 @@ fn fails_when_consecutive_block_difficulty_is_lower_than_bounds() {
         first_block.header.difficulty.saturating_sub(first_block.header.difficulty / 399);
     second_block.pow = calculate_superblock_effort(second_block.header.difficulty);
 
-    let block_list = vec![first_block, second_block];
+    let third_block = create_child_block(&second_block);
+    let block_list = vec![first_block, second_block, third_block];
     let args = CheckForkArgsBuilder::new(block_list).build();
 
     let result = check_fork(&args);
@@ -443,7 +476,8 @@ fn fails_when_consecutive_block_difficulty_is_higher_than_bounds() {
         first_block.header.difficulty.saturating_add(first_block.header.difficulty / 399);
     second_block.pow = calculate_superblock_effort(second_block.header.difficulty);
 
-    let block_list = vec![first_block, second_block];
+    let third_block = create_child_block(&second_block);
+    let block_list = vec![first_block, second_block, third_block];
     let args = CheckForkArgsBuilder::new(block_list).build();
 
     let result = check_fork(&args);
@@ -461,7 +495,8 @@ fn fails_when_consecutive_block_timestamp_is_lower() {
     let mut second_block = create_child_block(&first_block);
     second_block.header.timestamp = first_block.header.timestamp;
 
-    let block_list = vec![first_block, second_block];
+    let third_block = create_child_block(&second_block);
+    let block_list = vec![first_block, second_block, third_block];
     let args = CheckForkArgsBuilder::new(block_list).build();
 
     let result = check_fork(&args);
@@ -482,7 +517,8 @@ fn fails_when_uncle_number_is_different_from_trunk() {
     let mut second_block = create_child_block(&first_block);
     second_block.uncles = vec![second_block_uncle];
 
-    let block_list = vec![first_block, second_block];
+    let third_block = create_child_block(&second_block);
+    let block_list = vec![first_block, second_block, third_block];
     let args = CheckForkArgsBuilder::new(block_list).build();
 
     let result = check_fork(&args);
@@ -503,7 +539,8 @@ fn fails_when_uncle_parent_is_different_from_trunk() {
     let mut second_block = create_child_block(&first_block);
     second_block.uncles = vec![second_block_uncle];
 
-    let block_list = vec![first_block, second_block];
+    let third_block = create_child_block(&second_block);
+    let block_list = vec![first_block, second_block, third_block];
     let args = CheckForkArgsBuilder::new(block_list).build();
 
     let result = check_fork(&args);
@@ -524,7 +561,8 @@ fn fails_when_uncle_difficulty_is_different_from_trunk() {
     let mut second_block = create_child_block(&first_block);
     second_block.uncles = vec![second_block_uncle];
 
-    let block_list = vec![first_block, second_block];
+    let third_block = create_child_block(&second_block);
+    let block_list = vec![first_block, second_block, third_block];
     let args = CheckForkArgsBuilder::new(block_list).build();
 
     let result = check_fork(&args);
@@ -681,6 +719,10 @@ fn calculate_effort_from_pow(pow: H256) -> U256 {
     U256::MAX.checked_div(pow_dec).expect("0 division on calculate_effort_from_pow")
 }
 
+fn hex_32(value: &str) -> [u8; 32] {
+    hex::decode(value).unwrap().try_into().unwrap()
+}
+
 fn decorate_required_pegout_events(args: &mut CheckForkArgs) {
     let base_event = build_expected_base_event(args);
     for index in 2..args.block_list.len() {
@@ -697,13 +739,7 @@ fn decorate_required_pegout_events(args: &mut CheckForkArgs) {
 }
 
 fn build_expected_base_event(args: &CheckForkArgs) -> Vec<u8> {
-    let pegout_id = compute_pegout_id(args);
-    let mut event = Vec::with_capacity(72);
-    event.extend_from_slice(&args.operator_id);
-    event.extend_from_slice(pegout_id.as_bytes());
-    event.extend_from_slice(&args.stream_id.to_be_bytes());
-    event.extend_from_slice(&args.utxo_id.to_be_bytes());
-    event
+    build_pegout_base_event(args).to_vec()
 }
 
 fn assert_minichain_hashes_are_valid_from_fixture(path: &str) {
@@ -732,12 +768,13 @@ fn assert_minichain_hashes_are_valid_from_fixture(path: &str) {
 #[derive(Default)]
 struct CheckForkArgsBuilder {
     version: Option<u8>,
-    seq_id: Option<u32>,
-    rand: Option<u32>,
-    stream_id: Option<u32>,
-    packet_id: Option<u32>,
-    utxo_id: Option<u32>,
-    operator_id: Option<[u8; 32]>,
+    sequence_number: Option<U256>,
+    stream_id: Option<u64>,
+    packet_number: Option<u64>,
+    slot_id: Option<u64>,
+    operator_take_pubkey_parity: Option<u8>,
+    operator_take_pubkey_xonly: Option<[u8; 32]>,
+    best_block_hash: Option<H256>,
     init_block_time: Option<u64>,
     init_block_number: Option<u64>,
     required_num_blocks: Option<u32>,
@@ -773,12 +810,21 @@ impl CheckForkArgsBuilder {
     fn build(self) -> CheckForkArgs {
         CheckForkArgs {
             version: self.version.unwrap_or(DEFAULT_VERSION),
-            seq_id: self.seq_id.unwrap_or(DEFAULT_SEQ_ID),
-            rand: self.rand.unwrap_or(DEFAULT_RAND),
+            sequence_number: self
+                .sequence_number
+                .unwrap_or_else(|| U256::from(DEFAULT_SEQUENCE_NUMBER)),
             stream_id: self.stream_id.unwrap_or(DEFAULT_STREAM_ID),
-            packet_id: self.packet_id.unwrap_or(DEFAULT_PACKET_ID),
-            utxo_id: self.utxo_id.unwrap_or(DEFAULT_UTXO_ID),
-            operator_id: self.operator_id.unwrap_or(DEFAULT_OPERATOR_ID),
+            packet_number: self.packet_number.unwrap_or(DEFAULT_PACKET_NUMBER),
+            slot_id: self.slot_id.unwrap_or(DEFAULT_SLOT_ID),
+            operator_take_pubkey_parity: self
+                .operator_take_pubkey_parity
+                .unwrap_or(DEFAULT_OPERATOR_TAKE_PUBKEY_PARITY),
+            operator_take_pubkey_xonly: self
+                .operator_take_pubkey_xonly
+                .unwrap_or(DEFAULT_OPERATOR_TAKE_PUBKEY_XONLY),
+            best_block_hash: self
+                .best_block_hash
+                .unwrap_or_else(|| H256::from(DEFAULT_BEST_BLOCK_HASH)),
             init_block_time: self.init_block_time.unwrap_or(DEFAULT_TIMESTAMP),
             init_block_number: self.init_block_number.unwrap_or(DEFAULT_INIT_BLOCK_NUMBER),
             required_effort: self.required_effort.unwrap_or(U256::MAX),

@@ -11,14 +11,17 @@ use crate::block_header::RskBlockHeader;
 
 pub const SUPERBLOCK_TIMES_DIFFICULTY: u8 = 20;
 pub const CHECK_FORK_JOURNAL_LEN: usize = 76;
-pub const PEGOUT_BASE_EVENT_LEN: usize = 72;
+pub const PEGOUT_BASE_EVENT_LEN: usize = 32;
 
 const BASE_EVENT_HEADER_VERSION: u8 = 2;
-const CHECK_FORK_OPERATOR_ID_LEN: usize = 32;
-const JOURNAL_OPERATOR_ID_LEN: usize = 36;
 const PEGOUT_ID_LEN: usize = 32;
-const STREAM_ID_LEN: usize = 4;
-const UTXO_ID_LEN: usize = 4;
+const OPERATOR_TAKE_PUBKEY_LEN: usize = 33;
+const OPERATOR_TAKE_PUBKEY_XONLY_LEN: usize = 32;
+const SEQUENCE_NUMBER_LEN: usize = 32;
+const STREAM_ID_LEN: usize = 8;
+const PACKET_NUMBER_LEN: usize = 8;
+const SLOT_ID_LEN: usize = 8;
+const PEGOUT_ID_PREIMAGE_LEN: usize = 122;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RskBlock {
@@ -30,12 +33,13 @@ pub struct RskBlock {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckForkArgs {
     pub version: u8,
-    pub seq_id: u32,
-    pub rand: u32,
-    pub stream_id: u32,
-    pub packet_id: u32,
-    pub utxo_id: u32,
-    pub operator_id: [u8; 32],
+    pub sequence_number: U256,
+    pub stream_id: u64,
+    pub packet_number: u64,
+    pub slot_id: u64,
+    pub operator_take_pubkey_parity: u8,
+    pub operator_take_pubkey_xonly: [u8; OPERATOR_TAKE_PUBKEY_XONLY_LEN],
+    pub best_block_hash: H256,
     pub init_block_time: u64,
     pub init_block_number: u64,
     pub required_effort: U256,
@@ -45,9 +49,9 @@ pub struct CheckForkArgs {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CheckForkJournal {
-    pub operator_id: [u8; JOURNAL_OPERATOR_ID_LEN],
+    pub operator_take_pubkey: [u8; OPERATOR_TAKE_PUBKEY_LEN],
     pub pegout_id: [u8; PEGOUT_ID_LEN],
-    pub slot_id: [u8; 4],
+    pub slot_id: [u8; SLOT_ID_LEN],
     pub accepted: u8,
     pub version: [u8; 2],
 }
@@ -58,8 +62,8 @@ impl CheckForkJournal {
         let mut out = [0u8; CHECK_FORK_JOURNAL_LEN];
         let mut rest = out.as_mut_slice();
 
-        let (operator_dst, next) = rest.split_at_mut(self.operator_id.len());
-        operator_dst.copy_from_slice(&self.operator_id);
+        let (operator_dst, next) = rest.split_at_mut(self.operator_take_pubkey.len());
+        operator_dst.copy_from_slice(&self.operator_take_pubkey);
         rest = next;
 
         let (pegout_dst, next) = rest.split_at_mut(self.pegout_id.len());
@@ -82,14 +86,40 @@ impl CheckForkJournal {
 #[must_use]
 pub fn compute_pegout_id(args: &CheckForkArgs) -> H256 {
     let mut hasher = Keccak256::new();
-    hasher.update([args.version]);
-    hasher.update(args.seq_id.to_be_bytes());
-    hasher.update(args.stream_id.to_be_bytes());
-    hasher.update(args.packet_id.to_be_bytes());
-    hasher.update(args.utxo_id.to_be_bytes());
-    hasher.update(args.operator_id);
-    hasher.update(args.rand.to_be_bytes());
+    hasher.update(build_pegout_id_preimage(args));
     H256::from_slice(&hasher.finalize())
+}
+
+fn build_pegout_id_preimage(args: &CheckForkArgs) -> [u8; PEGOUT_ID_PREIMAGE_LEN] {
+    let mut out = [0u8; PEGOUT_ID_PREIMAGE_LEN];
+    let mut offset = 0;
+
+    out[offset] = args.version;
+    offset += 1;
+
+    out[offset..offset + SEQUENCE_NUMBER_LEN]
+        .copy_from_slice(&args.sequence_number.to_big_endian());
+    offset += SEQUENCE_NUMBER_LEN;
+
+    out[offset..offset + STREAM_ID_LEN].copy_from_slice(&args.stream_id.to_be_bytes());
+    offset += STREAM_ID_LEN;
+
+    out[offset..offset + PACKET_NUMBER_LEN].copy_from_slice(&args.packet_number.to_be_bytes());
+    offset += PACKET_NUMBER_LEN;
+
+    out[offset..offset + SLOT_ID_LEN].copy_from_slice(&args.slot_id.to_be_bytes());
+    offset += SLOT_ID_LEN;
+
+    out[offset] = args.operator_take_pubkey_parity;
+    offset += 1;
+
+    out[offset..offset + OPERATOR_TAKE_PUBKEY_XONLY_LEN]
+        .copy_from_slice(&args.operator_take_pubkey_xonly);
+    offset += OPERATOR_TAKE_PUBKEY_XONLY_LEN;
+
+    out[offset..offset + PEGOUT_ID_LEN].copy_from_slice(args.best_block_hash.as_bytes());
+
+    out
 }
 
 #[must_use]
@@ -98,17 +128,17 @@ pub fn build_check_fork_journal_from_args(
     accepted: bool,
 ) -> CheckForkJournal {
     let pegout_id = compute_pegout_id(args);
-    let mut operator_id = [0u8; JOURNAL_OPERATOR_ID_LEN];
-    let (operator_prefix, _) = operator_id.split_at_mut(args.operator_id.len());
-    operator_prefix.copy_from_slice(&args.operator_id);
+    let mut operator_take_pubkey = [0u8; OPERATOR_TAKE_PUBKEY_LEN];
+    operator_take_pubkey[0] = args.operator_take_pubkey_parity;
+    operator_take_pubkey[1..].copy_from_slice(&args.operator_take_pubkey_xonly);
 
     let mut pegout_id_bytes = [0u8; PEGOUT_ID_LEN];
     pegout_id_bytes.copy_from_slice(pegout_id.as_bytes());
 
     CheckForkJournal {
-        operator_id,
+        operator_take_pubkey,
         pegout_id: pegout_id_bytes,
-        slot_id: args.utxo_id.to_be_bytes(),
+        slot_id: args.slot_id.to_be_bytes(),
         accepted: u8::from(accepted),
         version: u16::from(args.version).to_be_bytes(),
     }
@@ -118,19 +148,7 @@ pub fn build_check_fork_journal_from_args(
 pub fn build_pegout_base_event(args: &CheckForkArgs) -> [u8; PEGOUT_BASE_EVENT_LEN] {
     let pegout_id = compute_pegout_id(args);
     let mut out = [0u8; PEGOUT_BASE_EVENT_LEN];
-    let mut offset = 0;
-
-    out[offset..offset + CHECK_FORK_OPERATOR_ID_LEN].copy_from_slice(&args.operator_id);
-    offset += CHECK_FORK_OPERATOR_ID_LEN;
-
-    out[offset..offset + PEGOUT_ID_LEN].copy_from_slice(pegout_id.as_bytes());
-    offset += PEGOUT_ID_LEN;
-
-    out[offset..offset + STREAM_ID_LEN].copy_from_slice(&args.stream_id.to_be_bytes());
-    offset += STREAM_ID_LEN;
-
-    out[offset..offset + UTXO_ID_LEN].copy_from_slice(&args.utxo_id.to_be_bytes());
-
+    out.copy_from_slice(pegout_id.as_bytes());
     out
 }
 
@@ -138,7 +156,8 @@ pub fn build_pegout_base_event(args: &CheckForkArgs) -> [u8; PEGOUT_BASE_EVENT_L
 ///
 /// # Errors
 ///
-/// Returns an error string if the fork validation fails.
+/// Returns an error string if the fork validation fails (e.g., insufficient blocks,
+/// invalid block sequence, cumulative `PoW` below threshold, or base event mismatch)
 #[allow(dead_code)]
 pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
     let CheckForkArgs {
@@ -150,6 +169,7 @@ pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
         ..
     } = args;
 
+    // extract values directly to avoid dereferencing later
     let expected_base_event = build_pegout_base_event(args);
     let init_block_time = *init_block_time;
     let init_block_number = *init_block_number;
@@ -215,8 +235,10 @@ fn validate_block_list(
         return Err("Invalid number of required blocks");
     }
 
-    if block_list.len() < 2 {
-        return Err("Check-fork requires at least two blocks");
+    if block_list.len() < 3 {
+        return Err(
+            "Check-fork A2 requires at least one continuation block with the PegOutID base event",
+        );
     }
 
     if block_list.len() < required_num_blocks as usize {
@@ -268,6 +290,7 @@ fn contains_matching_pegout_event(
 }
 
 fn validate_consecutive_block(block: &RskBlock, prev_block: &RskBlock) -> Result<(), &'static str> {
+    // block timestamp should be greater than previous one
     if block.header.timestamp <= prev_block.header.timestamp {
         return Err("Block Timestamp is not increasing");
     }
@@ -278,10 +301,12 @@ fn validate_consecutive_block(block: &RskBlock, prev_block: &RskBlock) -> Result
         .checked_add(1)
         .ok_or("Overflow incrementing previous block number")?;
 
+    // blocks should be consecutive
     if block.header.number != expected_next_number {
         return Err("Block numbers are not consecutive");
     }
 
+    // previous should be the parent of current one
     if block.header.parent != prev_block.header.hash {
         return Err("Invalid parent linkage between blocks");
     }

@@ -22,6 +22,8 @@ use serde_json::{Value, json};
 const RSK_RPC_URL: &str = "https://public-node.rsk.co";
 const SUPERBLOCK_THRESHOLD_FACTOR: u64 = 20;
 
+// Used mainly for deserialization and also to avoid adding
+// bitcoin-specific RPC dependencies to the `check-fork` crate.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TesterRskBlockHeader {
     #[serde(rename = "number", deserialize_with = "deserialize_hex_u64")]
@@ -187,14 +189,17 @@ pub async fn get_blocks(
 ///
 /// # Errors
 ///
-/// Returns an error when fewer than two blocks are provided, because check-fork
-/// requires at least a two-block window.
+/// Returns an error when fewer than three blocks are provided, because check-fork
+/// A2 requires at least one continuation block with the `PegOutID` base event.
 pub fn apply_base_event_fixture(
     blocks: &mut [RskBlock],
     base_event: &[u8],
 ) -> Result<(), Box<dyn Error>> {
-    if blocks.len() < 2 {
-        return Err("Check-fork requires at least two blocks".into());
+    if blocks.len() < 3 {
+        return Err(
+            "Check-fork A2 requires at least one continuation block with the PegOutID base event"
+                .into(),
+        );
     }
 
     for block in blocks.iter_mut() {
@@ -330,12 +335,16 @@ async fn fetch_block_by_num(
 }
 
 fn log_if_superblock(block: &TesterRskBlock) -> Result<(), Box<dyn Error>> {
+    // Parse the block's actual PoW from `bitcoinMergedMiningHeader`.
     let actual_block_pow =
         U256::from_big_endian(block.header.bitcoin_merged_mining_header.as_slice());
+    // Compute the PoW target from difficulty by inversion. `difficulty 1` maps to `U256::MAX`.
     let target_block_pow =
         U256::MAX.checked_div(block.header.difficulty).ok_or("0 division on log_if_superblock")?;
+    // Define a superblock as one whose PoW is at least N times harder than the required target.
     let superblock_pow = target_block_pow / SUPERBLOCK_THRESHOLD_FACTOR;
 
+    // If the actual block PoW is lower (i.e. harder) than the superblock threshold, we found one.
     if actual_block_pow < superblock_pow {
         let timestamp_i64 = i64::try_from(block.header.timestamp).unwrap_or(i64::MAX);
         let formatted_time =
@@ -362,12 +371,17 @@ fn add_block_effort(total: U256, block: &RskBlock) -> Result<U256, Box<dyn Error
 fn build_summary(args: &CheckForkArgs, pegout_id: H256) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "version={}", args.version);
-    let _ = writeln!(out, "seq_id={}", args.seq_id);
-    let _ = writeln!(out, "rand=0x{:08x}", args.rand);
+    let _ = writeln!(out, "sequence_number={}", args.sequence_number);
     let _ = writeln!(out, "stream_id={}", args.stream_id);
-    let _ = writeln!(out, "packet_id={}", args.packet_id);
-    let _ = writeln!(out, "utxo_id={}", args.utxo_id);
-    let _ = writeln!(out, "operator_id=0x{}", hex::encode(args.operator_id));
+    let _ = writeln!(out, "packet_number={}", args.packet_number);
+    let _ = writeln!(out, "slot_id={}", args.slot_id);
+    let _ = writeln!(out, "operator_take_pubkey_parity=0x{:02x}", args.operator_take_pubkey_parity);
+    let _ = writeln!(
+        out,
+        "operator_take_pubkey_xonly=0x{}",
+        hex::encode(args.operator_take_pubkey_xonly)
+    );
+    let _ = writeln!(out, "best_block_hash=0x{}", hex::encode(args.best_block_hash.as_bytes()));
     let _ = writeln!(out, "pegout_id=0x{}", hex::encode(pegout_id.as_bytes()));
     let _ = writeln!(out, "block_count={}", args.block_list.len());
     let _ = writeln!(out, "required_num_blocks={}", args.required_num_blocks);

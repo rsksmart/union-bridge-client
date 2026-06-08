@@ -13,12 +13,13 @@ use primitive_types::U256;
 use zkvm_cli_serde::{serialize_guest_input, serialize_image_id};
 
 const MOCK_CHECK_FORK_VERSION: u8 = 1;
-const MOCK_CHECK_FORK_SEQ_ID: u32 = 1;
-const MOCK_CHECK_FORK_RAND: u32 = 0xA2C0_FFEE;
-const MOCK_CHECK_FORK_STREAM_ID: u32 = 1;
-const MOCK_CHECK_FORK_PACKET_ID: u32 = 1;
-const MOCK_CHECK_FORK_UTXO_ID: u32 = 4;
-const MOCK_CHECK_FORK_OPERATOR_ID: [u8; 32] = [0x11; 32];
+const MOCK_CHECK_FORK_SEQUENCE_NUMBER: u64 = 1;
+const MOCK_CHECK_FORK_STREAM_ID: u64 = 1;
+const MOCK_CHECK_FORK_PACKET_NUMBER: u64 = 1;
+const MOCK_CHECK_FORK_SLOT_ID: u64 = 4;
+const MOCK_CHECK_FORK_OPERATOR_TAKE_PUBKEY_PARITY: u8 = 0x02;
+const MOCK_CHECK_FORK_OPERATOR_TAKE_PUBKEY_XONLY: [u8; 32] = [0x11; 32];
+const MOCK_CHECK_FORK_BEST_BLOCK_HASH: [u8; 32] = [0x22; 32];
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -77,12 +78,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut check_fork_args = CheckForkArgs {
         version: MOCK_CHECK_FORK_VERSION,
-        seq_id: MOCK_CHECK_FORK_SEQ_ID,
-        rand: MOCK_CHECK_FORK_RAND,
+        sequence_number: U256::from(MOCK_CHECK_FORK_SEQUENCE_NUMBER),
         stream_id: MOCK_CHECK_FORK_STREAM_ID,
-        packet_id: MOCK_CHECK_FORK_PACKET_ID,
-        utxo_id: MOCK_CHECK_FORK_UTXO_ID,
-        operator_id: MOCK_CHECK_FORK_OPERATOR_ID,
+        packet_number: MOCK_CHECK_FORK_PACKET_NUMBER,
+        slot_id: MOCK_CHECK_FORK_SLOT_ID,
+        operator_take_pubkey_parity: MOCK_CHECK_FORK_OPERATOR_TAKE_PUBKEY_PARITY,
+        operator_take_pubkey_xonly: MOCK_CHECK_FORK_OPERATOR_TAKE_PUBKEY_XONLY,
+        best_block_hash: MOCK_CHECK_FORK_BEST_BLOCK_HASH.into(),
         init_block_time: cli_args.cf_init_timestamp,
         init_block_number: cli_args.cf_init_block,
         required_effort: U256::zero(),
