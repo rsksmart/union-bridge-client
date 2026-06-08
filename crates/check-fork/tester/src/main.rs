@@ -90,8 +90,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         block_list: Vec::new(),
     };
 
-    let pegout_id = check_fork::compute_pegout_id(&check_fork_args);
-    apply_base_event_fixture(&mut blocks, pegout_id)?;
+    let base_event = check_fork::build_pegout_base_event(&check_fork_args);
+    apply_base_event_fixture(&mut blocks, &base_event)?;
     check_fork_args.block_list = blocks;
     check_fork_args.required_effort = match cli_args.cf_required_effort {
         Some(value) => value,

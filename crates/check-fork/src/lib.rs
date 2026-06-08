@@ -11,10 +11,14 @@ use crate::block_header::RskBlockHeader;
 
 pub const SUPERBLOCK_TIMES_DIFFICULTY: u8 = 20;
 pub const CHECK_FORK_JOURNAL_LEN: usize = 76;
+pub const PEGOUT_BASE_EVENT_LEN: usize = 72;
 
 const BASE_EVENT_HEADER_VERSION: u8 = 2;
+const CHECK_FORK_OPERATOR_ID_LEN: usize = 32;
 const JOURNAL_OPERATOR_ID_LEN: usize = 36;
 const PEGOUT_ID_LEN: usize = 32;
+const STREAM_ID_LEN: usize = 4;
+const UTXO_ID_LEN: usize = 4;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RskBlock {
@@ -110,6 +114,26 @@ pub fn build_check_fork_journal_from_args(
     }
 }
 
+#[must_use]
+pub fn build_pegout_base_event(args: &CheckForkArgs) -> [u8; PEGOUT_BASE_EVENT_LEN] {
+    let pegout_id = compute_pegout_id(args);
+    let mut out = [0u8; PEGOUT_BASE_EVENT_LEN];
+    let mut offset = 0;
+
+    out[offset..offset + CHECK_FORK_OPERATOR_ID_LEN].copy_from_slice(&args.operator_id);
+    offset += CHECK_FORK_OPERATOR_ID_LEN;
+
+    out[offset..offset + PEGOUT_ID_LEN].copy_from_slice(pegout_id.as_bytes());
+    offset += PEGOUT_ID_LEN;
+
+    out[offset..offset + STREAM_ID_LEN].copy_from_slice(&args.stream_id.to_be_bytes());
+    offset += STREAM_ID_LEN;
+
+    out[offset..offset + UTXO_ID_LEN].copy_from_slice(&args.utxo_id.to_be_bytes());
+
+    out
+}
+
 /// Check fork validity and return cumulative `PoW`
 ///
 /// # Errors
@@ -126,7 +150,7 @@ pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
         ..
     } = args;
 
-    let pegout_id = compute_pegout_id(args);
+    let expected_base_event = build_pegout_base_event(args);
     let init_block_time = *init_block_time;
     let init_block_number = *init_block_number;
     let required_effort = *required_effort;
@@ -141,7 +165,7 @@ pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
     // 2. validate first block
     //
     let first_block = &block_list[0];
-    validate_first_block(first_block, init_block_time, init_block_number, &pegout_id)?;
+    validate_first_block(first_block, init_block_time, init_block_number, &expected_base_event)?;
     validate_block_hash(&first_block.header)?;
 
     let mut cumulative_effort = accumulate_effort(U256::zero(), first_block)?;
@@ -163,7 +187,7 @@ pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
         }
 
         if i >= 2 {
-            validate_required_pegout_event(block, &pegout_id)?;
+            validate_required_pegout_event(block, &expected_base_event)?;
         }
     }
 
@@ -206,7 +230,7 @@ fn validate_first_block(
     block: &RskBlock,
     init_block_time: u64,
     init_block_number: u64,
-    pegout_id: &H256,
+    expected_base_event: &[u8; PEGOUT_BASE_EVENT_LEN],
 ) -> Result<(), &'static str> {
     if block.header.timestamp < init_block_time {
         return Err("First block timestamp lower than expected");
@@ -218,23 +242,29 @@ fn validate_first_block(
 
     validate_enough_effort_superblock(block, "first")?;
 
-    if contains_matching_pegout_event(block, pegout_id) {
+    if contains_matching_pegout_event(block, expected_base_event) {
         return Err("First block must not contain the PegOutID base event");
     }
 
     Ok(())
 }
 
-fn validate_required_pegout_event(block: &RskBlock, pegout_id: &H256) -> Result<(), &'static str> {
-    if contains_matching_pegout_event(block, pegout_id) {
+fn validate_required_pegout_event(
+    block: &RskBlock,
+    expected_base_event: &[u8; PEGOUT_BASE_EVENT_LEN],
+) -> Result<(), &'static str> {
+    if contains_matching_pegout_event(block, expected_base_event) {
         return Ok(());
     }
 
     Err("Continuation block is missing the expected PegOutID base event")
 }
 
-fn contains_matching_pegout_event(block: &RskBlock, pegout_id: &H256) -> bool {
-    block.header.base_event.as_deref().is_some_and(|event| event == pegout_id.as_bytes())
+fn contains_matching_pegout_event(
+    block: &RskBlock,
+    expected_base_event: &[u8; PEGOUT_BASE_EVENT_LEN],
+) -> bool {
+    block.header.base_event.as_deref().is_some_and(|event| event == expected_base_event)
 }
 
 fn validate_consecutive_block(block: &RskBlock, prev_block: &RskBlock) -> Result<(), &'static str> {

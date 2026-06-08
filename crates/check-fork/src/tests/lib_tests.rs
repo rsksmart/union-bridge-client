@@ -330,10 +330,10 @@ fn fails_when_first_block_contains_the_pegout_event() {
     let mut args = CheckForkArgsBuilder::new(block_list).required_num_blocks(4).build();
     decorate_required_pegout_events(&mut args);
 
-    let pegout_id = compute_pegout_id(&args);
+    let base_event = build_expected_base_event(&args);
     let first_block = &mut args.block_list[0];
     first_block.header.version = 2;
-    first_block.header.base_event = Some(pegout_id.as_bytes().to_vec());
+    first_block.header.base_event = Some(base_event);
 
     let result = check_fork(&args);
     assert_eq!(result, Err("First block must not contain the PegOutID base event"));
@@ -361,6 +361,39 @@ fn fails_when_continuation_block_is_missing_the_pegout_event() {
 
     let result = check_fork(&args);
     assert_eq!(result, Err("Continuation block is missing the expected PegOutID base event"));
+}
+
+#[test]
+fn fails_when_base_event_fields_do_not_match_args() {
+    for (case, offset) in
+        [("operator_id", 0), ("pegout_id", 32), ("stream_id", 64), ("utxo_id", 68)]
+    {
+        let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
+        let second_block = create_child_block(&first_block);
+        let third_block = create_child_block(&second_block);
+        let fourth_block = create_child_block(&third_block);
+        let block_list = vec![first_block, second_block, third_block, fourth_block];
+
+        let mut args = CheckForkArgsBuilder::new(block_list).required_num_blocks(4).build();
+        decorate_required_pegout_events(&mut args);
+
+        let block = &mut args.block_list[2];
+        block.header.base_event.as_mut().expect("base event should exist")[offset] ^= 0x01;
+        block.header.hash =
+            block.header.calculate_block_hash().expect("could not calculate block hash");
+        args.block_list[3].header.parent = block.header.hash;
+        args.block_list[3].header.hash = args.block_list[3]
+            .header
+            .calculate_block_hash()
+            .expect("could not calculate block hash");
+
+        let result = check_fork(&args);
+        assert_eq!(
+            result,
+            Err("Continuation block is missing the expected PegOutID base event"),
+            "Expected to fail when {case} does not match args"
+        );
+    }
 }
 
 #[test]
@@ -649,10 +682,10 @@ fn calculate_effort_from_pow(pow: H256) -> U256 {
 }
 
 fn decorate_required_pegout_events(args: &mut CheckForkArgs) {
-    let pegout_id = compute_pegout_id(args);
+    let base_event = build_expected_base_event(args);
     for index in 2..args.block_list.len() {
         args.block_list[index].header.version = 2;
-        args.block_list[index].header.base_event = Some(pegout_id.as_bytes().to_vec());
+        args.block_list[index].header.base_event = Some(base_event.clone());
         args.block_list[index].header.hash = args.block_list[index]
             .header
             .calculate_block_hash()
@@ -661,6 +694,16 @@ fn decorate_required_pegout_events(args: &mut CheckForkArgs) {
             args.block_list[index + 1].header.parent = args.block_list[index].header.hash;
         }
     }
+}
+
+fn build_expected_base_event(args: &CheckForkArgs) -> Vec<u8> {
+    let pegout_id = compute_pegout_id(args);
+    let mut event = Vec::with_capacity(72);
+    event.extend_from_slice(&args.operator_id);
+    event.extend_from_slice(pegout_id.as_bytes());
+    event.extend_from_slice(&args.stream_id.to_be_bytes());
+    event.extend_from_slice(&args.utxo_id.to_be_bytes());
+    event
 }
 
 fn assert_minichain_hashes_are_valid_from_fixture(path: &str) {

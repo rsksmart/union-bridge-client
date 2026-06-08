@@ -191,7 +191,7 @@ pub async fn get_blocks(
 /// requires at least a two-block window.
 pub fn apply_base_event_fixture(
     blocks: &mut [RskBlock],
-    pegout_id: H256,
+    base_event: &[u8],
 ) -> Result<(), Box<dyn Error>> {
     if blocks.len() < 2 {
         return Err("Check-fork requires at least two blocks".into());
@@ -205,7 +205,7 @@ pub fn apply_base_event_fixture(
         let block = &mut blocks[index];
         if index >= 2 {
             block.header.version = 2;
-            block.header.base_event = Some(pegout_id.as_bytes().to_vec());
+            block.header.base_event = Some(base_event.to_vec());
         } else {
             block.header.version = 1;
             block.header.base_event = None;
