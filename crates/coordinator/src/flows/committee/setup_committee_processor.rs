@@ -32,6 +32,16 @@ use crate::types::{
     NewCommitteeReadyEvent, RskPegManagerEvents, UserRequests,
 };
 
+/// Tracing span name shared by every committee-setup code path. Centralised so
+/// a rename only touches one place.
+const COMMITTEE_SETUP_SPAN: &str = "committee_setup";
+
+/// Enter the committee-setup tracing span for `flow_id`. Keep the returned guard
+/// alive for the duration of the work that should be attributed to the flow.
+fn committee_setup_span(flow_id: FlowId) -> tracing::span::EnteredSpan {
+    info_span!(COMMITTEE_SETUP_SPAN, committee_setup_id = %flow_id).entered()
+}
+
 pub(crate) struct SetupCommitteeProcessor<CG, BC, FactoryBSF, S>
 where
     CG: RskContractsGatewayApi,
@@ -127,11 +137,6 @@ where
         name = "committee_setup",
         fields(committee_setup_id = %flow_id)
     )]
-    #[instrument(
-        skip(self, reason),
-        name = "committee_setup",
-        fields(committee_setup_id = %flow_id)
-    )]
     fn fail_flow(&mut self, flow_id: FlowId, reason: &str) -> Result<()> {
         if let Some(flow) = self.flows.get_mut(&flow_id) {
             flow.mark_failed(reason)?;
@@ -155,7 +160,7 @@ where
     fn dispatch_to_flow(&mut self, req_id: &Uuid, step_data: StepData) {
         if let Some(flow) = self.get_flow_for_bitvmx_response(req_id) {
             let flow_id = flow.flow_id();
-            let _span = info_span!("committee_setup", committee_setup_id = %flow_id).entered();
+            let _span = committee_setup_span(flow_id);
             Self::continue_flow(flow, step_data);
         } else {
             debug!("No flow found for BitVMX event with id {req_id}");
@@ -169,7 +174,7 @@ where
             .find(|flow| flow.is_waiting_for_dispute_core_variable(program_id))
         {
             let flow_id = flow.flow_id();
-            let _span = info_span!("committee_setup", committee_setup_id = %flow_id).entered();
+            let _span = committee_setup_span(flow_id);
             Self::continue_flow(flow, step_data);
         } else {
             debug!("No flow in RequestDisputeChannelVars step for DisputeCore pid {program_id}");
@@ -393,7 +398,7 @@ where
         match req {
             UserRequests::ApplyToStream(input) => {
                 let flow_id = FlowId::from_random();
-                let _span = info_span!("committee_setup", committee_setup_id = %flow_id).entered();
+                let _span = committee_setup_span(flow_id);
                 let mut flow = self.flow_factory.create_flow(flow_id, *input.stream_id);
 
                 Self::continue_flow(&mut flow, StepData::UserRequest(input.clone()));
@@ -419,8 +424,7 @@ where
             OutgoingBitVMXApiMessages::CommInfo(req_id, comm_info) => {
                 if let Some(flow) = self.get_flow_for_bitvmx_response(req_id) {
                     let flow_id = flow.flow_id();
-                    let _span =
-                        info_span!("committee_setup", committee_setup_id = %flow_id).entered();
+                    let _span = committee_setup_span(flow_id);
                     debug!(
                         "Routing BitVMX CommInfo req_id {} to setup committee flow {}",
                         req_id, flow_id
@@ -434,8 +438,7 @@ where
             OutgoingBitVMXApiMessages::AggregatedPubkey(req_id, pubkey) => {
                 if let Some(flow) = self.get_flow_for_bitvmx_response(req_id) {
                     let flow_id = flow.flow_id();
-                    let _span =
-                        info_span!("committee_setup", committee_setup_id = %flow_id).entered();
+                    let _span = committee_setup_span(flow_id);
                     info!("PK Received AggregatedPubkey: {req_id:?}, {pubkey:?}");
                     let is_pairwise = flow.is_pairwise_aggregated_key_request(req_id);
                     let step_data = if is_pairwise {
@@ -504,8 +507,7 @@ where
 
         if self.required_confirmations == 0 {
             let committee_setup_id = self.committee_setup_id_for_event(event);
-            let _span = committee_setup_id
-                .map(|fid| info_span!("committee_setup", committee_setup_id = %fid).entered());
+            let _span = committee_setup_id.map(committee_setup_span);
             self.process_confirmed_rsk_event(event);
             return Ok(());
         }
@@ -572,8 +574,7 @@ where
         for key in confirmed_keys {
             if let Some(event) = self.stop_confirming_event(&key) {
                 let committee_setup_id = self.committee_setup_id_for_event(event.get_data());
-                let _span = committee_setup_id
-                    .map(|fid| info_span!("committee_setup", committee_setup_id = %fid).entered());
+                let _span = committee_setup_id.map(committee_setup_span);
                 debug!("RSK event confirmed, removing pending {key}");
                 trace!("Event data: {:?}", event.get_data());
                 self.process_confirmed_rsk_event(event.get_data());

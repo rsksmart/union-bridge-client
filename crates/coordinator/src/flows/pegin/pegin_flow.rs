@@ -370,7 +370,7 @@ where
     pub(crate) fn complete_step(&mut self, data: &StepData) -> Result<()> {
         let current_step = self.state.ctx.step;
 
-        info!("Completing step {} with data: {:?}", format_step(current_step), data);
+        debug!("Completing step {} with data: {:?}", format_step(current_step), data);
 
         // Process data and determine next state
         let next_step = self.process_step_data(current_step, data)?;
