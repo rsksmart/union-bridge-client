@@ -91,8 +91,6 @@ if CONTRACTS_CONTEXT_CANDIDATE=$(cd "$SCRIPT_DIR" && cd "$CONTRACTS_CONTEXT_PATH
   :
 elif [[ -d "$(cd "$SCRIPT_DIR/../../.." && pwd)/../union-bridge-contracts" ]]; then
   CONTRACTS_CONTEXT_CANDIDATE="$(cd "$SCRIPT_DIR/../../.." && pwd)/../union-bridge-contracts"
-elif [[ -d "$HOME/Projects/rootstock/union/union-bridge-contracts" ]]; then
-  CONTRACTS_CONTEXT_CANDIDATE="$HOME/Projects/rootstock/union/union-bridge-contracts"
 else
   echo "Error: could not resolve CONTRACTS_CONTEXT_PATH '${CONTRACTS_CONTEXT_PATH}'." >&2
   echo "Set CONTRACTS_CONTEXT_PATH to a union-bridge-contracts checkout and rerun." >&2
