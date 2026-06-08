@@ -77,11 +77,25 @@ async fn main() -> Result<()> {
     let broker_port = config.user_api_config.notifier.port;
     let broker_key_path = config.user_api_config.broker_key_path.clone();
 
-    let broker_server =
-        tokio::task::spawn_blocking(move || BrokerServer::new(broker_port, &broker_key_path))
-            .await
-            .context("Failed to spawn blocking task")?
-            .context("Failed to create BrokerServer")?;
+    let pubkey_hash = config.user_api_config.coordinator.pubkey_hash.clone();
+    ensure!(
+        !pubkey_hash.is_empty() && pubkey_hash != "<to_patch_with_env>",
+        "coordinator must be configured with the coordinator broker pubkey_hash"
+    );
+
+    let coordinator_client_id = Identifier::new(
+        pubkey_hash,
+        u8::try_from(config.user_api_config.coordinator.client_id)
+            .context("user_api.coordinator.client_id must fit in u8")?,
+    );
+
+    let broker_authorized_peer = coordinator_client_id.clone();
+    let broker_server = tokio::task::spawn_blocking(move || {
+        BrokerServer::new(broker_port, &broker_key_path, &broker_authorized_peer)
+    })
+    .await
+    .context("Failed to spawn blocking task")?
+    .context("Failed to create BrokerServer")?;
 
     let broker_drop_guard = BrokerDropGuard::new(Arc::new(broker_server));
     info!("Broker Server started on {broker_port}");
@@ -104,18 +118,6 @@ async fn main() -> Result<()> {
         keystore_password,
     )
     .await?;
-
-    let pubkey_hash = config.user_api_config.coordinator.pubkey_hash.clone();
-    ensure!(
-        !pubkey_hash.is_empty() && pubkey_hash != "<to_patch_with_env>",
-        "coordinator must be configured with the coordinator broker pubkey_hash"
-    );
-
-    let coordinator_client_id = Identifier::new(
-        pubkey_hash,
-        u8::try_from(config.user_api_config.coordinator.client_id)
-            .context("user_api.coordinator.client_id must fit in u8")?,
-    );
 
     let admin_token = config.user_api_config.admin_token.clone();
 

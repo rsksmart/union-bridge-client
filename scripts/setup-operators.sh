@@ -609,11 +609,16 @@ write_operator_runtime_env_file() {
   mkdir -p "$(dirname "${env_file_path}")"
 
   cat > "${env_file_path}" <<EOF
+UB__BLOCK_INDEXER__COORDINATOR__CLIENT_ID=$((100 + op_num))
+UB__BLOCK_INDEXER__COORDINATOR__PUBKEY_HASH=$(read_broker_pubkey_hash "coordinator" "${op_num}")
+UB__LOG_INDEXER__COORDINATOR__CLIENT_ID=$((100 + op_num))
+UB__LOG_INDEXER__COORDINATOR__PUBKEY_HASH=$(read_broker_pubkey_hash "coordinator" "${op_num}")
 UB__COORDINATOR__BLOCKS__PUBKEY_HASH=$(read_broker_pubkey_hash "block-indexer" "${op_num}")
 UB__COORDINATOR__LOGS__PUBKEY_HASH=$(read_broker_pubkey_hash "log-indexer" "${op_num}")
 UB__COORDINATOR__USER__PUBKEY_HASH=$(read_broker_pubkey_hash "user-api" "${op_num}")
 UB__COORDINATOR__BITVMX__PUBKEY_HASH=${bitvmx_pubkey_hash}
 UB__COORDINATOR__BITVMX__PORT=$(operator_bitvmx_port "${op_num}")
+UB__USER_API__COORDINATOR__CLIENT_ID=$((100 + op_num))
 UB__USER_API__COORDINATOR__PUBKEY_HASH=$(read_broker_pubkey_hash "coordinator" "${op_num}")
 KEY_STORE_PASSWORD=${key_store_password}
 EOF

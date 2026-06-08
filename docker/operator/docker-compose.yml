@@ -30,6 +30,9 @@ services:
       service: block-indexer
     volumes:
       - ${BLOCK_INDEXER_BROKER_PEM_PATH}:/app/broker.pem:ro
+    environment:
+      - UB__BLOCK_INDEXER__COORDINATOR__CLIENT_ID
+      - UB__BLOCK_INDEXER__COORDINATOR__PUBKEY_HASH
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -41,6 +44,9 @@ services:
       service: log-indexer
     volumes:
       - ${LOG_INDEXER_BROKER_PEM_PATH}:/app/broker.pem:ro
+    environment:
+      - UB__LOG_INDEXER__COORDINATOR__CLIENT_ID
+      - UB__LOG_INDEXER__COORDINATOR__PUBKEY_HASH
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -53,6 +59,7 @@ services:
     volumes:
       - ${USER_API_BROKER_PEM_PATH}:/app/broker.pem:ro
     environment:
+      - UB__USER_API__COORDINATOR__CLIENT_ID
       - UB__USER_API__COORDINATOR__PUBKEY_HASH
     ports:
       - "${USER_API_PORT:-40001}:40001"

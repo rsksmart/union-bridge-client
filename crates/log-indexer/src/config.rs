@@ -25,7 +25,15 @@ pub struct Config {
 #[derive(Debug, Deserialize)]
 pub struct LogIndexerConfig {
     pub notifier: NotifierConfig,
+    pub coordinator: CoordinatorConfig,
     pub broker_key_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CoordinatorConfig {
+    pub client_id: u32,
+    #[serde(default)]
+    pub pubkey_hash: String,
 }
 
 impl Config {
@@ -94,6 +102,8 @@ mod tests {
             Some("0xa3b056ebbb4ca08f79975bc9a1d53b4fc68b011b0480b2241f7c03543bc3d22c"),
             config.indexer.initial_block_hash.as_deref()
         );
+        assert_eq!(101, config.log_indexer_config.coordinator.client_id);
+        assert_eq!("<to_patch_with_env>", config.log_indexer_config.coordinator.pubkey_hash);
         // local-anvil overrides start_from to Best (base sets Hash).
         assert_eq!(IndexerStartFrom::Best, config.indexer.start_from);
         assert!(!config.indexer.storage.path.contains("{BASE_STORAGE_PATH}"));

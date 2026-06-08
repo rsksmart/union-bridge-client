@@ -15,7 +15,15 @@ pub struct Config {
 #[derive(Debug, Deserialize)]
 pub struct BlockIndexerConfig {
     pub notifier: NotifierConfig,
+    pub coordinator: CoordinatorConfig,
     pub broker_key_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CoordinatorConfig {
+    pub client_id: u32,
+    #[serde(default)]
+    pub pubkey_hash: String,
 }
 
 impl Config {
@@ -65,6 +73,8 @@ mod tests {
             .expect("Failed to load config");
 
         assert_eq!(10001, config.block_indexer_config.notifier.port);
+        assert_eq!(101, config.block_indexer_config.coordinator.client_id);
+        assert_eq!("<to_patch_with_env>", config.block_indexer_config.coordinator.pubkey_hash);
         // local-anvil overrides start_from to Best (base sets Hash).
         assert_eq!(IndexerStartFrom::Best, config.indexer.start_from);
         assert!(!config.indexer.storage.path.contains("{BASE_STORAGE_PATH}"));

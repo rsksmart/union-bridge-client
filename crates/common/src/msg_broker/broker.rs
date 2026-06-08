@@ -13,6 +13,7 @@ use message_broker::channel::channel::{DualChannel, LocalChannel};
 pub use message_broker::identification::allow_list::AllowList;
 pub use message_broker::identification::identifier::Identifier;
 pub use message_broker::identification::routing::RoutingTable;
+use message_broker::identification::routing::WildCard;
 use message_broker::rpc::BrokerConfig;
 use message_broker::rpc::errors::BrokerError as RpcBrokerError;
 use message_broker::rpc::sync_server::BrokerSync;
@@ -29,6 +30,8 @@ use crate::msg_broker::types::{FromServer, ToServer};
 // by convention, server is id 0 (matching bitvmx broker convention)
 pub const BROKER_SERVER_ID: u8 = 0;
 pub const BITVMX_L2_BROKER_CLIENT_ID: u8 = 0; // Should match the ID defined in the BitVMX Client
+type SharedAllowList = Arc<Mutex<AllowList>>;
+type SharedRoutingTable = Arc<Mutex<RoutingTable>>;
 
 #[automock]
 pub trait BrokerServerApi<S: Serialize, C: DeserializeOwned> {
@@ -109,26 +112,33 @@ impl<S: Serialize, C: DeserializeOwned, T: BrokerClientApi<S, C>> BrokerClientAp
 }
 
 impl BrokerServer {
-    /// Create a new `BrokerServer` in simple/testing mode (allow all connections)
+    /// Create a new `BrokerServer` that accepts broker messages from one authorized peer.
     /// Uses a deterministic identity from the provided key file.
     ///
     /// # Arguments
     /// * `port` - Port to listen on
     /// * `key_path` - Path to PEM file containing the private key for deterministic identity
+    /// * `authorized_peer` - Peer allowed to send messages to this broker server
     ///
     /// # Errors
     ///
     /// Returns an error if certificate loading fails or broker initialization fails.
-    pub fn new(port: u16, key_path: &str) -> Result<Self, BrokerError> {
+    pub fn new(
+        port: u16,
+        key_path: &str,
+        authorized_peer: &Identifier,
+    ) -> Result<Self, BrokerError> {
         debug!("Starting BrokerServer on port {port}");
 
         let (cert, pubk_hash, broker_config) = broker_server_config(port, key_path)?;
         debug!("BrokerServer identity: pubkey_hash={pubk_hash}");
 
         let broker_storage = Arc::new(Mutex::new(MemStorage::new()));
-        let broker = BrokerSync::new_simple(&broker_config, broker_storage.clone(), cert)?;
-
         let server_identifier = Identifier::new(pubk_hash, BROKER_SERVER_ID);
+        let (allow_list, routing) =
+            broker_server_access_control(authorized_peer, &server_identifier)?;
+        let broker =
+            BrokerSync::new(&broker_config, broker_storage.clone(), cert, allow_list, routing)?;
         let broker_channel = LocalChannel::new(server_identifier, broker_storage.clone());
 
         Ok(Self { broker, channel: BrokerChannel::InMemory(broker_channel) })
@@ -141,6 +151,7 @@ impl BrokerServer {
     /// * `port` - Port to listen on
     /// * `key_path` - Path to PEM file containing the private key for deterministic identity
     /// * `storage_path` - Path to the broker queue storage directory
+    /// * `authorized_peer` - Peer allowed to send messages to this broker server
     ///
     /// # Errors
     ///
@@ -150,6 +161,7 @@ impl BrokerServer {
         port: u16,
         key_path: &str,
         storage_path: impl AsRef<Path>,
+        authorized_peer: &Identifier,
     ) -> Result<Self, BrokerError> {
         debug!("Starting persistent BrokerServer on port {port}");
 
@@ -157,13 +169,39 @@ impl BrokerServer {
         debug!("Persistent BrokerServer identity: pubkey_hash={pubk_hash}");
 
         let broker_storage = persistent_broker_storage(storage_path)?;
-        let broker = BrokerSync::new_simple(&broker_config, broker_storage.clone(), cert)?;
-
         let server_identifier = Identifier::new(pubk_hash, BROKER_SERVER_ID);
+        let (allow_list, routing) =
+            broker_server_access_control(authorized_peer, &server_identifier)?;
+        let broker =
+            BrokerSync::new(&broker_config, broker_storage.clone(), cert, allow_list, routing)?;
         let broker_channel = LocalChannel::new(server_identifier, broker_storage.clone());
 
         Ok(Self { broker, channel: BrokerChannel::Persistent(broker_channel) })
     }
+}
+
+fn broker_server_access_control(
+    authorized_peer: &Identifier,
+    server_identifier: &Identifier,
+) -> Result<(SharedAllowList, SharedRoutingTable), BrokerError> {
+    let allow_list = AllowList::new();
+    allow_list
+        .lock()
+        .map_err(|error| broker_mutex_error("allow_list", &error))?
+        .add_wildcard(authorized_peer.pubkey_hash.clone());
+
+    let routing = RoutingTable::new();
+    routing.lock().map_err(|error| broker_mutex_error("routing", &error))?.add_route(
+        authorized_peer.clone(),
+        server_identifier.clone(),
+        WildCard::No,
+    );
+
+    Ok((allow_list, routing))
+}
+
+fn broker_mutex_error<T>(name: &str, error: &std::sync::PoisonError<T>) -> BrokerError {
+    BrokerError::BrokerServerError(RpcBrokerError::MutexError(format!("{name}: {error}")))
 }
 
 fn broker_server_config(
@@ -536,6 +574,27 @@ mod tests {
             .expect("Failed to create persistent broker storage");
 
         assert!(storage_path.is_dir());
+    }
+
+    #[test]
+    fn test_broker_server_access_control_authorizes_only_expected_peer_route() {
+        let authorized_peer = Identifier::new("peer".to_string(), 101);
+        let server_identifier = Identifier::new("server".to_string(), BROKER_SERVER_ID);
+        let other_peer = Identifier::new("other".to_string(), 101);
+
+        let (allow_list, routing) =
+            broker_server_access_control(&authorized_peer, &server_identifier)
+                .expect("access control should build");
+
+        let allow_list = allow_list.lock().expect("allow list lock should succeed");
+        assert!(allow_list.is_allowed_by_fingerprint(&authorized_peer.pubkey_hash));
+        assert!(!allow_list.is_allowed_by_fingerprint(&other_peer.pubkey_hash));
+        drop(allow_list);
+
+        let routing = routing.lock().expect("routing lock should succeed");
+        assert!(routing.can_route(&authorized_peer, &server_identifier));
+        assert!(!routing.can_route(&server_identifier, &authorized_peer));
+        assert!(!routing.can_route(&other_peer, &server_identifier));
     }
 
     #[test]
