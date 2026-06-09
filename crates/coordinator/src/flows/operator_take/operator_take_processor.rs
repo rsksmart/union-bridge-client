@@ -41,7 +41,58 @@ struct AdvanceFundsProcessorState {
     flows: HashMap<FlowId, FlowContext>,
     events_confirming: HashMap<String, ConfirmableEventWithDataSnapshot>,
     retries: RetryTracker<FlowId>,
-    request_pegout_tx_hashes: HashMap<(CommitteeId, u64), String>,
+    #[serde(default, deserialize_with = "deserialize_request_pegout_tx_hash_entries")]
+    request_pegout_tx_hashes: Vec<RequestPegoutTxHashEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RequestPegoutTxHashEntry {
+    committee_id: Uuid,
+    slot_id: u64,
+    tx_hash: String,
+}
+
+fn snapshot_request_pegout_tx_hashes(
+    hashes: &HashMap<(CommitteeId, u64), String>,
+) -> Vec<RequestPegoutTxHashEntry> {
+    hashes
+        .iter()
+        .map(|((committee_id, slot_id), tx_hash)| RequestPegoutTxHashEntry {
+            committee_id: Uuid::from_u128(**committee_id),
+            slot_id: *slot_id,
+            tx_hash: tx_hash.clone(),
+        })
+        .collect()
+}
+
+fn restore_request_pegout_tx_hashes(
+    entries: Vec<RequestPegoutTxHashEntry>,
+) -> HashMap<(CommitteeId, u64), String> {
+    entries
+        .into_iter()
+        .map(|entry| {
+            ((CommitteeId::from(entry.committee_id.as_u128()), entry.slot_id), entry.tx_hash)
+        })
+        .collect()
+}
+
+fn deserialize_request_pegout_tx_hash_entries<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Vec<RequestPegoutTxHashEntry>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::Array(_) => {
+            serde_json::from_value(value).map_err(serde::de::Error::custom)
+        }
+        serde_json::Value::Object(map) if map.is_empty() => Ok(Vec::new()),
+        serde_json::Value::Null => Ok(Vec::new()),
+        other => Err(serde::de::Error::custom(format!(
+            "invalid request_pegout_tx_hashes snapshot: expected array or empty legacy map, got {other}"
+        ))),
+    }
 }
 
 pub(crate) struct AdvanceFundsFlowProcessor<CG, BC, S>
@@ -156,7 +207,9 @@ where
             flows: self.flows.iter().map(|(id, flow)| (*id, flow.snapshot())).collect(),
             events_confirming: snapshot_confirmable_events(&self.events_confirming),
             retries: self.retries.clone(),
-            request_pegout_tx_hashes: self.request_pegout_tx_hashes.clone(),
+            request_pegout_tx_hashes: snapshot_request_pegout_tx_hashes(
+                &self.request_pegout_tx_hashes,
+            ),
         }
     }
 
@@ -195,7 +248,8 @@ where
         self.events_confirming = events_confirming;
         self.blockchain_view = blockchain_view;
         self.retries = state.retries;
-        self.request_pegout_tx_hashes = state.request_pegout_tx_hashes;
+        self.request_pegout_tx_hashes =
+            restore_request_pegout_tx_hashes(state.request_pegout_tx_hashes);
         Ok(())
     }
 
@@ -923,6 +977,7 @@ mod tests {
     use std::rc::Rc;
     use std::str::FromStr;
 
+    use alloy_primitives::{Bytes, FixedBytes, U256 as AlloyU256};
     use bitcoin::absolute::LockTime;
     use bitcoin::transaction::Version;
     use bitcoin::{PublicKey, Transaction};
@@ -931,12 +986,16 @@ mod tests {
         OutgoingBitVMXApiMessages, UnionSPVNotification, UnionTxType,
     };
     use common::msg_broker::broker::MockBrokerClientApi;
-    use common::types::{Address, BlockNumber, CommitteeId, Hash256};
+    use common::types::{Address, BlockHash, BlockNumber, CommitteeId, Hash256, TxHash};
     use primitive_types::{H160, H256};
+    use union_contracts::bindings::pegout_manager::PegoutManager::{
+        BitcoinSignatureData, BtcTransaction, PegoutRequested,
+    };
     use uuid::Uuid;
 
     use super::*;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
+    use crate::store::{CoordinatorStore, TestStorePath};
 
     type MockBitVmxBroker =
         MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
@@ -982,6 +1041,69 @@ mod tests {
             merkle_branch_path: "0".to_string(),
             merkle_branch_hashes: vec![],
         }
+    }
+
+    fn store_backed_processor(
+        store: &Rc<CoordinatorStore>,
+    ) -> AdvanceFundsFlowProcessor<MockRskContractsGatewayApi, MockBitVmxBroker, CoordinatorStore>
+    {
+        AdvanceFundsFlowProcessor::new(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            RuntimeSync::new().expect("failed to create runtime sync"),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+            Rc::new(Signaling::new("/tmp", "disabled")),
+            store,
+            0,
+            1,
+            NativeBridgeVerifier::Dummy,
+        )
+    }
+
+    fn test_pegout_requested_event(
+        committee_id: u128,
+        slot_id: u64,
+    ) -> crate::types::PegoutRequestedEvent {
+        crate::types::EventWithBlock {
+            inner: PegoutRequested {
+                userPubKey: Bytes::from(vec![0x03; 33]),
+                committeeId: AlloyU256::from(committee_id),
+                pegoutSignatureData: BitcoinSignatureData {
+                    tx: BtcTransaction { version: 2, inputs: vec![], outputs: vec![], locktime: 0 },
+                    txid: FixedBytes::from([1u8; 32]),
+                    signatureHash: FixedBytes::from([2u8; 32]),
+                    signatureMessage: Bytes::from(vec![3u8; 32]),
+                },
+                streamId: 0,
+                packetNumber: 0,
+                slotId: slot_id,
+                amount: 100_000,
+            },
+            block_number: BlockNumber::from(1),
+            block_hash: BlockHash::from(H256::from_low_u64_be(2)),
+            removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(3)),
+        }
+    }
+
+    #[test]
+    fn request_pegout_tx_hashes_round_trip_through_store() {
+        let store_path = TestStorePath::new();
+        let store = Rc::new(store_path.open());
+        let mut processor = store_backed_processor(&store);
+        let committee_uuid = Uuid::new_v4();
+        let committee_id = CommitteeId::from(committee_uuid.as_u128());
+        let slot_id = 4;
+        let event = test_pegout_requested_event(committee_uuid.as_u128(), slot_id);
+        let tx_hash = event.tx_hash.to_string();
+
+        processor
+            .process_new_rsk_event(&RskPegManagerEvents::PegoutRequested(event))
+            .expect("PegoutRequested should persist advance-funds processor state");
+        drop(processor);
+
+        let restored = store_backed_processor(&store);
+        assert_eq!(restored.request_pegout_tx_hashes.get(&(committee_id, slot_id)), Some(&tx_hash));
     }
 
     #[test]
