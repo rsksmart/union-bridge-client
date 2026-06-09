@@ -227,6 +227,32 @@ impl CoordinatorStoreApi for CoordinatorStore {
     }
 }
 
+#[cfg(test)]
+pub(crate) struct TestStorePath {
+    path: std::path::PathBuf,
+}
+
+#[cfg(test)]
+impl TestStorePath {
+    pub(crate) fn new() -> Self {
+        let path = std::env::temp_dir().join(format!("coordinator-store-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&path).expect("failed to create temporary coordinator store");
+        Self { path }
+    }
+
+    pub(crate) fn open(&self) -> CoordinatorStore {
+        CoordinatorStore::new(self.path.to_str().expect("temporary store path is not UTF-8"))
+            .expect("failed to open temporary coordinator store")
+    }
+}
+
+#[cfg(test)]
+impl Drop for TestStorePath {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
 /// # Errors
 /// Returns an error if storage access fails or if deserialization fails.
 pub fn restore_flows<Store, State, Flow, Factory>(

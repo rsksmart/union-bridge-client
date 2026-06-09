@@ -11,7 +11,7 @@ use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{AddMemberNonceInput, AddMemberSignatureInput};
 use uuid::Uuid;
 
-use crate::blockchain_tracker::{BlockchainView, ConfirmableEvent, ConfirmableEventSnapshot};
+use crate::blockchain_tracker::{BlockchainView, ConfirmableEvent, ConfirmableEventStateSnapshot};
 use crate::types::RegisterSignaturesBitVmxData;
 
 #[cfg_attr(test, automock)]
@@ -45,8 +45,8 @@ pub(crate) trait BtcSignatureLifecycleApi {
 pub(crate) struct BtcSignatureLifecycleSnapshot {
     flow_id: Uuid,
     data: Option<RegisterSignaturesBitVmxData>,
-    nonce_step: Option<ConfirmableEventSnapshot>,
-    signature_step: Option<ConfirmableEventSnapshot>,
+    nonce_step: Option<ConfirmableEventStateSnapshot>,
+    signature_step: Option<ConfirmableEventStateSnapshot>,
 }
 
 pub(crate) struct State {
@@ -92,11 +92,11 @@ where
         let blockchain_view = BlockchainView::new();
         let nonce_step = snapshot
             .nonce_step
-            .map(|step| ConfirmableEvent::from_snapshot(step, blockchain_view.clone()))
+            .map(|step| ConfirmableEvent::from_state_snapshot(step, blockchain_view.clone()))
             .transpose()?;
         let signature_step = snapshot
             .signature_step
-            .map(|step| ConfirmableEvent::from_snapshot(step, blockchain_view.clone()))
+            .map(|step| ConfirmableEvent::from_state_snapshot(step, blockchain_view.clone()))
             .transpose()?;
 
         Ok(BtcSignatureLifeCycle {
@@ -328,8 +328,12 @@ where
         BtcSignatureLifecycleSnapshot {
             flow_id: self.state.flow_id,
             data: self.state.data.clone(),
-            nonce_step: self.state.nonce_step.as_ref().and_then(ConfirmableEvent::snapshot),
-            signature_step: self.state.signature_step.as_ref().and_then(ConfirmableEvent::snapshot),
+            nonce_step: self.state.nonce_step.as_ref().map(ConfirmableEvent::state_snapshot),
+            signature_step: self
+                .state
+                .signature_step
+                .as_ref()
+                .map(ConfirmableEvent::state_snapshot),
         }
     }
 }

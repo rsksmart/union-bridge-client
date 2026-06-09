@@ -1485,9 +1485,10 @@ mod tests {
     use common::msg_broker::broker::MockBrokerClientApi;
     use common::test_utils::rsk_block_generator::FakeBlockGenerator;
     use common::types::{BlockHash, TxHash, TxIdParser};
-    use musig2::PubNonce;
     use musig2::secp::MaybeScalar;
+    use musig2::{PartialSignature, PubNonce};
     use primitive_types::H256;
+    use serde_json::json;
     use transaction_dispatcher::types::GetCommitteeOutput;
     use union_contracts::bindings::committee_registry::CommitteeRegistry::Committee;
     use union_contracts::bindings::pegin_manager::PeginManager::{
@@ -1498,7 +1499,7 @@ mod tests {
     use super::*;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
     use crate::flows::pegin::pegin_flow::FlowContext;
-    use crate::store::MockCoordinatorStoreApi;
+    use crate::store::{CoordinatorStore, MockCoordinatorStoreApi, TestStorePath};
 
     type MockBitVmxBroker =
         MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
@@ -1692,6 +1693,93 @@ mod tests {
             .expect("invalid pub nonce")
     }
 
+    fn default_partial_signature() -> PartialSignature {
+        "44477400e59c41025e4e18c4de244b90b14554dcdcbfa396ead4659aa6343249"
+            .parse()
+            .expect("invalid partial signature")
+    }
+
+    fn test_register_signatures_data() -> RegisterSignaturesBitVmxData {
+        RegisterSignaturesBitVmxData {
+            hash_to_sign: Hash256::from(H256::from_low_u64_be(99)),
+            nonce: default_pub_nonce(),
+            signature: default_partial_signature(),
+        }
+    }
+
+    fn setup_successful_nonce_call(contracts: &mut MockRskContractsGatewayApi) {
+        contracts.expect_add_member_nonce().times(1).returning(|_| {
+            Ok(serde_json::from_value(json!({
+                "transaction_hash": "0x1234567890abcdef1234567890abcdef12345678",
+                "success": true
+            }))
+            .expect("valid nonce output"))
+        });
+    }
+
+    fn setup_successful_signature_call(contracts: &mut MockRskContractsGatewayApi) {
+        contracts.expect_add_member_signature().times(1).returning(|_| {
+            Ok(serde_json::from_value(json!({
+                "transaction_hash": "0x1234567890abcdef1234567890abcdef12345678",
+                "success": true
+            }))
+            .expect("valid signature output"))
+        });
+    }
+
+    fn broker_expecting_pegin_subscription() -> Rc<MockBitVmxBroker> {
+        let mut broker = MockBitVmxBroker::new();
+        broker.expect_send().times(1).returning(|msg| {
+            assert!(matches!(msg, IncomingBitVMXApiMessages::SubscribeToRskPegin(Some(1))));
+            Ok(true)
+        });
+        Rc::new(broker)
+    }
+
+    fn store_backed_processor(
+        contracts: Rc<MockRskContractsGatewayApi>,
+        store: &Rc<CoordinatorStore>,
+    ) -> PeginFlowProcessor<
+        MockRskContractsGatewayApi,
+        MockBitVmxBroker,
+        TestBtcSigSubFlow,
+        TestBtcSigFactory,
+        CoordinatorStore,
+    > {
+        PeginFlowProcessor::new(
+            contracts,
+            RuntimeSync::new().expect("failed to create runtime sync"),
+            broker_expecting_pegin_subscription(),
+            GlobalContext::new(),
+            store,
+            Rc::new(Signaling::new("/tmp", "disabled")),
+            NativeBridgeVerifier::Dummy,
+            1,
+            1,
+            1,
+        )
+    }
+
+    fn all_nonces_ready_event(data: &RegisterSignaturesBitVmxData) -> RskPegManagerEvents {
+        RskPegManagerEvents::AllNoncesReady(crate::types::AllNoncesReadyEvent {
+            inner: data.hash_to_sign,
+            block_number: BlockNumber::from(1),
+            block_hash: BlockHash::from(H256::from_low_u64_be(2)),
+            removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(3)),
+        })
+    }
+
+    fn all_signatures_ready_event(data: &RegisterSignaturesBitVmxData) -> RskPegManagerEvents {
+        RskPegManagerEvents::AllSignaturesReady(crate::types::AllSignaturesReadyEvent {
+            inner: data.hash_to_sign,
+            block_number: BlockNumber::from(2),
+            block_hash: BlockHash::from(H256::from_low_u64_be(4)),
+            removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(5)),
+        })
+    }
+
     fn test_pegin_accepted_message(accept_pegin_txid: Txid) -> PeginAcceptedMessage {
         PeginAcceptedMessage {
             accept_pegin_txid,
@@ -1782,6 +1870,77 @@ mod tests {
             removed: false,
             tx_hash: TxHash::from(H256::from_low_u64_be(62)),
         }
+    }
+
+    #[test]
+    fn signature_flow_waiting_for_all_nonces_ready_round_trips_through_store() {
+        let store_path = TestStorePath::new();
+        let store = Rc::new(store_path.open());
+        let signature_data = test_register_signatures_data();
+        let protocol_id = Uuid::new_v4();
+
+        let mut contracts = MockRskContractsGatewayApi::new();
+        setup_successful_nonce_call(&mut contracts);
+        let contracts = Rc::new(contracts);
+        let mut processor = store_backed_processor(Rc::clone(&contracts), &store);
+        let mut sig_flow = TestBtcSigSubFlow::new(
+            &contracts,
+            &processor.rt_sync,
+            protocol_id,
+            String::new(),
+            1,
+            Some(ParentSpan::Pegin(Uuid::new_v4())),
+        );
+        sig_flow
+            .start_signature_flow(protocol_id, &signature_data)
+            .expect("nonce submission should start signature flow");
+        processor.signature_flows.insert(protocol_id, sig_flow);
+        processor.persist_processor_state().expect("signature flow snapshot should persist");
+        drop(processor);
+
+        let restored_contracts = Rc::new(MockRskContractsGatewayApi::new());
+        let mut restored = store_backed_processor(restored_contracts, &store);
+        restored
+            .process_new_rsk_event(&all_nonces_ready_event(&signature_data))
+            .expect("restored subflow should accept AllNoncesReady");
+    }
+
+    #[test]
+    fn signature_flow_waiting_for_all_signatures_ready_round_trips_through_store() {
+        let store_path = TestStorePath::new();
+        let store = Rc::new(store_path.open());
+        let signature_data = test_register_signatures_data();
+        let protocol_id = Uuid::new_v4();
+
+        let mut contracts = MockRskContractsGatewayApi::new();
+        setup_successful_nonce_call(&mut contracts);
+        setup_successful_signature_call(&mut contracts);
+        let contracts = Rc::new(contracts);
+        let mut processor = store_backed_processor(Rc::clone(&contracts), &store);
+        let mut sig_flow = TestBtcSigSubFlow::new(
+            &contracts,
+            &processor.rt_sync,
+            protocol_id,
+            String::new(),
+            1,
+            Some(ParentSpan::Pegin(Uuid::new_v4())),
+        );
+        sig_flow
+            .start_signature_flow(protocol_id, &signature_data)
+            .expect("nonce submission should start signature flow");
+        sig_flow
+            .delegate_rsk_event(protocol_id, &all_nonces_ready_event(&signature_data))
+            .expect("AllNoncesReady should start nonce confirmations");
+        sig_flow.delegate_block(&test_block()).expect("confirmed nonces should send signature");
+        processor.signature_flows.insert(protocol_id, sig_flow);
+        processor.persist_processor_state().expect("signature flow snapshot should persist");
+        drop(processor);
+
+        let restored_contracts = Rc::new(MockRskContractsGatewayApi::new());
+        let mut restored = store_backed_processor(restored_contracts, &store);
+        restored
+            .process_new_rsk_event(&all_signatures_ready_event(&signature_data))
+            .expect("restored subflow should accept AllSignaturesReady");
     }
 
     #[test]
