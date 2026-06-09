@@ -334,6 +334,14 @@ pub(crate) struct ConfirmableEventSnapshot {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ConfirmableEventStateSnapshot {
+    id: String,
+    #[serde(default)]
+    start_block: Option<BlockNumber>,
+    required_confirmations: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct ConfirmableEventWithDataSnapshot {
     confirmation: ConfirmableEventSnapshot,
     data: RskPegManagerEvents,
@@ -487,6 +495,18 @@ impl ConfirmableEvent {
         })
     }
 
+    #[must_use]
+    pub(crate) fn state_snapshot(&self) -> ConfirmableEventStateSnapshot {
+        ConfirmableEventStateSnapshot {
+            id: self.id.clone(),
+            start_block: self.confirmations.as_ref().map(|confirmations| {
+                let confirmations = confirmations.borrow();
+                confirmations.init
+            }),
+            required_confirmations: self.req_confirmations,
+        }
+    }
+
     /// # Errors
     /// Returns an error if confirmation observer reconstruction fails.
     pub(crate) fn from_snapshot(
@@ -495,6 +515,19 @@ impl ConfirmableEvent {
     ) -> Result<Self> {
         let mut event = Self::new(snapshot.id, snapshot.required_confirmations, chain_view);
         event.start_confirming(snapshot.start_block)?;
+        Ok(event)
+    }
+
+    /// # Errors
+    /// Returns an error if confirmation observer reconstruction fails.
+    pub(crate) fn from_state_snapshot(
+        snapshot: ConfirmableEventStateSnapshot,
+        chain_view: BlockchainView,
+    ) -> Result<Self> {
+        let mut event = Self::new(snapshot.id, snapshot.required_confirmations, chain_view);
+        if let Some(start_block) = snapshot.start_block {
+            event.start_confirming(start_block)?;
+        }
         Ok(event)
     }
 }
