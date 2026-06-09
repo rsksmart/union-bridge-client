@@ -283,6 +283,10 @@ where
 
         debug!("{} -> {}", format_step(previous_step), format_step(next_step));
 
+        if next_step == Steps::AcceptPegin {
+            self.persist_state()?;
+        }
+
         // Execute the entry action for the new state
         match next_step {
             Steps::PeginTransactionFound => {
@@ -389,6 +393,7 @@ where
             }
             (Steps::RequestPeginSpvProof, StepData::RequestPeginSpvProof(spv_proof)) => {
                 self.state.ctx.request_pegin_spv_proof = Some(spv_proof.clone());
+                self.persist_state()?;
                 self.request_pegin(spv_proof)?;
                 Ok(Steps::WaitPeginRequested)
             }
@@ -1090,8 +1095,10 @@ fn format_step(step: Steps) -> &'static str {
 #[cfg(test)]
 mod tests {
     use alloy_primitives::{Address as AlloyAddress, Bytes, FixedBytes, U256, Uint};
-    use bitcoin::Txid;
+    use bitcoin::absolute::LockTime;
     use bitcoin::hashes::Hash;
+    use bitcoin::transaction::Version;
+    use bitcoin::{Transaction, Txid};
     use common::msg_broker::bitvmx_types::{
         IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PeginAcceptedMessage,
     };
@@ -1108,12 +1115,18 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
-    use crate::store::MockCoordinatorStoreApi;
+    use crate::store::{CoordinatorStore, MockCoordinatorStoreApi, TestStorePath};
 
     type MockPeginFlow = PeginFlow<
         crate::coordinator::tests::MockRskContractsGatewayApi,
         MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>,
         MockCoordinatorStoreApi,
+    >;
+
+    type StoreBackedPeginFlow = PeginFlow<
+        crate::coordinator::tests::MockRskContractsGatewayApi,
+        MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>,
+        CoordinatorStore,
     >;
 
     const ROLE_PROVER: u8 = 1;
@@ -1163,6 +1176,20 @@ mod tests {
             rskDestinationAddress: AlloyAddress::from([3u8; 20]),
             rbtcAmount: U256::from(1),
             utxoScriptPubKey: Bytes::from(vec![4u8]),
+        }
+    }
+
+    fn test_spv_proof() -> BtcTxSPVProof {
+        BtcTxSPVProof {
+            block_hash: "11".repeat(32),
+            tx: Transaction {
+                version: Version(2),
+                lock_time: LockTime::ZERO,
+                input: vec![],
+                output: vec![],
+            },
+            merkle_branch_path: "0".to_string(),
+            merkle_branch_hashes: vec![],
         }
     }
 
@@ -1244,6 +1271,95 @@ mod tests {
         let flow_id = flow_id_from_request_pegin_txid(test_txid([1u8; 32]));
         let ctx = create_default_flow_context(flow_id, step, op_role);
         create_test_flow_with_mock_contracts(my_address, ctx)
+    }
+
+    fn create_store_backed_flow(
+        ctx: FlowContext,
+        mut mock_contracts: crate::coordinator::tests::MockRskContractsGatewayApi,
+        store: std::rc::Rc<CoordinatorStore>,
+    ) -> StoreBackedPeginFlow {
+        mock_contracts.expect_my_address().returning(|| test_address([1u8; 20]));
+        let mock_contracts = std::rc::Rc::new(mock_contracts);
+        let mock_broker = std::rc::Rc::new(MockBrokerClientApi::<
+            IncomingBitVMXApiMessages,
+            OutgoingBitVMXApiMessages,
+        >::new());
+        let state = State { flow_id: ctx.flow_id, log_id: String::new(), ctx, created_at: None };
+        PeginFlow::from_saved_state(
+            mock_contracts,
+            RuntimeSync::new().expect("Failed to create runtime sync"),
+            mock_broker,
+            state,
+            store,
+            std::rc::Rc::new(crate::flows::common::Signaling::new("/tmp", "disabled")),
+            NativeBridgeVerifier::Dummy,
+        )
+    }
+
+    #[test]
+    fn request_pegin_retry_state_is_persisted_before_missing_native_bridge_error() {
+        let store_path = TestStorePath::new();
+        let store = std::rc::Rc::new(store_path.open());
+        let spv_proof = test_spv_proof();
+        let flow_id = flow_id_from_request_pegin_txid(spv_proof.tx.compute_txid());
+        let ctx = create_default_flow_context(flow_id, Steps::RequestPeginSpvProof, None);
+        let initial_state =
+            State { flow_id, log_id: String::new(), ctx: ctx.clone(), created_at: None };
+        store
+            .save_flow(&StoreKey::PeginFlow(flow_id.value()), initial_state)
+            .expect("initial flow state should persist");
+
+        let mut mock_contracts = crate::coordinator::tests::MockRskContractsGatewayApi::new();
+        mock_contracts.expect_request_pegin().times(1).returning(|_| {
+            Err(DomainErrors::MissingConfirmationsOnNativeBridge("not enough blocks".to_string()))
+        });
+        let mut flow = create_store_backed_flow(ctx, mock_contracts, std::rc::Rc::clone(&store));
+
+        let result = flow.complete_step(&StepData::RequestPeginSpvProof(spv_proof));
+        assert!(result.is_err(), "missing native bridge confirmations should surface");
+
+        let saved = store
+            .load_flow::<State>(&StoreKey::PeginFlow(flow_id.value()))
+            .expect("saved pegin flow should load")
+            .expect("saved pegin flow should exist");
+        assert_eq!(saved.ctx.step, Steps::RequestPeginSpvProof);
+        assert!(
+            saved.ctx.request_pegin_spv_proof.is_some(),
+            "retry needs request-pegin SPV proof after restart"
+        );
+    }
+
+    #[test]
+    fn accept_pegin_retry_state_is_persisted_before_missing_native_bridge_error() {
+        let store_path = TestStorePath::new();
+        let store = std::rc::Rc::new(store_path.open());
+        let spv_proof = test_spv_proof();
+        let flow_id = flow_id_from_request_pegin_txid(test_txid([1u8; 32]));
+        let ctx = create_default_flow_context(flow_id, Steps::RequestAcceptPeginSpvProof, None);
+        let initial_state =
+            State { flow_id, log_id: String::new(), ctx: ctx.clone(), created_at: None };
+        store
+            .save_flow(&StoreKey::PeginFlow(flow_id.value()), initial_state)
+            .expect("initial flow state should persist");
+
+        let mut mock_contracts = crate::coordinator::tests::MockRskContractsGatewayApi::new();
+        mock_contracts.expect_accept_pegin().times(1).returning(|_| {
+            Err(DomainErrors::MissingConfirmationsOnNativeBridge("not enough blocks".to_string()))
+        });
+        let mut flow = create_store_backed_flow(ctx, mock_contracts, std::rc::Rc::clone(&store));
+
+        let result = flow.complete_step(&StepData::AcceptPeginSpvProof(spv_proof));
+        assert!(result.is_err(), "missing native bridge confirmations should surface");
+
+        let saved = store
+            .load_flow::<State>(&StoreKey::PeginFlow(flow_id.value()))
+            .expect("saved pegin flow should load")
+            .expect("saved pegin flow should exist");
+        assert_eq!(saved.ctx.step, Steps::AcceptPegin);
+        assert!(
+            saved.ctx.accept_pegin_spv_proof.is_some(),
+            "retry needs accept-pegin SPV proof after restart"
+        );
     }
 
     fn create_committee_output_with_member(
