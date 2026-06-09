@@ -75,6 +75,7 @@ services:
     volumes:
       - ${COORDINATOR_BROKER_PEM_PATH}:/app/broker.pem:ro
     environment:
+      - UB__COORDINATOR__BROKER__CLIENT_ID
       - UB__COORDINATOR__BITVMX__HOST=${BITVMX_HOST:-dummy-bitvmx-host}
       - UB__COORDINATOR__BITVMX__PORT
       - UB__COORDINATOR__BLOCKS__PUBKEY_HASH
