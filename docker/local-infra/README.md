@@ -126,7 +126,7 @@ if the tag is not published. Use `--pull-contracts` to force a GHCR refresh.
 - powpeg-node tags: <https://hub.docker.com/r/rsksmart/powpeg-node/tags>
 
 The contracts are deployed from the local `union-bridge-contracts` checkout resolved by `CONTRACTS_CONTEXT_PATH`
-(`../../../union-bridge-contracts` by default). Until the native-bridge local-regtest deploy changes land upstream, keep
+(`../../../../union-bridge-contracts` by default). Until the native-bridge local-regtest deploy changes land upstream, keep
 that sibling checkout on `fedejinich/chore/local-regtest-native-bridge`; see the required sibling repository setup in
 the [Local Setup Guide](../../docs/LOCAL_SETUP.md#required-sibling-repositories).
 
