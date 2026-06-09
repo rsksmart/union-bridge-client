@@ -167,7 +167,7 @@ where
     }
 
     fn send_nonce_to_contracts(&mut self, data: &RegisterSignaturesBitVmxData) -> Result<()> {
-        debug!("Sending nonce to contract: flow_id={}", self.state.flow_id);
+        debug!("Sending nonce to contract");
 
         if self.state.nonce_step.is_some() || self.state.data.is_some() {
             bail!("flow {} is already in Nonces step", self.state.flow_id);

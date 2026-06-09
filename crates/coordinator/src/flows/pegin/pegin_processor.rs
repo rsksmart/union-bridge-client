@@ -13,7 +13,8 @@ use common::msg_broker::bitvmx_types::{
 use common::msg_broker::broker::BitVmxBrokerClientApi;
 use common::runtime_sync::RuntimeSync;
 use common::types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles, TxIdParser};
-use tracing::{debug, error, info, trace, warn};
+use tracing::span::Span;
+use tracing::{debug, error, info, info_span, instrument, trace, warn};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use union_contracts::bindings::pegin_manager::PeginManager::PeginRequested;
 use uuid::Uuid;
@@ -23,7 +24,7 @@ use crate::event_processor::EventProcessor;
 use crate::flows::btc_signature::btc_signature_lifecycle::BtcSignatureLifeCycle;
 use crate::flows::btc_signature::btc_signature_subflow::{
     BaseBtcSignatureSubFlow, BtcSignatureSubFlowApi, BtcSignatureSubFlowFactory,
-    BtcSignatureSubFlowFactoryApi,
+    BtcSignatureSubFlowFactoryApi, ParentSpan,
 };
 use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
 use crate::flows::common::{FlowId, GlobalContext, Signaling};
@@ -49,6 +50,10 @@ fn is_missing_native_bridge_confirmations(err: &anyhow::Error) -> bool {
             false
         }
     })
+}
+
+fn record_pegin_id(flow_id: &FlowId) {
+    Span::current().record("pegin_id", tracing::field::display(flow_id));
 }
 
 /// Processor that manages multiple pegin flow state machines
@@ -242,9 +247,22 @@ where
         Ok(())
     }
 
-    /// Handle confirmed `PeginAccepted` event
+    /// Handle confirmed `PeginAccepted` event.
+    ///
+    /// Opens a `pegin_accepted` sub-span carrying `tx_id` and
+    /// `accept_pegin_tx_id`. The caller is expected to have already entered
+    /// the outer `pegin{pegin_id}` span (every path lands here via the RSK
+    /// dispatchers or replay helpers, which all open it).
+    #[instrument(
+        skip(self, pa),
+        name = "pegin_accepted",
+        fields(
+            tx_id = %pa.inner.requestPeginTxid,
+            accept_pegin_tx_id = %pa.inner.acceptPeginTxid,
+        )
+    )]
     fn handle_pegin_accepted(&mut self, pa: &PeginAcceptedEvent) -> Result<()> {
-        info!("Processing confirmed PeginAccepted event: {pa:?}");
+        info!("Processing confirmed PeginAccepted event");
         let event_accept_pegin_txid = TxIdParser::fb_32_to_txid(pa.inner.acceptPeginTxid);
 
         // Find the flow corresponding to this pegin acceptance using accept_pegin_tx_hash
@@ -281,20 +299,26 @@ where
         Ok(())
     }
 
-    /// Process confirmed RSK events
+    /// Process confirmed RSK events.
+    ///
+    /// Callers must enter a `pegin{pegin_id}` span before invoking this
+    /// (the `pegin_id` is event-derived; see [`Self::pegin_id_for_event`]).
+    /// Every call site — RSK dispatcher, block confirmations, and the
+    /// `replay_pending_*` helpers — already opens that outer span.
     fn process_confirmed_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
-        info!("Processing confirmed RSK event: {event:?}");
-
         match event {
             RskPegManagerEvents::PeginRequested(pr) => {
-                let committee_id = pr.inner.committeeId.into();
+                let committee_id: CommitteeId = pr.inner.committeeId.into();
                 if !self.global_context.my_committees().im_member(&committee_id) {
                     debug!(
                         "Handling PeginRequested event with committee id {committee_id}, I am NOT member so I skip"
                     );
                     return Ok(());
                 }
-                info!("Processing confirmed PeginRequested event: {pr:?}");
+                debug!(
+                    request_pegin_tx_id = %pr.inner.requestPeginTxid,
+                    "Processing confirmed PeginRequested event: {pr:?}"
+                );
                 let btc_tx_id = TxIdParser::fb_32_to_txid(pr.inner.requestPeginTxid);
                 let flow_id = flow_id_from_request_pegin_txid(btc_tx_id);
                 let should_buffer = self
@@ -332,11 +356,6 @@ where
     ) -> Result<()> {
         let event_accept_pegin_txid = TxIdParser::fb_32_to_txid(event.inner.acceptPeginTxid);
 
-        debug!(
-            "Processing AllOperatorTakeTxidsAdded: acceptPeginTxid={}",
-            event.inner.acceptPeginTxid
-        );
-
         // Find the flow by accept_pegin_tx_hash
         let flow_with_bitvmx_accept_pegin = self.pegin_flows.values_mut().find(|flow| {
             flow.get_accept_pegin_txid_from_bitvmx_var() == Some(event_accept_pegin_txid)
@@ -344,6 +363,15 @@ where
 
         if let Some(flow) = flow_with_bitvmx_accept_pegin {
             let flow_id = flow.flow_id();
+            // Outer `pegin{pegin_id}` is opened by the caller (RSK dispatcher
+            // via `process_confirmed_rsk_event`, or `process_new_bitvmx_event`
+            // when replaying buffered events). The sub-span here only adds
+            // operation context — it deliberately does not repeat pegin_id.
+            let _span = info_span!("pegin_all_operator_take_txids_added").entered();
+            debug!(
+                "Processing AllOperatorTakeTxidsAdded: acceptPeginTxid={}",
+                event.inner.acceptPeginTxid
+            );
             let protocol_id = flow
                 .bitvmx_protocol_id_opt()
                 .ok_or_else(|| anyhow!("bitvmx_protocol_id not set for flow {flow_id}"))?;
@@ -367,9 +395,11 @@ where
                     signature: pegin_accepted.accept_pegin_signature,
                 };
 
-                let mut btc_sig_subflow = self
-                    .btc_sig_subflow_factory
-                    .create_flow(protocol_uuid, flow.log_id().to_string());
+                let mut btc_sig_subflow = self.btc_sig_subflow_factory.create_flow(
+                    protocol_uuid,
+                    flow.log_id().to_string(),
+                    Some(ParentSpan::Pegin(flow_id.value())),
+                );
                 btc_sig_subflow.start_signature_flow(protocol_uuid, &register_input)?;
 
                 self.signature_flows.insert(protocol_uuid, btc_sig_subflow);
@@ -404,6 +434,38 @@ where
                 .map(|pegin_requested| pegin_requested.acceptPeginTxid)
                 == Some(accept_pegin_txid)
         })
+    }
+
+    /// Resolve the originating pegin flow id for an RSK event, if known.
+    /// `PeginRequested` derives it from the request-pegin BTC txid;
+    /// `PeginAccepted` and `AllOperatorTakeTxidsAdded` look up the in-memory
+    /// flow by `accept_pegin_txid`.
+    fn pegin_id_for_event(&self, event: &RskPegManagerEvents) -> Option<FlowId> {
+        match event {
+            RskPegManagerEvents::PeginRequested(e) => {
+                let btc_tx_id = TxIdParser::fb_32_to_txid(e.inner.requestPeginTxid);
+                Some(flow_id_from_request_pegin_txid(btc_tx_id))
+            }
+            RskPegManagerEvents::PeginAccepted(e) => {
+                let accept_pegin_txid = TxIdParser::fb_32_to_txid(e.inner.acceptPeginTxid);
+                self.pegin_flows
+                    .values()
+                    .find(|flow| {
+                        flow.get_accept_pegin_txid_from_bitvmx_var() == Some(accept_pegin_txid)
+                    })
+                    .map(PeginFlow::flow_id)
+            }
+            RskPegManagerEvents::AllOperatorTakeTxidsAdded(e) => {
+                let accept_pegin_txid = TxIdParser::fb_32_to_txid(e.inner.acceptPeginTxid);
+                self.pegin_flows
+                    .values()
+                    .find(|flow| {
+                        flow.get_accept_pegin_txid_from_bitvmx_var() == Some(accept_pegin_txid)
+                    })
+                    .map(PeginFlow::flow_id)
+            }
+            _ => None,
+        }
     }
 
     /// Build event info for `PeginRequested` events
@@ -462,6 +524,8 @@ where
                 );
                 continue;
             };
+            let flow_id = flow.flow_id();
+            let _span = info_span!("pegin", pegin_id = %flow_id).entered();
 
             // Only complete the step if the flow is still waiting for signatures
             if flow.current_step() != Steps::WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint {
@@ -508,6 +572,7 @@ where
 
         let TransactionStatus { tx_id, confirmations, .. } = tx_status;
         let flow_id = flow.flow_id();
+        let _span = info_span!("pegin", pegin_id = %flow_id).entered();
         let expected_txid = flow
             .get_accept_pegin_txid_from_bitvmx_var()
             .ok_or_else(|| anyhow!("Expected accept pegin tx_id not found"))?;
@@ -551,6 +616,7 @@ where
 
         let ready = self.tx_status_scheduler.tick();
         for flow_id in ready {
+            let _span = info_span!("pegin", pegin_id = %flow_id).entered();
             match self.pegin_flows.get_mut(&flow_id) {
                 Some(flow) => {
                     if flow.current_step() == Steps::ConfirmAcceptPeginTransaction {
@@ -577,6 +643,7 @@ where
     ///
     /// Reachable at any step, including before Setup.
     fn fail_flow(&mut self, flow_id: FlowId, reason: &str) -> Result<()> {
+        let _span = info_span!("pegin", pegin_id = %flow_id).entered();
         if let Some(flow) = self.pegin_flows.get_mut(&flow_id) {
             flow.mark_failed(reason)?;
             warn!("Admin marked pegin flow {flow_id} as failed: {reason}");
@@ -601,8 +668,11 @@ where
         self.pegin_retry_scheduler.schedule(block_hash, self.btc_status_retry_blocks);
     }
 
+    /// Callers must enter a `pegin{pegin_id}` span (or descendant) before
+    /// invoking this — both `handle_spv_proof_for_accept_pegin` and
+    /// `handle_pegin_retry_tick`'s accept-pegin loop already do so.
     fn schedule_accept_pegin_retry(&mut self, flow_id: FlowId, attempt: i16, reason: &str) {
-        info!("{reason} for flow {flow_id} (attempt {attempt})");
+        info!(attempt, "{reason}");
         self.unconfirmed_accept_pegin.insert(flow_id, attempt);
         self.accept_pegin_retry_scheduler.schedule(flow_id, self.btc_status_retry_blocks);
     }
@@ -626,6 +696,7 @@ where
                 warn!("No pegin flow found for request_pegin retry: tx_id={tx_id}");
                 continue;
             };
+            let _span = info_span!("pegin", pegin_id = %flow_id).entered();
 
             let Some(flow) = self.pegin_flows.get_mut(&flow_id) else {
                 warn!("No pegin flow found for request_pegin retry: flow_id={flow_id}");
@@ -654,6 +725,7 @@ where
         }
 
         for flow_id in self.accept_pegin_retry_scheduler.tick() {
+            let _span = info_span!("pegin", pegin_id = %flow_id).entered();
             let Some(attempt) = self.unconfirmed_accept_pegin.remove(&flow_id) else {
                 warn!("No accept_pegin retry state found for flow {flow_id}");
                 continue;
@@ -772,6 +844,8 @@ where
 
         for key in confirmed_keys {
             if let Some(event) = self.stop_confirming_event(&key) {
+                let pegin_id = self.pegin_id_for_event(event.get_data());
+                let _span = pegin_id.map(|fid| info_span!("pegin", pegin_id = %fid).entered());
                 debug!("RSK event confirmed, removing pending {key}");
                 trace!("Event data: {:?}", event.get_data());
                 self.process_confirmed_rsk_event(event.get_data())?;
@@ -791,6 +865,7 @@ where
 
     fn handle_pegin_transaction_found(&mut self, tx_id: Txid) -> Result<()> {
         let flow_id = flow_id_from_request_pegin_txid(tx_id);
+        let _span = info_span!("pegin", pegin_id = %flow_id, tx_id = %tx_id).entered();
         if self.pegin_request_tracker.contains(&tx_id) || self.pegin_flows.contains_key(&flow_id) {
             debug!("Ignoring duplicate BitVMX pegin event for tx_id={tx_id}");
             return Ok(());
@@ -801,6 +876,7 @@ where
             self.rt_sync.clone(),
             Rc::clone(&self.bitvmx_broker),
             tx_id,
+            flow_id,
             Rc::clone(&self.store),
             self.signaling.clone(),
             self.native_bridge_verifier.clone(),
@@ -827,6 +903,11 @@ where
         (flow.current_step() == Steps::RequestPeginSpvProof).then_some(flow_id)
     }
 
+    #[instrument(
+        name = "pegin",
+        skip(self, spv_proof),
+        fields(tx_id = %tx_id, pegin_id = tracing::field::Empty),
+    )]
     fn handle_spv_proof_for_request_pegin(
         &mut self,
         tx_id: &Txid,
@@ -842,6 +923,7 @@ where
             warn!("No pegin flow found for request_pegin: tx_id={tx_id}");
             return Ok(());
         };
+        record_pegin_id(&flow_id);
 
         let Some(flow) = self.pegin_flows.get_mut(&flow_id) else {
             warn!("No pegin flow found for request_pegin: flow_id={flow_id}");
@@ -881,7 +963,8 @@ where
 
         if let Some(flow) = flow_opt {
             let flow_id = flow.flow_id();
-            info!("Handling accept pegin SPV proof: flow_id={flow_id}, tx_id={tx_id}");
+            let _span = info_span!("pegin", pegin_id = %flow_id, tx_id = %tx_id).entered();
+            info!("Handling accept pegin SPV proof");
             let step_data = StepData::AcceptPeginSpvProof(spv_proof);
             if let Err(err) = flow.complete_step(&step_data) {
                 if is_missing_native_bridge_confirmations(&err) {
@@ -1049,6 +1132,7 @@ where
                 // For any flow in GetCommInfoAuthoritativeCheckpoint step, complete the step with the CommInfo
                 for (flow_id, flow) in &mut self.pegin_flows {
                     if flow.current_step() == Steps::GetCommInfoAuthoritativeCheckpoint {
+                        let _span = info_span!("pegin", pegin_id = %flow_id, tx_id = %flow.get_state().ctx.request_pegin_btc_tx_id).entered();
                         debug!(
                             "Completing GetCommInfoAuthoritativeCheckpoint step for flow {flow_id}"
                         );
@@ -1063,6 +1147,9 @@ where
                 method,
                 VariableTypes::String(data),
             ) if matches!(method.as_str(), PEGIN_ACCEPTED_INPUT_MSG) => {
+                let flow_id_opt =
+                    self.pegin_flow_by_protocol_id_ref(protocol_id).map(PeginFlow::flow_id);
+                let _span = flow_id_opt.map(|fid| info_span!("pegin", pegin_id = %fid).entered());
                 info!("Received PeginAccepted variable from BitVMX for protocol_id: {protocol_id}");
                 debug!("PeginAccepted data: {data}");
                 let pegin_accepted: PeginAcceptedMessage = serde_json::from_str(data)?;
@@ -1099,6 +1186,7 @@ where
                 };
 
                 let flow_id = flow.flow_id();
+                let _span = info_span!("pegin", pegin_id = %flow_id).entered();
                 debug!(
                     "Received BitVMX TransactionInfo for flow_id: {flow_id}, tx_name: {tx_name}, txid: {txid}"
                 );
@@ -1132,7 +1220,8 @@ where
             }
             // Handle SetupCompleted from BitVMX
             OutgoingBitVMXApiMessages::SetupCompleted(program_id) => {
-                if self.pegin_flow_by_protocol_id_ref(program_id).is_some() {
+                if let Some(flow) = self.pegin_flow_by_protocol_id_ref(program_id) {
+                    let _span = info_span!("pegin", pegin_id = %flow.flow_id()).entered();
                     info!("Pegin setup was completed: protocol_id={program_id}");
                 } else {
                     trace!("Ignoring BitVMX SetupCompleted for unknown program_id: {program_id}");
@@ -1166,6 +1255,14 @@ where
                 // Continue with the normal flow
             }
         }
+
+        // Open the outer `pegin{pegin_id}` span once for this event so both
+        // the `required_confirmations == 0` direct-processing branch and the
+        // confirmation-registration branch run under it. Sub-handlers must
+        // not open their own `pegin` span on top.
+        let _span = self
+            .pegin_id_for_event(event)
+            .map(|fid| info_span!("pegin", pegin_id = %fid).entered());
 
         // useful for testing purposes
         if self.required_confirmations == 0 {
