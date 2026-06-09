@@ -339,6 +339,32 @@ pub(crate) struct ConfirmableEventWithDataSnapshot {
     data: RskPegManagerEvents,
 }
 
+#[must_use]
+pub(crate) fn snapshot_confirmable_events(
+    events: &HashMap<String, ConfirmableEventWithData>,
+) -> HashMap<String, ConfirmableEventWithDataSnapshot> {
+    events
+        .values()
+        .filter_map(|event| event.snapshot().map(|snapshot| (event.id(), snapshot)))
+        .collect()
+}
+
+/// # Errors
+/// Returns an error if confirmation observer reconstruction fails.
+pub(crate) fn restore_confirmable_events(
+    snapshots: HashMap<String, ConfirmableEventWithDataSnapshot>,
+) -> Result<(BlockchainView, HashMap<String, ConfirmableEventWithData>)> {
+    let blockchain_view = BlockchainView::new();
+    let events = snapshots
+        .into_values()
+        .map(|snapshot| {
+            ConfirmableEventWithData::from_snapshot(snapshot, blockchain_view.clone())
+                .map(|event| (event.id(), event))
+        })
+        .collect::<Result<HashMap<_, _>>>()?;
+    Ok((blockchain_view, events))
+}
+
 impl ConfirmableEventWithData {
     pub fn new(
         id: String,

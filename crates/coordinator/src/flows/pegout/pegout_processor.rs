@@ -18,6 +18,7 @@ use uuid::Uuid;
 
 use crate::blockchain_tracker::{
     BlockchainView, ConfirmableEventWithData, ConfirmableEventWithDataSnapshot,
+    restore_confirmable_events, snapshot_confirmable_events,
 };
 use crate::event_processor::EventProcessor;
 use crate::flows::btc_signature::btc_signature_lifecycle::BtcSignatureLifeCycle;
@@ -234,11 +235,7 @@ where
 
     fn snapshot_processor_state(&self) -> PegoutProcessorState {
         PegoutProcessorState {
-            events_confirming: self
-                .events_confirming
-                .iter()
-                .filter_map(|(id, event)| event.snapshot().map(|snapshot| (id.clone(), snapshot)))
-                .collect(),
+            events_confirming: snapshot_confirmable_events(&self.events_confirming),
             tx_status_scheduler: self.tx_status_scheduler.clone(),
             advance_funds_timeout_scheduler: self.advance_funds_timeout_scheduler.clone(),
             flows_pending_timeout: self.flows_pending_timeout.clone(),
@@ -247,7 +244,7 @@ where
             signature_flows: self
                 .signature_flows
                 .iter()
-                .filter_map(|(id, flow)| flow.snapshot().map(|snapshot| (*id, snapshot)))
+                .map(|(id, flow)| (*id, flow.snapshot()))
                 .collect(),
         }
     }
@@ -265,15 +262,9 @@ where
     }
 
     fn apply_processor_state(&mut self, state: PegoutProcessorState) -> Result<()> {
-        let blockchain_view = BlockchainView::new();
-        self.events_confirming = state
-            .events_confirming
-            .into_iter()
-            .map(|(id, snapshot)| {
-                ConfirmableEventWithData::from_snapshot(snapshot, blockchain_view.clone())
-                    .map(|event| (id, event))
-            })
-            .collect::<Result<HashMap<_, _>>>()?;
+        let (blockchain_view, events_confirming) =
+            restore_confirmable_events(state.events_confirming)?;
+        self.events_confirming = events_confirming;
         self.blockchain_view = blockchain_view;
         self.tx_status_scheduler = state.tx_status_scheduler;
         self.advance_funds_timeout_scheduler = state.advance_funds_timeout_scheduler;
@@ -869,7 +860,7 @@ where
         {
             self.fail_flow(*flow_id, reason)?;
         }
-        Ok(())
+        self.persist_processor_state()
     }
 
     #[allow(clippy::too_many_lines)]

@@ -16,6 +16,7 @@ use uuid::Uuid;
 
 use crate::blockchain_tracker::{
     BlockchainView, ConfirmableEventWithData, ConfirmableEventWithDataSnapshot,
+    restore_confirmable_events, snapshot_confirmable_events,
 };
 use crate::event_processor::EventProcessor;
 use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
@@ -153,11 +154,7 @@ where
     fn snapshot_processor_state(&self) -> AdvanceFundsProcessorState {
         AdvanceFundsProcessorState {
             flows: self.flows.iter().map(|(id, flow)| (*id, flow.snapshot())).collect(),
-            events_confirming: self
-                .events_confirming
-                .iter()
-                .filter_map(|(id, event)| event.snapshot().map(|snapshot| (id.clone(), snapshot)))
-                .collect(),
+            events_confirming: snapshot_confirmable_events(&self.events_confirming),
             retries: self.retries.clone(),
             request_pegout_tx_hashes: self.request_pegout_tx_hashes.clone(),
         }
@@ -193,15 +190,9 @@ where
             })
             .collect();
 
-        let blockchain_view = BlockchainView::new();
-        self.events_confirming = state
-            .events_confirming
-            .into_iter()
-            .map(|(id, snapshot)| {
-                ConfirmableEventWithData::from_snapshot(snapshot, blockchain_view.clone())
-                    .map(|event| (id, event))
-            })
-            .collect::<Result<HashMap<_, _>>>()?;
+        let (blockchain_view, events_confirming) =
+            restore_confirmable_events(state.events_confirming)?;
+        self.events_confirming = events_confirming;
         self.blockchain_view = blockchain_view;
         self.retries = state.retries;
         self.request_pegout_tx_hashes = state.request_pegout_tx_hashes;
@@ -439,8 +430,8 @@ where
     fn cleanup_terminal_flows(&mut self) {
         self.cleanup_terminal_flow_state();
 
-        // Advance-funds flows are not persisted just yet, so this processor removes
-        // terminal flows from memory directly instead of using cleanup_flows_matching.
+        // Advance-funds flows are persisted as part of the processor snapshot,
+        // so terminal entries are dropped from memory before the next snapshot.
         let terminal_flow_ids: Vec<_> = self
             .flows
             .iter()
