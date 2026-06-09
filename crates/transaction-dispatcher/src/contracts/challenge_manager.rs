@@ -158,7 +158,7 @@ pub(crate) fn decode_error(err: &alloy_contract::Error) -> Option<DomainErrors> 
             DomainErrors::ReimbursementKickoffTxidNotMatch(format!("{e:?}"))
         }
         ChallengeManagerErrors::InvalidPegStatus(e) => {
-            DomainErrors::InvalidPegStatus(format!("{e:?}"))
+            DomainErrors::InvalidPegStatus { actual: e.actual }
         }
         ChallengeManagerErrors::MemberNotInCommittee(e) => {
             DomainErrors::MemberNotInCommittee(format!("{e:?}"))
@@ -242,7 +242,7 @@ mod tests {
         let err_data = ChallengeManagerErrors::InvalidPegStatus(InvalidPegStatus { actual: 0 });
         let result = generate_contract_revert_error(&err_data);
         let domain_error = decode_error(&result).unwrap();
-        assert!(matches!(domain_error, DomainErrors::InvalidPegStatus(_)));
+        assert!(matches!(domain_error, DomainErrors::InvalidPegStatus { actual: 0 }));
     }
 
     #[test]

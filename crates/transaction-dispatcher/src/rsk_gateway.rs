@@ -467,7 +467,11 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         info!("Interacting with PeginManager#requestPegin");
 
         self.request_pegin_invoke.run(input).await.map_err(|err| {
-            error!("Error on request_pegin_invoke: {err}");
+            if matches!(err, DomainErrors::PeginAlreadyRequested(_)) {
+                tracing::warn!("Warning on request_pegin_invoke: {err}");
+            } else {
+                error!("Error on request_pegin_invoke: {err}");
+            }
             err
         })
     }
@@ -479,7 +483,11 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         info!("Interacting with PeginManager#acceptPegin");
 
         self.accept_pegin_invoke.run(input).await.map_err(|err| {
-            error!("Error on accept_pegin_invoke: {err}");
+            if matches!(err, DomainErrors::PeginAlreadyAccepted(_)) {
+                tracing::warn!("Warning on accept_pegin_invoke: {err}");
+            } else {
+                error!("Error on accept_pegin_invoke: {err}");
+            }
             err
         })
     }
@@ -533,7 +541,11 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
         info!("Interacting with PegoutManager#registerUserTake");
 
         self.register_pegout_invoke.run(input).await.map_err(|err| {
-            error!("Error on register_pegout_invoke: {err}");
+            if matches!(err, DomainErrors::PegStatusAlreadyCompleted) {
+                tracing::warn!("Warning on register_pegout_invoke: {err}");
+            } else {
+                error!("Error on register_pegout_invoke: {err}");
+            }
             err
         })
     }
@@ -713,6 +725,10 @@ impl<P: Provider + Clone> RskContractsGatewayApi for RskContractsGateway<P> {
     }
 }
 
+/// Discriminant of `PegStatus::COMPLETED` in the `union-bridge-contracts`
+/// `IPegCommonTypes.PegStatus` enum: the peg has already been paid out.
+const PEG_STATUS_COMPLETED: u8 = 9;
+
 #[derive(Debug, Error)]
 pub enum DomainErrors {
     // mapped smart contract errors
@@ -768,8 +784,10 @@ pub enum DomainErrors {
     InvalidRevealedInputCount(String),
     #[error("Reimbursement kickoff txid mismatch: {0}")]
     ReimbursementKickoffTxidNotMatch(String),
-    #[error("Invalid peg status: {0}")]
-    InvalidPegStatus(String),
+    #[error("Invalid peg status: actual {actual}")]
+    InvalidPegStatus { actual: u8 },
+    #[error("Peg status already completed")]
+    PegStatusAlreadyCompleted,
     #[error("Member not in committee: {0}")]
     MemberNotInCommittee(String),
 
@@ -793,4 +811,16 @@ pub enum DomainErrors {
 
     #[error("Internal non-contract error: {0}")]
     InternalServerError(String),
+}
+
+impl DomainErrors {
+    /// Map a contract `InvalidPegStatus` revert to the concrete domain error,
+    /// distinguishing the expected "already completed" status from the rest.
+    pub(crate) fn from_invalid_peg_status(actual: u8) -> Self {
+        if actual == PEG_STATUS_COMPLETED {
+            Self::PegStatusAlreadyCompleted
+        } else {
+            Self::InvalidPegStatus { actual }
+        }
+    }
 }
