@@ -111,7 +111,7 @@ else
   # Map git tag to image tag when they differ.
   case "$CONTRACTS_IMAGE_TAG" in
     v0.2.0-alpha) CONTRACTS_IMAGE_TAG="v0.2.0-alpha.1" ;;
-    v0.4.1-alpha) CONTRACTS_IMAGE_TAG="v0.4.1-alpha-10-4-2" ;;
+    v0.4.1-alpha) CONTRACTS_IMAGE_TAG="v0.4.1-alpha-10-4-2-2m" ;;
   esac
 fi
 export PREDEPLOYED_ANVIL_IMAGE_BASE

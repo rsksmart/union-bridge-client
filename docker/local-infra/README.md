@@ -96,7 +96,7 @@ Example:
 ```bash
 docker buildx build \
   --platform linux/amd64 \
-  -t ghcr.io/rsksmart/union-bridge-contracts-anvil:v0.4.1-alpha-10-4-2 \
+  -t ghcr.io/rsksmart/union-bridge-contracts-anvil:v0.4.1-alpha-10-4-2-2m \
   -f ../union-bridge-client/docker/local-infra/anvil/Dockerfile_predeployed \
   .
 ```
