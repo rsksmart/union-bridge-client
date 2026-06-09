@@ -43,10 +43,10 @@ pub(crate) trait BtcSignatureLifecycleApi {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct BtcSignatureLifecycleSnapshot {
-    pub(crate) flow_id: Uuid,
-    pub(crate) data: Option<RegisterSignaturesBitVmxData>,
-    pub(crate) nonce_step: Option<ConfirmableEventSnapshot>,
-    pub(crate) signature_step: Option<ConfirmableEventSnapshot>,
+    flow_id: Uuid,
+    data: Option<RegisterSignaturesBitVmxData>,
+    nonce_step: Option<ConfirmableEventSnapshot>,
+    signature_step: Option<ConfirmableEventSnapshot>,
 }
 
 pub(crate) struct State {

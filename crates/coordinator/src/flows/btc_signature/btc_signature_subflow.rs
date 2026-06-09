@@ -34,7 +34,7 @@ pub(crate) trait BtcSignatureSubFlowApi {
     fn delegate_rsk_event(&mut self, flow_id: Uuid, event: &RskPegManagerEvents) -> Result<()>;
     fn delegate_block(&mut self, block: &RskBlockAndUncles) -> Result<()>;
     fn is_done(&self) -> bool;
-    fn snapshot(&self) -> Option<BtcSignatureSubFlowSnapshot>;
+    fn snapshot(&self) -> BtcSignatureSubFlowSnapshot;
 }
 
 #[cfg_attr(test, automock)]
@@ -45,11 +45,11 @@ pub(crate) trait BtcSignatureSubFlowFactoryApi<BSF: BtcSignatureSubFlowApi> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct BtcSignatureSubFlowSnapshot {
-    pub(crate) lifecycle: BtcSignatureLifecycleSnapshot,
-    pub(crate) is_done: bool,
-    pub(crate) is_nonces_step_done: bool,
-    pub(crate) parent_log_id: String,
-    pub(crate) parent: Option<ParentSpan>,
+    lifecycle: BtcSignatureLifecycleSnapshot,
+    is_done: bool,
+    is_nonces_step_done: bool,
+    parent_log_id: String,
+    parent: Option<ParentSpan>,
 }
 
 pub(crate) struct BaseBtcSignatureSubFlow<BSF: BtcSignatureLifecycleApi> {
@@ -239,14 +239,14 @@ where
         self.is_done
     }
 
-    fn snapshot(&self) -> Option<BtcSignatureSubFlowSnapshot> {
-        Some(BtcSignatureSubFlowSnapshot {
+    fn snapshot(&self) -> BtcSignatureSubFlowSnapshot {
+        BtcSignatureSubFlowSnapshot {
             lifecycle: self.lifecycle.snapshot(),
             is_done: self.is_done,
             is_nonces_step_done: self.is_nonces_step_done,
             parent_log_id: self.parent_log_id.clone(),
             parent: self.parent,
-        })
+        }
     }
 }
 
