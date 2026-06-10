@@ -51,11 +51,11 @@ hand-merging lines — a line-merged lockfile can look clean but be invalid.
 
 ## 3. Pick the merge mechanism — discover, don't assume
 
-Read the repo's branch protection / rulesets, then:
+Read the repo's branch protection / rulesets and resolve the merge method to propose:
 
-- merge queue enabled → add PRs through the queue (e.g. the `enqueuePullRequest` GraphQL mutation — verify it's still current)
-- else auto-merge allowed → `gh pr merge <n> --auto`
-- else → `gh pr merge <n>`
+- merge queue enabled → propose adding PRs through the queue (e.g. the `enqueuePullRequest` GraphQL mutation — verify it's still current)
+- else auto-merge allowed → propose `gh pr merge <n> --auto`
+- else → propose `gh pr merge <n>`
 
 If the queue/protection pins one merge method, use it; if several are allowed
 (merge / squash / rebase), **ask which to use**.
