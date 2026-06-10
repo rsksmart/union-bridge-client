@@ -13,7 +13,7 @@ musig2 = { workspace = true }
 serde = { workspace = true }
 sha2 = { workspace = true }
 tracing = { workspace = true }
-uuid = { version = "1.23.1", features = ["v4", "serde"] }
+uuid = { workspace = true }
 
 [lints]
 workspace = true
