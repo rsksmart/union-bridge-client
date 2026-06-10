@@ -40,6 +40,12 @@ jobs:
         run: |
           cargo test --workspace --locked
 
+      # The coverage job runs the all-features unit/integration tests under instrumentation,
+      # but cargo-llvm-cov skips doctests on stable, so run the all-features doctests here.
+      - name: Test Features (doctests)
+        run: |
+          cargo test --workspace --all-features --doc --locked
+
       - name: Test cli workspace (Prod)
         run: |
           cargo test --manifest-path cli/Cargo.toml --workspace --locked
@@ -121,7 +127,7 @@ jobs:
           {
             echo '### Coverage'
             echo '```'
-            cargo llvm-cov report --summary-only --ignore-filename-regex 'src/main\.rs'
+            cargo llvm-cov report --ignore-filename-regex 'src/main\.rs'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
