@@ -11,6 +11,7 @@ cli/.env.*
 
 # Build artifacts and runtime outputs
 **/target
+lcov.info
 **/app.log*
 *.log
 **/logs/*

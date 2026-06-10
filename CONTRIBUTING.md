@@ -111,8 +111,16 @@ routed by pubkey hash; `.pem` keys live under `$BASE_STORAGE_PATH/.union_bridge/
 - **Aiming for:**
     - Line coverage of **75%** workspace-wide for library crates, measured by `cargo-llvm-cov` on every PR and
       tag. Binary entrypoints (`*/src/main.rs`) are excluded from the measurement.
-    - A drop greater than 5 percentage points relative to the previous tag triggers a reviewer question, not an
-      automatic fail.
+- **Enforced:** CI hard-fails any PR whose workspace line coverage drops below a transitional **65%** floor
+  (`--fail-under-lines`). The floor is ratcheted toward the 75% target as catch-up work lands.
+- CI surfaces absolute coverage and a per-file breakdown on the check page, but does not track a delta against a
+  baseline. Judging whether a coverage drop is acceptable is a manual reviewer call, not an automated gate.
+- **Locally:** install the `llvm-tools-preview` rustup component (pinned in `rust-toolchain.toml`), then:
+
+    ```bash
+    cargo llvm-cov --workspace --all-features --summary-only   # totals per crate/file in the terminal
+    cargo llvm-cov --workspace --all-features --html --open     # line-by-line browsing in a browser
+    ```
 
 ## Documentation build
 

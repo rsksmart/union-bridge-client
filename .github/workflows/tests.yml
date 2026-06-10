@@ -10,9 +10,15 @@ on:
     types: [ checks_requested ]
     branches:
       - main
+  # Tag pushes run the coverage job so each release has a downloadable lcov.info.
+  push:
+    tags:
+      - 'v*'
 
 jobs:
   test-workspace:
+    # Skip on tag pushes: those runs only exist to publish the coverage artifact.
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     env:
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
@@ -34,10 +40,6 @@ jobs:
         run: |
           cargo test --workspace --locked
 
-      - name: Test Features
-        run: |
-          cargo test --workspace --all-features --locked
-
       - name: Test cli workspace (Prod)
         run: |
           cargo test --manifest-path cli/Cargo.toml --workspace --locked
@@ -47,6 +49,8 @@ jobs:
           cargo test --manifest-path cli/Cargo.toml --workspace --all-features --locked
 
   check-all-targets:
+    # Skip on tag pushes: those runs only exist to publish the coverage artifact.
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     env:
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
@@ -79,3 +83,52 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: |
           cargo doc --manifest-path cli/Cargo.toml --workspace --no-deps --all-features --locked
+
+  coverage:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+      RUSTFLAGS: -C link-arg=-fuse-ld=lld
+      CARGO_PROFILE_TEST_DEBUG: 0
+      RISC0_SKIP_BUILD: 1
+
+    steps:
+
+      # cannot be moved to common_setup action because its needed to find the action itself
+      - name: Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup
+        uses: ./.github/actions/common_setup
+        with:
+          cache-build: true
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@b550161ef8a7bc4f2a671c0b03a18ac9ccedea1e # v2.79.1
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Run coverage
+        run: |
+          cargo llvm-cov --workspace --all-features --locked \
+            --ignore-filename-regex 'src/main\.rs' \
+            --fail-under-lines 65 \
+            --lcov --output-path lcov.info
+
+      - name: Coverage summary
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo '### Coverage'
+            echo '```'
+            cargo llvm-cov report --summary-only --ignore-filename-regex 'src/main\.rs'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload lcov.info
+        if: ${{ success() || failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lcov.info
+          path: lcov.info
+          if-no-files-found: warn
