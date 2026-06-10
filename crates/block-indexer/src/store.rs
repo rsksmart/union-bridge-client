@@ -1,10 +1,11 @@
 use anyhow::{Context, Result};
-use common::cache::{Cache, LruCache};
-use common::types::{BlockHash, BlockNumber, RskBlock};
+use common_core::types::{BlockHash, BlockNumber, RskBlock};
 #[cfg(test)]
 use mockall::automock;
 use storage_backend::storage::{KeyValueStore, Storage};
 use storage_backend::storage_config::StorageConfig;
+
+use crate::cache::{Cache, LruCache};
 
 #[cfg_attr(test, automock)]
 pub trait BlockStore {
@@ -253,13 +254,11 @@ impl<C: Cache<RskBlock>> BlockStore for CachedBlockStore<C> {
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
-    use common::cache::LruCache;
-    use common::test_utils::rsk_block_generator::{
-        get_default_rsk_blocks, get_first_default_rsk_block,
-    };
-    use common::types::RskBlock;
+    use common_core::types::RskBlock;
+    use common_dev::rsk_block_generator::{get_default_rsk_blocks, get_first_default_rsk_block};
     use tempfile::tempdir;
 
+    use crate::cache::LruCache;
     use crate::store::{CachedBlockStore, StoreKey};
 
     fn create_test_store() -> Result<CachedBlockStore<LruCache<RskBlock>>> {

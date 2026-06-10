@@ -5,9 +5,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use bitcoin::Network;
-use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
-use common::msg_broker::broker::BitVmxBrokerClientApi;
-use common::msg_broker::types::{MemberFundingInfo, ToServer};
+use common_bitvmx::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+use common_broker::broker::BitVmxBrokerClientApi;
+use common_broker::types::{MemberFundingInfo, ToServer};
 use tracing::{info, trace, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;

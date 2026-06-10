@@ -5,16 +5,16 @@ use alloy_primitives::{Address, Bytes, FixedBytes};
 use anyhow::{Context, Result, bail, ensure};
 use bitcoin::key::Parity::Even;
 use bitcoin::{Network, PublicKey, ScriptBuf, Txid, XOnlyPublicKey};
-use common::msg_broker::bitvmx_types::{
+use common_bitvmx::bitvmx_types::{
     CommsAddress, Destination, IncomingBitVMXApiMessages, OP_COSIGN_UTXOS, OutputType, PartialUtxo,
     ParticipantRole, PubKeyHash, SignedPublicKey, Utxo, VariableTypes, WT_INIT_CHALLENGE_UTXOS,
     WtInitChallengeUtxos, build_communication_data, dispute_aggregated_key_protocol_id,
     pairwise_aggregated_key_protocol_id, take_aggregated_key_protocol_id,
 };
-use common::msg_broker::broker::BitVmxBrokerClientApi;
-use common::runtime_sync::RuntimeSync;
-use common::types;
-use common::types::{CommitteeId, StreamId, TxIdParser};
+use common_broker::broker::BitVmxBrokerClientApi;
+use common_core::types;
+use common_core::types::{CommitteeId, StreamId, TxIdParser};
+use common_runtime::runtime_sync::RuntimeSync;
 #[cfg(test)]
 use mockall::automock;
 use op_funding::{derive_stream_funding_profile, required_member_rsk_balance};
@@ -2469,15 +2469,15 @@ mod tests {
     use anyhow::anyhow;
     use bitcoin::hashes::Hash;
     use bitcoin::{PublicKey, Txid};
-    use common::msg_broker::bitvmx_types::{
+    use common_bitvmx::bitvmx_types::{
         CommsAddress, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, OutputType,
         ParticipantRole, SignedPublicKey,
     };
-    use common::msg_broker::broker::MockBrokerClientApi;
-    use common::runtime_sync::RuntimeSync;
-    use common::types::{
+    use common_broker::broker::MockBrokerClientApi;
+    use common_core::types::{
         Address as CommonAddress, BlockHash, BlockNumber, CommitteeId, StreamId, TxHash,
     };
+    use common_runtime::runtime_sync::RuntimeSync;
     use mockall::predicate::function;
     use primitive_types::{H160, H256};
     use union_contracts::bindings::committee_registry::CommitteeRegistry::{

@@ -20,7 +20,9 @@ alloy-sol-types = { workspace = true, features = ["json"] }
 alloy-transport = { workspace = true }
 anyhow = { workspace = true }
 bitcoin = { workspace = true }
-common = { path = "../common" }
+common-bitvmx = { path = "../common/bitvmx" }
+common-core = { path = "../common/core" }
+common-runtime = { path = "../common/runtime" }
 hex = { workspace = true, features = ["serde"] }
 key-manager = { path = "../key-manager" }
 multiaddr = "0.18.2"

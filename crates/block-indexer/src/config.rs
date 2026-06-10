@@ -1,5 +1,7 @@
-use common::config::{CommonConfig, IndexerConfig, KeyStoreConfig, NotifierConfig, ProviderConfig};
-use common::errors::ConfigError;
+use common_runtime::config::{
+    CommonConfig, IndexerConfig, KeyStoreConfig, NotifierConfig, ProviderConfig,
+};
+use common_runtime::errors::ConfigError;
 use serde::Deserialize;
 
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
@@ -46,7 +48,7 @@ impl Logger {
     /// `UB_LOG_DIR` env var is consulted; if neither is set, logs are written
     /// under `./logs/` (relative to the current working directory).
     ///
-    /// Returns a [`common::logging::LogGuard`] that must be kept alive for the
+    /// Returns a [`common_runtime::logging::LogGuard`] that must be kept alive for the
     /// duration of the process to flush the background file-writer thread.
     ///
     /// # Errors
@@ -54,14 +56,14 @@ impl Logger {
     /// Returns an error if the log directory cannot be created, or if a global
     /// tracing subscriber has already been installed (e.g. in tests that call
     /// this more than once).
-    pub fn init(log_dir_opt: Option<&String>) -> anyhow::Result<common::logging::LogGuard> {
+    pub fn init(log_dir_opt: Option<&String>) -> anyhow::Result<common_runtime::logging::LogGuard> {
         CommonConfig::init_logger(log_dir_opt, CARGO_PKG_NAME)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use common::config::{CommonConfig, IndexerStartFrom};
+    use common_runtime::config::{CommonConfig, IndexerStartFrom};
 
     use crate::config::{CARGO_PKG_NAME, Config};
 

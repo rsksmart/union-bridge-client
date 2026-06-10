@@ -1,0 +1,22 @@
+[package]
+name = "common-core"
+version.workspace = true
+license.workspace = true
+rust-version.workspace = true
+edition = "2024"
+
+[features]
+anvil = []
+
+[dependencies]
+alloy-primitives = { workspace = true }
+anyhow = { workspace = true }
+bitcoin = { workspace = true }
+hex = { workspace = true }
+musig2 = { workspace = true }
+primitive-types = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true

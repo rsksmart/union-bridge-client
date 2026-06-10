@@ -1,10 +1,10 @@
 use std::rc::Rc;
 
 use anyhow::{Context, Result, bail};
-use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
-use common::msg_broker::broker::{BitVmxBrokerClientApi, BrokerError, UnionBrokerClientApi};
-use common::msg_broker::types::{FromServer, ToServer};
-use common::types::{Address, RskBlockAndUncles};
+use common_bitvmx::bitvmx_types::OutgoingBitVMXApiMessages;
+use common_broker::broker::{BitVmxBrokerClientApi, BrokerError, UnionBrokerClientApi};
+use common_broker::types::{FromServer, ToServer};
+use common_core::types::{Address, RskBlockAndUncles};
 #[cfg(test)]
 use mockall::automock;
 use tracing::{debug, error, info, trace};
@@ -433,14 +433,14 @@ where
 #[cfg(test)]
 mod tests {
     use anyhow::anyhow;
-    use common::msg_broker::bitvmx_types::IncomingBitVMXApiMessages;
-    use common::msg_broker::broker::MockBrokerClientApi;
-    use common::msg_broker::types::ToServer;
-    use common::test_utils::rsk_block_generator::{
+    use common_bitvmx::bitvmx_types::IncomingBitVMXApiMessages;
+    use common_broker::broker::MockBrokerClientApi;
+    use common_broker::types::ToServer;
+    use common_dev::rsk_block_generator::{
         create_block_and_uncles, create_block_from_template, get_first_default_rsk_block,
         get_second_default_rsk_block, get_third_default_rsk_block,
     };
-    use common::test_utils::rsk_log_generator::FakeLogGenerator;
+    use common_dev::rsk_log_generator::FakeLogGenerator;
     use mockall::predicate::*;
 
     use super::*;

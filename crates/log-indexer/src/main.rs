@@ -4,11 +4,11 @@ use std::sync::mpsc;
 
 use anyhow::{Context, Result, ensure};
 use clap::{Arg, Command};
-use common::alloy_rsk_provider::rpc::AlloyProvider;
-use common::msg_broker::broker::{BrokerServer, Identifier, broker_queue_storage_path};
-use common::rsk_indexer::RskIndexer;
-use common::shutdown_flag::ShutdownFlag;
-use common::types::RskLog;
+use common_broker::broker::{BrokerServer, Identifier, broker_queue_storage_path};
+use common_core::types::RskLog;
+use common_rsk::alloy_rsk_provider::rpc::AlloyProvider;
+use common_rsk::rsk_indexer::RskIndexer;
+use common_runtime::shutdown_flag::ShutdownFlag;
 use log_indexer::config::{Config, Logger};
 use log_indexer::indexer::LogIndexer;
 use log_indexer::notifier::Notifier;

@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
-use common::msg_broker::bitvmx_types::BtcTxSPVProof;
-use common::runtime_sync::RuntimeSync;
-use common::types::{Hash256, TxIdParser};
+use common_bitvmx::bitvmx_types::BtcTxSPVProof;
+use common_core::types::{Hash256, TxIdParser};
+use common_runtime::runtime_sync::RuntimeSync;
 use tracing::{debug, info, warn};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use transaction_dispatcher::types::GetBtcTransactionConfirmationsInput;
@@ -99,7 +99,7 @@ fn verify_btc_confirmations<CG>(
 where
     CG: RskContractsGatewayApi,
 {
-    let block_hash: common::types::BlockHash =
+    let block_hash: common_core::types::BlockHash =
         match spv_proof.block_hash.parse::<primitive_types::H256>() {
             Ok(h) => h.into(),
             Err(e) => {
@@ -110,7 +110,7 @@ where
 
     let tx_id = spv_proof.tx.compute_txid();
     let tx_hash_fb = TxIdParser::txid_to_fb_32(tx_id);
-    let tx_hash: common::types::TxHash =
+    let tx_hash: common_core::types::TxHash =
         Hash256::from(primitive_types::H256::from_slice(tx_hash_fb.as_slice()));
 
     let merkle_branch_hashes: Vec<String> =

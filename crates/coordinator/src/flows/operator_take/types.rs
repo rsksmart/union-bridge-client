@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 use bitcoin::PublicKey;
 use bitcoin::key::Parity::Even;
 use bitcoin::secp256k1::XOnlyPublicKey;
-use common::msg_broker::bitvmx_types::AdvanceFundsRegistered;
-use common::types::{Address, CommitteeId, Hash256, TxIdParser};
+use common_bitvmx::bitvmx_types::AdvanceFundsRegistered;
+use common_core::types::{Address, CommitteeId, Hash256, TxIdParser};
 use uuid::Uuid;
 
 use crate::types::OperatorTakeTriggeredEvent;

@@ -4,18 +4,18 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use anyhow::{Context, Result};
-use common::config::{IndexerConfig, IndexerStartFrom};
-use common::rsk_indexer::RskIndexer;
-use common::rsk_provider::{MockRskProvider, RskSubscriptionFilter};
-use common::shutdown_flag::ShutdownFlag;
-use common::test_utils::mock_rsk_provider_handler::MockRskProviderHandler;
-use common::test_utils::rsk_block_generator::FakeBlockGenerator;
-use common::test_utils::rsk_log_generator::FakeLogGenerator;
-use common::test_utils::rsk_utils::{
+use common_core::types::{Address, BlockHash, ContractInfo, LogInfo, RskLog, TxHash};
+use common_dev::mock_rsk_provider_handler::MockRskProviderHandler;
+use common_dev::rsk_block_generator::FakeBlockGenerator;
+use common_dev::rsk_log_generator::FakeLogGenerator;
+use common_dev::rsk_utils::{
     DEFAULT_BLOCK_HASH, generate_fake_address, generate_fake_addresses,
     generate_fake_managed_contracts,
 };
-use common::types::{Address, BlockHash, ContractInfo, LogInfo, RskLog, TxHash};
+use common_rsk::rsk_indexer::RskIndexer;
+use common_rsk::rsk_provider::{MockRskProvider, RskSubscriptionFilter};
+use common_runtime::config::{IndexerConfig, IndexerStartFrom};
+use common_runtime::shutdown_flag::ShutdownFlag;
 use log_indexer::indexer::LogIndexer;
 use log_indexer::store::RawLogStore;
 use primitive_types::H256;
@@ -189,9 +189,9 @@ fn cycle_indexer(
     let indexer_config = IndexerConfig {
         start_from: IndexerStartFrom::Hash,
         initial_block_hash: Some(DEFAULT_BLOCK_HASH.to_string()),
-        sync: common::config::SyncConfig { finality_depth: 0, batch_size: 0 },
-        storage: common::config::StorageConfig { path: String::new() },
-        cache: common::config::CacheConfig { size: 0 },
+        sync: common_runtime::config::SyncConfig { finality_depth: 0, batch_size: 0 },
+        storage: common_runtime::config::StorageConfig { path: String::new() },
+        cache: common_runtime::config::CacheConfig { size: 0 },
     };
 
     let indexer = LogIndexer::new(

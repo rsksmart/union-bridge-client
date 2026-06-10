@@ -5,8 +5,8 @@ use std::path::Path;
 use alloy_provider::network::EthereumWallet;
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use anyhow::{Context, Result};
-use common::runtime_sync::RuntimeSync;
-use common::types::Address;
+use common_core::types::Address;
+use common_runtime::runtime_sync::RuntimeSync;
 use key_manager::key_manager::KeyManager;
 use secrecy::SecretString;
 use tracing::info;
@@ -147,7 +147,7 @@ async fn create_contracts_gateway_impl_with_role(
 
 #[cfg(test)]
 mod tests {
-    use common::runtime_sync::RuntimeSync;
+    use common_runtime::runtime_sync::RuntimeSync;
 
     use super::*;
 

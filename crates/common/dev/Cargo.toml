@@ -1,0 +1,33 @@
+[package]
+name = "common-dev"
+version.workspace = true
+license.workspace = true
+rust-version.workspace = true
+edition = "2024"
+
+[features]
+# Enables `mock_rsk_provider_handler`, which mocks the `RskProvider` trait and so
+# pulls in `common-rsk` (and the alloy provider stack). Off by default so consumers
+# that only need the data generators (e.g. coordinator) stay light.
+provider-mock = ["dep:common-rsk", "dep:common-runtime", "dep:mockall"]
+
+[dependencies]
+anyhow = { workspace = true }
+common-core = { path = "../core" }
+common-rsk = { path = "../rsk", optional = true }
+common-runtime = { path = "../runtime", optional = true }
+hex = { workspace = true }
+mockall = { workspace = true, optional = true }
+primitive-types = { workspace = true }
+sha3 = "0.11.0"
+tracing = { workspace = true }
+
+# cargo-husky installs the git hooks from `.cargo-husky/hooks/` the first time this
+# crate's dev-dependencies are compiled after clone (e.g. `cargo test` or
+# `cargo test --no-run` at the workspace root; a plain `cargo build` does not pull in
+# dev-deps). `user-hooks` disables its built-in default hooks; we use our own scripts.
+[dev-dependencies]
+cargo-husky = { version = "1", default-features = false, features = ["user-hooks"] }
+
+[lints]
+workspace = true

@@ -42,7 +42,7 @@ mod tests {
     use std::str::FromStr;
 
     use alloy_primitives::TxHash;
-    use common::types::CommitteeId;
+    use common_core::types::CommitteeId;
     use mockall::predicate::*;
 
     use super::*;

@@ -73,7 +73,11 @@ ENV RUST_BACKTRACE=1
 # Override at build time with `--build-arg RUST_LOG="..."`, or per-service at
 # run time via the compose `environment:` block (run-time wins). See docs/LOGGING.md.
 ARG RUST_LOG="info,\
-common=debug,\
+common_core=debug,\
+common_runtime=debug,\
+common_broker=debug,\
+common_bitvmx=debug,\
+common_rsk=debug,\
 block_indexer=debug,\
 log_indexer=debug,\
 transaction_dispatcher=debug,\

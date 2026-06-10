@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use anyhow::{Result, bail};
-use common::runtime_sync::RuntimeSync;
-use common::types::RskBlockAndUncles;
+use common_core::types::RskBlockAndUncles;
+use common_runtime::runtime_sync::RuntimeSync;
 #[cfg(test)]
 use mockall::automock;
 use tracing::{debug, info_span, trace};
@@ -246,8 +246,8 @@ impl<CG: RskContractsGatewayApi>
 #[cfg(test)]
 mod tests {
     use anyhow::anyhow;
-    use common::test_utils::rsk_block_generator::create_block_and_uncles;
-    use common::types::{BlockNumber, Hash256, RskBlockAndUncles, TxHash};
+    use common_core::types::{BlockNumber, Hash256, RskBlockAndUncles, TxHash};
+    use common_dev::rsk_block_generator::create_block_and_uncles;
     use mockall::predicate::*;
     use musig2::PubNonce;
     use primitive_types::H256;

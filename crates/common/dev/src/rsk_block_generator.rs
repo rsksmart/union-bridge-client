@@ -1,12 +1,14 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use common_core::types::{
+    BlockDifficulty, BlockHash, BlockNumber, BlockPow, BlockTimestamp, RskBlock,
+};
 use primitive_types::{H256, U256};
 use sha3::{Digest, Keccak256};
 use tracing::debug;
 
-use crate::test_utils::rsk_utils::{UncleBlockInfo, from_hex_to_block_hash, from_hex_to_block_pow};
-use crate::types::{BlockDifficulty, BlockHash, BlockNumber, BlockPow, BlockTimestamp, RskBlock};
+use crate::rsk_utils::{UncleBlockInfo, from_hex_to_block_hash, from_hex_to_block_pow};
 
 /// Returns a list of default RSK test blocks.
 ///
@@ -16,7 +18,7 @@ use crate::types::{BlockDifficulty, BlockHash, BlockNumber, BlockPow, BlockTimes
 /// # Example
 ///
 /// ```
-/// use common::test_utils::rsk_block_generator::get_default_rsk_blocks;
+/// use common_dev::rsk_block_generator::get_default_rsk_blocks;
 ///
 /// let blocks = get_default_rsk_blocks();
 ///
@@ -43,7 +45,7 @@ pub fn get_default_rsk_blocks() -> Vec<RskBlock> {
 /// # Example
 ///
 /// ```
-/// use common::test_utils::rsk_block_generator::get_first_default_rsk_block;
+/// use common_dev::rsk_block_generator::get_first_default_rsk_block;
 ///
 /// let block = get_first_default_rsk_block();
 /// assert_eq!(block.number(), 7_234_706);
@@ -79,7 +81,7 @@ pub fn get_first_default_rsk_block() -> RskBlock {
 /// # Example
 ///
 /// ```
-/// use common::test_utils::rsk_block_generator::get_second_default_rsk_block;
+/// use common_dev::rsk_block_generator::get_second_default_rsk_block;
 ///
 /// let block = get_second_default_rsk_block();
 /// assert_eq!(block.number(), 7_234_707);
@@ -113,7 +115,7 @@ pub fn get_second_default_rsk_block() -> RskBlock {
 /// # Example
 ///
 /// ```
-/// use common::test_utils::rsk_block_generator::get_third_default_rsk_block;
+/// use common_dev::rsk_block_generator::get_third_default_rsk_block;
 ///
 /// let block = get_third_default_rsk_block();
 /// assert_eq!(block.number(), 7_234_708);

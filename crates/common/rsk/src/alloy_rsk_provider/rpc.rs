@@ -6,16 +6,16 @@ use alloy_rpc_client::RpcClient;
 use alloy_rpc_types::{Filter, FilterSet, Header, Log};
 use alloy_transport::layers::RetryBackoffLayer;
 use anyhow::{Context, Result, bail};
+use common_core::types::{
+    Address, BlockHash, BlockNumber, RskBlock, RskLog, RskRpcBlock, RskRpcLog, ToHexString,
+};
+use common_runtime::runtime_sync::RuntimeSync;
+use common_runtime::shutdown_flag::ShutdownFlag;
 use serde_json::{Value, json};
 use tracing::{debug, info};
 
 use crate::alloy_rsk_provider::sub::AlloySubscription;
 use crate::rsk_provider::{RskProvider, RskSubscriptionFilter};
-use crate::runtime_sync::RuntimeSync;
-use crate::shutdown_flag::ShutdownFlag;
-use crate::types::{
-    Address, BlockHash, BlockNumber, RskBlock, RskLog, RskRpcBlock, RskRpcLog, ToHexString,
-};
 
 #[derive(Clone)]
 pub struct AlloyProvider<T = RootProvider>
@@ -230,11 +230,11 @@ impl RskProvider for AlloyProvider {
 mod tests {
     use std::fs;
 
+    use common_core::types::{Address, BlockHash, BlockNumber, DataBytes, LogTopic, TxHash};
     use primitive_types::U256;
     use serde_json::{Value, json};
 
     use crate::alloy_rsk_provider::rpc::AlloyProvider;
-    use crate::types::{Address, BlockHash, BlockNumber, DataBytes, LogTopic, TxHash};
 
     const BLOCK_RESPONSE_FILE_PATH: &str = "tests/resources/block_response.json";
     const LOG_RESPONSE_FILE_PATH: &str = "tests/resources/log_response.json";

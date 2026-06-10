@@ -5,11 +5,11 @@ use std::sync::mpsc::RecvTimeoutError;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
-use common::constants::indexer::NOTIFIER_CHECK_PERIOD;
-use common::msg_broker::broker::{Identifier, UnionBrokerServerApi};
-use common::msg_broker::types::{FromServer, ToServer};
-use common::shutdown_flag::ShutdownFlag;
-use common::types::{Address, RskLog};
+use common_broker::broker::{Identifier, UnionBrokerServerApi};
+use common_broker::types::{FromServer, ToServer};
+use common_core::constants::indexer::NOTIFIER_CHECK_PERIOD;
+use common_core::types::{Address, RskLog};
+use common_runtime::shutdown_flag::ShutdownFlag;
 use tracing::{debug, error, info, instrument, trace, warn};
 
 pub struct Notifier<BS: UnionBrokerServerApi> {
@@ -203,9 +203,9 @@ mod tests {
     use std::thread;
     use std::thread::{JoinHandle, sleep};
 
-    use common::msg_broker::broker::MockBrokerServerApi;
-    use common::test_utils::rsk_log_generator::FakeLogGenerator;
-    use common::test_utils::rsk_utils::generate_fake_address;
+    use common_broker::broker::MockBrokerServerApi;
+    use common_dev::rsk_log_generator::FakeLogGenerator;
+    use common_dev::rsk_utils::generate_fake_address;
 
     use super::*;
 

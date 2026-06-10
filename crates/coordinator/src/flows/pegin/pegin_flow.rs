@@ -5,14 +5,14 @@ use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::Parity::Even;
 use bitcoin::secp256k1::XOnlyPublicKey;
 use bitcoin::{PublicKey, Txid};
-use common::msg_broker::bitvmx_types::{
+use common_bitvmx::bitvmx_types::{
     ACCEPT_PEGIN_TX, BitVmxProtocolId, BtcTxSPVProof, CommsAddress, IncomingBitVMXApiMessages,
     OPERATOR_TAKE_TX, OPERATOR_WON_TX, ParticipantRole, PeginAcceptedMessage, PubKeyHash,
     TransactionStatus, VariableTypes, accept_pegin_protocol_id, build_communication_data,
 };
-use common::msg_broker::broker::BitVmxBrokerClientApi;
-use common::runtime_sync::RuntimeSync;
-use common::types::{CommitteeId, TxIdParser};
+use common_broker::broker::BitVmxBrokerClientApi;
+use common_core::types::{CommitteeId, TxIdParser};
+use common_runtime::runtime_sync::RuntimeSync;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{debug, info, trace};
@@ -1092,12 +1092,12 @@ mod tests {
     use alloy_primitives::{Address as AlloyAddress, Bytes, FixedBytes, U256, Uint};
     use bitcoin::Txid;
     use bitcoin::hashes::Hash;
-    use common::msg_broker::bitvmx_types::{
+    use common_bitvmx::bitvmx_types::{
         IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PeginAcceptedMessage,
     };
-    use common::msg_broker::broker::MockBrokerClientApi;
-    use common::runtime_sync::RuntimeSync;
-    use common::types::Address as CommonAddress;
+    use common_broker::broker::MockBrokerClientApi;
+    use common_core::types::Address as CommonAddress;
+    use common_runtime::runtime_sync::RuntimeSync;
     use mockall::predicate::*;
     use musig2::PubNonce;
     use musig2::secp::MaybeScalar;

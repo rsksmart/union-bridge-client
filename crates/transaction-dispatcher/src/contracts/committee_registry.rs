@@ -1,6 +1,6 @@
 use alloy_primitives::{TxHash, U256};
 use alloy_provider::Provider;
-use common::types::CommitteeId;
+use common_core::types::CommitteeId;
 #[cfg(test)]
 use mockall::automock;
 use tracing::info;

@@ -5,14 +5,14 @@ use std::rc::Rc;
 use alloy_primitives::FixedBytes;
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::Txid;
-use common::msg_broker::bitvmx_types::{
+use common_bitvmx::bitvmx_types::{
     BitVmxProtocolId, BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages,
     PeginAcceptedMessage, RSK_PEGIN_TAG, TransactionStatus, VariableTypes,
     accept_pegin_protocol_id,
 };
-use common::msg_broker::broker::BitVmxBrokerClientApi;
-use common::runtime_sync::RuntimeSync;
-use common::types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles, TxIdParser};
+use common_broker::broker::BitVmxBrokerClientApi;
+use common_core::types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles, TxIdParser};
+use common_runtime::runtime_sync::RuntimeSync;
 use tracing::span::Span;
 use tracing::{debug, error, info, info_span, instrument, trace, warn};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
@@ -1374,12 +1374,12 @@ mod tests {
     use bitcoin::Transaction;
     use bitcoin::absolute::LockTime;
     use bitcoin::transaction::Version;
-    use common::msg_broker::bitvmx_types::{
+    use common_bitvmx::bitvmx_types::{
         IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, ParticipantRole,
     };
-    use common::msg_broker::broker::MockBrokerClientApi;
-    use common::test_utils::rsk_block_generator::FakeBlockGenerator;
-    use common::types::{BlockHash, TxHash, TxIdParser};
+    use common_broker::broker::MockBrokerClientApi;
+    use common_core::types::{BlockHash, TxHash, TxIdParser};
+    use common_dev::rsk_block_generator::FakeBlockGenerator;
     use musig2::PubNonce;
     use musig2::secp::MaybeScalar;
     use primitive_types::H256;
@@ -1501,9 +1501,10 @@ mod tests {
                 flow_id,
                 request_pegin_btc_tx_id: test_txid([1u8; 32]),
                 step,
-                bitvmx_protocol_id: Some(
-                    common::msg_broker::bitvmx_types::accept_pegin_protocol_id(Uuid::nil(), 0),
-                ),
+                bitvmx_protocol_id: Some(common_bitvmx::bitvmx_types::accept_pegin_protocol_id(
+                    Uuid::nil(),
+                    0,
+                )),
                 request_pegin_btc_tx_status: None,
                 request_pegin_spv_proof: None,
                 pegin_requested: Some(test_pegin_requested(accept_pegin_txid)),
@@ -1686,8 +1687,7 @@ mod tests {
         let request_tx_id = spv_proof.tx.compute_txid();
         let flow_id = flow_id_from_request_pegin_txid(request_tx_id);
 
-        let protocol_id =
-            common::msg_broker::bitvmx_types::accept_pegin_protocol_id(Uuid::nil(), 0);
+        let protocol_id = common_bitvmx::bitvmx_types::accept_pegin_protocol_id(Uuid::nil(), 0);
         let state = State {
             flow_id,
             log_id: String::new(),
@@ -1760,8 +1760,7 @@ mod tests {
             Steps::WaitAcceptPeginSignaturesReadyAllConvergeCheckpoint,
             accept_pegin_txid,
         );
-        let protocol_id =
-            common::msg_broker::bitvmx_types::accept_pegin_protocol_id(Uuid::nil(), 0);
+        let protocol_id = common_bitvmx::bitvmx_types::accept_pegin_protocol_id(Uuid::nil(), 0);
         harness.processor.pegin_flows.insert(flow_id, flow);
         harness
             .processor

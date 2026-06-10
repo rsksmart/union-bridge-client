@@ -1,4 +1,4 @@
-use common::types::TxIdParser;
+use common_core::types::TxIdParser;
 use tracing::info;
 
 use crate::contracts::signature_manager::SignatureManagerContractApi;

@@ -1,11 +1,11 @@
 use std::rc::Rc;
 
 use anyhow::{Context, Result};
-use common::msg_broker::bitvmx_types::{
+use common_bitvmx::bitvmx_types::{
     BitVmxProtocolId, CommsAddress, FullPenalizationData, IncomingBitVMXApiMessages,
     PROGRAM_TYPE_FULL_PENALIZATION, VariableTypes, full_penalization_protocol_id,
 };
-use common::msg_broker::broker::BitVmxBrokerClientApi;
+use common_broker::broker::BitVmxBrokerClientApi;
 use tracing::{debug, info};
 use uuid::Uuid;
 

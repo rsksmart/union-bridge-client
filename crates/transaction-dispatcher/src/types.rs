@@ -3,8 +3,8 @@ use std::net::{IpAddr, SocketAddr};
 use alloy_primitives::{Address, Bytes, FixedBytes};
 use anyhow::{Context, Result, bail};
 use bitcoin::{Transaction, TxIn, TxOut, Txid};
-use common::msg_broker::bitvmx_types::{BtcTxSPVProof, PubKeyHash};
-use common::types::{CommitteeId, Hash256, StreamId};
+use common_bitvmx::bitvmx_types::{BtcTxSPVProof, PubKeyHash};
+use common_core::types::{CommitteeId, Hash256, StreamId};
 use multiaddr::{Multiaddr, Protocol};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
@@ -208,8 +208,8 @@ pub struct GetMemberPublicKeysOutput {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GetBtcTransactionConfirmationsInput {
-    pub tx_hash: common::types::TxHash,
-    pub block_hash: common::types::BlockHash,
+    pub tx_hash: common_core::types::TxHash,
+    pub block_hash: common_core::types::BlockHash,
     pub merkle_branch_path: String,
     pub merkle_branch_hashes: Vec<String>,
 }

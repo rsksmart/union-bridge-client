@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common::types::Address;
+use common_core::types::Address;
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use transaction_dispatcher::types::{
     PeginAddressInput, PeginAddressOutput, RequestPegoutInput, RequestPegoutOutput,

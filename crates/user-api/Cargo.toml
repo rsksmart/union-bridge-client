@@ -9,7 +9,9 @@ edition = "2024"
 anyhow = { workspace = true }
 axum = { workspace = true }
 clap = { workspace = true }
-common = { path = "../common" }
+common-broker = { path = "../common/broker" }
+common-core = { path = "../common/core" }
+common-runtime = { path = "../common/runtime" }
 secrecy = { workspace = true }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { workspace = true }

@@ -1,8 +1,7 @@
+use common_core::types::{Address, RskBlockAndUncles, RskLog};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
-
-use crate::types::{Address, RskBlockAndUncles, RskLog};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum ToServer {

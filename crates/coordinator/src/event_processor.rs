@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use common::msg_broker::bitvmx_types::OutgoingBitVMXApiMessages;
-use common::types::RskBlockAndUncles;
+use common_bitvmx::bitvmx_types::OutgoingBitVMXApiMessages;
+use common_core::types::RskBlockAndUncles;
 #[cfg(test)]
 use mockall::automock;
 use serde::Serialize;

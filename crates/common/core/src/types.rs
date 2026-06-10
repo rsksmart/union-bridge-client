@@ -38,7 +38,7 @@ pub trait ToHexString {
 ///
 /// ```
 /// use primitive_types::H256;
-/// use common::types::BlockHash;
+/// use common_core::types::BlockHash;
 ///
 /// let raw_hash = H256::random();
 /// let block_hash = BlockHash::from(raw_hash);
@@ -117,7 +117,7 @@ pub type LogTopic = Hash256;
 /// # Example
 ///
 /// ```
-/// use common::types::BlockNumber;
+/// use common_core::types::BlockNumber;
 ///
 /// let block_100 = BlockNumber::from(100);
 /// let next_block = block_100 + 1;
@@ -239,7 +239,7 @@ impl Sub<u64> for BlockTimestamp {
 ///
 /// ```
 /// use primitive_types::U256;
-/// use common::types::BlockDifficulty;
+/// use common_core::types::BlockDifficulty;
 ///
 /// let value = U256::from(10);
 /// let block_difficulty = BlockDifficulty::from(value);
@@ -304,7 +304,7 @@ impl fmt::Display for BlockDifficulty {
 ///
 /// ```
 /// use primitive_types::H256;
-/// use common::types::BlockPow;
+/// use common_core::types::BlockPow;
 ///
 /// let value = H256::random();
 /// let pow = BlockPow::from(value);
@@ -366,7 +366,7 @@ impl fmt::Display for BlockPow {
 ///
 /// ```
 /// use primitive_types::H160;
-/// use common::types::Address;
+/// use common_core::types::Address;
 ///
 /// let raw_address = H160::random();
 /// let address = Address::from(raw_address);
@@ -1201,8 +1201,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::test_utils::rsk_utils::{DEFAULT_BITCOIN_MERGED_MINING_HEADER, DEFAULT_BLOCK_HASH};
     use crate::types::{BlockHash, BlockPow, DataBytes};
+
+    // NB: these two fixtures are intentionally duplicated from `common_dev::rsk_utils` (the
+    // canonical `pub` copies). `common-dev` depends on `common-core`, not the other way around,
+    // so this crate cannot import them. Keep the values in sync.
+    const DEFAULT_BLOCK_HASH: &str =
+        "0x5d164d93bf09ee215cc67420f24d31b8d86c46ced6e770e8abf69c16bea3a67c";
+    const DEFAULT_BITCOIN_MERGED_MINING_HEADER: &str = "0x00000020538fb0d4d0cbdf0f3b88e02551018fcd6064cbe5cbed40d78b4c3709000000004feaeec0d7a118f6d1c0d8fec32936b9dfff3bea45b537027c6439ac5ea98ccd34b8b467908316194c8b4487";
 
     #[test]
     fn test_valid_block_hash_when_valid_hash_is_provided_should_return_ok() {

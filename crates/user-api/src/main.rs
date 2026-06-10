@@ -7,8 +7,8 @@ use std::thread;
 
 use anyhow::{Context, Result, ensure};
 use clap::{Arg, Command};
-use common::msg_broker::broker::{BrokerServer, Identifier};
-use common::shutdown_flag::ShutdownFlag;
+use common_broker::broker::{BrokerServer, Identifier};
+use common_runtime::shutdown_flag::ShutdownFlag;
 use tokio::net::TcpListener;
 use tracing::{error, info};
 use transaction_dispatcher::config::Config as TxDispatcherConfig;

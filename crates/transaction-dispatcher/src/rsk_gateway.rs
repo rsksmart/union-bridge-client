@@ -4,7 +4,7 @@ use std::error::Error;
 use alloy_primitives::U256;
 use alloy_provider::Provider;
 use anyhow::{Result, anyhow};
-use common::types::{Address, ContractInfo};
+use common_core::types::{Address, ContractInfo};
 #[cfg(test)]
 use mockall::automock;
 use thiserror::Error;

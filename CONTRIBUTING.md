@@ -54,7 +54,11 @@ Every crate in this workspace is classified into one of two tiers:
 **Production code** — held to the strict bar in the rest of this document:
 
 - `coordinator` — main orchestration daemon; drives all flows
-- `common` — shared types, broker wrappers, RSK provider utilities, `TxIdParser`
+- `common-core` — shared domain types (`TxIdParser`, block/log types) and constants
+- `common-runtime` — config loading, logging setup, shutdown and async-runtime helpers
+- `common-rsk` — Rootstock provider trait and the alloy-based provider implementation
+- `common-broker` — message-broker transport and the Union channel (BitVMX channel behind a feature)
+- `common-bitvmx` — BitVMX protocol message types
 - `transaction-dispatcher` — Rootstock transaction construction and submission; wraps contract bindings
 - `log-indexer` — subscribes to Rootstock contract logs and filters protocol events
 - `block-indexer` — subscribes to Rootstock block headers
@@ -69,6 +73,7 @@ Every crate in this workspace is classified into one of two tiers:
 - `cli/operations` — operator command-line tool
 - `cli/bitcoin-wallet` — wallet management CLI
 - `user-api` — REST wrapper around the production layer
+- `common-dev` — shared test fixtures and data generators (dev-dependency only)
 
 The relaxed bar means `clippy::pedantic` is allowed (not denied) in these crates. All other bars — format, sort,
 `clippy::all` + `clippy::cargo` at deny, tests, coverage, supply chain, visibility lints — still apply.
@@ -279,7 +284,7 @@ exception, not the default.
 - **Bitcoin transaction construction**: deterministic given inputs; fuzzed against the `bitcoin` crate's parser.
 - **Bitcoin `Txid` byte order**: never use `Txid::from_slice`, `Txid::from_byte_array`, or anything depending on
   `hashes::hash_newtype!` — these reverse byte order and cause silent data corruption. Encapsulate all such calls
-  in `common::types::TxIdParser`, which handles the reversal. Be cautious with `use bitcoin::hashes::Hash;` for
+  in `common_core::types::TxIdParser`, which handles the reversal. Be cautious with `use bitcoin::hashes::Hash;` for
   the same reason.
 - **Aiming for:**
     - Consensus-sensitive code (fork detection, signing, signature aggregation): property-based tests covering reorg

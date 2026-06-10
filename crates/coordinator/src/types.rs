@@ -8,10 +8,10 @@ use alloy_sol_types::SolEvent;
 use alloy_sol_types::SolEventInterface;
 use anyhow::{Result, anyhow};
 use bitcoin::PublicKey;
-use common::msg_broker::bitvmx_types::{
+use common_bitvmx::bitvmx_types::{
     PartialUtxo, ParticipantRole, PegOutAccepted, PeginAcceptedMessage,
 };
-use common::types::{Address, BlockHash, BlockNumber, Hash256, RskLog, TxHash};
+use common_core::types::{Address, BlockHash, BlockNumber, Hash256, RskLog, TxHash};
 use musig2::{PartialSignature, PubNonce};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, trace, warn};
@@ -728,9 +728,9 @@ pub(crate) struct MemberOfCommittee {
 #[cfg(test)]
 mod tests {
     use alloy_primitives::{Address, B256, Bytes, FixedBytes, U256};
-    use common::test_utils::rsk_log_generator::{FakeLogGenerator, event_signature_to_topic};
-    use common::test_utils::rsk_utils::generate_fake_address;
-    use common::types::{BlockHash, DataBytes, Hash256, LogEvent, LogInfo, RskLog, TxHash};
+    use common_core::types::{BlockHash, DataBytes, Hash256, LogEvent, LogInfo, RskLog, TxHash};
+    use common_dev::rsk_log_generator::{FakeLogGenerator, event_signature_to_topic};
+    use common_dev::rsk_utils::generate_fake_address;
     use primitive_types::H256;
     use union_contracts::bindings::committee_registry::CommitteeRegistry::{
         Committee, CommitteeMember,

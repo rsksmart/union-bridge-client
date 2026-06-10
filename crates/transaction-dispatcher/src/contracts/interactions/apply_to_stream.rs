@@ -110,7 +110,7 @@ mod tests {
     use std::str::FromStr;
 
     use alloy_primitives::{Address, TxHash, U256};
-    use common::msg_broker::bitvmx_types::PubKeyHash;
+    use common_bitvmx::bitvmx_types::PubKeyHash;
     use mockall::predicate::eq;
     use union_contracts::bindings::committee_registry::CommitteeRegistry::UTXO;
     use union_contracts::bindings::stream_manager::StreamManager::{Role, StreamDenomination};

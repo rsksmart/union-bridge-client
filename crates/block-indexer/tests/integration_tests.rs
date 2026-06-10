@@ -3,20 +3,20 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use anyhow::Result;
+use block_indexer::cache::LruCache;
 use block_indexer::indexer::BlockIndexer;
 use block_indexer::store::{BlockStore, CachedBlockStore};
-use common::cache::LruCache;
-use common::config::{IndexerConfig, IndexerStartFrom};
-use common::rsk_indexer::RskIndexer;
-use common::rsk_provider::MockRskProvider;
-use common::shutdown_flag::ShutdownFlag;
-use common::test_utils::mock_rsk_provider_handler::MockRskProviderHandler;
-use common::test_utils::rsk_block_generator::FakeBlockGenerator;
-use common::types::{BlockHash, BlockNumber, RskBlock};
+use common_core::types::{BlockHash, BlockNumber, RskBlock};
+use common_dev::mock_rsk_provider_handler::MockRskProviderHandler;
+use common_dev::rsk_block_generator::FakeBlockGenerator;
+use common_rsk::rsk_indexer::RskIndexer;
+use common_rsk::rsk_provider::MockRskProvider;
+use common_runtime::config::{IndexerConfig, IndexerStartFrom};
+use common_runtime::shutdown_flag::ShutdownFlag;
 use tempfile::tempdir;
 use tracing::info;
 const BLOCK_CACHE_SIZE: usize = 100;
-use common::test_utils::rsk_utils::UncleBlockInfo;
+use common_dev::rsk_utils::UncleBlockInfo;
 
 /*
 Scenario: happy path
@@ -780,9 +780,9 @@ fn cycle_indexer(
     let indexer_config = IndexerConfig {
         start_from: IndexerStartFrom::Hash,
         initial_block_hash: Some(initial_block_hash.to_string()),
-        sync: common::config::SyncConfig { finality_depth: 0, batch_size: 0 },
-        storage: common::config::StorageConfig { path: String::new() },
-        cache: common::config::CacheConfig { size: 0 },
+        sync: common_runtime::config::SyncConfig { finality_depth: 0, batch_size: 0 },
+        storage: common_runtime::config::StorageConfig { path: String::new() },
+        cache: common_runtime::config::CacheConfig { size: 0 },
     };
     let indexer =
         BlockIndexer::new(store, mock_rsk_provider, &indexer_config, shutting_down.clone())

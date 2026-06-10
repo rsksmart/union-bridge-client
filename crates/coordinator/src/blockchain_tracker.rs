@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
 use anyhow::Result;
-use common::types::{BlockNumber, RskBlock, RskBlockAndUncles};
+use common_core::types::{BlockNumber, RskBlock, RskBlockAndUncles};
 use tracing::{debug, info, trace, warn};
 
 use crate::types::RskPegManagerEvents;
@@ -420,7 +420,7 @@ impl ConfirmableEvent {
 mod tests_blockchain_view {
     use std::ops::Mul;
 
-    use common::types::{BlockDifficulty, BlockHash, BlockPow, BlockTimestamp, RskBlock};
+    use common_core::types::{BlockDifficulty, BlockHash, BlockPow, BlockTimestamp, RskBlock};
     use primitive_types::{H256, U256};
 
     use super::*;
@@ -845,8 +845,8 @@ mod confirmable_event_tests {
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
 
-    use common::test_utils::rsk_block_generator::{FakeBlockGenerator, create_block_from_template};
-    use common::types::{BlockNumber, RskBlockAndUncles};
+    use common_core::types::{BlockNumber, RskBlockAndUncles};
+    use common_dev::rsk_block_generator::{FakeBlockGenerator, create_block_from_template};
     use uuid::Uuid;
 
     use crate::blockchain_tracker::{BlockchainView, ConfirmableEvent};

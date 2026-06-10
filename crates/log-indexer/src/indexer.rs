@@ -2,13 +2,14 @@ use std::collections::HashMap;
 use std::sync::mpsc;
 
 use anyhow::{Context, Result, bail};
-use common::config::{IndexerConfig, IndexerStartFrom};
-use common::rsk_indexer::RskIndexer;
-use common::rsk_provider::{
+use common_core::types::{Address, BlockNumber, ContractInfo, RskLog};
+use common_rsk::rsk_indexer::RskIndexer;
+use common_rsk::rsk_provider::{
     RskProvider, RskSubscription, RskSubscriptionError, RskSubscriptionFilter,
+    resolve_initial_block,
 };
-use common::shutdown_flag::ShutdownFlag;
-use common::types::{Address, BlockNumber, ContractInfo, RskLog};
+use common_runtime::config::{IndexerConfig, IndexerStartFrom};
+use common_runtime::shutdown_flag::ShutdownFlag;
 use tracing::{debug, error, info, instrument, trace, warn};
 
 use crate::store::LogStore;
@@ -39,7 +40,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         managed_contracts: HashMap<Address, ContractInfo>,
         shutdown_flag: ShutdownFlag,
     ) -> Result<Self> {
-        let initial_block = indexer_config.resolve_initial_block(&rsk_provider)?;
+        let initial_block = resolve_initial_block(indexer_config, &rsk_provider)?;
 
         Ok(Self {
             store,
@@ -66,7 +67,7 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
         managed_contracts: HashMap<Address, ContractInfo>,
         shutdown_flag: ShutdownFlag,
     ) -> Result<Self> {
-        let initial_block = indexer_config.resolve_initial_block(&rsk_provider)?;
+        let initial_block = resolve_initial_block(indexer_config, &rsk_provider)?;
 
         Ok(Self {
             store,
@@ -317,8 +318,8 @@ impl<P: RskProvider, S: LogStore> LogIndexer<P, S> {
 
 #[cfg(test)]
 mod tests {
-    use common::rsk_provider::{MockRskProvider, MockRskSubscription, RskSubscriptionError};
-    use common::types::*;
+    use common_core::types::*;
+    use common_rsk::rsk_provider::{MockRskProvider, MockRskSubscription, RskSubscriptionError};
     use mockall::predicate::*;
     use primitive_types::{H160, H256, U256};
 
