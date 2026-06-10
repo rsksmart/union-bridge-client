@@ -5,6 +5,7 @@
 # Invoked by start-blockchains.sh AFTER bitcoind is up and `mainwallet` exists.
 # Reads COMPOSE_FILE, ENV_PATH, ENVIRONMENT, FRESH from env (exported by the
 # parent). Anvil-specific responsibilities:
+#   - Resolve CONTRACTS_CONTEXT_PATH for local-build docker compose context
 #   - Parse --contracts-tag / --pull-contracts
 #   - Resolve the predeployed Anvil image tag (from arg or Cargo.toml)
 #   - For registry tags: pull / refresh the image; detect digest changes that
@@ -116,6 +117,21 @@ else
 fi
 export PREDEPLOYED_ANVIL_IMAGE_BASE
 export CONTRACTS_IMAGE_TAG
+
+# Only local-build needs a contracts checkout; registry tags pull a prebuilt image.
+if [[ "${CONTRACTS_IMAGE_TAG}" == "${CONTRACTS_TAG_LOCAL_BUILD}" ]]; then
+  CONTRACTS_CONTEXT_CANDIDATE=""
+  if [[ -n "${CONTRACTS_CONTEXT_PATH:-}" ]] && CONTRACTS_CONTEXT_CANDIDATE=$(cd "$SCRIPT_DIR" && cd "$CONTRACTS_CONTEXT_PATH" 2>/dev/null && pwd); then
+    :
+  elif [[ -d "${PROJECT_ROOT}/../union-bridge-contracts" ]]; then
+    CONTRACTS_CONTEXT_CANDIDATE="${PROJECT_ROOT}/../union-bridge-contracts"
+  else
+    echo "Error: local-build requires a union-bridge-contracts checkout." >&2
+    echo "  Clone it as a sibling of union-bridge-client, or set CONTRACTS_CONTEXT_PATH." >&2
+    exit 1
+  fi
+  export CONTRACTS_CONTEXT_PATH="$CONTRACTS_CONTEXT_CANDIDATE"
+fi
 
 # Detect whether the user invoked `up` (in practice this is always true when
 # called from the orchestrator; kept for direct invocation parity).
