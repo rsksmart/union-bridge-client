@@ -74,21 +74,6 @@ if [[ -z "${BITCOIND_USER:-}" ]]; then
   source "$ENV_PATH"
 fi
 
-# Resolve the contracts source directory for local-build docker compose context.
-CONTRACTS_CONTEXT_CANDIDATE=""
-if [[ -n "${CONTRACTS_CONTEXT_PATH:-}" ]] && CONTRACTS_CONTEXT_CANDIDATE=$(cd "$SCRIPT_DIR" && cd "$CONTRACTS_CONTEXT_PATH" 2>/dev/null && pwd); then
-  :
-elif [[ -d "$(cd "$SCRIPT_DIR/../../.." && pwd)/../union-bridge-contracts" ]]; then
-  CONTRACTS_CONTEXT_CANDIDATE="$(cd "$SCRIPT_DIR/../../.." && pwd)/../union-bridge-contracts"
-elif [[ -d "$HOME/Projects/rootstock/union/union-bridge-contracts" ]]; then
-  CONTRACTS_CONTEXT_CANDIDATE="$HOME/Projects/rootstock/union/union-bridge-contracts"
-else
-  echo "Error: could not resolve CONTRACTS_CONTEXT_PATH '${CONTRACTS_CONTEXT_PATH:-}'." >&2
-  echo "Set CONTRACTS_CONTEXT_PATH to a union-bridge-contracts checkout and rerun." >&2
-  exit 1
-fi
-export CONTRACTS_CONTEXT_PATH="$CONTRACTS_CONTEXT_CANDIDATE"
-
 wait_for_anvil_rpc() {
   local timeout_secs="${1:-60}"
   local elapsed=0
@@ -132,6 +117,21 @@ else
 fi
 export PREDEPLOYED_ANVIL_IMAGE_BASE
 export CONTRACTS_IMAGE_TAG
+
+# Only local-build needs a contracts checkout; registry tags pull a prebuilt image.
+if [[ "${CONTRACTS_IMAGE_TAG}" == "${CONTRACTS_TAG_LOCAL_BUILD}" ]]; then
+  CONTRACTS_CONTEXT_CANDIDATE=""
+  if [[ -n "${CONTRACTS_CONTEXT_PATH:-}" ]] && CONTRACTS_CONTEXT_CANDIDATE=$(cd "$SCRIPT_DIR" && cd "$CONTRACTS_CONTEXT_PATH" 2>/dev/null && pwd); then
+    :
+  elif [[ -d "${PROJECT_ROOT}/../union-bridge-contracts" ]]; then
+    CONTRACTS_CONTEXT_CANDIDATE="${PROJECT_ROOT}/../union-bridge-contracts"
+  else
+    echo "Error: local-build requires a union-bridge-contracts checkout." >&2
+    echo "  Clone it as a sibling of union-bridge-client, or set CONTRACTS_CONTEXT_PATH." >&2
+    exit 1
+  fi
+  export CONTRACTS_CONTEXT_PATH="$CONTRACTS_CONTEXT_CANDIDATE"
+fi
 
 # Detect whether the user invoked `up` (in practice this is always true when
 # called from the orchestrator; kept for direct invocation parity).
