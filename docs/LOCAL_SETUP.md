@@ -70,14 +70,15 @@ git clone https://github.com/FairgateLabs/rust-bitvmx-client.git
 git clone https://github.com/rsksmart/union-bridge-contracts.git
 ```
 
-Temporary `local-rskj` note: until the native-bridge local-regtest deploy changes are available in
-`rsksmart/union-bridge-contracts`, use the fork branch below for the sibling contracts checkout:
+For `local-rskj` and `docker-rskj`, keep the sibling contracts checkout on
+`rsksmart/union-bridge-contracts` `main` until a released tag includes PR #33 (`68a10ae`):
 
 ```bash
 cd ../union-bridge-contracts
-git remote add fedejinich https://github.com/fedejinich/union-bridge-contracts.git
-git fetch fedejinich
-git checkout chore/local-regtest-native-bridge
+git remote set-url origin https://github.com/rsksmart/union-bridge-contracts.git
+git fetch origin
+git switch main
+git pull --ff-only origin main
 ```
 
 The `local-rskj` and `docker-rskj` flows deploy contracts from this local checkout, so the checked-out contracts branch
@@ -356,6 +357,7 @@ For the automated local happy-path flow:
 ./scripts/run-infra.sh --start-bitvmx [--fresh]
 ./scripts/run-clients.sh [--fresh]
 bash scripts/test-flows.sh
+bash scripts/test-flows.sh --happy
 bash scripts/test-flows.sh --ops 4
 bash scripts/test-flows.sh --setup
 bash scripts/test-flows.sh --committee
@@ -374,7 +376,8 @@ Notes:
 - Start `./scripts/run-clients.sh` for local mode or `docker/operator/start-operators.sh` for docker mode before using the happy-path script.
 - Local happy-path runs require `USER_BITCOIN_WIF` and `MEMBER_BITCOIN_WIF`; `scripts/test-flows.sh` uses the user wallet for pegin and pegout and the member wallet during setup funding.
 - If mining gets stuck, run `./scripts/run-infra.sh --stop-mining` before restarting it.
-- `bash scripts/test-flows.sh` runs the default `happy` mode.
+- `bash scripts/test-flows.sh` defaults to `--happy`, the full happy path: it runs `--setup` and `--committee` first, then the pegin and pegout flows.
+- Every mode accepts `--env <local-anvil|docker-anvil|local-rskj|docker-rskj>` to pick the target environment (default: `local-anvil`).
 - `bash scripts/test-flows.sh --ops 4` does the same, but shows the optional operator-count override.
 - `bash scripts/test-flows.sh --setup` runs only the preparation phases: member wallet prep, operator funding, and whitelist.
 - `bash scripts/test-flows.sh --committee` runs only the committee creation phases: apply-stream and committee completion wait.
