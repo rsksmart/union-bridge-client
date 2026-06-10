@@ -55,6 +55,9 @@ done
 # bundled bitcoind + anvil/rskj stack and exit. The external stack owns its own chains,
 # wallet, and mining; union only talks to it over BITCOIND_URL. The bundled-only flags
 # (--env, --contracts-tag, --pull-contracts, --rskj-tag, --powpeg-tag) don't apply here.
+# Note: an oci:// ref needs Docker Compose v2.32+; on versions where the OCI-remote loader is
+# still experimental, also `export COMPOSE_EXPERIMENTAL_OCI_REMOTE=1` (or update Docker). A local
+# compose-file path needs neither.
 if [[ -n "${BYO_BLOCKCHAINS_COMPOSE:-}" ]]; then
   byo_project="byo-blockchains"
   byo_args=()

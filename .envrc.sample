@@ -59,4 +59,7 @@ export BITCOIN_WALLET=mainwallet
 # external stack runs its own bitcoind/Rootstock and block production; it needs no extra config if it
 # uses the regtest defaults (foo/rpcpassword, mainwallet) — otherwise set BITCOIND_URL + BITCOIN_WALLET
 # above to match. Leave unset to use the bundled stack.
+# Note: oci:// references need Docker Compose v2.32+, and on versions where the OCI-remote loader
+# is still experimental you must also `export COMPOSE_EXPERIMENTAL_OCI_REMOTE=1` — or update Docker
+# to a release where it's enabled by default. (Local compose-file paths don't need either.)
 # export BYO_BLOCKCHAINS_COMPOSE="oci://ghcr.io/org/your-stack:tag"

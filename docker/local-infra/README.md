@@ -86,8 +86,13 @@ artifact such as `oci://ghcr.io/org/stack:tag`, or a local compose path) and `--
 brings *that* stack up instead of the bundled chains: it runs `docker compose -f <ref> up -d` (project
 `byo-blockchains`), and `--stop-blockchains` brings it down. Because the external stack owns its own
 bitcoind wallet and block production, union skips its own wallet bootstrap + background mining in this
-mode. (Requires Docker Compose v2.32+ for `oci://` references.) Leave the variable unset to start the
-chains yourself instead.
+mode. Leave the variable unset to start the chains yourself instead.
+
+> **`oci://` references are new/experimental in Docker Compose.** They require Docker Compose v2.32+,
+> and on versions where the OCI-remote loader is still gated you must also
+> `export COMPOSE_EXPERIMENTAL_OCI_REMOTE=1` before `--start-blockchains` — otherwise the `oci://` ref
+> isn't recognized. Updating Docker to a release where the loader is enabled by default also fixes it.
+> (A local compose-file path needs neither.)
 
 The BYO flow mirrors the bundled local flow, just with **you** (or `BYO_BLOCKCHAINS_COMPOSE`) providing
 the chains. End to end:
