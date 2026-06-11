@@ -186,7 +186,10 @@ cleanup_background_jobs() {
 set +e
 ready_notify_pid=""
 if should_notify_ready "$@"; then
-  mapfile -t ready_ids < <(selected_client_ids "$@")
+  ready_ids=()
+  while IFS= read -r ready_id; do
+    ready_ids+=("$ready_id")
+  done < <(selected_client_ids "$@")
   notify_when_clients_ready "${ready_ids[@]}" &
   ready_notify_pid=$!
 fi

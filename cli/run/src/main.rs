@@ -104,6 +104,10 @@ struct Cli {
     #[arg(long = "kill", action = ArgAction::SetTrue)]
     kill: bool,
 
+    /// Services to launch or kill. Defaults to all services.
+    #[arg(long = "services", value_delimiter = ',', num_args = 1..)]
+    services: Vec<Service>,
+
     /// Source of BitVMX identity used by coordinator in local runs.
     #[arg(long = "bitvmx-mode", value_enum, default_value_t = BitvmxMode::Docker)]
     bitvmx_mode: BitvmxMode,
@@ -122,7 +126,7 @@ enum BitvmxMode {
     Docker,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
 enum Service {
     BlockIndexer,
     LogIndexer,
@@ -184,10 +188,12 @@ async fn main() -> Result<()> {
     }));
 
     let cli = Cli::parse();
+    let services =
+        if cli.services.is_empty() { UNION_CLIENT_SERVICES.to_vec() } else { cli.services.clone() };
 
     // handle kill command - exit early after killing services
     if cli.kill {
-        detect_and_kill_existing_services()?;
+        detect_and_kill_existing_services(&services)?;
         println!("Kill command ran, exiting...");
         return Ok(());
     }
@@ -203,6 +209,7 @@ async fn main() -> Result<()> {
         fresh: cli.fresh,
         bitvmx_mode: cli.bitvmx_mode,
         rskj: cli.rskj,
+        services,
     };
 
     let result = run_clients(run_config).await;
@@ -227,12 +234,13 @@ struct RunConfig {
     /// When true, spawn services against `--config local-rskj` and skip the
     /// `--features anvil` default. See the matching `--rskj` flag on `Cli`.
     rskj: bool,
+    services: Vec<Service>,
 }
 
 async fn run_clients(config: RunConfig) -> Result<()> {
     if config.client_id.is_none() {
         // detect and kill any running services before starting
-        detect_and_kill_existing_services()?;
+        detect_and_kill_existing_services(&config.services)?;
     }
 
     if config.fresh {
@@ -278,7 +286,7 @@ async fn run_clients(config: RunConfig) -> Result<()> {
                 "============================================================================"
             );
 
-            let readiness_ports = readiness_ports_for_client(&envs);
+            let readiness_ports = readiness_ports_for_client(&envs, &config.services);
             launch_client_services(&config, envs, &client_id, &shutdown_tx, &launch_cancelled).map(
                 |services| ManagedClient {
                     client_id: client_id.to_string(),
@@ -372,7 +380,7 @@ async fn run_clients(config: RunConfig) -> Result<()> {
     Ok(())
 }
 
-fn detect_and_kill_existing_services() -> Result<()> {
+fn detect_and_kill_existing_services(services: &[Service]) -> Result<()> {
     println!("Checking for existing services...");
 
     // initialize system and refresh process list
@@ -383,7 +391,7 @@ fn detect_and_kill_existing_services() -> Result<()> {
     let mut found_pids: Vec<(String, u32)> = Vec::new();
 
     // find all matching processes
-    for service in &UNION_CLIENT_SERVICES {
+    for service in services {
         let service_name = service.name();
 
         for (pid, process) in sys.processes() {
@@ -787,17 +795,37 @@ fn get_port_from_envs(envs: &[(String, String)], key: &str) -> Option<u16> {
     envs.iter().find(|(k, _)| k == key).and_then(|(_, v)| v.parse().ok())
 }
 
-fn readiness_ports_for_client(envs: &[(String, String)]) -> Vec<(String, u16)> {
-    [
-        ("block-indexer broker", "UB__BLOCK_INDEXER__NOTIFIER__PORT"),
-        ("log-indexer broker", "UB__LOG_INDEXER__NOTIFIER__PORT"),
-        ("coordinator user broker", "UB__COORDINATOR__USER__PORT"),
-        ("user-api broker", "UB__USER_API__NOTIFIER__PORT"),
-        ("user-api http", "UB__USER_API__HTTP__PORT"),
-    ]
-    .into_iter()
-    .filter_map(|(label, key)| get_port_from_envs(envs, key).map(|port| (label.to_string(), port)))
-    .collect()
+fn readiness_ports_for_client(
+    envs: &[(String, String)],
+    services: &[Service],
+) -> Vec<(String, u16)> {
+    let mut ports = Vec::new();
+
+    if services.contains(&Service::BlockIndexer)
+        && let Some(port) = get_port_from_envs(envs, "UB__BLOCK_INDEXER__NOTIFIER__PORT")
+    {
+        ports.push(("block-indexer broker".to_string(), port));
+    }
+    if services.contains(&Service::LogIndexer)
+        && let Some(port) = get_port_from_envs(envs, "UB__LOG_INDEXER__NOTIFIER__PORT")
+    {
+        ports.push(("log-indexer broker".to_string(), port));
+    }
+    if services.contains(&Service::Coordinator)
+        && let Some(port) = get_port_from_envs(envs, "UB__COORDINATOR__USER__PORT")
+    {
+        ports.push(("coordinator user broker".to_string(), port));
+    }
+    if services.contains(&Service::UserApi) {
+        if let Some(port) = get_port_from_envs(envs, "UB__USER_API__NOTIFIER__PORT") {
+            ports.push(("user-api broker".to_string(), port));
+        }
+        if let Some(port) = get_port_from_envs(envs, "UB__USER_API__HTTP__PORT") {
+            ports.push(("user-api http".to_string(), port));
+        }
+    }
+
+    ports
 }
 
 fn wait_for_clients_ready(clients: &[ManagedClient]) -> Result<()> {
@@ -893,7 +921,7 @@ fn launch_client_services(
 ) -> Result<Vec<ManagedService>> {
     let mut services: Vec<ManagedService> = Vec::new();
 
-    for svc in UNION_CLIENT_SERVICES {
+    for svc in config.services.iter().copied() {
         if launch_cancelled.load(Ordering::SeqCst) {
             cleanup_partial_services(client_id, &services);
             bail!("Launch cancelled before starting {} for {}", svc.name(), client_id);

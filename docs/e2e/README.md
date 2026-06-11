@@ -13,6 +13,8 @@ The current scope is limited to the currently documented flows in this E2E set: 
 - [Parameter Sources and Mappings](parameter-sources-and-mappings.md)
 - [BitVMX Actions Triggered by Union Client](bitvmx-actions-triggered-by-union-client.md)
 - [Confirmations, Retry Delays, and Timeouts](confirmations-retries-and-timeouts.md)
+- [Pegin Recovery E2E](pegin-recovery-e2e.md)
+- [Pegout Recovery E2E](pegout-recovery-e2e.md)
 
 ## How to Read These Docs
 

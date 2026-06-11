@@ -145,7 +145,11 @@ wait_for_bitvmx_clients() {
       esac
     done
 
-    pending=("${next_pending[@]}")
+    if [[ "${#next_pending[@]}" -eq 0 ]]; then
+      pending=()
+    else
+      pending=("${next_pending[@]}")
+    fi
     if [[ "${#pending[@]}" -eq 0 ]]; then
       return 0
     fi
