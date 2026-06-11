@@ -254,7 +254,6 @@ where
             self.store.load_flow::<PegoutProcessorState>(&StoreKey::PegoutProcessorState)?
         {
             self.apply_processor_state(state)?;
-            return Ok(());
         }
 
         self.reconstruct_runtime_state_from_flows();
@@ -286,16 +285,22 @@ where
     fn reconstruct_runtime_state_from_flows(&mut self) {
         for (flow_id, flow) in &self.pegout_flows {
             match flow.current_step() {
-                Steps::WaitUserTakeSignaturesReady => {
+                Steps::WaitUserTakeSignaturesReady
+                    if !self.advance_funds_timeout_scheduler.is_scheduled(flow_id) =>
+                {
                     self.flows_pending_timeout.insert(*flow_id);
                 }
-                Steps::ConfirmUserTakeTransaction => {
+                Steps::ConfirmUserTakeTransaction
+                    if !self.tx_status_scheduler.is_scheduled(flow_id) =>
+                {
                     self.tx_status_scheduler.schedule(*flow_id, self.btc_status_retry_blocks);
                 }
                 Steps::RegisterPegout => {
-                    self.unconfirmed_register_pegout.insert(*flow_id, 0);
-                    self.register_pegout_retry_scheduler
-                        .schedule(*flow_id, self.btc_status_retry_blocks);
+                    self.unconfirmed_register_pegout.entry(*flow_id).or_insert(0);
+                    if !self.register_pegout_retry_scheduler.is_scheduled(flow_id) {
+                        self.register_pegout_retry_scheduler
+                            .schedule(*flow_id, self.btc_status_retry_blocks);
+                    }
                 }
                 _ => {}
             }
@@ -1138,9 +1143,11 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use alloy_primitives::{Bytes, FixedBytes, U256 as AlloyU256};
-    use bitcoin::Txid;
+    use bitcoin::absolute::LockTime;
+    use bitcoin::transaction::Version;
+    use bitcoin::{Transaction, Txid};
     use common::msg_broker::bitvmx_types::{
-        IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PegOutAccepted,
+        BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PegOutAccepted,
     };
     use common::msg_broker::broker::MockBrokerClientApi;
     use common::test_utils::rsk_block_generator::FakeBlockGenerator;
@@ -1155,7 +1162,7 @@ mod tests {
     use super::*;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
     use crate::flows::pegout::pegout_flow::{FlowContext, flow_id_from_pegout_requested_tx_hash};
-    use crate::store::MockCoordinatorStoreApi;
+    use crate::store::{CoordinatorStore, MockCoordinatorStoreApi, TestStorePath};
 
     type MockBitVmxBroker =
         MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
@@ -1300,6 +1307,32 @@ mod tests {
         }
     }
 
+    fn store_backed_processor(
+        store: &Rc<CoordinatorStore>,
+    ) -> PegoutFlowProcessor<
+        MockRskContractsGatewayApi,
+        MockBitVmxBroker,
+        TestBtcSigSubFlow,
+        TestBtcSigFactory,
+        CoordinatorStore,
+    > {
+        PegoutFlowProcessor::restore_or_new(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            RuntimeSync::new().expect("failed to create runtime sync"),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+            store,
+            Rc::new(Signaling::new("/tmp", "disabled")),
+            NativeBridgeVerifier::Dummy,
+            60,
+            1,
+            1,
+            1,
+            None,
+        )
+        .expect("processor should restore")
+    }
+
     fn create_fake_pegout_requested() -> PegoutRequested {
         PegoutRequested {
             userPubKey: Bytes::from(vec![0x03; 33]),
@@ -1319,6 +1352,20 @@ mod tests {
 
     fn test_txid(bytes: [u8; 32]) -> Txid {
         TxIdParser::fb_32_to_txid(FixedBytes::from(bytes))
+    }
+
+    fn test_spv_proof() -> BtcTxSPVProof {
+        BtcTxSPVProof {
+            block_hash: "11".repeat(32),
+            tx: Transaction {
+                version: Version(2),
+                lock_time: LockTime::ZERO,
+                input: vec![],
+                output: vec![],
+            },
+            merkle_branch_path: "0".to_string(),
+            merkle_branch_hashes: vec![],
+        }
     }
 
     fn default_pub_nonce() -> PubNonce {
@@ -1403,6 +1450,47 @@ mod tests {
         assert_eq!(restored.unconfirmed_register_pegout.get(&flow_id), Some(&2));
         assert!(restored.register_pegout_retry_scheduler.is_scheduled(&flow_id));
         assert!(restored.signature_flows.get(&protocol_id).unwrap().is_done());
+    }
+
+    #[test]
+    fn restore_processor_state_reconciles_stale_snapshot_with_register_pegout_retry() {
+        let store_path = TestStorePath::new();
+        let store = Rc::new(store_path.open());
+        let flow_id =
+            flow_id_from_pegout_requested_tx_hash(TxHash::from(H256::from_low_u64_be(99)));
+        let state = State {
+            flow_id,
+            log_id: String::new(),
+            step: Steps::RegisterPegout,
+            ctx: FlowContext {
+                pegout_requested: create_fake_pegout_requested(),
+                pegout_requested_tx_hash: TxHash::from(H256::from_low_u64_be(99)),
+                bitvmx_protocol_id: common::msg_broker::bitvmx_types::user_take_protocol_id(
+                    Uuid::nil(),
+                    0,
+                ),
+                my_p2p_address: None,
+                committee_output: None,
+                peg_out_accepted: Some(fake_pegout_accepted(test_txid([3u8; 32]))),
+                pegout_registered: None,
+                pegout_registered_tx: None,
+                spv_proof: Some(test_spv_proof()),
+                transaction_status: None,
+            },
+            created_at: None,
+        };
+        store
+            .save_flow(&StoreKey::PegoutFlow(flow_id.value()), state)
+            .expect("flow state should persist");
+        let stale_snapshot = TestHarness::new().processor.snapshot_processor_state();
+        store
+            .save_flow(&StoreKey::PegoutProcessorState, stale_snapshot)
+            .expect("processor snapshot should persist");
+
+        let restored = store_backed_processor(&store);
+
+        assert_eq!(restored.unconfirmed_register_pegout.get(&flow_id), Some(&0));
+        assert!(restored.register_pegout_retry_scheduler.is_scheduled(&flow_id));
     }
 
     /// Regression test for the bug where a signature flow completing after
