@@ -77,7 +77,7 @@ fn fails_with_two_blocks_because_a2_requires_a_checked_continuation_event() {
     let block_list = vec![first_block, second_block];
 
     let args = CheckForkArgsBuilder::new(block_list).required_effort(actual_effort).build();
-    let result = check_fork(&args);
+    let result = run_check_fork(&args);
 
     assert_eq!(
         result,
@@ -104,7 +104,7 @@ fn fails_with_two_blocks_and_one_uncle_because_a2_requires_a_checked_continuatio
     let block_list = vec![first_block, second_block];
 
     let args = CheckForkArgsBuilder::new(block_list).required_effort(actual_effort).build();
-    let result = check_fork(&args);
+    let result = run_check_fork(&args);
 
     assert_eq!(
         result,
@@ -133,7 +133,7 @@ fn succeeds_with_required_pegout_event_in_continuation_blocks() {
         .build();
     decorate_required_pegout_events(&mut args);
 
-    let result = check_fork(&args);
+    let result = run_check_fork(&args);
 
     assert_eq!(result, Ok(actual_effort), "Expected to succeed for valid continuation blocks");
 }
@@ -211,7 +211,7 @@ fn fails_when_required_block_number_is_invalid() {
 
     let args = CheckForkArgsBuilder::new(block_list).required_num_blocks(0).build();
 
-    let result = check_fork(&args);
+    let result = run_check_fork(&args);
     assert_eq!(
         result,
         Err("Invalid number of required blocks"),
@@ -226,7 +226,7 @@ fn fails_when_block_list_has_less_than_three_blocks() {
 
     let args = CheckForkArgsBuilder::new(block_list).required_num_blocks(1).build();
 
-    let result = check_fork(&args);
+    let result = run_check_fork(&args);
     assert_eq!(
         result,
         Err("Check-fork A2 requires at least one continuation block with the PegOutID base event"),
@@ -243,7 +243,7 @@ fn fails_when_provided_blocks_are_less_than_required() {
 
     let args = CheckForkArgsBuilder::new(block_list).required_num_blocks(4).build();
 
-    let result = check_fork(&args);
+    let result = run_check_fork(&args);
     assert_eq!(
         result,
         Err("Insufficient number of blocks"),
@@ -260,7 +260,7 @@ fn fails_when_first_block_timestamp_is_lower_than_min_requested() {
 
     let args = CheckForkArgsBuilder::new(block_list).init_block_time(1_000_000).build();
 
-    let result = check_fork(&args);
+    let result = run_check_fork(&args);
     assert_eq!(
         result,
         Err("First block timestamp lower than expected"),
@@ -277,7 +277,7 @@ fn fails_when_first_block_number_is_lower_than_min_requested() {
 
     let args = CheckForkArgsBuilder::new(block_list).init_block_number(1_000_000).build();
 
-    let result = check_fork(&args);
+    let result = run_check_fork(&args);
     assert_eq!(
         result,
         Err("First block number lower than expected"),
@@ -307,7 +307,7 @@ fn fails_when_cumulative_effort_below_expected() {
     let mut args = CheckForkArgsBuilder::new(block_list).required_effort(expected_effort).build();
     decorate_required_pegout_events(&mut args);
 
-    let result = check_fork(&args);
+    let result = run_check_fork(&args);
     assert_eq!(
         result,
         Err("Cumulative PoW does not meet the required threshold"),
@@ -326,7 +326,7 @@ fn fails_when_blocks_are_not_consecutive() {
     let block_list = vec![first_block, second_block, third_block];
     let args = CheckForkArgsBuilder::new(block_list).build();
 
-    let result = check_fork(&args);
+    let result = run_check_fork(&args);
     assert_eq!(
         result,
         Err("Block numbers are not consecutive"),
@@ -345,7 +345,7 @@ fn fails_when_consecutive_blocks_are_not_parent_child() {
     let block_list = vec![first_block, second_block, third_block];
     let args = CheckForkArgsBuilder::new(block_list).build();
 
-    let result = check_fork(&args);
+    let result = run_check_fork(&args);
     assert_eq!(
         result,
         Err("Invalid parent linkage between blocks"),
@@ -369,7 +369,7 @@ fn fails_when_first_block_contains_the_pegout_event() {
     first_block.header.version = 2;
     first_block.header.base_event = Some(base_event);
 
-    let result = check_fork(&args);
+    let result = run_check_fork(&args);
     assert_eq!(result, Err("First block must not contain the PegOutID base event"));
 }
 
@@ -393,7 +393,7 @@ fn fails_when_continuation_block_is_missing_the_pegout_event() {
     args.block_list[3].header.hash =
         args.block_list[3].header.calculate_block_hash().expect("could not calculate block hash");
 
-    let result = check_fork(&args);
+    let result = run_check_fork(&args);
     assert_eq!(result, Err("Continuation block is missing the expected PegOutID base event"));
 }
 
@@ -419,7 +419,7 @@ fn fails_when_base_event_pegout_id_does_not_match_args() {
             .calculate_block_hash()
             .expect("could not calculate block hash");
 
-        let result = check_fork(&args);
+        let result = run_check_fork(&args);
         assert_eq!(
             result,
             Err("Continuation block is missing the expected PegOutID base event"),
@@ -442,7 +442,7 @@ fn fails_when_base_event_exists_but_header_version_is_not_v2() {
     let block = &mut args.block_list[2];
     block.header.version = 1;
 
-    let result = check_fork(&args);
+    let result = run_check_fork(&args);
     assert_eq!(result, Err("Block with base event must use header version 2"));
 }
 
@@ -459,7 +459,7 @@ fn fails_when_consecutive_block_difficulty_is_lower_than_bounds() {
     let block_list = vec![first_block, second_block, third_block];
     let args = CheckForkArgsBuilder::new(block_list).build();
 
-    let result = check_fork(&args);
+    let result = run_check_fork(&args);
     assert_eq!(
         result,
         Err("Consecutive Block difficulty is out of bounds"),
@@ -480,7 +480,7 @@ fn fails_when_consecutive_block_difficulty_is_higher_than_bounds() {
     let block_list = vec![first_block, second_block, third_block];
     let args = CheckForkArgsBuilder::new(block_list).build();
 
-    let result = check_fork(&args);
+    let result = run_check_fork(&args);
     assert_eq!(
         result,
         Err("Consecutive Block difficulty is out of bounds"),
@@ -499,7 +499,7 @@ fn fails_when_consecutive_block_timestamp_is_lower() {
     let block_list = vec![first_block, second_block, third_block];
     let args = CheckForkArgsBuilder::new(block_list).build();
 
-    let result = check_fork(&args);
+    let result = run_check_fork(&args);
     assert_eq!(
         result,
         Err("Block Timestamp is not increasing"),
@@ -521,7 +521,7 @@ fn fails_when_uncle_number_is_different_from_trunk() {
     let block_list = vec![first_block, second_block, third_block];
     let args = CheckForkArgsBuilder::new(block_list).build();
 
-    let result = check_fork(&args);
+    let result = run_check_fork(&args);
     assert_eq!(
         result,
         Err("Uncle's block number does not match trunk block number"),
@@ -543,7 +543,7 @@ fn fails_when_uncle_parent_is_different_from_trunk() {
     let block_list = vec![first_block, second_block, third_block];
     let args = CheckForkArgsBuilder::new(block_list).build();
 
-    let result = check_fork(&args);
+    let result = run_check_fork(&args);
     assert_eq!(
         result,
         Err("Uncle's parent does not match trunk block's parent"),
@@ -565,7 +565,7 @@ fn fails_when_uncle_difficulty_is_different_from_trunk() {
     let block_list = vec![first_block, second_block, third_block];
     let args = CheckForkArgsBuilder::new(block_list).build();
 
-    let result = check_fork(&args);
+    let result = run_check_fork(&args);
     assert_eq!(
         result,
         Err("Uncle's difficulty does not match trunk block's difficulty"),
@@ -740,6 +740,10 @@ fn decorate_required_pegout_events(args: &mut CheckForkArgs) {
 
 fn build_expected_base_event(args: &CheckForkArgs) -> Vec<u8> {
     build_pegout_base_event(args).to_vec()
+}
+
+fn run_check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
+    check_fork(args, compute_pegout_id(args))
 }
 
 fn assert_minichain_hashes_are_valid_from_fixture(path: &str) {

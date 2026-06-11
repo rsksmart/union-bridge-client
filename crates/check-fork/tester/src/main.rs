@@ -3,7 +3,7 @@
 use std::error::Error;
 use std::path::PathBuf;
 
-use check_fork::{CheckForkArgs, check_fork};
+use check_fork::{CheckForkArgs, check_fork, compute_pegout_id};
 use check_fork_tester::{
     apply_base_event_fixture, calculate_total_effort, get_blocks, write_check_fork_artifacts,
 };
@@ -92,7 +92,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         block_list: Vec::new(),
     };
 
-    let base_event = check_fork::build_pegout_base_event(&check_fork_args);
+    let pegout_id = compute_pegout_id(&check_fork_args);
+    let base_event = check_fork::build_pegout_base_event_from_id(pegout_id);
     apply_base_event_fixture(&mut blocks, &base_event)?;
     check_fork_args.block_list = blocks;
     check_fork_args.required_effort = match cli_args.cf_required_effort {
@@ -105,7 +106,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if cli_args.operation == "elf" {
         generate_elf(&check_fork_args, &cli_args.output_dir)?;
     } else if cli_args.operation == "run" {
-        match check_fork(&check_fork_args) {
+        match check_fork(&check_fork_args, pegout_id) {
             Ok(effort) => println!("Check Fork returned ACCEPT with cumulative_effort={effort}"),
             Err(error) => println!("Check Fork returned REJECT: {error:?}"),
         }

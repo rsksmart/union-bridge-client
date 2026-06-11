@@ -13,7 +13,7 @@ use check_fork::block_header::{
     deserialize_hex_u64, deserialize_hex_u256, deserialize_hex_u256_option,
     deserialize_vec_hex_h256,
 };
-use check_fork::{CheckForkArgs, RskBlock, build_check_fork_journal_from_args, compute_pegout_id};
+use check_fork::{CheckForkArgs, RskBlock, build_check_fork_journal, compute_pegout_id};
 use primitive_types::{H256, U256};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -255,7 +255,7 @@ pub fn write_check_fork_artifacts(
     fs::create_dir_all(output_dir)?;
 
     let pegout_id = compute_pegout_id(args);
-    let expected_journal = build_check_fork_journal_from_args(args, true).to_bytes();
+    let expected_journal = build_check_fork_journal(args, pegout_id, true).to_bytes();
     fs::write(output_dir.join("expected_journal.bin"), expected_journal)?;
     fs::write(output_dir.join("expected_journal.hex"), hex::encode(expected_journal))?;
     fs::write(

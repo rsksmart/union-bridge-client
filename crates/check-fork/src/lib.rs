@@ -123,11 +123,11 @@ fn build_pegout_id_preimage(args: &CheckForkArgs) -> [u8; PEGOUT_ID_PREIMAGE_LEN
 }
 
 #[must_use]
-pub fn build_check_fork_journal_from_args(
+pub fn build_check_fork_journal(
     args: &CheckForkArgs,
+    pegout_id: H256,
     accepted: bool,
 ) -> CheckForkJournal {
-    let pegout_id = compute_pegout_id(args);
     let mut operator_take_pubkey = [0u8; OPERATOR_TAKE_PUBKEY_LEN];
     operator_take_pubkey[0] = args.operator_take_pubkey_parity;
     operator_take_pubkey[1..].copy_from_slice(&args.operator_take_pubkey_xonly);
@@ -145,11 +145,24 @@ pub fn build_check_fork_journal_from_args(
 }
 
 #[must_use]
-pub fn build_pegout_base_event(args: &CheckForkArgs) -> [u8; PEGOUT_BASE_EVENT_LEN] {
+pub fn build_check_fork_journal_from_args(
+    args: &CheckForkArgs,
+    accepted: bool,
+) -> CheckForkJournal {
     let pegout_id = compute_pegout_id(args);
+    build_check_fork_journal(args, pegout_id, accepted)
+}
+
+#[must_use]
+pub fn build_pegout_base_event_from_id(pegout_id: H256) -> [u8; PEGOUT_BASE_EVENT_LEN] {
     let mut out = [0u8; PEGOUT_BASE_EVENT_LEN];
     out.copy_from_slice(pegout_id.as_bytes());
     out
+}
+
+#[must_use]
+pub fn build_pegout_base_event(args: &CheckForkArgs) -> [u8; PEGOUT_BASE_EVENT_LEN] {
+    build_pegout_base_event_from_id(compute_pegout_id(args))
 }
 
 /// Check fork validity and return cumulative `PoW`
@@ -159,7 +172,7 @@ pub fn build_pegout_base_event(args: &CheckForkArgs) -> [u8; PEGOUT_BASE_EVENT_L
 /// Returns an error string if the fork validation fails (e.g., insufficient blocks,
 /// invalid block sequence, cumulative `PoW` below threshold, or base event mismatch)
 #[allow(dead_code)]
-pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
+pub fn check_fork(args: &CheckForkArgs, pegout_id: H256) -> Result<U256, &'static str> {
     let CheckForkArgs {
         init_block_time,
         init_block_number,
@@ -170,7 +183,7 @@ pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
     } = args;
 
     // extract values directly to avoid dereferencing later
-    let expected_base_event = build_pegout_base_event(args);
+    let expected_base_event = build_pegout_base_event_from_id(pegout_id);
     let init_block_time = *init_block_time;
     let init_block_number = *init_block_number;
     let required_effort = *required_effort;
