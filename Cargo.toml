@@ -41,7 +41,7 @@ alloy-contract = "1.0.42"
 # alloy-rs-core
 alloy-dyn-abi = "1.4.1"
 alloy-json-abi = "1.4.1"
-alloy-json-rpc = "1.0.42"
+alloy-json-rpc = "2.0.4"
 alloy-primitives = "1.4.1"
 alloy-provider = "1.0.42"
 alloy-pubsub = "1.0.42"
