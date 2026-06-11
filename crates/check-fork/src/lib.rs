@@ -47,124 +47,6 @@ pub struct CheckForkArgs {
     pub block_list: Vec<RskBlock>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CheckForkJournal {
-    pub operator_take_pubkey: [u8; OPERATOR_TAKE_PUBKEY_LEN],
-    pub pegout_id: [u8; PEGOUT_ID_LEN],
-    pub slot_id: [u8; SLOT_ID_LEN],
-    pub accepted: u8,
-    pub version: [u8; 2],
-}
-
-impl CheckForkJournal {
-    #[must_use]
-    pub fn to_bytes(self) -> [u8; CHECK_FORK_JOURNAL_LEN] {
-        let mut out = [0u8; CHECK_FORK_JOURNAL_LEN];
-        let mut rest = out.as_mut_slice();
-
-        let (operator_dst, next) = rest.split_at_mut(self.operator_take_pubkey.len());
-        operator_dst.copy_from_slice(&self.operator_take_pubkey);
-        rest = next;
-
-        let (pegout_dst, next) = rest.split_at_mut(self.pegout_id.len());
-        pegout_dst.copy_from_slice(&self.pegout_id);
-        rest = next;
-
-        let (slot_dst, next) = rest.split_at_mut(self.slot_id.len());
-        slot_dst.copy_from_slice(&self.slot_id);
-        rest = next;
-
-        let (accepted_dst, rest) = rest.split_at_mut(1);
-        accepted_dst[0] = self.accepted;
-        let (version_dst, padding_dst) = rest.split_at_mut(self.version.len());
-        version_dst.copy_from_slice(&self.version);
-        padding_dst.fill(0);
-        out
-    }
-}
-
-#[must_use]
-pub fn compute_pegout_id(args: &CheckForkArgs) -> H256 {
-    let mut hasher = Keccak256::new();
-    hasher.update(build_pegout_id_preimage(args));
-    H256::from_slice(&hasher.finalize())
-}
-
-fn build_pegout_id_preimage(args: &CheckForkArgs) -> [u8; PEGOUT_ID_PREIMAGE_LEN] {
-    let mut out = [0u8; PEGOUT_ID_PREIMAGE_LEN];
-    let mut offset = 0;
-
-    out[offset] = args.version;
-    offset += 1;
-
-    out[offset..offset + SEQUENCE_NUMBER_LEN]
-        .copy_from_slice(&args.sequence_number.to_big_endian());
-    offset += SEQUENCE_NUMBER_LEN;
-
-    out[offset..offset + STREAM_ID_LEN].copy_from_slice(&args.stream_id.to_be_bytes());
-    offset += STREAM_ID_LEN;
-
-    out[offset..offset + PACKET_NUMBER_LEN].copy_from_slice(&args.packet_number.to_be_bytes());
-    offset += PACKET_NUMBER_LEN;
-
-    out[offset..offset + SLOT_ID_LEN].copy_from_slice(&args.slot_id.to_be_bytes());
-    offset += SLOT_ID_LEN;
-
-    out[offset] = args.operator_take_pubkey_parity;
-    offset += 1;
-
-    out[offset..offset + OPERATOR_TAKE_PUBKEY_XONLY_LEN]
-        .copy_from_slice(&args.operator_take_pubkey_xonly);
-    offset += OPERATOR_TAKE_PUBKEY_XONLY_LEN;
-
-    out[offset..offset + PEGOUT_ID_LEN].copy_from_slice(args.best_block_hash.as_bytes());
-
-    out
-}
-
-#[must_use]
-pub fn build_check_fork_journal(
-    args: &CheckForkArgs,
-    pegout_id: H256,
-    accepted: bool,
-) -> CheckForkJournal {
-    let mut operator_take_pubkey = [0u8; OPERATOR_TAKE_PUBKEY_LEN];
-    operator_take_pubkey[0] = args.operator_take_pubkey_parity;
-    operator_take_pubkey[1..].copy_from_slice(&args.operator_take_pubkey_xonly);
-
-    let mut pegout_id_bytes = [0u8; PEGOUT_ID_LEN];
-    pegout_id_bytes.copy_from_slice(pegout_id.as_bytes());
-
-    CheckForkJournal {
-        operator_take_pubkey,
-        pegout_id: pegout_id_bytes,
-        slot_id: args.slot_id.to_be_bytes(),
-        accepted: u8::from(accepted),
-        version: u16::from(args.version).to_be_bytes(),
-    }
-}
-
-#[must_use]
-pub fn build_check_fork_journal_from_args(
-    args: &CheckForkArgs,
-    accepted: bool,
-) -> CheckForkJournal {
-    let pegout_id = compute_pegout_id(args);
-    build_check_fork_journal(args, pegout_id, accepted)
-}
-
-#[must_use]
-pub fn build_pegout_base_event_from_id(pegout_id: H256) -> [u8; PEGOUT_BASE_EVENT_LEN] {
-    let mut out = [0u8; PEGOUT_BASE_EVENT_LEN];
-    out.copy_from_slice(pegout_id.as_bytes());
-    out
-}
-
-#[must_use]
-pub fn build_pegout_base_event(args: &CheckForkArgs) -> [u8; PEGOUT_BASE_EVENT_LEN] {
-    build_pegout_base_event_from_id(compute_pegout_id(args))
-}
-
 /// Check fork validity and return cumulative `PoW`
 ///
 /// # Errors
@@ -401,6 +283,110 @@ fn validate_block_hash(header: &RskBlockHeader) -> Result<(), &'static str> {
         return Err("Block header hash is not matching");
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CheckForkJournal {
+    pub operator_take_pubkey: [u8; OPERATOR_TAKE_PUBKEY_LEN],
+    pub pegout_id: [u8; PEGOUT_ID_LEN],
+    pub slot_id: [u8; SLOT_ID_LEN],
+    pub accepted: u8,
+    pub version: [u8; 2],
+}
+
+impl CheckForkJournal {
+    #[must_use]
+    pub fn to_bytes(self) -> [u8; CHECK_FORK_JOURNAL_LEN] {
+        let mut out = [0u8; CHECK_FORK_JOURNAL_LEN];
+        let mut rest = out.as_mut_slice();
+
+        let (operator_dst, next) = rest.split_at_mut(self.operator_take_pubkey.len());
+        operator_dst.copy_from_slice(&self.operator_take_pubkey);
+        rest = next;
+
+        let (pegout_dst, next) = rest.split_at_mut(self.pegout_id.len());
+        pegout_dst.copy_from_slice(&self.pegout_id);
+        rest = next;
+
+        let (slot_dst, next) = rest.split_at_mut(self.slot_id.len());
+        slot_dst.copy_from_slice(&self.slot_id);
+        rest = next;
+
+        let (accepted_dst, rest) = rest.split_at_mut(1);
+        accepted_dst[0] = self.accepted;
+        let (version_dst, padding_dst) = rest.split_at_mut(self.version.len());
+        version_dst.copy_from_slice(&self.version);
+        padding_dst.fill(0);
+        out
+    }
+}
+
+#[must_use]
+pub fn compute_pegout_id(args: &CheckForkArgs) -> H256 {
+    let mut hasher = Keccak256::new();
+    hasher.update(build_pegout_id_preimage(args));
+    H256::from_slice(&hasher.finalize())
+}
+
+fn build_pegout_id_preimage(args: &CheckForkArgs) -> [u8; PEGOUT_ID_PREIMAGE_LEN] {
+    let mut out = [0u8; PEGOUT_ID_PREIMAGE_LEN];
+    let mut offset = 0;
+
+    out[offset] = args.version;
+    offset += 1;
+
+    out[offset..offset + SEQUENCE_NUMBER_LEN]
+        .copy_from_slice(&args.sequence_number.to_big_endian());
+    offset += SEQUENCE_NUMBER_LEN;
+
+    out[offset..offset + STREAM_ID_LEN].copy_from_slice(&args.stream_id.to_be_bytes());
+    offset += STREAM_ID_LEN;
+
+    out[offset..offset + PACKET_NUMBER_LEN].copy_from_slice(&args.packet_number.to_be_bytes());
+    offset += PACKET_NUMBER_LEN;
+
+    out[offset..offset + SLOT_ID_LEN].copy_from_slice(&args.slot_id.to_be_bytes());
+    offset += SLOT_ID_LEN;
+
+    out[offset] = args.operator_take_pubkey_parity;
+    offset += 1;
+
+    out[offset..offset + OPERATOR_TAKE_PUBKEY_XONLY_LEN]
+        .copy_from_slice(&args.operator_take_pubkey_xonly);
+    offset += OPERATOR_TAKE_PUBKEY_XONLY_LEN;
+
+    out[offset..offset + PEGOUT_ID_LEN].copy_from_slice(args.best_block_hash.as_bytes());
+
+    out
+}
+
+#[must_use]
+pub fn build_check_fork_journal(
+    args: &CheckForkArgs,
+    pegout_id: H256,
+    accepted: bool,
+) -> CheckForkJournal {
+    let mut operator_take_pubkey = [0u8; OPERATOR_TAKE_PUBKEY_LEN];
+    operator_take_pubkey[0] = args.operator_take_pubkey_parity;
+    operator_take_pubkey[1..].copy_from_slice(&args.operator_take_pubkey_xonly);
+
+    let mut pegout_id_bytes = [0u8; PEGOUT_ID_LEN];
+    pegout_id_bytes.copy_from_slice(pegout_id.as_bytes());
+
+    CheckForkJournal {
+        operator_take_pubkey,
+        pegout_id: pegout_id_bytes,
+        slot_id: args.slot_id.to_be_bytes(),
+        accepted: u8::from(accepted),
+        version: u16::from(args.version).to_be_bytes(),
+    }
+}
+
+#[must_use]
+pub fn build_pegout_base_event_from_id(pegout_id: H256) -> [u8; PEGOUT_BASE_EVENT_LEN] {
+    let mut out = [0u8; PEGOUT_BASE_EVENT_LEN];
+    out.copy_from_slice(pegout_id.as_bytes());
+    out
 }
 
 #[cfg(test)]

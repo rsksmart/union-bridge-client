@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::block_header::{RskBlockHeader, encode_list};
 use crate::{
-    CheckForkArgs, RskBlock, SUPERBLOCK_TIMES_DIFFICULTY, build_check_fork_journal_from_args,
-    build_pegout_base_event, build_pegout_id_preimage, check_fork, compute_pegout_id,
+    CheckForkArgs, RskBlock, SUPERBLOCK_TIMES_DIFFICULTY, build_check_fork_journal,
+    build_pegout_base_event_from_id, build_pegout_id_preimage, check_fork, compute_pegout_id,
 };
 
 const DEFAULT_DIFFICULTY: u128 = 5_904_436_352_267_687_415_636;
@@ -190,8 +190,8 @@ fn journal_layout_is_exactly_76_bytes() {
         .build();
         args.slot_id = 0x0102_0304_0506_0708;
 
-        let journal = build_check_fork_journal_from_args(&args, accepted).to_bytes();
         let pegout_id = compute_pegout_id(&args);
+        let journal = build_check_fork_journal(&args, pegout_id, accepted).to_bytes();
 
         assert_eq!(journal.len(), 76);
         assert_eq!(journal[0], args.operator_take_pubkey_parity);
@@ -739,7 +739,7 @@ fn decorate_required_pegout_events(args: &mut CheckForkArgs) {
 }
 
 fn build_expected_base_event(args: &CheckForkArgs) -> Vec<u8> {
-    build_pegout_base_event(args).to_vec()
+    build_pegout_base_event_from_id(compute_pegout_id(args)).to_vec()
 }
 
 fn run_check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
