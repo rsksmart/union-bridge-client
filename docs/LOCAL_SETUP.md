@@ -228,11 +228,15 @@ Use this mode when the Union Bridge services run from the operator Docker runtim
 export BITCOIND_URL=http://user:password@localhost:18443
 export KEY_STORE_PASSWORD=<your-password>
 export USER_BITCOIN_WIF=<your-user-wif>
+export MEMBER_BITCOIN_WIF=<your-member-wif>
 ./scripts/run-infra.sh --start-blockchains [--fresh]
 ./scripts/setup-operators.sh --ops 4
 cd docker/operator
 bash start-operators.sh [--fresh] up -d
 ```
+
+`start-operators.sh` defaults to `docker-anvil.env`. Once the stack is up, run the happy-path against it **from the
+repo root** in docker-anvil mode: `bash scripts/test-flows.sh --env docker-anvil` (see [Automated Happy-Path](#automated-happy-path)).
 
 Use the [Operator Docker Runtime Guide](../docker/operator/README.md) for runtime flags and troubleshooting.
 

@@ -820,7 +820,7 @@ fn contract_address_for_env(env: &Environment, contract_name: &str) -> Result<St
 }
 
 /// Tiny inline parser for `[[contracts]]` blocks in a config profile TOML.
-/// Mirrors the awk parser in `tests/run-flows.sh`. Returns `Ok(None)` when
+/// Mirrors the awk parser in `scripts/test-flows.sh`. Returns `Ok(None)` when
 /// the contract isn't listed in the profile (so the caller can fall through
 /// to a base.toml lookup).
 fn contract_address_from_toml(profile: &str, contract_name: &str) -> Result<Option<String>> {
