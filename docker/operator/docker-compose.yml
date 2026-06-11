@@ -8,7 +8,7 @@ services:
   # ================================
   bitvmx-client:
     environment:
-      RUST_LOG: info,bitvmx_client=debug,bitcoin_coordinator=info,bitcoin_indexer=warn,bitcoincore_rpc=warn,hyper=warn,hyper_util=warn,tarpc=warn,bitvmx_bitcoin_rpc=info,bitvmx_transaction_monitor=info
+      RUST_LOG: info,bitvmx_client=debug,bitcoin_coordinator=info,bitcoin_indexer=error,bitcoincore_rpc=warn,hyper=warn,hyper_util=warn,tarpc=warn,bitvmx_bitcoin_rpc=info,bitvmx_transaction_monitor=info
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
