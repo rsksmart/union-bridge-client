@@ -82,7 +82,7 @@ fn fails_with_two_blocks_because_a2_requires_a_checked_continuation_event() {
 
     assert_eq!(
         result,
-        Err("Check-fork A2 requires at least one continuation block with the PegOutID base event"),
+        Err("Check-fork requires at least one continuation block with the PegOutID base event"),
         "Expected to fail because A2 needs a checked continuation event"
     );
 }
@@ -109,7 +109,7 @@ fn fails_with_two_blocks_and_one_uncle_because_a2_requires_a_checked_continuatio
 
     assert_eq!(
         result,
-        Err("Check-fork A2 requires at least one continuation block with the PegOutID base event"),
+        Err("Check-fork requires at least one continuation block with the PegOutID base event"),
         "Expected to fail because A2 needs a checked continuation event"
     );
 }
@@ -205,6 +205,20 @@ fn journal_layout_is_exactly_76_bytes() {
 }
 
 #[test]
+fn fails_when_pegout_id_version_does_not_match_contract_abi() {
+    let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
+    let second_block = create_child_block(&first_block);
+    let third_block = create_child_block(&second_block);
+    let block_list = vec![first_block, second_block, third_block];
+
+    let mut args = CheckForkArgsBuilder::new(block_list).build();
+    args.pegout_id_version = DEFAULT_PEGOUT_ID_VERSION + 1;
+
+    let result = run_check_fork(&args);
+    assert_eq!(result, Err("PegOutID version does not match contract ABI"));
+}
+
+#[test]
 fn fails_when_required_block_number_is_invalid() {
     let first_block = create_first_block(DEFAULT_INIT_BLOCK_NUMBER);
     let second_block = create_child_block(&first_block);
@@ -230,7 +244,7 @@ fn fails_when_block_list_has_less_than_three_blocks() {
     let result = run_check_fork(&args);
     assert_eq!(
         result,
-        Err("Check-fork A2 requires at least one continuation block with the PegOutID base event"),
+        Err("Check-fork requires at least one continuation block with the PegOutID base event"),
         "Expected to fail if block_list has less than three blocks"
     );
 }

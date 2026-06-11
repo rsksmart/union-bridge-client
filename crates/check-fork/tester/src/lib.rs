@@ -197,7 +197,7 @@ pub fn apply_base_event_fixture(
 ) -> Result<(), Box<dyn Error>> {
     if blocks.len() < 3 {
         return Err(
-            "Check-fork A2 requires at least one continuation block with the PegOutID base event"
+            "Check-fork requires at least one continuation block with the PegOutID base event"
                 .into(),
         );
     }

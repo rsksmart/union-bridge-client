@@ -14,6 +14,7 @@ pub const CHECK_FORK_JOURNAL_LEN: usize = 76;
 pub const PEGOUT_BASE_EVENT_LEN: usize = 32;
 
 const CHECK_FORK_JOURNAL_VERSION: u16 = 1;
+const PEGOUT_ID_VERSION: u8 = 1;
 const PEGOUT_ID_LEN: usize = 32;
 const BEST_BLOCK_HASH_LEN: usize = 32;
 const OPERATOR_TAKE_PUBKEY_LEN: usize = 33;
@@ -79,6 +80,11 @@ pub fn check_fork(args: &CheckForkArgs, pegout_id: H256) -> Result<U256, &'stati
     let required_effort = *required_effort;
     let required_num_blocks = *required_num_blocks;
 
+    // 0. validate pegout id version
+    if args.pegout_id_version != PEGOUT_ID_VERSION {
+        return Err("PegOutID version does not match contract ABI");
+    }
+
     //
     // 1. validate block list shape
     //
@@ -140,7 +146,7 @@ fn validate_block_list(
 
     if block_list.len() < 3 {
         return Err(
-            "Check-fork A2 requires at least one continuation block with the PegOutID base event",
+            "Check-fork requires at least one continuation block with the PegOutID base event",
         );
     }
 
