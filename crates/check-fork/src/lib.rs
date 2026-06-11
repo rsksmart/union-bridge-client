@@ -14,13 +14,21 @@ pub const CHECK_FORK_JOURNAL_LEN: usize = 76;
 pub const PEGOUT_BASE_EVENT_LEN: usize = 32;
 
 const PEGOUT_ID_LEN: usize = 32;
+const BEST_BLOCK_HASH_LEN: usize = 32;
 const OPERATOR_TAKE_PUBKEY_LEN: usize = 33;
 const OPERATOR_TAKE_PUBKEY_XONLY_LEN: usize = 32;
 const SEQUENCE_NUMBER_LEN: usize = 32;
 const STREAM_ID_LEN: usize = 8;
 const PACKET_NUMBER_LEN: usize = 8;
 const SLOT_ID_LEN: usize = 8;
-const PEGOUT_ID_PREIMAGE_LEN: usize = 122;
+const PEGOUT_ID_PREIMAGE_LEN: usize = 1 // version
+    + SEQUENCE_NUMBER_LEN
+    + STREAM_ID_LEN
+    + PACKET_NUMBER_LEN
+    + SLOT_ID_LEN
+    + 1 // operator_take_pubkey_parity
+    + OPERATOR_TAKE_PUBKEY_XONLY_LEN
+    + BEST_BLOCK_HASH_LEN;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RskBlock {
@@ -353,7 +361,7 @@ fn build_pegout_id_preimage(args: &CheckForkArgs) -> [u8; PEGOUT_ID_PREIMAGE_LEN
         .copy_from_slice(&args.operator_take_pubkey_xonly);
     offset += OPERATOR_TAKE_PUBKEY_XONLY_LEN;
 
-    out[offset..offset + PEGOUT_ID_LEN].copy_from_slice(args.best_block_hash.as_bytes());
+    out[offset..offset + BEST_BLOCK_HASH_LEN].copy_from_slice(args.best_block_hash.as_bytes());
 
     out
 }
