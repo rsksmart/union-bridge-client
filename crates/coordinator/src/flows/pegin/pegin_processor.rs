@@ -263,7 +263,6 @@ where
             self.store.load_flow::<PeginProcessorState>(&StoreKey::PeginProcessorState)?
         {
             self.apply_processor_state(state)?;
-            return Ok(());
         }
 
         self.reconstruct_runtime_state_from_flows();
@@ -300,15 +299,30 @@ where
         for (flow_id, flow) in &self.pegin_flows {
             match flow.current_step() {
                 Steps::RequestPeginSpvProof => {
-                    self.pegin_request_tracker.insert(flow.request_pegin_btc_tx_id());
+                    let request_txid = flow.request_pegin_btc_tx_id();
+                    self.pegin_request_tracker.insert(request_txid);
+                    if let Some(spv_proof) = flow.get_state().ctx.request_pegin_spv_proof.clone() {
+                        let block_hash = spv_proof.block_hash.clone();
+                        self.unconfirmed_pegin_requests
+                            .entry(block_hash.clone())
+                            .or_insert((spv_proof, 0));
+                        if !self.pegin_retry_scheduler.is_scheduled(&block_hash) {
+                            self.pegin_retry_scheduler
+                                .schedule(block_hash, self.btc_status_retry_blocks);
+                        }
+                    }
                 }
-                Steps::ConfirmAcceptPeginTransaction => {
+                Steps::ConfirmAcceptPeginTransaction
+                    if !self.tx_status_scheduler.is_scheduled(flow_id) =>
+                {
                     self.tx_status_scheduler.schedule(*flow_id, self.btc_status_retry_blocks);
                 }
                 Steps::AcceptPegin => {
-                    self.unconfirmed_accept_pegin.insert(*flow_id, 0);
-                    self.accept_pegin_retry_scheduler
-                        .schedule(*flow_id, self.btc_status_retry_blocks);
+                    self.unconfirmed_accept_pegin.entry(*flow_id).or_insert(0);
+                    if !self.accept_pegin_retry_scheduler.is_scheduled(flow_id) {
+                        self.accept_pegin_retry_scheduler
+                            .schedule(*flow_id, self.btc_status_retry_blocks);
+                    }
                 }
                 _ => {}
             }
@@ -2004,6 +2018,57 @@ mod tests {
         assert_eq!(restored.unconfirmed_accept_pegin.get(&flow_id), Some(&4));
         assert!(restored.accept_pegin_retry_scheduler.is_scheduled(&flow_id));
         assert!(restored.signature_flows.get(&protocol_id).unwrap().is_done());
+    }
+
+    #[test]
+    fn restore_processor_state_reconciles_stale_snapshot_with_request_pegin_retry() {
+        let store_path = TestStorePath::new();
+        let store = Rc::new(store_path.open());
+        let spv_proof = test_spv_proof();
+        let request_txid = spv_proof.tx.compute_txid();
+        let flow_id = flow_id_from_request_pegin_txid(request_txid);
+        let state = State {
+            flow_id,
+            log_id: String::new(),
+            ctx: FlowContext {
+                flow_id,
+                request_pegin_btc_tx_id: request_txid,
+                step: Steps::RequestPeginSpvProof,
+                bitvmx_protocol_id: None,
+                request_pegin_btc_tx_status: None,
+                request_pegin_spv_proof: Some(spv_proof.clone()),
+                pegin_requested: None,
+                my_p2p_address: None,
+                committee_output: None,
+                bitvmx_pegin_accepted: None,
+                operator_take_txid: None,
+                operator_won_txid: None,
+                accept_pegin_spv_proof: None,
+                accept_pegin_tx_status: None,
+                pegin_accepted: None,
+                op_role: None,
+            },
+            created_at: None,
+        };
+        store
+            .save_flow(&StoreKey::PeginFlow(flow_id.value()), state)
+            .expect("flow state should persist");
+        let stale_snapshot = TestHarness::new().processor.snapshot_processor_state();
+        store
+            .save_flow(&StoreKey::PeginProcessorState, stale_snapshot)
+            .expect("processor snapshot should persist");
+
+        let restored = store_backed_processor(Rc::new(MockRskContractsGatewayApi::new()), &store);
+
+        assert!(restored.pegin_request_tracker.contains(&request_txid));
+        assert_eq!(
+            restored
+                .unconfirmed_pegin_requests
+                .get(&spv_proof.block_hash)
+                .map(|(_, attempt)| *attempt),
+            Some(0)
+        );
+        assert!(restored.pegin_retry_scheduler.is_scheduled(&spv_proof.block_hash));
     }
 
     #[test]
