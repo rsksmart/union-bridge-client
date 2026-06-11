@@ -9,34 +9,39 @@ use sha3::{Digest, Keccak256};
 use crate::rlp::{encode_coin_value, encode_signed_coin_value_as_byte};
 
 const RSK_HEADER_EXTENSION_TYPE_V1: u8 = 1_u8;
+pub(crate) const RSK_HEADER_EXTENSION_TYPE_V2: u8 = 2_u8;
+const BASE_EVENT_MAX_SIZE: usize = 128;
 const MAX_RSK_PTE_EDGES: usize = 0; // for the moment is better to keep zero because parallel tx is not fully activated
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct RskBlockHeader {
-    pub number: u64,                           // Block height (genesis = 0)
-    pub hash: H256,                            // Keccak-256 of the encoded header
-    pub parent: H256,                          // Keccak-256 hash of the parent block
-    pub difficulty: U256,                      // Target difficulty for this block
-    pub timestamp: u64,                        // Unix time (seconds) when the block was created
-    pub uncles_hash: H256,                     // SHA3-256 hash of the uncles list
-    pub coinbase: [u8; 20],                    // 160-bit address (RskAddress) - miner's address
-    pub state_root: H256,                      // SHA3-256 hash of the root node of the state trie
-    pub tx_trie_root: H256, // SHA3-256 hash of the root node of the transaction trie
-    pub receipt_trie_root: H256, // SHA3-256 hash of the root node of the receipt trie
-    pub extension_data: Vec<u8>, // RPC logsBloom bytes (expanded format only)
-    pub gas_limit: Vec<u8>, // Current limit of gas expenditure per block
-    pub gas_used: u64,      // Total gas used in transactions in this block
-    pub extra_data: Vec<u8>, // Arbitrary byte array (max 32 bytes, except genesis)
-    pub paid_fees: U256,    // Total paid fees in transactions (Coin, RLP encoded)
+    pub number: u64,                     // Block height (genesis = 0)
+    pub hash: H256,                      // Keccak-256 of the encoded header
+    pub parent: H256,                    // Keccak-256 hash of the parent block
+    pub difficulty: U256,                // Target difficulty for this block
+    pub timestamp: u64,                  // Unix time (seconds) when the block was created
+    pub uncles_hash: H256,               // SHA3-256 hash of the uncles list
+    pub coinbase: [u8; 20],              // 160-bit address (RskAddress) - miner's address
+    pub state_root: H256,                // SHA3-256 hash of the root node of the state trie
+    pub tx_trie_root: H256,              // SHA3-256 hash of the root node of the transaction trie
+    pub receipt_trie_root: H256,         // SHA3-256 hash of the root node of the receipt trie
+    pub extension_data: Vec<u8>,         // RPC logsBloom bytes (expanded format only)
+    pub gas_limit: Vec<u8>,              // Current limit of gas expenditure per block
+    pub gas_used: u64,                   // Total gas used in transactions in this block
+    pub extra_data: Vec<u8>,             // Arbitrary byte array (max 32 bytes, except genesis)
+    pub paid_fees: U256,                 // Total paid fees in transactions (Coin, RLP encoded)
     pub minimum_gas_price: Option<U256>, // Minimum gas price for a tx to be included
-    pub uncles: Vec<H256>,  // Hashes of uncle blocks
+    pub uncles: Vec<H256>,               // Hashes of uncle blocks
     pub rsk_pte_edges: Option<Vec<u16>>, // None: omit field in hash input, Some([]): include empty field
+    pub version: u8,
+    pub base_event: Option<Vec<u8>>,
     pub bitcoin_merged_mining_header: Vec<u8>, // 80-byte Bitcoin block header for merged mining
 }
 
 impl Default for RskBlockHeader {
     fn default() -> Self {
         Self {
+            version: 1,
             number: 0,
             hash: H256::zero(),
             parent: H256::zero(),
@@ -55,6 +60,7 @@ impl Default for RskBlockHeader {
             minimum_gas_price: Some(U256::zero()),
             uncles: Vec::new(),
             rsk_pte_edges: None,
+            base_event: None,
             bitcoin_merged_mining_header: vec![0u8; 80],
         }
     }
@@ -74,10 +80,13 @@ impl RskBlockHeader {
             return Err("minimum_gas_price is None");
         };
 
-        let extension_field = if self.rsk_pte_edges.is_some() {
-            self.compressed_extension_data_v1()?
-        } else {
-            self.logs_bloom_v0()?.to_vec()
+        let extension_field = match self.version {
+            RSK_HEADER_EXTENSION_TYPE_V2 => self.compressed_extension_data_v2()?,
+            RSK_HEADER_EXTENSION_TYPE_V1 if self.rsk_pte_edges.is_some() => {
+                self.compressed_extension_data_v1()?
+            }
+            RSK_HEADER_EXTENSION_TYPE_V1 => self.logs_bloom_v0()?.to_vec(),
+            _ => return Err("unsupported RSK block header version"),
         };
 
         let encoded_fields: Vec<Vec<u8>> = vec![
@@ -112,33 +121,63 @@ impl RskBlockHeader {
     }
 
     fn compressed_extension_data_v1(&self) -> Result<Vec<u8>, &'static str> {
-        let logs_bloom = self.logs_bloom_v0()?;
+        self.compressed_extension_data(RSK_HEADER_EXTENSION_TYPE_V1, Vec::new())
+    }
 
+    fn compressed_extension_data_v2(&self) -> Result<Vec<u8>, &'static str> {
+        let base_event = self.base_event.as_deref().unwrap_or_default();
+        if base_event.len() > BASE_EVENT_MAX_SIZE {
+            return Err("base_event exceeds maximum allowed length");
+        }
+
+        self.compressed_extension_data(
+            RSK_HEADER_EXTENSION_TYPE_V2,
+            vec![alloy_rlp::encode(base_event)],
+        )
+    }
+
+    fn compressed_extension_data(
+        &self,
+        extension_type: u8,
+        mut extra_fields: Vec<Vec<u8>>,
+    ) -> Result<Vec<u8>, &'static str> {
+        let logs_bloom = self.logs_bloom_v0()?;
         let logs_bloom_hash = Keccak256::digest(logs_bloom);
         let mut extension_for_hash_fields = vec![alloy_rlp::encode(logs_bloom_hash.as_slice())];
+        extension_for_hash_fields.append(&mut extra_fields);
 
-        if let Some(edges) = &self.rsk_pte_edges {
-            let edge_bytes_len = edges
-                .len()
-                .checked_mul(std::mem::size_of::<u16>())
-                .ok_or("rsk_pte_edges byte length overflow")?;
-            if edge_bytes_len > MAX_RSK_PTE_EDGES {
-                return Err("rsk_pte_edges exceeds maximum allowed length");
-            }
-            let mut edges_little_endian = Vec::with_capacity(edge_bytes_len);
-            for edge in edges {
-                edges_little_endian.extend_from_slice(&edge.to_le_bytes());
-            }
-            extension_for_hash_fields.push(alloy_rlp::encode(edges_little_endian.as_slice()));
+        if let Some(edges_field) = self.encoded_rsk_pte_edges()? {
+            extension_for_hash_fields.push(edges_field);
         }
 
         let extension_for_hash = encode_list(extension_for_hash_fields);
         let extension_hash = Keccak256::digest(&extension_for_hash);
 
         Ok(encode_list(vec![
-            alloy_rlp::encode(RSK_HEADER_EXTENSION_TYPE_V1),
+            alloy_rlp::encode(extension_type),
             alloy_rlp::encode(extension_hash.as_slice()),
         ]))
+    }
+
+    fn encoded_rsk_pte_edges(&self) -> Result<Option<Vec<u8>>, &'static str> {
+        let Some(edges) = &self.rsk_pte_edges else {
+            return Ok(None);
+        };
+
+        let edge_bytes_len = edges
+            .len()
+            .checked_mul(std::mem::size_of::<u16>())
+            .ok_or("rsk_pte_edges byte length overflow")?;
+        if edge_bytes_len > MAX_RSK_PTE_EDGES {
+            return Err("rsk_pte_edges exceeds maximum allowed length");
+        }
+
+        let mut edges_little_endian = Vec::with_capacity(edge_bytes_len);
+        for edge in edges {
+            edges_little_endian.extend_from_slice(&edge.to_le_bytes());
+        }
+
+        Ok(Some(alloy_rlp::encode(edges_little_endian.as_slice())))
     }
 
     #[must_use]
@@ -167,7 +206,7 @@ where
     D: Deserializer<'de>,
 {
     let s: String = Deserialize::deserialize(deserializer)?;
-    let s = s.strip_prefix("0x").unwrap_or(&s);
+    let s = strip_hex_prefix(&s);
     u64::from_str_radix(s, 16).map_err(serde::de::Error::custom)
 }
 
@@ -176,7 +215,7 @@ where
     D: Deserializer<'de>,
 {
     let s: String = Deserialize::deserialize(deserializer)?;
-    let s = s.strip_prefix("0x").unwrap_or(&s);
+    let s = strip_hex_prefix(&s);
     let bytes = hex::decode(s).map_err(serde::de::Error::custom)?;
     from_bytes_vec_to_h256(&bytes)
 }
@@ -186,7 +225,7 @@ where
     D: Deserializer<'de>,
 {
     let s: String = Deserialize::deserialize(deserializer)?;
-    let s = s.strip_prefix("0x").unwrap_or(&s);
+    let s = strip_hex_prefix(&s);
     hex::decode(s).map_err(serde::de::Error::custom)
 }
 
@@ -195,7 +234,7 @@ where
     D: Deserializer<'de>,
 {
     let s: String = Deserialize::deserialize(deserializer)?;
-    let s = s.strip_prefix("0x").unwrap_or(&s);
+    let s = strip_hex_prefix(&s);
     U256::from_str_radix(s, 16).map_err(serde::de::Error::custom)
 }
 
@@ -204,7 +243,7 @@ where
     D: Deserializer<'de>,
 {
     let s: String = Deserialize::deserialize(deserializer)?;
-    let s = s.strip_prefix("0x").unwrap_or(&s);
+    let s = strip_hex_prefix(&s);
     u32::from_str_radix(s, 16).map_err(serde::de::Error::custom)
 }
 
@@ -216,11 +255,15 @@ where
     strings
         .iter()
         .map(|s| {
-            let s = s.strip_prefix("0x").unwrap_or(s);
+            let s = strip_hex_prefix(s);
             let bytes = hex::decode(s).map_err(serde::de::Error::custom)?;
             from_bytes_vec_to_h256(&bytes)
         })
         .collect()
+}
+
+fn strip_hex_prefix(s: &str) -> &str {
+    s.strip_prefix("0x").unwrap_or(s)
 }
 
 fn from_bytes_vec_to_h256<E>(bytes: &[u8]) -> Result<H256, E>
@@ -239,7 +282,7 @@ where
     D: Deserializer<'de>,
 {
     let s: String = Deserialize::deserialize(deserializer)?;
-    let s = s.strip_prefix("0x").unwrap_or(&s);
+    let s = strip_hex_prefix(&s);
     let bytes = hex::decode(s).map_err(serde::de::Error::custom)?;
     if bytes.len() != 20 {
         return Err(serde::de::Error::custom(format!("expected 20 bytes, got {}", bytes.len())));
@@ -256,7 +299,7 @@ where
     let s: Option<String> = Option::deserialize(deserializer)?;
     match s {
         Some(s) => {
-            let s = s.strip_prefix("0x").unwrap_or(&s);
+            let s = strip_hex_prefix(&s);
             U256::from_str_radix(s, 16).map(Some).map_err(serde::de::Error::custom)
         }
         None => Ok(None),
@@ -272,7 +315,8 @@ impl fmt::Debug for RskBlockHeader {
 
         write!(
             f,
-            "RskBlockHeader {{ number: {}, hash: {}, parent: {}, diff: {}, ts: {}, uncles_hash: {}, coinbase: 0x{}, state_root: {}, tx_root: {}, receipt_root: {}, extension_data: {} bytes, rsk_pte_edges: {:?}, gas_limit: 0x{}, gas_used: {}, extra_data: {} bytes, paid_fees: {}, min_gas_price: {:?}, uncle_count: {}, umm_root: {:?}, mm_header: {} bytes }}",
+            "RskBlockHeader {{ version: {}, number: {}, hash: {}, parent: {}, diff: {}, ts: {}, uncles_hash: {}, coinbase: 0x{}, state_root: {}, tx_root: {}, receipt_root: {}, extension_data: {} bytes, rsk_pte_edges: {:?}, gas_limit: 0x{}, gas_used: {}, extra_data: {} bytes, paid_fees: {}, min_gas_price: {:?}, uncle_count: {}, base_event: {:?}, umm_root: {:?}, mm_header: {} bytes }}",
+            self.version,
             self.number,
             short(&self.hash),
             short(&self.parent),
@@ -291,6 +335,7 @@ impl fmt::Debug for RskBlockHeader {
             self.paid_fees,
             self.minimum_gas_price,
             self.uncles.len(),
+            self.base_event.as_ref().map(hex::encode),
             self.umm_root(),
             self.bitcoin_merged_mining_header.len(),
         )

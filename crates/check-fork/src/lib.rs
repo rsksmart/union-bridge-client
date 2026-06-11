@@ -5,24 +5,50 @@ pub mod rlp;
 
 use primitive_types::{H256, U256};
 use serde::{Deserialize, Serialize};
+use sha3::{Digest, Keccak256};
 
-use crate::block_header::RskBlockHeader;
+use crate::block_header::{RSK_HEADER_EXTENSION_TYPE_V2, RskBlockHeader};
 
 pub const SUPERBLOCK_TIMES_DIFFICULTY: u8 = 20;
+pub const CHECK_FORK_JOURNAL_LEN: usize = 76;
+pub const PEGOUT_BASE_EVENT_LEN: usize = 32;
+
+const CHECK_FORK_JOURNAL_VERSION: u16 = 1;
+const PEGOUT_ID_VERSION: u8 = 1;
+const PEGOUT_ID_LEN: usize = 32;
+const BEST_BLOCK_HASH_LEN: usize = 32;
+const OPERATOR_TAKE_PUBKEY_LEN: usize = 33;
+const OPERATOR_TAKE_PUBKEY_XONLY_LEN: usize = 32;
+const SEQUENCE_NUMBER_LEN: usize = 32;
+const STREAM_ID_LEN: usize = 8;
+const PACKET_NUMBER_LEN: usize = 8;
+const SLOT_ID_LEN: usize = 8;
+const PEGOUT_ID_PREIMAGE_LEN: usize = 1 // version
+    + SEQUENCE_NUMBER_LEN
+    + STREAM_ID_LEN
+    + PACKET_NUMBER_LEN
+    + SLOT_ID_LEN
+    + 1 // operator_take_pubkey_parity
+    + OPERATOR_TAKE_PUBKEY_XONLY_LEN
+    + BEST_BLOCK_HASH_LEN;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RskBlock {
-    pub bridge_event: Option<BridgeEvent>,
     pub uncles: Vec<RskBlock>,
-    pub pow: H256, // used to accumulate effort (from check_fork_accumulator)
+    pub pow: H256,
     pub header: RskBlockHeader,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckForkArgs {
-    pub utxo_id: String,
-    pub pegout_id: String,
-    pub operator_id: String,
+    pub pegout_id_version: u8,
+    pub sequence_number: U256,
+    pub stream_id: u64,
+    pub packet_number: u64,
+    pub slot_id: u64,
+    pub operator_take_pubkey_parity: u8,
+    pub operator_take_pubkey_xonly: [u8; OPERATOR_TAKE_PUBKEY_XONLY_LEN],
+    pub best_block_hash: H256,
     pub init_block_time: u64,
     pub init_block_number: u64,
     pub required_effort: U256,
@@ -30,56 +56,45 @@ pub struct CheckForkArgs {
     pub block_list: Vec<RskBlock>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct BridgeEvent {
-    pub utxo_id: String,
-    pub pegout_id: String,
-    pub operator_id: String,
-}
-
 /// Check fork validity and return cumulative `PoW`
 ///
 /// # Errors
 ///
 /// Returns an error string if the fork validation fails (e.g., insufficient blocks,
-/// invalid block sequence, cumulative `PoW` below threshold, or bridge event mismatch)
+/// invalid block sequence, cumulative `PoW` below threshold, or base event mismatch)
 #[allow(dead_code)]
-pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
+pub fn check_fork(args: &CheckForkArgs, pegout_id: H256) -> Result<U256, &'static str> {
     let CheckForkArgs {
-        utxo_id,
-        pegout_id,
-        operator_id,
         init_block_time,
         init_block_number,
         required_effort,
         required_num_blocks,
         block_list,
+        ..
     } = args;
 
     // extract values directly to avoid dereferencing later
+    let expected_base_event = build_pegout_base_event_from_id(pegout_id);
     let init_block_time = *init_block_time;
     let init_block_number = *init_block_number;
     let required_effort = *required_effort;
     let required_num_blocks = *required_num_blocks;
 
+    // 0. validate pegout id version
+    if args.pegout_id_version != PEGOUT_ID_VERSION {
+        return Err("PegOutID version does not match contract ABI");
+    }
+
     //
-    // 1. basic validations: validate list size
+    // 1. validate block list shape
     //
     validate_block_list(required_num_blocks, block_list)?;
 
     //
     // 2. validate first block
     //
-
     let first_block = &block_list[0];
-    validate_first_block(
-        first_block,
-        init_block_time,
-        init_block_number,
-        utxo_id,
-        pegout_id,
-        operator_id,
-    )?;
+    validate_first_block(first_block, init_block_time, init_block_number, &expected_base_event)?;
     validate_block_hash(&first_block.header)?;
 
     let mut cumulative_effort = accumulate_effort(U256::zero(), first_block)?;
@@ -99,13 +114,15 @@ pub fn check_fork(args: &CheckForkArgs) -> Result<U256, &'static str> {
             validate_uncle(prev_block, uncle)?;
             cumulative_effort = accumulate_effort(cumulative_effort, uncle)?;
         }
+
+        if i >= 2 {
+            validate_required_pegout_event(block, &expected_base_event)?;
+        }
     }
 
     //
     // 4. validate enough cumulative PoW
     //
-    dbg!((block_list.len(), cumulative_effort, required_effort));
-
     if cumulative_effort < required_effort {
         return Err("Cumulative PoW does not meet the required threshold");
     }
@@ -127,6 +144,12 @@ fn validate_block_list(
         return Err("Invalid number of required blocks");
     }
 
+    if block_list.len() < 3 {
+        return Err(
+            "Check-fork requires at least one continuation block with the PegOutID base event",
+        );
+    }
+
     if block_list.len() < required_num_blocks as usize {
         return Err("Insufficient number of blocks");
     }
@@ -138,9 +161,7 @@ fn validate_first_block(
     block: &RskBlock,
     init_block_time: u64,
     init_block_number: u64,
-    utxo_id: &str,
-    pegout_id: &str,
-    operator_id: &str,
+    expected_base_event: &[u8; PEGOUT_BASE_EVENT_LEN],
 ) -> Result<(), &'static str> {
     if block.header.timestamp < init_block_time {
         return Err("First block timestamp lower than expected");
@@ -152,57 +173,53 @@ fn validate_first_block(
 
     validate_enough_effort_superblock(block, "first")?;
 
-    validate_bridge_event(block.bridge_event.as_ref(), utxo_id, pegout_id, operator_id)?;
+    if contains_matching_pegout_event(block, expected_base_event) {
+        return Err("First block must not contain the PegOutID base event");
+    }
 
     Ok(())
 }
 
-fn validate_bridge_event(
-    bridge_event: Option<&BridgeEvent>,
-    utxo_id: &str,
-    pegout_id: &str,
-    operator_id: &str,
+fn validate_required_pegout_event(
+    block: &RskBlock,
+    expected_base_event: &[u8; PEGOUT_BASE_EVENT_LEN],
 ) -> Result<(), &'static str> {
-    let bridge_event = bridge_event.ok_or("First block is missing BridgeEvent")?;
-
-    if bridge_event.pegout_id != pegout_id {
-        return Err("BridgeEvent does not match pegoutID");
+    if contains_matching_pegout_event(block, expected_base_event) {
+        return Ok(());
     }
 
-    if bridge_event.operator_id != operator_id {
-        return Err("BridgeEvent does not match operatorID");
-    }
+    Err("Continuation block is missing the expected PegOutID base event")
+}
 
-    if bridge_event.utxo_id != utxo_id {
-        return Err("BridgeEvent does not match utxoID");
-    }
-
-    Ok(())
+fn contains_matching_pegout_event(
+    block: &RskBlock,
+    expected_base_event: &[u8; PEGOUT_BASE_EVENT_LEN],
+) -> bool {
+    block.header.base_event.as_deref().is_some_and(|event| event == expected_base_event)
 }
 
 fn validate_consecutive_block(block: &RskBlock, prev_block: &RskBlock) -> Result<(), &'static str> {
-    if block.bridge_event.is_some() {
-        return Err("Only the first block should contain a BridgeEvent");
-    }
     // block timestamp should be greater than previous one
     if block.header.timestamp <= prev_block.header.timestamp {
         return Err("Block Timestamp is not increasing");
     }
 
-    // blocks should be consecutive
     let expected_next_number = prev_block
         .header
         .number
         .checked_add(1)
         .ok_or("Overflow incrementing previous block number")?;
 
+    // blocks should be consecutive
     if block.header.number != expected_next_number {
         return Err("Block numbers are not consecutive");
     }
+
     // previous should be the parent of current one
     if block.header.parent != prev_block.header.hash {
         return Err("Invalid parent linkage between blocks");
     }
+
     validate_enough_effort_superblock(block, "consecutive")?;
     validate_difficulty_in_bounds(block, prev_block)?;
 
@@ -270,12 +287,119 @@ fn calculate_block_effort(block: &RskBlock) -> Result<U256, &'static str> {
 }
 
 fn validate_block_hash(header: &RskBlockHeader) -> Result<(), &'static str> {
+    if header.base_event.is_some() && header.version != RSK_HEADER_EXTENSION_TYPE_V2 {
+        return Err("Block with base event must use header version 2");
+    }
+
     let actual_hash = header.calculate_block_hash()?;
     if header.hash != actual_hash {
         println!("Block number: {}", header.number);
         return Err("Block header hash is not matching");
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CheckForkJournal {
+    pub operator_take_pubkey: [u8; OPERATOR_TAKE_PUBKEY_LEN],
+    pub pegout_id: [u8; PEGOUT_ID_LEN],
+    pub slot_id: [u8; SLOT_ID_LEN],
+    pub accepted: u8,
+    pub version: [u8; 2],
+}
+
+impl CheckForkJournal {
+    #[must_use]
+    pub fn to_bytes(self) -> [u8; CHECK_FORK_JOURNAL_LEN] {
+        let mut out = [0u8; CHECK_FORK_JOURNAL_LEN];
+        let mut rest = out.as_mut_slice();
+
+        let (operator_dst, next) = rest.split_at_mut(self.operator_take_pubkey.len());
+        operator_dst.copy_from_slice(&self.operator_take_pubkey);
+        rest = next;
+
+        let (pegout_dst, next) = rest.split_at_mut(self.pegout_id.len());
+        pegout_dst.copy_from_slice(&self.pegout_id);
+        rest = next;
+
+        let (slot_dst, next) = rest.split_at_mut(self.slot_id.len());
+        slot_dst.copy_from_slice(&self.slot_id);
+        rest = next;
+
+        let (accepted_dst, rest) = rest.split_at_mut(1);
+        accepted_dst[0] = self.accepted;
+        let (version_dst, _rest) = rest.split_at_mut(self.version.len());
+        version_dst.copy_from_slice(&self.version);
+        out
+    }
+}
+
+#[must_use]
+pub fn compute_pegout_id(args: &CheckForkArgs) -> H256 {
+    let mut hasher = Keccak256::new();
+    hasher.update(build_pegout_id_preimage(args));
+    H256::from_slice(&hasher.finalize())
+}
+
+fn build_pegout_id_preimage(args: &CheckForkArgs) -> [u8; PEGOUT_ID_PREIMAGE_LEN] {
+    let mut out = [0u8; PEGOUT_ID_PREIMAGE_LEN];
+    let mut offset = 0;
+
+    out[offset] = args.pegout_id_version;
+    offset += 1;
+
+    out[offset..offset + SEQUENCE_NUMBER_LEN]
+        .copy_from_slice(&args.sequence_number.to_big_endian());
+    offset += SEQUENCE_NUMBER_LEN;
+
+    out[offset..offset + STREAM_ID_LEN].copy_from_slice(&args.stream_id.to_be_bytes());
+    offset += STREAM_ID_LEN;
+
+    out[offset..offset + PACKET_NUMBER_LEN].copy_from_slice(&args.packet_number.to_be_bytes());
+    offset += PACKET_NUMBER_LEN;
+
+    out[offset..offset + SLOT_ID_LEN].copy_from_slice(&args.slot_id.to_be_bytes());
+    offset += SLOT_ID_LEN;
+
+    out[offset] = args.operator_take_pubkey_parity;
+    offset += 1;
+
+    out[offset..offset + OPERATOR_TAKE_PUBKEY_XONLY_LEN]
+        .copy_from_slice(&args.operator_take_pubkey_xonly);
+    offset += OPERATOR_TAKE_PUBKEY_XONLY_LEN;
+
+    out[offset..offset + BEST_BLOCK_HASH_LEN].copy_from_slice(args.best_block_hash.as_bytes());
+
+    out
+}
+
+#[must_use]
+pub fn build_check_fork_journal(
+    args: &CheckForkArgs,
+    pegout_id: H256,
+    accepted: bool,
+) -> CheckForkJournal {
+    let mut operator_take_pubkey = [0u8; OPERATOR_TAKE_PUBKEY_LEN];
+    operator_take_pubkey[0] = args.operator_take_pubkey_parity;
+    operator_take_pubkey[1..].copy_from_slice(&args.operator_take_pubkey_xonly);
+
+    let mut pegout_id_bytes = [0u8; PEGOUT_ID_LEN];
+    pegout_id_bytes.copy_from_slice(pegout_id.as_bytes());
+
+    CheckForkJournal {
+        operator_take_pubkey,
+        pegout_id: pegout_id_bytes,
+        slot_id: args.slot_id.to_be_bytes(),
+        accepted: u8::from(accepted),
+        version: CHECK_FORK_JOURNAL_VERSION.to_be_bytes(),
+    }
+}
+
+#[must_use]
+pub fn build_pegout_base_event_from_id(pegout_id: H256) -> [u8; PEGOUT_BASE_EVENT_LEN] {
+    let mut out = [0u8; PEGOUT_BASE_EVENT_LEN];
+    out.copy_from_slice(pegout_id.as_bytes());
+    out
 }
 
 #[cfg(test)]
