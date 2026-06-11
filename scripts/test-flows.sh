@@ -527,8 +527,11 @@ check_bitcoin_connectivity() {
     bitcoin-cli -regtest -rpcuser="$BITCOIND_USER" -rpcpassword="$BITCOIND_PASSWORD" getblockcount &> /dev/null
 }
 
+# Probe bitcoind's default RPC wallet endpoint (no wallet name) — the same one the wallet CLI's
+# mine_utxo uses, which Bitcoin Core resolves only with exactly one wallet loaded — so a missing or
+# ambiguous wallet fails here rather than mid-flow during funding.
 check_bitcoin_wallet() {
-    bitcoin-cli -regtest -rpcuser="$BITCOIND_USER" -rpcpassword="$BITCOIND_PASSWORD" -rpcwallet="$BITCOIN_WALLET" getwalletinfo &> /dev/null
+    bitcoin-cli -regtest -rpcuser="$BITCOIND_USER" -rpcpassword="$BITCOIND_PASSWORD" getwalletinfo &> /dev/null
 }
 
 wait_for_condition() {
@@ -622,8 +625,8 @@ wait_for_test_prereqs() {
         return 1
     fi
 
-    if ! wait_for_condition "Bitcoin wallet '${BITCOIN_WALLET}'" 30 check_bitcoin_wallet; then
-        echo "Error: Bitcoin wallet '${BITCOIN_WALLET}' is not loaded" >&2
+    if ! wait_for_condition "Bitcoin wallet on default RPC endpoint" 30 check_bitcoin_wallet; then
+        echo "Error: bitcoind's default RPC wallet endpoint is unusable; load exactly one wallet (e.g. '${BITCOIN_WALLET}')" >&2
         return 1
     fi
 

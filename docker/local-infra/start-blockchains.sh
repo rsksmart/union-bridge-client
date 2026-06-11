@@ -53,8 +53,9 @@ done
 # When BYO_BLOCKCHAINS_COMPOSE names a compose reference (an OCI artifact such as
 # oci://ghcr.io/org/stack:tag, or a local compose path), bring that up instead of the
 # bundled bitcoind + anvil/rskj stack and exit. The external stack owns its own chains,
-# wallet, and mining; union only talks to it over BITCOIND_URL. The bundled-only flags
-# (--env, --contracts-tag, --pull-contracts, --rskj-tag, --powpeg-tag) don't apply here.
+# wallet, and mining; union only talks to it over BITCOIND_URL. The bundled-only contract/chain
+# flags (--contracts-tag, --pull-contracts, --rskj-tag, --powpeg-tag) don't apply here and are
+# rejected so a stale tag can't look like it took effect; --env is parsed earlier but unused here.
 # Note: an oci:// ref needs Docker Compose v2.32+; on versions where the OCI-remote loader is
 # still experimental, also `export COMPOSE_EXPERIMENTAL_OCI_REMOTE=1` (or update Docker). A local
 # compose-file path needs neither.
@@ -62,16 +63,13 @@ if [[ -n "${BYO_BLOCKCHAINS_COMPOSE:-}" ]]; then
   byo_project="byo-blockchains"
   byo_args=()
   byo_fresh=false
-  skip_value=false
   for arg in "${REMAINING_ARGS[@]}"; do
-    if [[ "$skip_value" == true ]]; then
-      skip_value=false
-      continue
-    fi
     case "$arg" in
       --fresh) byo_fresh=true ;;
-      --contracts-tag|--rskj-tag|--powpeg-tag) skip_value=true ;;
-      --pull-contracts) ;;
+      --contracts-tag|--contracts-tag=*|--rskj-tag|--rskj-tag=*|--powpeg-tag|--powpeg-tag=*|--pull-contracts)
+        echo "Error: ${arg%%=*} does not apply to bring-your-own blockchains (BYO_BLOCKCHAINS_COMPOSE is set); the external stack owns its contracts and chain images. Remove it and rerun." >&2
+        exit 1
+        ;;
       *) byo_args+=("$arg") ;;
     esac
   done
