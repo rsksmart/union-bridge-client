@@ -13,6 +13,7 @@ pub const SUPERBLOCK_TIMES_DIFFICULTY: u8 = 20;
 pub const CHECK_FORK_JOURNAL_LEN: usize = 76;
 pub const PEGOUT_BASE_EVENT_LEN: usize = 32;
 
+const CHECK_FORK_JOURNAL_VERSION: u16 = 1;
 const PEGOUT_ID_LEN: usize = 32;
 const BEST_BLOCK_HASH_LEN: usize = 32;
 const OPERATOR_TAKE_PUBKEY_LEN: usize = 33;
@@ -39,7 +40,7 @@ pub struct RskBlock {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CheckForkArgs {
-    pub version: u8,
+    pub pegout_id_version: u8,
     pub sequence_number: U256,
     pub stream_id: u64,
     pub packet_number: u64,
@@ -338,7 +339,7 @@ fn build_pegout_id_preimage(args: &CheckForkArgs) -> [u8; PEGOUT_ID_PREIMAGE_LEN
     let mut out = [0u8; PEGOUT_ID_PREIMAGE_LEN];
     let mut offset = 0;
 
-    out[offset] = args.version;
+    out[offset] = args.pegout_id_version;
     offset += 1;
 
     out[offset..offset + SEQUENCE_NUMBER_LEN]
@@ -384,7 +385,7 @@ pub fn build_check_fork_journal(
         pegout_id: pegout_id_bytes,
         slot_id: args.slot_id.to_be_bytes(),
         accepted: u8::from(accepted),
-        version: u16::from(args.version).to_be_bytes(),
+        version: CHECK_FORK_JOURNAL_VERSION.to_be_bytes(),
     }
 }
 

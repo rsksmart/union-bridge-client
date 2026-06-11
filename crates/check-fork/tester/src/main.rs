@@ -12,7 +12,7 @@ use methods::{CHECK_FORK_GUEST_ID, CHECK_FORK_GUEST_PATH};
 use primitive_types::U256;
 use zkvm_cli_serde::{serialize_guest_input, serialize_image_id};
 
-const MOCK_CHECK_FORK_VERSION: u8 = 1;
+const MOCK_CHECK_FORK_PEGOUT_ID_VERSION: u8 = 1;
 const MOCK_CHECK_FORK_SEQUENCE_NUMBER: u64 = 1;
 const MOCK_CHECK_FORK_STREAM_ID: u64 = 1;
 const MOCK_CHECK_FORK_PACKET_NUMBER: u64 = 1;
@@ -77,7 +77,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         get_blocks(cli_args.fetch_start_block, cli_args.fetch_block_count, false).await?;
 
     let mut check_fork_args = CheckForkArgs {
-        version: MOCK_CHECK_FORK_VERSION,
+        pegout_id_version: MOCK_CHECK_FORK_PEGOUT_ID_VERSION,
         sequence_number: U256::from(MOCK_CHECK_FORK_SEQUENCE_NUMBER),
         stream_id: MOCK_CHECK_FORK_STREAM_ID,
         packet_number: MOCK_CHECK_FORK_PACKET_NUMBER,

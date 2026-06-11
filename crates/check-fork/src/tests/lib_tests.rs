@@ -7,15 +7,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::block_header::{RskBlockHeader, encode_list};
 use crate::{
-    CheckForkArgs, RskBlock, SUPERBLOCK_TIMES_DIFFICULTY, build_check_fork_journal,
-    build_pegout_base_event_from_id, build_pegout_id_preimage, check_fork, compute_pegout_id,
+    CHECK_FORK_JOURNAL_VERSION, CheckForkArgs, RskBlock, SUPERBLOCK_TIMES_DIFFICULTY,
+    build_check_fork_journal, build_pegout_base_event_from_id, build_pegout_id_preimage,
+    check_fork, compute_pegout_id,
 };
 
 const DEFAULT_DIFFICULTY: u128 = 5_904_436_352_267_687_415_636;
 const DEFAULT_TIMESTAMP: u64 = 1000;
 const DEFAULT_INIT_BLOCK_NUMBER: u64 = 100;
 const DEFAULT_REQ_NUMBER_OF_BLOCKS: u32 = 2;
-const DEFAULT_VERSION: u8 = 1;
+const DEFAULT_PEGOUT_ID_VERSION: u8 = 1;
 const DEFAULT_SEQUENCE_NUMBER: u64 = 1;
 const DEFAULT_STREAM_ID: u64 = 1;
 const DEFAULT_PACKET_NUMBER: u64 = 1;
@@ -148,7 +149,7 @@ fn compute_pegout_id_matches_contract_generate_pegout_id_encoding() {
         "595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778",
     ));
     let args = CheckForkArgs {
-        version: 1,
+        pegout_id_version: 1,
         sequence_number: U256::from_big_endian(&sequence_number_bytes),
         stream_id: 0x2122_2324_2526_2728,
         packet_number: 0x292a_2b2c_2d2e_2f30,
@@ -199,7 +200,7 @@ fn journal_layout_is_exactly_76_bytes() {
         assert_eq!(&journal[33..65], pegout_id.as_bytes());
         assert_eq!(&journal[65..73], &args.slot_id.to_be_bytes());
         assert_eq!(journal[73], accepted_byte);
-        assert_eq!(&journal[74..76], &u16::from(args.version).to_be_bytes());
+        assert_eq!(&journal[74..76], &CHECK_FORK_JOURNAL_VERSION.to_be_bytes());
     }
 }
 
@@ -771,7 +772,7 @@ fn assert_minichain_hashes_are_valid_from_fixture(path: &str) {
 
 #[derive(Default)]
 struct CheckForkArgsBuilder {
-    version: Option<u8>,
+    pegout_id_version: Option<u8>,
     sequence_number: Option<U256>,
     stream_id: Option<u64>,
     packet_number: Option<u64>,
@@ -813,7 +814,7 @@ impl CheckForkArgsBuilder {
 
     fn build(self) -> CheckForkArgs {
         CheckForkArgs {
-            version: self.version.unwrap_or(DEFAULT_VERSION),
+            pegout_id_version: self.pegout_id_version.unwrap_or(DEFAULT_PEGOUT_ID_VERSION),
             sequence_number: self
                 .sequence_number
                 .unwrap_or_else(|| U256::from(DEFAULT_SEQUENCE_NUMBER)),

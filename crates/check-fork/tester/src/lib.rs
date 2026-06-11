@@ -370,7 +370,7 @@ fn add_block_effort(total: U256, block: &RskBlock) -> Result<U256, Box<dyn Error
 
 fn build_summary(args: &CheckForkArgs, pegout_id: H256) -> String {
     let mut out = String::new();
-    let _ = writeln!(out, "version={}", args.version);
+    let _ = writeln!(out, "pegout_id_version={}", args.pegout_id_version);
     let _ = writeln!(out, "sequence_number={}", args.sequence_number);
     let _ = writeln!(out, "stream_id={}", args.stream_id);
     let _ = writeln!(out, "packet_number={}", args.packet_number);
