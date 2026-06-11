@@ -45,7 +45,7 @@ alloy-json-rpc = "1.0.42"
 alloy-primitives = "1.4.1"
 alloy-provider = "1.0.42"
 alloy-pubsub = "1.0.42"
-alloy-rpc-client = "1.0.42"
+alloy-rpc-client = "2.0.4"
 alloy-rpc-types = "1.0.42"
 alloy-signer = "1.0.42"
 alloy-signer-local = { version = "1.0.42" }
