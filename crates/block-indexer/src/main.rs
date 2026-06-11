@@ -2,14 +2,14 @@
 
 use std::sync::mpsc;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use block_indexer::config::{Config, Logger};
 use block_indexer::indexer::BlockIndexer;
 use block_indexer::notifier::Notifier;
 use block_indexer::store::CachedBlockStore;
 use clap::{Arg, Command};
 use common::alloy_rsk_provider::rpc::AlloyProvider;
-use common::msg_broker::broker::{BrokerServer, broker_queue_storage_path};
+use common::msg_broker::broker::{BrokerServer, Identifier, broker_queue_storage_path};
 use common::rsk_indexer::RskIndexer;
 use common::shutdown_flag::ShutdownFlag;
 use common::types::RskBlockAndUncles;
@@ -67,10 +67,22 @@ fn main() -> Result<()> {
     )
     .context("Failed to create BlockIndexer")?;
 
+    let coordinator_pubkey_hash = config.block_indexer_config.coordinator.pubkey_hash.clone();
+    ensure!(
+        !coordinator_pubkey_hash.is_empty() && coordinator_pubkey_hash != "<to_patch_with_env>",
+        "block_indexer.coordinator.pubkey_hash must be configured"
+    );
+    let coordinator_identifier = Identifier::new(
+        coordinator_pubkey_hash,
+        u8::try_from(config.block_indexer_config.coordinator.client_id)
+            .context("block_indexer.coordinator.client_id must fit in u8")?,
+    );
+
     let broker_server = BrokerServer::new_with_storage_path(
         config.block_indexer_config.notifier.port,
         &config.block_indexer_config.broker_key_path,
         broker_queue_storage_path(&config.indexer.storage.path, BROKER_QUEUE_SERVICE_NAME),
+        &coordinator_identifier,
     )
     .context("Failed to create BrokerServer")?;
 

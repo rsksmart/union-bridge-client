@@ -91,8 +91,6 @@ if CONTRACTS_CONTEXT_CANDIDATE=$(cd "$SCRIPT_DIR" && cd "$CONTRACTS_CONTEXT_PATH
   :
 elif [[ -d "$(cd "$SCRIPT_DIR/../../.." && pwd)/../union-bridge-contracts" ]]; then
   CONTRACTS_CONTEXT_CANDIDATE="$(cd "$SCRIPT_DIR/../../.." && pwd)/../union-bridge-contracts"
-elif [[ -d "$HOME/Projects/rootstock/union/union-bridge-contracts" ]]; then
-  CONTRACTS_CONTEXT_CANDIDATE="$HOME/Projects/rootstock/union/union-bridge-contracts"
 else
   echo "Error: could not resolve CONTRACTS_CONTEXT_PATH '${CONTRACTS_CONTEXT_PATH}'." >&2
   echo "Set CONTRACTS_CONTEXT_PATH to a union-bridge-contracts checkout and rerun." >&2
@@ -223,6 +221,28 @@ normalize_hex_lower() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
 }
 
+validate_rbtc_bridge_uses_native_precompile() {
+  local rbtc_bridge="$1"
+  local bridge_precompile="$2"
+  local configured=""
+  local configured_lower=""
+  local bridge_precompile_lower=""
+
+  configured=$(cast call --rpc-url "${RSKJ_HOST_HTTP_URL}" "$rbtc_bridge" "bridge()(address)" 2>/dev/null || true)
+  if [[ -z "$configured" ]]; then
+    echo "Error: failed to read RbtcBridge.bridge() from ${rbtc_bridge}." >&2
+    return 1
+  fi
+
+  configured_lower=$(normalize_hex_lower "$configured")
+  bridge_precompile_lower=$(normalize_hex_lower "$bridge_precompile")
+  if [[ "$configured_lower" != "$bridge_precompile_lower" ]]; then
+    echo "Error: RbtcBridge.bridge()=${configured} is not the RSK native bridge precompile (${bridge_precompile})." >&2
+    echo "Use rsksmart/union-bridge-contracts main or a tag that includes PR #33 (68a10ae)." >&2
+    return 1
+  fi
+}
+
 require_env_var() {
   local name="$1"
 
@@ -317,6 +337,7 @@ authorize_native_bridge() {
   fi
 
   rbtc_bridge_lower=$(normalize_hex_lower "$rbtc_bridge")
+  validate_rbtc_bridge_uses_native_precompile "$rbtc_bridge" "$bridge_precompile" || return 1
 
   authorizer_private_key=$(cast keccak "changeUnionBridgeContractAddressAuthorizer")
   authorizer_address=$(cast wallet address --private-key "$authorizer_private_key")

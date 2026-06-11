@@ -22,6 +22,7 @@ use uuid::Uuid;
 use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
 use crate::flows::common::{FlowId, Signaling};
 use crate::flows::operator_take::types::OperatorTakeTriggerData;
+use crate::flows::pegout::pegout_flow::flow_id_from_pegout_requested_tx_hash;
 
 pub(crate) const PROGRAM_TYPE_ADVANCE_FUNDS: &str = "advance_funds";
 pub(crate) const ADVANCE_FUNDS_REQUEST_VAR_NAME: &str = "advance_funds_request";
@@ -851,6 +852,7 @@ where
 
     fn enter_write_completion_marker(&self) -> Result<()> {
         let payload = json!({
+            "ancestor_pegout_id": self.ancestor_pegout_id(),
             "request_pegout_tx_hash": self.state.trigger_data.request_pegout_tx_hash,
             "pegout_txid": self.state.trigger_data.pegout_txid.to_string(),
             "pegout_id": self.state.trigger_data.pegout_id.to_string(),
@@ -872,6 +874,20 @@ where
 
     pub(crate) fn flow_id(&self) -> FlowId {
         self.state.flow_id
+    }
+
+    pub(crate) fn slot_index(&self) -> usize {
+        self.state.trigger_data.slot_index
+    }
+
+    pub(crate) fn ancestor_pegout_id(&self) -> String {
+        self.state
+            .trigger_data
+            .request_pegout_tx_hash
+            .as_deref()
+            .and_then(|tx_hash| TxHash::try_from(tx_hash).ok())
+            .map(flow_id_from_pegout_requested_tx_hash)
+            .map_or_else(|| self.state.flow_id.to_string(), |flow_id| flow_id.to_string())
     }
 
     /// BitVMX-side protocol id for this flow's advance-funds protocol

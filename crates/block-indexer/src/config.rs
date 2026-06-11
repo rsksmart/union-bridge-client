@@ -15,7 +15,15 @@ pub struct Config {
 #[derive(Debug, Deserialize)]
 pub struct BlockIndexerConfig {
     pub notifier: NotifierConfig,
+    pub coordinator: CoordinatorConfig,
     pub broker_key_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CoordinatorConfig {
+    pub client_id: u32,
+    #[serde(default)]
+    pub pubkey_hash: String,
 }
 
 impl Config {
@@ -38,7 +46,7 @@ impl Logger {
     /// `UB_LOG_DIR` env var is consulted; if neither is set, logs are written
     /// under `./logs/` (relative to the current working directory).
     ///
-    /// Returns a [`common::config::LogGuard`] that must be kept alive for the
+    /// Returns a [`common::logging::LogGuard`] that must be kept alive for the
     /// duration of the process to flush the background file-writer thread.
     ///
     /// # Errors
@@ -46,7 +54,7 @@ impl Logger {
     /// Returns an error if the log directory cannot be created, or if a global
     /// tracing subscriber has already been installed (e.g. in tests that call
     /// this more than once).
-    pub fn init(log_dir_opt: Option<&String>) -> anyhow::Result<common::config::LogGuard> {
+    pub fn init(log_dir_opt: Option<&String>) -> anyhow::Result<common::logging::LogGuard> {
         CommonConfig::init_logger(log_dir_opt, CARGO_PKG_NAME)
     }
 }
@@ -65,6 +73,8 @@ mod tests {
             .expect("Failed to load config");
 
         assert_eq!(10001, config.block_indexer_config.notifier.port);
+        assert_eq!(101, config.block_indexer_config.coordinator.client_id);
+        assert_eq!("<to_patch_with_env>", config.block_indexer_config.coordinator.pubkey_hash);
         // local-anvil overrides start_from to Best (base sets Hash).
         assert_eq!(IndexerStartFrom::Best, config.indexer.start_from);
         assert!(!config.indexer.storage.path.contains("{BASE_STORAGE_PATH}"));

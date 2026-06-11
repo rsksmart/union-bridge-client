@@ -62,6 +62,7 @@
 
 use std::collections::HashMap;
 use std::fs;
+use std::io::{BufRead, BufReader, Read};
 use std::net::TcpStream;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -840,6 +841,49 @@ fn cleanup_partial_services(client_id: &str, services: &[ManagedService]) {
     }
 }
 
+/// Builds the colored `[op-N] ` line prefix for a client. `client_id` is
+/// formatted as `client-{n}`, so we show just the operator number. Each
+/// operator gets a distinct color so its lines stand out in the shared stdout;
+/// the reset code keeps the service's own output uncolored. Unknown ids fall
+/// back to bold.
+fn op_prefix(client_id: &str) -> String {
+    let n = client_id.rsplit('-').next().unwrap_or(client_id);
+    let color = match n {
+        "1" => "36", // cyan
+        "2" => "32", // green
+        "3" => "33", // yellow
+        "4" => "35", // magenta
+        _ => "1",    // bold
+    };
+    format!("\x1b[{color}m[op-{n}]\x1b[0m ")
+}
+
+/// Reads a child pipe line by line and re-emits each line on the parent's
+/// stdout/stderr prefixed with `prefix`. Runs on a detached thread that ends
+/// when the pipe closes (child exit). Non-UTF8 bytes are replaced lossily so a
+/// stray byte never drops the rest of the stream.
+fn forward_with_prefix<R: Read + Send + 'static>(reader: R, prefix: String, to_stderr: bool) {
+    std::thread::spawn(move || {
+        let mut buf = BufReader::new(reader);
+        let mut bytes = Vec::new();
+        loop {
+            bytes.clear();
+            match buf.read_until(b'\n', &mut bytes) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    let line = String::from_utf8_lossy(&bytes);
+                    let line = line.strip_suffix('\n').unwrap_or(&line);
+                    if to_stderr {
+                        eprintln!("{prefix}{line}");
+                    } else {
+                        println!("{prefix}{line}");
+                    }
+                }
+            }
+        }
+    });
+}
+
 fn launch_client_services(
     config: &RunConfig,
     envs: Vec<(String, String)>,
@@ -896,13 +940,16 @@ fn launch_client_services(
 
         let mut cmd = Command::new("cargo");
         let args = cargo_args_for_service(config, &svc);
+        // Pipe child output so each line can be tagged with `[op-N]` before
+        // reaching the shared stdout/stderr, making the four operators
+        // distinguishable in a single combined stream.
         cmd.args(&args)
             .stdin(Stdio::null())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .process_group(0); // create new process group to avoid receiving parent's SIGINT
 
-        let child = match cmd.envs(envs.clone()).spawn() {
+        let mut child = match cmd.envs(envs.clone()).spawn() {
             Ok(child) => child,
             Err(err) => {
                 cleanup_partial_services(client_id, &services);
@@ -911,6 +958,13 @@ fn launch_client_services(
             }
         };
         let pid = child.id();
+        let prefix = op_prefix(client_id);
+        if let Some(out) = child.stdout.take() {
+            forward_with_prefix(out, prefix.clone(), false);
+        }
+        if let Some(err) = child.stderr.take() {
+            forward_with_prefix(err, prefix, true);
+        }
         let child = Arc::new(Mutex::new(child));
         let mgd_child = ManagedService { service: svc.name().to_string(), pid, child };
         services.push(mgd_child);

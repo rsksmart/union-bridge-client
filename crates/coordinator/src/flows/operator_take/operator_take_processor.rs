@@ -9,7 +9,7 @@ use common::msg_broker::bitvmx_types::{
 use common::runtime_sync::RuntimeSync;
 use common::types::{CommitteeId, Hash256, RskBlockAndUncles};
 use primitive_types::H256;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, info_span, trace, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
 
@@ -125,6 +125,13 @@ where
                 warn!("No advance funds flow found for retry: {flow_id}");
                 continue;
             };
+            let ancestor_pegout_id = flow.ancestor_pegout_id();
+            let _span = info_span!(
+                "operator_take",
+                ancestor_pegout_id = %ancestor_pegout_id,
+                operator_take_id = %flow_id,
+            )
+            .entered();
 
             // A retry is scheduled only when a register-step submission was
             // parked due to missing native-bridge confirmations. Re-entering
@@ -181,6 +188,13 @@ where
     /// Tear down an advance-funds flow declared dead by an admin operator.
     fn fail_flow(&mut self, flow_id: FlowId, reason: &str) -> Result<()> {
         if let Some(flow) = self.flows.get_mut(&flow_id) {
+            let ancestor_pegout_id = flow.ancestor_pegout_id();
+            let _span = info_span!(
+                "operator_take",
+                ancestor_pegout_id = %ancestor_pegout_id,
+                operator_take_id = %flow_id,
+            )
+            .entered();
             flow.mark_failed(reason)?;
             warn!("Admin marked advance-funds flow {flow_id} as failed: {reason}");
             // Cancel any pending retry explicitly
@@ -216,11 +230,6 @@ where
             bail!("Advance funds flow {flow_id} already exists for committee {committee_id}");
         }
 
-        debug!(
-            "Creating advance funds flow {} for committee {} and slot {}",
-            flow_id, committee_id, trigger_data.slot_index
-        );
-
         let flow = AdvanceFundsFlow::new(
             self.contracts_gateway.clone(),
             self.rt_sync.clone(),
@@ -230,6 +239,22 @@ where
             flow_id,
             trigger_data,
         );
+        {
+            let ancestor_pegout_id = flow.ancestor_pegout_id();
+            let _span = info_span!(
+                "operator_take",
+                ancestor_pegout_id = %ancestor_pegout_id,
+                operator_take_id = %flow_id,
+            )
+            .entered();
+
+            debug!(
+                "Creating advance funds flow {} for committee {} and slot {}",
+                flow_id,
+                committee_id,
+                flow.slot_index()
+            );
+        }
 
         self.flows.insert(flow_id, flow);
         self.complete_step(flow_id, StepData::OperatorTakeTriggered)?;
@@ -427,6 +452,19 @@ where
     }
 
     fn complete_step(&mut self, flow_id: FlowId, step_data: StepData) -> Result<()> {
+        let Some(ancestor_pegout_id) =
+            self.flows.get(&flow_id).map(AdvanceFundsFlow::ancestor_pegout_id)
+        else {
+            trace!("Ignoring step delivery for flow {flow_id} - no matching flow");
+            return Ok(());
+        };
+        let _span = info_span!(
+            "operator_take",
+            ancestor_pegout_id = %ancestor_pegout_id,
+            operator_take_id = %flow_id,
+        )
+        .entered();
+
         let Some(flow) = self.flows.get_mut(&flow_id) else {
             trace!("Ignoring step delivery for flow {flow_id} - no matching flow");
             return Ok(());

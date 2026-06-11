@@ -6,6 +6,7 @@ pub mod cache;
 pub mod config;
 pub mod constants;
 pub mod errors;
+pub mod logging;
 pub mod msg_broker;
 pub mod rsk_indexer;
 pub mod rsk_provider;

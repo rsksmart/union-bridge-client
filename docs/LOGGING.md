@@ -1,7 +1,7 @@
 # Logging
 
 This project uses the [`tracing`](https://docs.rs/tracing) ecosystem. A single
-subscriber is built in [`crates/common/src/config.rs`](../crates/common/src/config.rs)
+subscriber is built in [`common/src/logging.rs`](../crates/common/src/logging.rs)
 (`CommonConfig::init_logger`) and reused by every service crate
 (`block-indexer`, `log-indexer`, `coordinator`, `transaction-dispatcher`,
 `user-api`).
@@ -48,14 +48,42 @@ prefix.
 
 ### JSON
 
-One JSON event per line, flattened, with the current span included. Default in
-any non-`local` environment — intended for log shippers / structured search.
+One JSON event per line, flattened, with the current span and the full span
+ancestry included. Default in any non-`local` environment — intended for log
+shippers / structured search.
 
 ```json
-{"timestamp":"2026-05-19T10:14:22.041Z","level":"INFO","target":"block_indexer::sync","message":"caught up","height":8421,"span":{"name":"sync_loop"}}
+{"timestamp":"2026-05-19T10:14:22.041Z","level":"INFO","target":"block_indexer::sync","message":"caught up","height":8421,"span":{"name":"sync_loop"},"spans":[{"name":"sync_loop"}]}
 ```
 
+`span` carries only the innermost (current) span; `spans` is the full array
+from outermost to innermost. Filter on `span.<field>` for the immediate
+context, or scan `spans[*].<field>` when you need to match an ancestor.
+
 Notes:
+- Pegin work in the coordinator runs inside a `pegin` span carrying the
+  `pegin_id` of the pegin being processed. In JSON output every log emitted
+  from inside `PeginFlow`/`PeginFlowProcessor` (and the `btc_signature`
+  subflow when spawned from a pegin) includes `span.name="pegin"` and
+  `span.pegin_id="<uuid>"`, so logs from parallel pegins can be filtered
+  by `pegin_id`. In pretty output the same span context appears between the
+  level and the target.
+- Pegout work in the coordinator runs inside a `pegout` span carrying the
+  `pegout_id` of the pegout being processed. In JSON output every log emitted
+  from inside `PegoutFlow`/`PegoutFlowProcessor` (and the `btc_signature`
+  subflow when spawned from a pegout) includes `span.name="pegout"` and
+  `span.pegout_id="<uuid>"`, so logs from parallel pegouts can be filtered
+  by `pegout_id`. In pretty output the same span context appears between the
+  level and the target.
+- Committee setup work in the coordinator runs inside a `committee_setup` span
+  carrying the `committee_setup_id` of the in-flight flow (a stable UUID per
+  setup attempt, distinct from the RSK `committeeId` which is only known after
+  `NewCommitteePending`). In JSON output every log emitted from inside
+  `SetupCommitteeFlow`/`SetupCommitteeProcessor` includes
+  `span.name="committee_setup"` and `span.committee_setup_id="<uuid>"`, so the
+  many BitVMX/RSK calls of a single committee formation can be filtered by
+  `committee_setup_id`. In pretty output the same span context appears between
+  the level and the target.
 - File output is always written **without** ANSI codes, regardless of format.
 - In JSON the operator identity should be carried via `CLIENT_ID` in your
   shipping pipeline.
@@ -65,8 +93,8 @@ Notes:
 Module-level filtering uses the standard `tracing-subscriber` `EnvFilter`
 syntax, read from `RUST_LOG`.
 
-When `RUST_LOG` is **unset**, the built-in default
-(`DEFAULT_FILTER` in `crates/common/src/config.rs`) is applied:
+When `RUST_LOG` is **unset or empty**, the built-in default
+(`DEFAULT_FILTER` in `crates/common/src/logging.rs`) is applied:
 
 ```
 debug,
@@ -97,6 +125,11 @@ RUST_LOG=debug,hyper=debug ./scripts/run-clients.sh
 > Setting `RUST_LOG` **replaces** the default filter — it doesn't merge with it.
 > If you want our defaults plus one tweak, copy the relevant pieces of
 > `DEFAULT_FILTER` into your `RUST_LOG`.
+
+> A **present-but-empty** `RUST_LOG` (e.g. `RUST_LOG=${RUST_LOG:-}` as injected by
+> the docker-compose files) is treated the same as unset — it falls back to
+> `DEFAULT_FILTER` rather than disabling all output. A non-empty but unparseable
+> value also falls back to the default.
 
 ### Filter syntax recap
 
