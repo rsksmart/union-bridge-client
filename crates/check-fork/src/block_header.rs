@@ -9,7 +9,7 @@ use sha3::{Digest, Keccak256};
 use crate::rlp::{encode_coin_value, encode_signed_coin_value_as_byte};
 
 const RSK_HEADER_EXTENSION_TYPE_V1: u8 = 1_u8;
-const RSK_HEADER_EXTENSION_TYPE_V2: u8 = 2_u8;
+pub(crate) const RSK_HEADER_EXTENSION_TYPE_V2: u8 = 2_u8;
 const BASE_EVENT_MAX_SIZE: usize = 128;
 const MAX_RSK_PTE_EDGES: usize = 0; // for the moment is better to keep zero because parallel tx is not fully activated
 

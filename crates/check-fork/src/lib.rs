@@ -7,13 +7,12 @@ use primitive_types::{H256, U256};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 
-use crate::block_header::RskBlockHeader;
+use crate::block_header::{RSK_HEADER_EXTENSION_TYPE_V2, RskBlockHeader};
 
 pub const SUPERBLOCK_TIMES_DIFFICULTY: u8 = 20;
 pub const CHECK_FORK_JOURNAL_LEN: usize = 76;
 pub const PEGOUT_BASE_EVENT_LEN: usize = 32;
 
-const BASE_EVENT_HEADER_VERSION: u8 = 2;
 const PEGOUT_ID_LEN: usize = 32;
 const OPERATOR_TAKE_PUBKEY_LEN: usize = 33;
 const OPERATOR_TAKE_PUBKEY_XONLY_LEN: usize = 32;
@@ -273,7 +272,7 @@ fn calculate_block_effort(block: &RskBlock) -> Result<U256, &'static str> {
 }
 
 fn validate_block_hash(header: &RskBlockHeader) -> Result<(), &'static str> {
-    if header.base_event.is_some() && header.version != BASE_EVENT_HEADER_VERSION {
+    if header.base_event.is_some() && header.version != RSK_HEADER_EXTENSION_TYPE_V2 {
         return Err("Block with base event must use header version 2");
     }
 
