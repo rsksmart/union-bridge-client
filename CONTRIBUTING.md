@@ -120,9 +120,9 @@ routed by pubkey hash; `.pem` keys live under `$BASE_STORAGE_PATH/.union_bridge/
 
     ```bash
     # totals per crate/file in the terminal
-    cargo llvm-cov --workspace --all-features --ignore-filename-regex 'src/main\.rs'
+    cargo llvm-cov --workspace --all-features --locked --ignore-filename-regex 'src/main\.rs'
     # line-by-line browsing in a browser
-    cargo llvm-cov --workspace --all-features --ignore-filename-regex 'src/main\.rs' --html --open
+    cargo llvm-cov --workspace --all-features --locked --ignore-filename-regex 'src/main\.rs' --html --open
     ```
 
 ## Documentation build
