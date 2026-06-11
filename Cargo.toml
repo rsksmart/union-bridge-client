@@ -37,7 +37,7 @@ unreachable_pub = "warn"
 
 [workspace.dependencies]
 # alloy
-alloy-contract = "1.0.42"
+alloy-contract = "2.0.4"
 # alloy-rs-core
 alloy-dyn-abi = "1.4.1"
 alloy-json-abi = "1.4.1"
