@@ -87,7 +87,7 @@ controls what gets deployed to Rootstock regtest.
 ### Install Git Hooks
 
 Hook installation is automatic on a clean checkout. [cargo-husky](https://github.com/rhysd/cargo-husky) is declared as
-a dev-dependency of the `common` crate; the first time it compiles, its `build.rs` copies the hook entrypoints in
+a dev-dependency of the `common-dev` crate; the first time it compiles, its `build.rs` copies the hook entrypoints in
 [`.cargo-husky/hooks/`](../.cargo-husky/hooks/) into `.git/hooks/`. Trigger it with:
 
 ```bash
@@ -460,9 +460,9 @@ find .git/hooks -type f ! -name '*.sample' -delete
 #    silently skipped.
 cargo clean -p cargo-husky
 
-# 3. Trigger a compile of `common`'s dev-deps. cargo-husky's build.rs runs and
+# 3. Trigger a compile of `common-dev`'s dev-deps. cargo-husky's build.rs runs and
 #    writes pre-commit / pre-push / commit-msg into .git/hooks/.
-cargo test --no-run -p common
+cargo test --no-run -p common-dev
 ```
 
 After this, `.git/hooks/` should contain exactly three files: `pre-commit`, `pre-push`, `commit-msg`. If you previously

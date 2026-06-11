@@ -1,16 +1,14 @@
 use std::fs;
 use std::path::Path;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use bitcoin::Network;
 use config::{self, Environment, Source};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use tracing::{info, trace};
+use tracing::trace;
 
 use crate::errors::ConfigError;
-use crate::rsk_provider::RskProvider;
-use crate::types::{BlockHash, RskBlock};
 
 const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 const BASE_CONFIG_PATH: &str = "config/base";
@@ -98,62 +96,6 @@ pub struct KeyStoreConfig {
     pub member_path: String,
 }
 
-impl IndexerConfig {
-    /// Resolves the initial block number based on the `start_from` configuration.
-    ///
-    /// # Panics
-    ///
-    /// Panics when `start_from = "hash"` and `initial_block_hash` is missing or cannot be parsed
-    /// as a valid block hash.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when:
-    /// - `start_from = "hash"` and the provider fails to retrieve the block by hash, or the block
-    ///   is not found on the provider.
-    /// - `start_from = "best"` and the provider fails to retrieve the current best block.
-    pub fn resolve_initial_block<P: RskProvider>(&self, provider: &P) -> Result<RskBlock> {
-        let block = match self.start_from {
-            IndexerStartFrom::Hash => {
-                let hash_from_cfg = self.initial_block_hash.as_deref().context(
-                    "Missing indexer.initial_block_hash when indexer.start_from is 'hash'",
-                )?;
-
-                let initial_block_hash = BlockHash::try_from(hash_from_cfg)
-                    .with_context(|| format!("Invalid initial block hash: {hash_from_cfg}"))?;
-
-                let block_by_hash = provider
-                    .get_block_by_hash(initial_block_hash)
-                    .context("Failed to get initial block by hash")?
-                    .context("Initial block not found on provider")?;
-
-                info!(
-                    "Indexer start_from 'hash': using initial block {} ({})",
-                    block_by_hash.hash(),
-                    block_by_hash.number()
-                );
-
-                block_by_hash
-            }
-            IndexerStartFrom::Best => {
-                let best_block = provider
-                    .get_best_block()
-                    .context("Failed to get best block for start_from='best'")?;
-
-                info!(
-                    "Indexer start_from 'best': using best block {} ({})",
-                    best_block.hash(),
-                    best_block.number()
-                );
-
-                best_block
-            }
-        };
-
-        Ok(block)
-    }
-}
-
 impl CommonConfig {
     /// # Errors
     ///
@@ -238,10 +180,11 @@ impl CommonConfig {
     }
 
     fn project_root() -> String {
-        // This crate lives at `<repo>/crates/common`, so the repo root is two
+        // This crate lives at `<repo>/crates/common/runtime`, so the repo root is three
         // levels up from its manifest dir.
         let project_root = Path::new(CARGO_MANIFEST_DIR)
             .parent()
+            .and_then(|p| p.parent())
             .and_then(|p| p.parent())
             .and_then(|p| p.to_str())
             .expect("Failed to get default_destination");

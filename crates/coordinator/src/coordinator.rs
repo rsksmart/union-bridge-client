@@ -5,13 +5,13 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use bitcoin::Network;
-use common::msg_broker::bitvmx_types::IncomingBitVMXApiMessages;
-use common::msg_broker::broker::{
+use common_bitvmx::bitvmx_types::IncomingBitVMXApiMessages;
+use common_broker::broker::{
     BitVmxBrokerClientApi, UnionBrokerClientApi, is_recoverable_transport_error,
 };
-use common::msg_broker::types::ToServer;
-use common::runtime_sync::RuntimeSync;
-use common::shutdown_flag::ShutdownFlag;
+use common_broker::types::ToServer;
+use common_runtime::runtime_sync::RuntimeSync;
+use common_runtime::shutdown_flag::ShutdownFlag;
 use tracing::{error, info, instrument, trace, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 
@@ -488,15 +488,15 @@ pub(crate) mod tests {
     use std::time::{Duration, Instant};
 
     use anyhow::anyhow;
-    use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
-    use common::msg_broker::broker::{BrokerError, MockBrokerClientApi};
-    use common::msg_broker::types::{FromServer, ToServer};
-    use common::shutdown_flag::ShutdownFlag;
-    use common::test_utils::rsk_block_generator::{
+    use common_bitvmx::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+    use common_broker::broker::{BrokerError, MockBrokerClientApi};
+    use common_broker::types::{FromServer, ToServer};
+    use common_core::types;
+    use common_core::types::RskBlockAndUncles;
+    use common_dev::rsk_block_generator::{
         create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
     };
-    use common::types;
-    use common::types::RskBlockAndUncles;
+    use common_runtime::shutdown_flag::ShutdownFlag;
     use mockall::mock;
     use mockall::predicate::{always, function};
     use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};

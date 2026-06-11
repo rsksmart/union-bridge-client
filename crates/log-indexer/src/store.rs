@@ -1,5 +1,5 @@
 use anyhow::Result;
-use common::types::{Address, RskLog};
+use common_core::types::{Address, RskLog};
 use storage_backend::storage::{KeyValueStore, Storage};
 use storage_backend::storage_config::StorageConfig;
 
@@ -121,9 +121,9 @@ impl LogStore for RawLogStore {
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
-    use common::test_utils::rsk_log_generator::FakeLogGenerator;
-    use common::test_utils::rsk_utils::generate_fake_address;
-    use common::types::{BlockHash, LogInfo, TxHash};
+    use common_core::types::{BlockHash, LogInfo, TxHash};
+    use common_dev::rsk_log_generator::FakeLogGenerator;
+    use common_dev::rsk_utils::generate_fake_address;
     use primitive_types::H256;
     use storage_backend::storage::KeyValueStore;
     use tempfile::tempdir;

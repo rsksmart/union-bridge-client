@@ -7,19 +7,23 @@ edition = "2024"
 
 [features]
 default = []
-anvil = ["common/anvil"]
+anvil = ["common-rsk/anvil"]
 
 [dependencies]
 
 anyhow = { workspace = true }
 clap = { workspace = true }
-common = { path = "../common" }
+common-broker = { path = "../common/broker" }
+common-core = { path = "../common/core" }
+common-rsk = { path = "../common/rsk" }
+common-runtime = { path = "../common/runtime" }
 mockall = { workspace = true }
 serde = { workspace = true }
 storage-backend = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+common-dev = { path = "../common/dev", features = ["provider-mock"] }
 primitive-types = { workspace = true }
 rand = "0.10.1"
 tempfile = { workspace = true }

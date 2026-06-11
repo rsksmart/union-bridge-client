@@ -4,12 +4,12 @@ use std::rc::Rc;
 
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::Txid;
-use common::msg_broker::bitvmx_types::{
+use common_bitvmx::bitvmx_types::{
     BitVmxProtocolId, OutgoingBitVMXApiMessages, PegOutAccepted, TransactionStatus, VariableTypes,
 };
-use common::msg_broker::broker::BitVmxBrokerClientApi;
-use common::runtime_sync::RuntimeSync;
-use common::types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles, TxIdParser};
+use common_broker::broker::BitVmxBrokerClientApi;
+use common_core::types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles, TxIdParser};
+use common_runtime::runtime_sync::RuntimeSync;
 use tracing::{debug, error, info, info_span, instrument, trace, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use union_contracts::bindings::pegout_manager::PegoutManager::{PegoutRegistered, PegoutRequested};
@@ -1049,12 +1049,12 @@ mod tests {
 
     use alloy_primitives::{Bytes, FixedBytes, U256 as AlloyU256};
     use bitcoin::Txid;
-    use common::msg_broker::bitvmx_types::{
+    use common_bitvmx::bitvmx_types::{
         IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PegOutAccepted,
     };
-    use common::msg_broker::broker::MockBrokerClientApi;
-    use common::test_utils::rsk_block_generator::FakeBlockGenerator;
-    use common::types::{BlockHash, TxHash, TxIdParser};
+    use common_broker::broker::MockBrokerClientApi;
+    use common_core::types::{BlockHash, TxHash, TxIdParser};
+    use common_dev::rsk_block_generator::FakeBlockGenerator;
     use musig2::PubNonce;
     use musig2::secp::MaybeScalar;
     use primitive_types::H256;
@@ -1138,7 +1138,7 @@ mod tests {
                 ctx: FlowContext {
                     pegout_requested: create_fake_pegout_requested(),
                     pegout_requested_tx_hash: TxHash::from(H256::zero()),
-                    bitvmx_protocol_id: common::msg_broker::bitvmx_types::user_take_protocol_id(
+                    bitvmx_protocol_id: common_bitvmx::bitvmx_types::user_take_protocol_id(
                         Uuid::nil(),
                         0,
                     ),
@@ -1172,7 +1172,7 @@ mod tests {
                 ctx: FlowContext {
                     pegout_requested: create_fake_pegout_requested(),
                     pegout_requested_tx_hash: TxHash::from(H256::zero()),
-                    bitvmx_protocol_id: common::msg_broker::bitvmx_types::user_take_protocol_id(
+                    bitvmx_protocol_id: common_bitvmx::bitvmx_types::user_take_protocol_id(
                         Uuid::nil(),
                         0,
                     ),
@@ -1286,7 +1286,7 @@ mod tests {
         let flow_id = flow_id_from_pegout_requested_tx_hash(TxHash::from(H256::random()));
 
         let protocol_uuid =
-            common::msg_broker::bitvmx_types::user_take_protocol_id(Uuid::nil(), 0).value();
+            common_bitvmx::bitvmx_types::user_take_protocol_id(Uuid::nil(), 0).value();
         let pegout_flow = harness.create_flow_at_done(flow_id);
         harness.processor.pegout_flows.insert(flow_id, pegout_flow);
         let signature_flow = harness.create_completed_sig_flow(protocol_uuid);
@@ -1363,7 +1363,7 @@ mod tests {
         let mut harness = TestHarness::new();
         let flow_id = flow_id_from_pegout_requested_tx_hash(TxHash::from(H256::from_low_u64_be(1)));
         let protocol_uuid =
-            common::msg_broker::bitvmx_types::user_take_protocol_id(Uuid::nil(), 0).value();
+            common_bitvmx::bitvmx_types::user_take_protocol_id(Uuid::nil(), 0).value();
         harness.processor.pegout_flows.insert(flow_id, harness.create_flow_at_done(flow_id));
         harness
             .processor

@@ -1,10 +1,10 @@
 use anyhow::{Context, Result};
 use bitcoin::PublicKey;
-use common::msg_broker::bitvmx_types::{
+use common_bitvmx::bitvmx_types::{
     BitVmxProtocolId, IncomingBitVMXApiMessages, PartialUtxo, dispute_core_protocol_id,
 };
-use common::msg_broker::broker::BitVmxBrokerClientApi;
-use common::types::CommitteeId;
+use common_broker::broker::BitVmxBrokerClientApi;
+use common_core::types::CommitteeId;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error};
 use union_contracts::bindings::committee_registry::CommitteeRegistry::Committee;

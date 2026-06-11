@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use alloy_primitives::FixedBytes;
 use anyhow::Result;
-use common::msg_broker::bitvmx_types::PubKeyHash;
+use common_bitvmx::bitvmx_types::PubKeyHash;
 use union_contracts::bindings::committee_registry::CommitteeRegistry::{
     ECDSAPublicKey, MemberRegistrationKeys, RSAPublicKey,
 };

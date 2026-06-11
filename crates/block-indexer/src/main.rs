@@ -8,11 +8,11 @@ use block_indexer::indexer::BlockIndexer;
 use block_indexer::notifier::Notifier;
 use block_indexer::store::CachedBlockStore;
 use clap::{Arg, Command};
-use common::alloy_rsk_provider::rpc::AlloyProvider;
-use common::msg_broker::broker::{BrokerServer, Identifier, broker_queue_storage_path};
-use common::rsk_indexer::RskIndexer;
-use common::shutdown_flag::ShutdownFlag;
-use common::types::RskBlockAndUncles;
+use common_broker::broker::{BrokerServer, Identifier, broker_queue_storage_path};
+use common_core::types::RskBlockAndUncles;
+use common_rsk::alloy_rsk_provider::rpc::AlloyProvider;
+use common_rsk::rsk_indexer::RskIndexer;
+use common_runtime::shutdown_flag::ShutdownFlag;
 use tracing::{debug, error, info};
 
 const LOG_DIR_CLI_FLAG: &str = "log-dir";

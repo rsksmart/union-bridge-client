@@ -1,0 +1,32 @@
+[package]
+name = "common-rsk"
+version.workspace = true
+license.workspace = true
+rust-version.workspace = true
+edition = "2024"
+
+[features]
+anvil = ["common-core/anvil"]
+
+[dependencies]
+alloy-primitives = { workspace = true }
+alloy-provider = { workspace = true, features = ["ws"] }
+alloy-pubsub = { workspace = true }
+alloy-rpc-client = { workspace = true }
+alloy-rpc-types = { workspace = true }
+alloy-transport = { workspace = true }
+anyhow = { workspace = true }
+common-core = { path = "../core" }
+common-runtime = { path = "../runtime" }
+mockall = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+primitive-types = { workspace = true }
+
+[lints]
+workspace = true

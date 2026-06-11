@@ -2,7 +2,7 @@ use bitcoin::PublicKey;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::bitvmx_types::{
+use crate::bitvmx_types::{
     FailConfiguration, ForceChallenge, ForceCondition, OutputType, PartialUtxo,
 };
 

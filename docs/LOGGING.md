@@ -1,7 +1,7 @@
 # Logging
 
 This project uses the [`tracing`](https://docs.rs/tracing) ecosystem. A single
-subscriber is built in [`common/src/logging.rs`](../crates/common/src/logging.rs)
+subscriber is built in [`common/runtime/src/logging.rs`](../crates/common/runtime/src/logging.rs)
 (`CommonConfig::init_logger`) and reused by every service crate
 (`block-indexer`, `log-indexer`, `coordinator`, `transaction-dispatcher`,
 `user-api`).
@@ -94,7 +94,7 @@ Module-level filtering uses the standard `tracing-subscriber` `EnvFilter`
 syntax, read from `RUST_LOG`.
 
 When `RUST_LOG` is **unset or empty**, the built-in default
-(`DEFAULT_FILTER` in `crates/common/src/logging.rs`) is applied:
+(`DEFAULT_FILTER` in `crates/common/runtime/src/logging.rs`) is applied:
 
 ```
 debug,

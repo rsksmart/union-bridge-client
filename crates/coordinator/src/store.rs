@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::hash::BuildHasher;
 
 use anyhow::{Result, ensure};
-use common::msg_broker::bitvmx_types::{ParticipantRole, SignedPublicKey};
-use common::types::CommitteeId;
+use common_bitvmx::bitvmx_types::{ParticipantRole, SignedPublicKey};
+use common_core::types::CommitteeId;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use storage_backend::storage::{KeyValueStore, Storage};

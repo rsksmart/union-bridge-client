@@ -2,14 +2,14 @@ use std::rc::Rc;
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use bitcoin::{PublicKey, Txid};
-use common::msg_broker::bitvmx_types::{
+use common_bitvmx::bitvmx_types::{
     BitVmxProtocolId, BtcTxSPVProof, CommsAddress, IncomingBitVMXApiMessages, PegOutAccepted,
     PegOutRequest, PubKeyHash, TransactionStatus, VariableTypes, build_communication_data,
     user_take_protocol_id,
 };
-use common::msg_broker::broker::BitVmxBrokerClientApi;
-use common::runtime_sync::RuntimeSync;
-use common::types::{CommitteeId, TxHash};
+use common_broker::broker::BitVmxBrokerClientApi;
+use common_core::types::{CommitteeId, TxHash};
+use common_runtime::runtime_sync::RuntimeSync;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{debug, info, trace, warn};
@@ -382,7 +382,7 @@ where
             .get_user_take_txid()
             .ok_or_else(|| anyhow!("Expected user take txid not found"))?;
         let registered_tx_id =
-            common::types::TxIdParser::fb_32_to_txid(pegout_registered.inner.txid);
+            common_core::types::TxIdParser::fb_32_to_txid(pegout_registered.inner.txid);
 
         ensure!(
             registered_tx_id == expected_tx_id,
@@ -750,13 +750,13 @@ mod tests {
 
     use alloy_primitives::{Bytes, FixedBytes, U256 as AlloyU256};
     use bitcoin::Txid;
-    use common::msg_broker::bitvmx_types::{
+    use common_bitvmx::bitvmx_types::{
         BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PegOutAccepted,
         VariableTypes,
     };
-    use common::msg_broker::broker::MockBrokerClientApi;
-    use common::runtime_sync::RuntimeSync;
-    use common::types::{BlockHash, BlockNumber, TxHash, TxIdParser};
+    use common_broker::broker::MockBrokerClientApi;
+    use common_core::types::{BlockHash, BlockNumber, TxHash, TxIdParser};
+    use common_runtime::runtime_sync::RuntimeSync;
     use mockall::predicate::function;
     use musig2::PubNonce;
     use musig2::secp::MaybeScalar;
@@ -845,7 +845,7 @@ mod tests {
         crate::types::EventWithBlock {
             inner: PegoutRegistered {
                 blockHash: FixedBytes::from([1u8; 32]),
-                txid: common::types::TxIdParser::txid_to_fb_32(user_take_txid),
+                txid: common_core::types::TxIdParser::txid_to_fb_32(user_take_txid),
                 acceptPeginTxid: FixedBytes::from([2u8; 32]),
                 committeeId: 1,
                 streamInfo: StreamPosition {

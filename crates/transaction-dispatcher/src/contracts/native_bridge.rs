@@ -2,7 +2,7 @@ use alloy_primitives::{Address, Bytes, FixedBytes, I256, U256};
 use alloy_provider::Provider;
 use alloy_transport::TransportError;
 use anyhow::Result as AnyhowResult;
-use common::types::{BlockHash, TxHash};
+use common_core::types::{BlockHash, TxHash};
 #[cfg(test)]
 use mockall::automock;
 use tracing::info;
@@ -179,7 +179,7 @@ mod tests {
     use bitcoin::locktime::absolute;
     use bitcoin::transaction::Version;
     use bitcoin::{Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness};
-    use common::types::{BlockHash, TxHash};
+    use common_core::types::{BlockHash, TxHash};
     use tracing::{debug, error, info, warn};
 
     use super::*;

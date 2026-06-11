@@ -1675,7 +1675,12 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "clap",
- "common",
+ "common-broker",
+ "common-core",
+ "common-dev",
+ "common-rsk",
+ "common-runtime",
+ "lru 0.18.0",
  "mockall",
  "primitive-types 0.14.0",
  "rust-bitvmx-storage-backend 0.1.1",
@@ -2090,10 +2095,71 @@ dependencies = [
 ]
 
 [[package]]
-name = "common"
+name = "common-bitvmx"
 version = "0.4.0"
 dependencies = [
- "alloy-contract",
+ "anyhow",
+ "bitcoin",
+ "emulator",
+ "musig2",
+ "serde",
+ "sha2 0.11.0",
+ "tracing",
+ "uuid 1.23.1",
+]
+
+[[package]]
+name = "common-broker"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "bitvmx-broker",
+ "common-bitvmx",
+ "common-core",
+ "mockall",
+ "rust-bitvmx-storage-backend 0.6.1",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tracing",
+ "uuid 1.23.1",
+]
+
+[[package]]
+name = "common-core"
+version = "0.4.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "bitcoin",
+ "hex",
+ "musig2",
+ "primitive-types 0.14.0",
+ "serde",
+ "tracing",
+]
+
+[[package]]
+name = "common-dev"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "cargo-husky",
+ "common-core",
+ "common-rsk",
+ "common-runtime",
+ "hex",
+ "mockall",
+ "primitive-types 0.14.0",
+ "sha3 0.11.0",
+ "tracing",
+]
+
+[[package]]
+name = "common-rsk"
+version = "0.4.0"
+dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-pubsub",
@@ -2101,32 +2167,33 @@ dependencies = [
  "alloy-rpc-types",
  "alloy-transport",
  "anyhow",
- "bitcoin",
- "bitvmx-broker",
- "cargo-husky",
- "chrono",
- "config",
- "emulator",
- "hex",
- "lru 0.18.0",
+ "common-core",
+ "common-runtime",
  "mockall",
- "musig2",
  "primitive-types 0.14.0",
- "rust-bitvmx-storage-backend 0.6.1",
  "serde",
  "serde_json",
- "serde_yaml",
- "sha2 0.11.0",
- "sha3 0.11.0",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "common-runtime"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "bitcoin",
+ "chrono",
+ "config",
+ "serde",
  "signal-hook",
- "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
  "tracing-appender",
  "tracing-log",
  "tracing-subscriber",
- "uuid 1.23.1",
 ]
 
 [[package]]
@@ -2272,7 +2339,11 @@ dependencies = [
  "bitcoin",
  "chrono",
  "clap",
- "common",
+ "common-bitvmx",
+ "common-broker",
+ "common-core",
+ "common-dev",
+ "common-runtime",
  "hex",
  "mockall",
  "musig2",
@@ -4236,7 +4307,11 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "clap",
- "common",
+ "common-broker",
+ "common-core",
+ "common-dev",
+ "common-rsk",
+ "common-runtime",
  "mockall",
  "primitive-types 0.14.0",
  "rand 0.10.1",
@@ -7219,7 +7294,9 @@ dependencies = [
  "alloy-transport",
  "anyhow",
  "bitcoin",
- "common",
+ "common-bitvmx",
+ "common-core",
+ "common-runtime",
  "hex",
  "key-manager",
  "mockall",
@@ -7414,7 +7491,9 @@ dependencies = [
  "anyhow",
  "axum",
  "clap",
- "common",
+ "common-broker",
+ "common-core",
+ "common-runtime",
  "secrecy",
  "serde",
  "serde_json",

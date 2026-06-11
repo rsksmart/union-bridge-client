@@ -1,0 +1,30 @@
+[package]
+name = "common-broker"
+version.workspace = true
+license.workspace = true
+rust-version.workspace = true
+edition = "2024"
+
+[features]
+# Enables the BitVMX broker channel (BitVmxBroker*). Pulls in common-bitvmx (and the
+# emulator); off by default so Union-channel-only consumers stay light.
+bitvmx = ["dep:common-bitvmx"]
+
+[dependencies]
+anyhow = { workspace = true }
+broker-storage-backend = { package = "rust-bitvmx-storage-backend", git = "https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git", tag = "v0.6.1" }
+common-bitvmx = { path = "../bitvmx", optional = true }
+common-core = { path = "../core" }
+message-broker = { workspace = true, features = ["storagebackend"] }
+mockall = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

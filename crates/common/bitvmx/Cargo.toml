@@ -1,0 +1,19 @@
+[package]
+name = "common-bitvmx"
+version.workspace = true
+license.workspace = true
+rust-version.workspace = true
+edition = "2024"
+
+[dependencies]
+anyhow = { workspace = true }
+bitcoin = { workspace = true }
+bitvmx-emulator = { git = "https://github.com/FairgateLabs/BitVMX-CPU.git", tag = "v0.5.11", package = "emulator" }
+musig2 = { workspace = true }
+serde = { workspace = true }
+sha2 = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+
+[lints]
+workspace = true

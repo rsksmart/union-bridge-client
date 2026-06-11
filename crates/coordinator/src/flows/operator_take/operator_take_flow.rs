@@ -2,14 +2,14 @@ use std::rc::Rc;
 
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin::{PublicKey, Txid};
-use common::msg_broker::bitvmx_types::{
+use common_bitvmx::bitvmx_types::{
     AdvanceFundsRegistered, AdvanceFundsRequest, BitVmxProtocolId, BtcTxSPVProof, CommsAddress,
     FundsAdvanceSPV, IncomingBitVMXApiMessages, OPERATOR_TAKE_TX, VariableTypes,
     accept_pegin_protocol_id, advance_funds_protocol_id,
 };
-use common::msg_broker::broker::BitVmxBrokerClientApi;
-use common::runtime_sync::RuntimeSync;
-use common::types::{Hash256, TxHash};
+use common_broker::broker::BitVmxBrokerClientApi;
+use common_core::types::{Hash256, TxHash};
+use common_runtime::runtime_sync::RuntimeSync;
 use serde_json::json;
 use tracing::{debug, info, trace};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
@@ -966,9 +966,9 @@ mod tests {
     use bitcoin::absolute::LockTime;
     use bitcoin::transaction::Version;
     use bitcoin::{PublicKey, Transaction};
-    use common::msg_broker::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
-    use common::msg_broker::broker::MockBrokerClientApi;
-    use common::types::{Address, CommitteeId, Hash256};
+    use common_bitvmx::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
+    use common_broker::broker::MockBrokerClientApi;
+    use common_core::types::{Address, CommitteeId, Hash256};
     use primitive_types::{H160, H256};
     use union_contracts::bindings::pegout_manager::PegoutManager::StreamPosition;
     use uuid::Uuid;

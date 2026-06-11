@@ -4,11 +4,11 @@ use std::sync::mpsc::RecvTimeoutError;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
-use common::constants::indexer::NOTIFIER_CHECK_PERIOD;
-use common::msg_broker::broker::{Identifier, UnionBrokerServerApi};
-pub use common::msg_broker::types::{FromServer, ToServer};
-use common::shutdown_flag::ShutdownFlag;
-use common::types::RskBlockAndUncles;
+use common_broker::broker::{Identifier, UnionBrokerServerApi};
+pub use common_broker::types::{FromServer, ToServer};
+use common_core::constants::indexer::NOTIFIER_CHECK_PERIOD;
+use common_core::types::RskBlockAndUncles;
+use common_runtime::shutdown_flag::ShutdownFlag;
 use tracing::{info, instrument, trace, warn};
 
 pub struct Notifier<BS: UnionBrokerServerApi> {
@@ -142,11 +142,11 @@ mod tests {
     use std::thread;
     use std::thread::{JoinHandle, sleep};
 
-    use common::msg_broker::broker::MockBrokerServerApi;
-    use common::test_utils::rsk_block_generator::{
+    use common_broker::broker::MockBrokerServerApi;
+    use common_core::types::RskBlock;
+    use common_dev::rsk_block_generator::{
         create_block_and_uncles, get_first_default_rsk_block, get_second_default_rsk_block,
     };
-    use common::types::RskBlock;
 
     use super::*;
 

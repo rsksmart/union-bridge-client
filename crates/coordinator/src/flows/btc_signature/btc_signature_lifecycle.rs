@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use anyhow::{Context, Result, anyhow, bail};
-use common::runtime_sync::RuntimeSync;
-use common::types::{BlockNumber, Hash256};
+use common_core::types::{BlockNumber, Hash256};
+use common_runtime::runtime_sync::RuntimeSync;
 #[cfg(test)]
 use mockall::automock;
 use tracing::debug;
@@ -288,9 +288,9 @@ where
 mod tests {
     use std::rc::Rc;
 
-    use common::runtime_sync::RuntimeSync;
-    use common::test_utils::rsk_block_generator::create_block_and_uncles;
-    use common::types::{BlockNumber, Hash256, RskBlock, RskBlockAndUncles};
+    use common_core::types::{BlockNumber, Hash256, RskBlock, RskBlockAndUncles};
+    use common_dev::rsk_block_generator::create_block_and_uncles;
+    use common_runtime::runtime_sync::RuntimeSync;
     use mockall::predicate::function;
     use musig2::{PartialSignature, PubNonce};
     use primitive_types::H256;

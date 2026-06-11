@@ -2,12 +2,12 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use anyhow::{Context, Result, anyhow, bail};
-use common::msg_broker::bitvmx_types::{
+use common_bitvmx::bitvmx_types::{
     FundsAdvanceSPV, OPERATOR_TAKE_TX, OutgoingBitVMXApiMessages, UnionSPVNotification,
     UnionTxType, VariableTypes, advance_funds_protocol_id,
 };
-use common::runtime_sync::RuntimeSync;
-use common::types::{CommitteeId, Hash256, RskBlockAndUncles};
+use common_core::types::{CommitteeId, Hash256, RskBlockAndUncles};
+use common_runtime::runtime_sync::RuntimeSync;
 use primitive_types::H256;
 use tracing::{debug, error, info, info_span, trace, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
@@ -33,7 +33,7 @@ use crate::types::{
 pub(crate) struct AdvanceFundsFlowProcessor<CG, BC>
 where
     CG: RskContractsGatewayApi,
-    BC: common::msg_broker::broker::BitVmxBrokerClientApi,
+    BC: common_broker::broker::BitVmxBrokerClientApi,
 {
     contracts_gateway: Rc<CG>,
     rt_sync: RuntimeSync,
@@ -57,7 +57,7 @@ where
 impl<CG, BC> AdvanceFundsFlowProcessor<CG, BC>
 where
     CG: RskContractsGatewayApi,
-    BC: common::msg_broker::broker::BitVmxBrokerClientApi,
+    BC: common_broker::broker::BitVmxBrokerClientApi,
 {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
@@ -394,7 +394,7 @@ where
 
     fn build_pegout_requested_event_info(
         event: &crate::types::PegoutRequestedEvent,
-    ) -> (String, EventStatus, common::types::BlockNumber, RskPegManagerEvents) {
+    ) -> (String, EventStatus, common_core::types::BlockNumber, RskPegManagerEvents) {
         (
             format!("advance-funds-pegout-requested-{}", event.tx_hash),
             event.removed,
@@ -405,7 +405,7 @@ where
 
     fn build_operator_take_triggered_event_info(
         event: &OperatorTakeTriggeredEvent,
-    ) -> (String, EventStatus, common::types::BlockNumber, RskPegManagerEvents) {
+    ) -> (String, EventStatus, common_core::types::BlockNumber, RskPegManagerEvents) {
         (
             format!("operator-take-triggered-{}", event.tx_hash),
             event.removed,
@@ -586,7 +586,7 @@ where
 impl<CG, BC> EventProcessor for AdvanceFundsFlowProcessor<CG, BC>
 where
     CG: RskContractsGatewayApi,
-    BC: common::msg_broker::broker::BitVmxBrokerClientApi,
+    BC: common_broker::broker::BitVmxBrokerClientApi,
 {
     fn process_user_request(&mut self, req: &UserRequests) -> Result<()> {
         self.cleanup_terminal_flows();
@@ -831,12 +831,12 @@ mod tests {
     use bitcoin::absolute::LockTime;
     use bitcoin::transaction::Version;
     use bitcoin::{PublicKey, Transaction};
-    use common::msg_broker::bitvmx_types::{
+    use common_bitvmx::bitvmx_types::{
         AdvanceFundsRegistered, BtcTxSPVProof, IncomingBitVMXApiMessages,
         OutgoingBitVMXApiMessages, UnionSPVNotification, UnionTxType,
     };
-    use common::msg_broker::broker::MockBrokerClientApi;
-    use common::types::{Address, CommitteeId, Hash256};
+    use common_broker::broker::MockBrokerClientApi;
+    use common_core::types::{Address, CommitteeId, Hash256};
     use primitive_types::{H160, H256};
     use uuid::Uuid;
 

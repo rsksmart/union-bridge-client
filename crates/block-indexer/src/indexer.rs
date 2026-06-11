@@ -1,11 +1,13 @@
 use std::sync::mpsc;
 
 use anyhow::{Context, Result, bail};
-use common::config::{IndexerConfig, IndexerStartFrom};
-use common::rsk_indexer::RskIndexer;
-use common::rsk_provider::{RskProvider, RskSubscription, RskSubscriptionError};
-use common::shutdown_flag::ShutdownFlag;
-use common::types::{BlockHash, BlockNumber, RskBlock, RskBlockAndUncles};
+use common_core::types::{BlockHash, BlockNumber, RskBlock, RskBlockAndUncles};
+use common_rsk::rsk_indexer::RskIndexer;
+use common_rsk::rsk_provider::{
+    RskProvider, RskSubscription, RskSubscriptionError, resolve_initial_block,
+};
+use common_runtime::config::{IndexerConfig, IndexerStartFrom};
+use common_runtime::shutdown_flag::ShutdownFlag;
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::store::BlockStore;
@@ -32,7 +34,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         indexer_config: &IndexerConfig,
         shutdown_flag: ShutdownFlag,
     ) -> Result<Self> {
-        let initial_block = indexer_config.resolve_initial_block(&provider)?;
+        let initial_block = resolve_initial_block(indexer_config, &provider)?;
 
         Ok(Self {
             store,
@@ -55,7 +57,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         indexer_config: &IndexerConfig,
         shutdown_flag: ShutdownFlag,
     ) -> Result<Self> {
-        let initial_block = indexer_config.resolve_initial_block(&provider)?;
+        let initial_block = resolve_initial_block(indexer_config, &provider)?;
 
         Ok(Self {
             store,
@@ -490,10 +492,10 @@ impl<P: RskProvider, S: BlockStore> RskIndexer<P, S> for BlockIndexer<P, S> {
 
 #[cfg(test)]
 mod tests {
-    use common::rsk_provider::MockRskProvider;
-    use common::test_utils::rsk_block_generator::{
+    use common_dev::rsk_block_generator::{
         get_first_default_rsk_block, get_second_default_rsk_block, get_third_default_rsk_block,
     };
+    use common_rsk::rsk_provider::MockRskProvider;
     use mockall::predicate::eq;
 
     use super::*;
@@ -649,9 +651,9 @@ mod tests {
         let indexer_config = IndexerConfig {
             start_from: IndexerStartFrom::Hash,
             initial_block_hash: Some(missing_hash.to_string()),
-            sync: common::config::SyncConfig { finality_depth: 0, batch_size: 0 },
-            storage: common::config::StorageConfig { path: String::new() },
-            cache: common::config::CacheConfig { size: 0 },
+            sync: common_runtime::config::SyncConfig { finality_depth: 0, batch_size: 0 },
+            storage: common_runtime::config::StorageConfig { path: String::new() },
+            cache: common_runtime::config::CacheConfig { size: 0 },
         };
 
         // Provider that returns Ok(None) for our missing hash

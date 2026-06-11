@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 
-use common::msg_broker::bitvmx_types::{ParticipantRole, SignedPublicKey};
-use common::types::CommitteeId;
+use common_bitvmx::bitvmx_types::{ParticipantRole, SignedPublicKey};
+use common_core::types::CommitteeId;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;

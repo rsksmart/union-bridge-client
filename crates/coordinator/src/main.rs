@@ -4,12 +4,10 @@ use std::rc::Rc;
 
 use anyhow::{Context, Result, ensure};
 use clap::{Arg, Command};
-use common::config::CommonConfig;
-use common::msg_broker::broker::{
-    BITVMX_L2_BROKER_CLIENT_ID, BitVmxBrokerClient, BrokerClient, Cert,
-};
-use common::runtime_sync::RuntimeSync;
-use common::shutdown_flag::ShutdownFlag;
+use common_broker::broker::{BITVMX_L2_BROKER_CLIENT_ID, BitVmxBrokerClient, BrokerClient, Cert};
+use common_runtime::config::CommonConfig;
+use common_runtime::runtime_sync::RuntimeSync;
+use common_runtime::shutdown_flag::ShutdownFlag;
 use coordinator::config::{Config, Logger};
 use coordinator::coordinator::Coordinator;
 use coordinator::monitor::Monitor;
@@ -40,7 +38,7 @@ fn require_pubkey_hash(pubkey_hash: &str, service: &str) -> Result<String> {
     Ok(pubkey_hash.to_owned())
 }
 
-fn parse_cli_args() -> (Option<String>, common::logging::LogGuard) {
+fn parse_cli_args() -> (Option<String>, common_runtime::logging::LogGuard) {
     let matches = Command::new("Union Bridge Coordinator")
         .arg(Arg::new(LOG_DIR_CLI_FLAG).short('l').long(LOG_DIR_CLI_FLAG).value_name("DIR").help(
             "Directory for log files (also set via UB_LOG_DIR). Defaults to ./logs/ when unset.",

@@ -9,12 +9,12 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use anyhow::{Context, Result};
-use common::msg_broker::bitvmx_types::{
+use common_bitvmx::bitvmx_types::{
     GLOBAL_SETTINGS_UUID, IncomingBitVMXApiMessages, OP_COSIGN_UTXOS, OutgoingBitVMXApiMessages,
     UnionSettings, VariableTypes, WT_INIT_CHALLENGE_UTXOS,
 };
-use common::msg_broker::broker::BitVmxBrokerClientApi;
-use common::types::{BlockNumber, CommitteeId, RskBlockAndUncles, StreamId};
+use common_broker::broker::BitVmxBrokerClientApi;
+use common_core::types::{BlockNumber, CommitteeId, RskBlockAndUncles, StreamId};
 use tracing::{debug, error, info, info_span, instrument, trace, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use uuid::Uuid;
@@ -606,13 +606,13 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use alloy_primitives::{Address as AlloyAddress, Bytes, U256};
-    use common::msg_broker::bitvmx_types::{
+    use common_bitvmx::bitvmx_types::{
         CommsAddress, GLOBAL_SETTINGS_UUID, IncomingBitVMXApiMessages, OP_COSIGN_UTXOS,
         OutgoingBitVMXApiMessages, ParticipantRole, UnionSettings, VariableTypes,
     };
-    use common::msg_broker::broker::MockBrokerClientApi;
-    use common::runtime_sync::RuntimeSync;
-    use common::types::{Address as CommonAddress, BlockHash, BlockNumber, StreamId, TxHash};
+    use common_broker::broker::MockBrokerClientApi;
+    use common_core::types::{Address as CommonAddress, BlockHash, BlockNumber, StreamId, TxHash};
+    use common_runtime::runtime_sync::RuntimeSync;
     use mockall::predicate::function;
     use op_funding::derive_stream_funding_profile;
     use primitive_types::{H160, H256};

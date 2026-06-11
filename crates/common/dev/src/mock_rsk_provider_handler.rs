@@ -6,16 +6,16 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::anyhow;
-use tracing::info;
-
-use crate::rsk_provider::{
+use common_core::types::{BlockHash, BlockNumber, LogInfo, RskBlock, RskLog};
+use common_rsk::rsk_provider::{
     MockRskProvider, MockRskSubscription, RskSubscriptionError, RskSubscriptionFilter,
 };
-use crate::shutdown_flag::ShutdownFlag;
-use crate::test_utils::rsk_block_generator::FakeBlockGenerator;
-use crate::test_utils::rsk_log_generator::FakeLogGenerator;
-use crate::test_utils::rsk_utils::{UncleBlockInfo, from_hex_to_block_hash};
-use crate::types::{BlockHash, BlockNumber, LogInfo, RskBlock, RskLog};
+use common_runtime::shutdown_flag::ShutdownFlag;
+use tracing::info;
+
+use crate::rsk_block_generator::FakeBlockGenerator;
+use crate::rsk_log_generator::FakeLogGenerator;
+use crate::rsk_utils::{UncleBlockInfo, from_hex_to_block_hash};
 
 pub struct MockRskProviderHandler<'a> {
     provider: &'a mut MockRskProvider,

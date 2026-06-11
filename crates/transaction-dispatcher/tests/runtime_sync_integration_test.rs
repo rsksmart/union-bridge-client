@@ -2,7 +2,7 @@
 // This test simulates the real-world scenario where coordinator calls
 // transaction-dispatcher through RuntimeSync
 
-use common::runtime_sync::RuntimeSync;
+use common_runtime::runtime_sync::RuntimeSync;
 use transaction_dispatcher::rsk_gateway::DomainErrors;
 
 #[test]

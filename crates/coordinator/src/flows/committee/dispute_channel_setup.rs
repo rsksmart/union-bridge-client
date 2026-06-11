@@ -3,13 +3,13 @@ use std::rc::Rc;
 
 use anyhow::{Context, Result};
 use bitcoin::PublicKey;
-use common::msg_broker::bitvmx_types::{
+use common_bitvmx::bitvmx_types::{
     CommsAddress, ForceChallenge, ForceCondition, IncomingBitVMXApiMessages, OP_COSIGN_UTXOS,
     PROGRAM_TYPE_DISPUTE_CHANNEL, PROGRAM_TYPE_DRP, PartialUtxo, ParticipantRole, VariableTypes,
     WT_INIT_CHALLENGE_UTXOS, WtInitChallengeUtxos, dispute_channel_protocol_id,
 };
-use common::msg_broker::broker::BitVmxBrokerClientApi;
-use common::msg_broker::config::{ConfigResult, DisputeConfiguration, ForceFailConfiguration};
+use common_bitvmx::config::{ConfigResult, DisputeConfiguration, ForceFailConfiguration};
+use common_broker::broker::BitVmxBrokerClientApi;
 use hex::decode;
 use tracing::{debug, info};
 use uuid::Uuid;
@@ -499,12 +499,12 @@ mod tests {
     use alloy_primitives::U256;
     use bitcoin::hashes::Hash;
     use bitcoin::{Amount, PublicKey, ScriptBuf, Txid, WPubkeyHash};
-    use common::msg_broker::bitvmx_types::{
+    use common_bitvmx::bitvmx_types::{
         CommsAddress, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, OutputType,
         ParticipantRole, WtInitChallengeUtxos,
     };
-    use common::msg_broker::broker::MockBrokerClientApi;
-    use common::types::{Address, CommitteeId};
+    use common_broker::broker::MockBrokerClientApi;
+    use common_core::types::{Address, CommitteeId};
     use primitive_types::H160;
     use uuid::Uuid;
 

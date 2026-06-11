@@ -1,5 +1,5 @@
-use common::msg_broker::bitvmx_types::ParticipantRole;
-use common::types::StreamId;
+use common_bitvmx::bitvmx_types::ParticipantRole;
+use common_core::types::StreamId;
 use serde::{Deserialize, Serialize};
 
 use crate::types::Utxo;

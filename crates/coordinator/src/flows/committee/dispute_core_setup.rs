@@ -2,11 +2,11 @@ use std::rc::Rc;
 
 use anyhow::{Context, Result};
 use bitcoin::PublicKey;
-use common::msg_broker::bitvmx_types::{
+use common_bitvmx::bitvmx_types::{
     ADVANCE_FUNDS_INPUT, Committee, CommsAddress, DisputeCoreData, IncomingBitVMXApiMessages,
     MemberData, PartialUtxo, Utxo, VariableTypes,
 };
-use common::msg_broker::broker::BitVmxBrokerClientApi;
+use common_broker::broker::BitVmxBrokerClientApi;
 use tracing::{debug, info};
 use uuid::Uuid;
 
@@ -160,12 +160,12 @@ mod tests {
     use alloy_primitives::{Bytes, U256};
     use bitcoin::hashes::Hash;
     use bitcoin::{Amount, PublicKey, ScriptBuf, Txid, WPubkeyHash};
-    use common::msg_broker::bitvmx_types::{
+    use common_bitvmx::bitvmx_types::{
         Committee, CommsAddress, DisputeCoreData, IncomingBitVMXApiMessages,
         OutgoingBitVMXApiMessages, OutputType, ParticipantRole, Utxo,
     };
-    use common::msg_broker::broker::MockBrokerClientApi;
-    use common::types::{Address, CommitteeId};
+    use common_broker::broker::MockBrokerClientApi;
+    use common_core::types::{Address, CommitteeId};
     use primitive_types::H160;
     use uuid::Uuid;
 
