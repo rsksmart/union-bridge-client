@@ -313,9 +313,8 @@ impl CheckForkJournal {
 
         let (accepted_dst, rest) = rest.split_at_mut(1);
         accepted_dst[0] = self.accepted;
-        let (version_dst, padding_dst) = rest.split_at_mut(self.version.len());
+        let (version_dst, _rest) = rest.split_at_mut(self.version.len());
         version_dst.copy_from_slice(&self.version);
-        padding_dst.fill(0);
         out
     }
 }
