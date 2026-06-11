@@ -179,6 +179,10 @@ pub(crate) struct FlowContext {
     operator_take_spv: Option<BtcTxSPVProof>,
     accept_pegin_pid: Option<Uuid>,
     created_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// True while the current (register) step is parked on a retryable
+    /// `MissingConfirmationsOnNativeBridge` outcome. Persisted so a restart can
+    /// re-arm the in-memory retry; a successful submission resets it to false.
+    pending_retry: bool,
 }
 
 pub(crate) struct AdvanceFundsFlow<CG, BC, S>
@@ -237,6 +241,7 @@ where
                 operator_take_spv: None,
                 accept_pegin_pid: None,
                 created_at: Some(chrono::Utc::now()),
+                pending_retry: false,
             },
         }
     }
@@ -348,6 +353,7 @@ where
             }
         };
 
+        self.state.pending_retry = matches!(outcome, StepOutcome::Retry { .. });
         self.persist_state()?;
 
         Ok(outcome)
@@ -929,6 +935,14 @@ where
         matches!(self.state.step, Steps::Done | Steps::Failed)
     }
 
+    /// True when a restored flow was persisted mid-retry (register step parked
+    /// on missing native-bridge confirmations). The retry lives only in the
+    /// processor's in-memory `RetryTracker`, so it must be re-armed after a
+    /// restart or the submission would never be re-attempted.
+    pub(crate) fn pending_retry(&self) -> bool {
+        self.state.pending_retry
+    }
+
     /// Snapshot used by `Coordinator::log_active_flows` for periodic
     /// observability of in-flight flows.
     pub(crate) fn get_flow_details(&self) -> crate::event_processor::FlowDetails {
@@ -996,8 +1010,17 @@ where
                 operator_take_spv: None,
                 accept_pegin_pid: None,
                 created_at: None,
+                pending_retry: false,
             },
         }
+    }
+
+    /// Consume the flow and return its persisted state with `pending_retry`
+    /// set, mirroring a flow that was checkpointed mid-retry. Used to seed the
+    /// processor restore path.
+    pub(crate) fn into_saved_state_pending_retry(mut self) -> FlowContext {
+        self.state.pending_retry = true;
+        self.state
     }
 }
 
@@ -1476,6 +1499,7 @@ mod tests {
         flow.state.operator_take_txid = Some(test_spv_proof_value().tx.compute_txid());
         flow.state.operator_take_spv = Some(test_spv_proof_value());
         flow.state.my_committee_index = Some(2);
+        flow.state.pending_retry = true;
 
         let json = serde_json::to_string(&flow.state).expect("FlowContext serializes");
         let restored_ctx: FlowContext =
@@ -1499,5 +1523,6 @@ mod tests {
         assert_eq!(restored.state.my_committee_index, Some(2));
         assert!(restored.state.operator_take_spv.is_some());
         assert!(restored.state.operator_take_txid.is_some());
+        assert!(restored.pending_retry());
     }
 }

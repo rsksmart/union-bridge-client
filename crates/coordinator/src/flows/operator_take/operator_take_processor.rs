@@ -110,6 +110,19 @@ where
                 .expect("Failed to load operator-take flows from store");
         processor.flows = restored.into_values().map(|flow| (flow.flow_id(), flow)).collect();
 
+        // Retries live only in the in-memory `RetryTracker`, so a flow parked
+        // on a retryable register step would otherwise never re-submit after a
+        // restart. Re-arm those retries from the persisted `pending_retry` flag.
+        let to_retry: Vec<FlowId> = processor
+            .flows
+            .values()
+            .filter(|flow| flow.pending_retry())
+            .map(AdvanceFundsFlow::flow_id)
+            .collect();
+        for flow_id in to_retry {
+            processor.schedule_retry(flow_id, 1, "re-arming retry for restored flow");
+        }
+
         processor
     }
 
@@ -1204,6 +1217,52 @@ mod tests {
             !processor
                 .request_pegout_tx_hashes
                 .contains_key(&(CommitteeId::from(committee_id.as_u128()), slot_index as u64))
+        );
+    }
+
+    #[test]
+    fn restore_rearms_retry_for_flow_parked_mid_retry() {
+        // A selected-operator flow checkpointed at a register step with a
+        // pending retry must have that retry re-armed on restart — the
+        // RetryTracker is in-memory only, so otherwise the register tx would
+        // never be re-submitted and the flow would hang forever.
+        let committee_id = Uuid::new_v4();
+        let slot_index = 4;
+        let flow_id = FlowId::from_random();
+        let trigger_data = test_trigger_data(committee_id, slot_index);
+
+        let saved_state = AdvanceFundsFlow::new_for_test(
+            Rc::new(test_contracts(true)),
+            Rc::new(MockBitVmxBroker::new()),
+            flow_id,
+            trigger_data,
+            Steps::RegisterOrWaitRskAdvanceFunds,
+        )
+        .into_saved_state_pending_retry();
+
+        let mut store = MockCoordinatorStoreApi::new();
+        store.expect_load_all_flows::<FlowContext>().returning(move |_| {
+            let mut flows = HashMap::new();
+            flows.insert(flow_id.value(), saved_state.clone());
+            Ok(flows)
+        });
+
+        let processor = AdvanceFundsFlowProcessor::new(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            RuntimeSync::new().expect("runtime"),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+            Rc::new(Signaling::new("/tmp", "disabled")),
+            &Rc::new(store),
+            5,
+            20,
+            NativeBridgeVerifier::Dummy,
+        );
+
+        assert!(processor.flows.contains_key(&flow_id), "flow restored");
+        assert!(
+            processor.retries.is_scheduled(&flow_id),
+            "pending retry must be re-armed after restore"
         );
     }
 
