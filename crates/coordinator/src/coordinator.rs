@@ -371,10 +371,6 @@ impl<
             .cancel_bitvmx_monitoring()
             .context("Failed to cancel BitVMX event monitoring")?;
 
-        self.monitor.cancel_block_monitoring().context("Failed to cancel block monitoring")?;
-
-        self.monitor.cancel_event_monitoring().context("Failed to cancel event monitoring")?;
-
         result
     }
 
@@ -560,10 +556,6 @@ pub(crate) mod tests {
 
         mock_monitor.expect_start_user_monitoring().times(..).returning(|| Ok(()));
 
-        mock_monitor.expect_cancel_event_monitoring().return_once(|| Ok(())).once();
-
-        mock_monitor.expect_cancel_block_monitoring().return_once(|| Ok(())).once();
-
         mock_monitor.expect_cancel_bitvmx_monitoring().return_once(|| Ok(())).once();
 
         expect_try_rsk_event(vec![event_1, event_2], &mut mock_monitor);
@@ -626,10 +618,6 @@ pub(crate) mod tests {
         mock_monitor.expect_start_user_monitoring().times(..).returning(|| Ok(()));
 
         mock_monitor.expect_start_bitvmx_monitoring().times(..).returning(|| Ok(()));
-
-        mock_monitor.expect_cancel_event_monitoring().return_once(|| Ok(())).once();
-
-        mock_monitor.expect_cancel_block_monitoring().return_once(|| Ok(())).once();
 
         mock_monitor.expect_cancel_bitvmx_monitoring().return_once(|| Ok(())).once();
 
@@ -696,8 +684,6 @@ pub(crate) mod tests {
         mock_monitor.expect_start_bitvmx_monitoring().times(..).returning(|| Ok(()));
         mock_monitor.expect_start_block_monitoring().times(..).returning(|| Ok(()));
         mock_monitor.expect_start_user_monitoring().times(..).returning(|| Ok(()));
-        mock_monitor.expect_cancel_event_monitoring().return_once(|| Ok(())).once();
-        mock_monitor.expect_cancel_block_monitoring().return_once(|| Ok(())).once();
         mock_monitor.expect_cancel_bitvmx_monitoring().return_once(|| Ok(())).once();
         mock_monitor.expect_try_bitvmx_event().returning(|| Ok(None));
         mock_monitor.expect_try_rsk_event().returning(|| Ok(None));
@@ -737,6 +723,43 @@ pub(crate) mod tests {
             bitvmx_broker,
             mock_user_broker,
             vec![Box::new(processor)],
+            shutdown_flag,
+            mock_store,
+        );
+
+        assert!(coordinator.run().is_ok());
+    }
+
+    #[test]
+    fn test_coordinator_run_preserves_block_and_log_subscriptions_on_shutdown() {
+        let mut mock_monitor = MockMonitorApi::new();
+
+        mock_monitor.expect_start_event_monitoring().return_once(|| Ok(()));
+        mock_monitor.expect_start_block_monitoring().return_once(|| Ok(()));
+        mock_monitor.expect_start_bitvmx_monitoring().return_once(|| Ok(()));
+        mock_monitor.expect_start_user_monitoring().return_once(|| Ok(()));
+        mock_monitor.expect_cancel_event_monitoring().never();
+        mock_monitor.expect_cancel_block_monitoring().never();
+        mock_monitor.expect_cancel_bitvmx_monitoring().return_once(|| Ok(()));
+        mock_monitor.expect_try_user_request().returning(|| Ok(None));
+        mock_monitor.expect_try_bitvmx_event().returning(|| Ok(None));
+        mock_monitor.expect_try_rsk_event().returning(|| Ok(None));
+        mock_monitor.expect_try_block().returning(|| Ok(None));
+
+        let shutdown_flag = ShutdownFlag::init();
+        handle_shutdown(shutdown_flag.clone());
+
+        let mut bitvmx_broker = MockBitVmxBroker::new();
+        expect_bitvmx_ping(&mut bitvmx_broker, 1);
+
+        let mut mock_store = MockCoordinatorStoreApi::new();
+        mock_store.expect_save_context().with(always()).returning(|_| Ok(()));
+
+        let mut coordinator = Coordinator::new_for_tests(
+            mock_monitor,
+            bitvmx_broker,
+            MockUnionBroker::new(),
+            generate_idle_processors(),
             shutdown_flag,
             mock_store,
         );
@@ -889,8 +912,6 @@ pub(crate) mod tests {
         mock_monitor.expect_start_block_monitoring().return_once(|| Ok(()));
         mock_monitor.expect_start_bitvmx_monitoring().return_once(|| Ok(()));
         mock_monitor.expect_start_user_monitoring().return_once(|| Ok(()));
-        mock_monitor.expect_cancel_event_monitoring().return_once(|| Ok(()));
-        mock_monitor.expect_cancel_block_monitoring().return_once(|| Ok(()));
         mock_monitor.expect_cancel_bitvmx_monitoring().return_once(|| Ok(()));
     }
 
