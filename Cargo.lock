@@ -1671,7 +1671,7 @@ dependencies = [
 
 [[package]]
 name = "block-indexer"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1922,7 +1922,7 @@ dependencies = [
 
 [[package]]
 name = "check-fork"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "alloy-rlp",
  "check-fork-tester",
@@ -1935,7 +1935,7 @@ dependencies = [
 
 [[package]]
 name = "check-fork-tester"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "bitcoin",
  "check-fork",
@@ -1953,7 +1953,7 @@ dependencies = [
 
 [[package]]
 name = "check-fork-zkp"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "risc0-build",
 ]
@@ -2096,7 +2096,7 @@ dependencies = [
 
 [[package]]
 name = "common-bitvmx"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "bitcoin",
@@ -2110,7 +2110,7 @@ dependencies = [
 
 [[package]]
 name = "common-broker"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "bitvmx-broker",
@@ -2128,7 +2128,7 @@ dependencies = [
 
 [[package]]
 name = "common-core"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "alloy-primitives",
  "anyhow",
@@ -2142,7 +2142,7 @@ dependencies = [
 
 [[package]]
 name = "common-dev"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "cargo-husky",
@@ -2158,7 +2158,7 @@ dependencies = [
 
 [[package]]
 name = "common-rsk"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "alloy-primitives",
  "alloy-provider",
@@ -2180,7 +2180,7 @@ dependencies = [
 
 [[package]]
 name = "common-runtime"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "bitcoin",
@@ -2331,7 +2331,7 @@ dependencies = [
 
 [[package]]
 name = "coordinator"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-types",
@@ -4177,7 +4177,7 @@ dependencies = [
 
 [[package]]
 name = "key-manager"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "alloy-primitives",
  "alloy-signer",
@@ -4303,7 +4303,7 @@ checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "log-indexer"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -4719,7 +4719,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "op-funding"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "alloy-primitives",
 ]
@@ -5220,7 +5220,7 @@ dependencies = [
 
 [[package]]
 name = "protocol-params"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
 ]
@@ -7302,7 +7302,7 @@ dependencies = [
 
 [[package]]
 name = "transaction-dispatcher"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "alloy-contract",
  "alloy-json-rpc",
@@ -7505,7 +7505,7 @@ dependencies = [
 
 [[package]]
 name = "user-api"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "axum",
