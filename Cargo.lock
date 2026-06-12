@@ -2105,7 +2105,7 @@ dependencies = [
  "serde",
  "sha2 0.11.0",
  "tracing",
- "uuid 1.23.1",
+ "uuid 1.23.3",
 ]
 
 [[package]]
@@ -2123,7 +2123,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tracing",
- "uuid 1.23.1",
+ "uuid 1.23.3",
 ]
 
 [[package]]
@@ -2361,7 +2361,7 @@ dependencies = [
  "tracing",
  "transaction-dispatcher",
  "union-bridge-contracts",
- "uuid 1.23.1",
+ "uuid 1.23.3",
 ]
 
 [[package]]
@@ -2672,7 +2672,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 2.0.117",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -5784,7 +5784,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "uuid 1.23.1",
+ "uuid 1.23.3",
 ]
 
 [[package]]
@@ -5802,7 +5802,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "uuid 1.23.1",
+ "uuid 1.23.3",
 ]
 
 [[package]]
@@ -6824,7 +6824,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.2",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -7521,7 +7521,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "transaction-dispatcher",
- "uuid 1.23.1",
+ "uuid 1.23.3",
 ]
 
 [[package]]
@@ -7554,9 +7554,9 @@ dependencies = [
 
 [[package]]
 name = "uuid"
-version = "1.23.1"
+version = "1.23.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ddd74a9687298c6858e9b88ec8935ec45d22e8fd5e6394fa1bd4e99a87789c76"
+checksum = "144d6b123cef80b301b8f72a9e2ca4370ddec21950d0a103dd22c437006d2db7"
 dependencies = [
  "getrandom 0.4.2",
  "js-sys",
