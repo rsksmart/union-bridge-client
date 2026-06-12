@@ -127,7 +127,10 @@ pub(crate) enum StepData {
     OperatorTakeTriggered,
     CommInfo(CommsAddress),
     SetupCompleted,
-    OperatorTakeTransactionInfo(Txid),
+    OperatorTakeTransactionInfo {
+        tx_name: String,
+        txid: Txid,
+    },
     AdvanceFundsSPV(FundsAdvanceSPV),
     AdvanceFundsConfirmed(AdvanceFundsRegistered),
     ReimbursementKickoffSPV(BtcTxSPVProof),
@@ -366,8 +369,8 @@ where
             StepData::OperatorTakeTriggered => self.on_operator_take_triggered(current_step)?,
             StepData::CommInfo(comm_info) => self.on_comm_info(current_step, comm_info)?,
             StepData::SetupCompleted => self.on_setup_completed(current_step)?,
-            StepData::OperatorTakeTransactionInfo(txid) => {
-                self.on_operator_take_transaction_info(current_step, txid)?
+            StepData::OperatorTakeTransactionInfo { tx_name, txid } => {
+                self.on_operator_take_transaction_info(current_step, &tx_name, txid)?
             }
             StepData::AdvanceFundsSPV(spv_data) => {
                 self.on_advance_funds_spv(current_step, spv_data)?
@@ -422,15 +425,18 @@ where
     fn on_operator_take_transaction_info(
         &mut self,
         current_step: Steps,
+        tx_name: &str,
         txid: Txid,
     ) -> Result<Option<Steps>> {
-        if !self.was_selected_operator() && current_step == Steps::WaitBitVmxOperatorTakeSpv {
-            self.state.operator_take_txid = Some(txid);
-            return Ok(Some(Steps::WaitBitVmxOperatorTakeSpv));
-        }
         if current_step != Steps::RequestBitVmxOperatorTakeTransactionInfo {
             bail!(
                 "Invalid state transition from {current_step:?} with OperatorTakeTransactionInfo"
+            );
+        }
+        let expected_tx_name = self.operator_take_transaction_name()?;
+        if tx_name != expected_tx_name {
+            bail!(
+                "Unexpected OperatorTakeTransactionInfo: got {tx_name}, expected {expected_tx_name}"
             );
         }
         self.state.operator_take_txid = Some(txid);
@@ -520,12 +526,10 @@ where
                 "Invalid state transition from {current_step:?} with ReimbursementKickoffConfirmed"
             );
         }
-        // Both paths converge on the operator-take SPV wait step: each
-        // operator's accept_pegin observes the BTC OPERATOR_TAKE_TX and emits
-        // the SPV.
-        if !self.was_selected_operator() {
-            self.enter_request_transaction_info()?;
-        }
+        // Both paths converge on the operator-take wait step. Non-selected
+        // members complete from the RSK PegoutRegistered event because BitVMX
+        // TransactionInfo replies are keyed only by accept_pegin pid/name and
+        // cannot distinguish a replaced operator-take flow.
         Ok(Some(Steps::WaitBitVmxOperatorTakeSpv))
     }
 
@@ -877,10 +881,8 @@ where
     /// captured `accept_pegin_pid` matches `program_id`. The step check guards
     /// against late replies arriving after the flow advanced.
     pub(crate) fn matches_accept_pegin_pid(&self, program_id: &Uuid) -> bool {
-        let waiting_for_txid = self.state.step == Steps::RequestBitVmxOperatorTakeTransactionInfo
-            || (self.state.step == Steps::WaitBitVmxOperatorTakeSpv
-                && self.state.operator_take_txid.is_none());
-        waiting_for_txid && self.state.accept_pegin_pid == Some(*program_id)
+        self.state.step == Steps::RequestBitVmxOperatorTakeTransactionInfo
+            && self.state.accept_pegin_pid == Some(*program_id)
     }
 
     fn enter_write_completion_marker(&self) -> Result<()> {
@@ -988,6 +990,16 @@ where
         self.state.advance_funds_registered.is_some()
     }
 
+    #[cfg(test)]
+    pub(crate) fn set_operator_take_txid_for_test(&mut self, txid: Txid) {
+        self.state.operator_take_txid = Some(txid);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_advance_funds_registered_for_test(&mut self, data: AdvanceFundsRegistered) {
+        self.state.advance_funds_registered = Some(data);
+    }
+
     pub(crate) fn is_terminal(&self) -> bool {
         matches!(self.state.step, Steps::Done | Steps::Failed)
     }
@@ -1016,6 +1028,36 @@ where
         self.state.operator_take_txid == Some(txid)
     }
 
+    pub(crate) fn matches_advance_funds_spv(&self, spv_data: &FundsAdvanceSPV) -> bool {
+        spv_data.txid == spv_data.spv_proof.tx.compute_txid()
+            && spv_data.committee_id == self.committee_id_uuid()
+            && spv_data.slot_index == self.state.trigger_data.slot_index
+            && spv_data.pegout_id == self.state.trigger_data.pegout_id.value().as_bytes().to_vec()
+            && self
+                .state
+                .operator_take_txid
+                .is_some_and(|txid| tx_spends(&spv_data.spv_proof, txid))
+    }
+
+    pub(crate) fn matches_reimbursement_kickoff_spv(
+        &self,
+        notification_txid: Txid,
+        spv_proof: &BtcTxSPVProof,
+    ) -> bool {
+        notification_txid == spv_proof.tx.compute_txid()
+            && self
+                .state
+                .advance_funds_registered
+                .as_ref()
+                .is_some_and(|registered| tx_spends(spv_proof, registered.txid))
+    }
+
+    pub(crate) fn can_complete_pegout_registered_without_txid(&self) -> bool {
+        !self.was_selected_operator()
+            && self.state.operator_take_txid.is_none()
+            && self.state.step.is_valid_transition(Steps::RegisterOrWaitRskOperatorTake, false)
+    }
+
     /// Snapshot used by `Coordinator::log_active_flows` for periodic
     /// observability of in-flight flows.
     pub(crate) fn get_flow_details(&self) -> crate::event_processor::FlowDetails {
@@ -1042,6 +1084,10 @@ where
         *self.state.trigger_data.committee_id == committee_id
             && self.state.trigger_data.slot_id == slot_id
     }
+}
+
+fn tx_spends(spv_proof: &BtcTxSPVProof, txid: Txid) -> bool {
+    spv_proof.tx.input.iter().any(|input| input.previous_output.txid == txid)
 }
 
 #[cfg(test)]
