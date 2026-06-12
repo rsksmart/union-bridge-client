@@ -2659,7 +2659,7 @@ dependencies = [
 
 [[package]]
 name = "key-manager"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "alloy-primitives",
  "alloy-signer",
@@ -2953,7 +2953,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "op-funding"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "alloy-primitives",
 ]
@@ -3009,7 +3009,7 @@ dependencies = [
 
 [[package]]
 name = "operations"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "alloy-primitives",
  "anyhow",
@@ -3268,7 +3268,7 @@ dependencies = [
 
 [[package]]
 name = "protocol-params"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
 ]
@@ -3678,7 +3678,7 @@ checksum = "48fd7bd8a6377e15ad9d42a8ec25371b94ddc67abe7c8b9127bec79bebaaae18"
 
 [[package]]
 name = "run"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -4754,7 +4754,7 @@ checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 
 [[package]]
 name = "ub-wallet"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "base64 0.13.1",
