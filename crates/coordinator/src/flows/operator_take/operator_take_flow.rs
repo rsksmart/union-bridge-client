@@ -424,6 +424,10 @@ where
         current_step: Steps,
         txid: Txid,
     ) -> Result<Option<Steps>> {
+        if !self.was_selected_operator() && current_step == Steps::WaitBitVmxOperatorTakeSpv {
+            self.state.operator_take_txid = Some(txid);
+            return Ok(Some(Steps::WaitBitVmxOperatorTakeSpv));
+        }
         if current_step != Steps::RequestBitVmxOperatorTakeTransactionInfo {
             bail!(
                 "Invalid state transition from {current_step:?} with OperatorTakeTransactionInfo"
@@ -519,6 +523,9 @@ where
         // Both paths converge on the operator-take SPV wait step: each
         // operator's accept_pegin observes the BTC OPERATOR_TAKE_TX and emits
         // the SPV.
+        if !self.was_selected_operator() {
+            self.enter_request_transaction_info()?;
+        }
         Ok(Some(Steps::WaitBitVmxOperatorTakeSpv))
     }
 
@@ -866,12 +873,14 @@ where
         self.state.step == Steps::GetBitVmxCommInfo
     }
 
-    /// True when this flow is at the operator-take txid request step and its
+    /// True when this flow is waiting for an operator-take txid reply and its
     /// captured `accept_pegin_pid` matches `program_id`. The step check guards
     /// against late replies arriving after the flow advanced.
     pub(crate) fn matches_accept_pegin_pid(&self, program_id: &Uuid) -> bool {
-        self.state.step == Steps::RequestBitVmxOperatorTakeTransactionInfo
-            && self.state.accept_pegin_pid == Some(*program_id)
+        let waiting_for_txid = self.state.step == Steps::RequestBitVmxOperatorTakeTransactionInfo
+            || (self.state.step == Steps::WaitBitVmxOperatorTakeSpv
+                && self.state.operator_take_txid.is_none());
+        waiting_for_txid && self.state.accept_pegin_pid == Some(*program_id)
     }
 
     fn enter_write_completion_marker(&self) -> Result<()> {
