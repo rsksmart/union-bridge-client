@@ -378,6 +378,28 @@ where
             .map(AdvanceFundsFlow::flow_id)
     }
 
+    fn flow_id_for_pegout_registered(
+        &self,
+        committee_id: u128,
+        slot_id: u64,
+        operator_take_txid: bitcoin::Txid,
+    ) -> Option<FlowId> {
+        self.flow_id_by_committee_slot_and_operator_take_txid(
+            committee_id,
+            slot_id,
+            operator_take_txid,
+        )
+        .or_else(|| {
+            self.flows
+                .values()
+                .find(|flow| {
+                    flow.matches_committee_slot(committee_id, slot_id)
+                        && flow.can_complete_pegout_registered_without_txid()
+                })
+                .map(AdvanceFundsFlow::flow_id)
+        })
+    }
+
     fn event_matches_superseded_slot(
         event: &RskPegManagerEvents,
         pegout_id: Hash256,
@@ -575,22 +597,9 @@ where
         let event_slot_id = pegout_registered.streamInfo.slotId;
         let event_txid = TxIdParser::fb_32_to_txid(pegout_registered.txid);
 
-        let flow_id = self.flow_id_by_committee_slot_and_operator_take_txid(
-            event_committee_id,
-            event_slot_id,
-            event_txid,
-        );
-        let flow_id = flow_id.or_else(|| {
-            self.flows
-                .values()
-                .find(|flow| {
-                    flow.matches_committee_slot(event_committee_id, event_slot_id)
-                        && flow.can_complete_pegout_registered_without_txid()
-                })
-                .map(AdvanceFundsFlow::flow_id)
-        });
-
-        let Some(flow_id) = flow_id else {
+        let Some(flow_id) =
+            self.flow_id_for_pegout_registered(event_committee_id, event_slot_id, event_txid)
+        else {
             trace!(
                 "No advance funds flow found for PegoutRegistered with committee_id {event_committee_id} slot_id {event_slot_id} txid {event_txid}",
             );
@@ -803,11 +812,7 @@ where
                 let event_slot_id = e.inner.streamInfo.slotId;
                 let event_txid = TxIdParser::fb_32_to_txid(e.inner.txid);
                 if self
-                    .flow_id_by_committee_slot_and_operator_take_txid(
-                        event_committee_id,
-                        event_slot_id,
-                        event_txid,
-                    )
+                    .flow_id_for_pegout_registered(event_committee_id, event_slot_id, event_txid)
                     .is_none()
                 {
                     trace!(
@@ -1945,6 +1950,42 @@ mod tests {
             .expect("matching PegoutRegistered should complete the flow");
 
         assert!(!processor.flows.contains_key(&flow_id));
+    }
+
+    #[test]
+    fn pegout_registered_without_expected_txid_starts_confirming_for_non_selected_path() {
+        let committee_id = Uuid::new_v4();
+        let slot_index = 6;
+        let flow_id = FlowId::from_random();
+        let trigger_data = test_trigger_data(committee_id, slot_index);
+
+        let flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(test_contracts(false)),
+            Rc::new(MockBitVmxBroker::new()),
+            flow_id,
+            trigger_data.clone(),
+            Steps::WaitBitVmxOperatorTakeSpv,
+        );
+
+        let mut processor = AdvanceFundsFlowProcessor::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+            test_store(),
+        );
+        processor.flows.insert(flow_id, flow);
+
+        let event = test_pegout_registered_event(
+            &trigger_data,
+            TxIdParser::txid_to_fb_32(test_spv_proof_with_version(7).tx.compute_txid()),
+            308,
+        );
+
+        processor
+            .process_new_rsk_event(&RskPegManagerEvents::PegoutRegistered(event))
+            .expect("PegoutRegistered should enter confirmation for non-selected path");
+
+        assert_eq!(processor.events_confirming.len(), 1);
     }
 
     #[test]
