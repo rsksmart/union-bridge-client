@@ -24,6 +24,7 @@ use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_
 use crate::flows::common::{FlowId, Signaling};
 use crate::flows::operator_take::types::OperatorTakeTriggerData;
 use crate::flows::pegout::pegout_flow::flow_id_from_pegout_requested_tx_hash;
+use crate::store::{CoordinatorStoreApi, StoreKey};
 
 pub(crate) const PROGRAM_TYPE_ADVANCE_FUNDS: &str = "advance_funds";
 pub(crate) const ADVANCE_FUNDS_REQUEST_VAR_NAME: &str = "advance_funds_request";
@@ -178,32 +179,39 @@ pub(crate) struct FlowContext {
     operator_take_spv: Option<BtcTxSPVProof>,
     accept_pegin_pid: Option<Uuid>,
     created_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pending_retry: bool,
 }
 
-pub(crate) struct AdvanceFundsFlow<CG, BC>
+pub(crate) struct AdvanceFundsFlow<CG, BC, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
+    S: CoordinatorStoreApi,
 {
     contracts: Rc<CG>,
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
     native_bridge_verifier: NativeBridgeVerifier<CG>,
     signaling: Rc<Signaling>,
+    store: Rc<S>,
     state: FlowContext,
 }
 
-impl<CG, BC> AdvanceFundsFlow<CG, BC>
+impl<CG, BC, S> AdvanceFundsFlow<CG, BC, S>
 where
     CG: RskContractsGatewayApi,
     BC: BitVmxBrokerClientApi,
+    S: CoordinatorStoreApi,
 {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         contracts: Rc<CG>,
         rt_sync: RuntimeSync,
         bitvmx_broker: Rc<BC>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
         signaling: Rc<Signaling>,
+        store: Rc<S>,
         flow_id: FlowId,
         trigger_data: OperatorTakeTriggerData,
     ) -> Self {
@@ -215,6 +223,7 @@ where
             bitvmx_broker,
             native_bridge_verifier,
             signaling,
+            store,
             state: FlowContext {
                 flow_id,
                 bitvmx_protocol_id,
@@ -230,6 +239,7 @@ where
                 operator_take_spv: None,
                 accept_pegin_pid: None,
                 created_at: Some(chrono::Utc::now()),
+                pending_retry: false,
             },
         }
     }
@@ -240,48 +250,20 @@ where
         bitvmx_broker: Rc<BC>,
         native_bridge_verifier: NativeBridgeVerifier<CG>,
         signaling: Rc<Signaling>,
+        store: Rc<S>,
         state: FlowContext,
     ) -> Self {
-        Self { contracts, rt_sync, bitvmx_broker, native_bridge_verifier, signaling, state }
+        Self { contracts, rt_sync, bitvmx_broker, native_bridge_verifier, signaling, store, state }
     }
 
-    pub(crate) fn snapshot(&self) -> FlowContext {
-        self.state.clone()
+    fn persist_state(&self) -> Result<()> {
+        debug!("Persisting state for step: {:?}", self.state.step);
+        self.store
+            .save_flow(&StoreKey::OperatorTakeFlow(self.state.flow_id.value()), self.state.clone())
     }
 
-    #[cfg(test)]
-    pub(crate) fn new_for_test(
-        contracts: Rc<CG>,
-        bitvmx_broker: Rc<BC>,
-        flow_id: FlowId,
-        trigger_data: OperatorTakeTriggerData,
-        step: Steps,
-    ) -> Self {
-        let committee_uuid = Uuid::from_u128(*trigger_data.committee_id);
-        let bitvmx_protocol_id = advance_funds_protocol_id(committee_uuid, trigger_data.slot_index);
-        Self {
-            contracts,
-            rt_sync: RuntimeSync::new().expect("Failed to create runtime sync for test flow"),
-            bitvmx_broker,
-            native_bridge_verifier: NativeBridgeVerifier::Dummy,
-            signaling: Rc::new(Signaling::new("/tmp", "disabled")),
-            state: FlowContext {
-                flow_id,
-                bitvmx_protocol_id,
-                step,
-                trigger_data,
-                my_p2p_address: None,
-                accept_pegin_txid: None,
-                my_committee_index: None,
-                operator_take_txid: None,
-                advance_funds_spv: None,
-                advance_funds_registered: None,
-                reimbursement_kickoff_spv: None,
-                operator_take_spv: None,
-                accept_pegin_pid: None,
-                created_at: None,
-            },
-        }
+    pub(crate) fn pending_retry(&self) -> bool {
+        self.state.pending_retry
     }
 
     pub(crate) fn start_step(&mut self, next_step: Steps) -> Result<StepOutcome> {
@@ -296,12 +278,17 @@ where
             format_step(next_step)
         );
 
-        let outcome = self.enter_step(next_step);
-        if outcome.is_err() {
-            self.state = previous_state;
+        match self.enter_step(next_step) {
+            Ok(outcome) => {
+                self.state.pending_retry = matches!(outcome, StepOutcome::Retry { .. });
+                self.persist_state()?;
+                Ok(outcome)
+            }
+            Err(err) => {
+                self.state = previous_state;
+                Err(err)
+            }
         }
-
-        outcome
     }
 
     #[allow(clippy::too_many_lines)]
@@ -923,6 +910,55 @@ where
     }
 
     #[cfg(test)]
+    pub(crate) fn new_for_test_with_store(
+        contracts: Rc<CG>,
+        bitvmx_broker: Rc<BC>,
+        store: Rc<S>,
+        flow_id: FlowId,
+        trigger_data: OperatorTakeTriggerData,
+        step: Steps,
+    ) -> Self {
+        let committee_uuid = Uuid::from_u128(*trigger_data.committee_id);
+        let bitvmx_protocol_id = advance_funds_protocol_id(committee_uuid, trigger_data.slot_index);
+        Self {
+            contracts,
+            rt_sync: RuntimeSync::new().expect("Failed to create runtime sync for test flow"),
+            bitvmx_broker,
+            native_bridge_verifier: NativeBridgeVerifier::Dummy,
+            signaling: Rc::new(Signaling::new("/tmp", "disabled")),
+            store,
+            state: FlowContext {
+                flow_id,
+                bitvmx_protocol_id,
+                step,
+                trigger_data,
+                my_p2p_address: None,
+                accept_pegin_txid: None,
+                my_committee_index: None,
+                operator_take_txid: None,
+                advance_funds_spv: None,
+                advance_funds_registered: None,
+                reimbursement_kickoff_spv: None,
+                operator_take_spv: None,
+                accept_pegin_pid: None,
+                created_at: None,
+                pending_retry: false,
+            },
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn into_saved_state(self) -> FlowContext {
+        self.state
+    }
+
+    #[cfg(test)]
+    pub(crate) fn into_saved_state_pending_retry(mut self) -> FlowContext {
+        self.state.pending_retry = true;
+        self.state
+    }
+
+    #[cfg(test)]
     pub(crate) fn current_step(&self) -> Steps {
         self.state.step
     }
@@ -961,6 +997,27 @@ where
     pub(crate) fn matches_committee_slot(&self, committee_id: u128, slot_id: u64) -> bool {
         *self.state.trigger_data.committee_id == committee_id
             && self.state.trigger_data.slot_id == slot_id
+    }
+}
+
+#[cfg(test)]
+impl<CG, BC> AdvanceFundsFlow<CG, BC, crate::store::MockCoordinatorStoreApi>
+where
+    CG: RskContractsGatewayApi,
+    BC: BitVmxBrokerClientApi,
+{
+    pub(crate) fn new_for_test(
+        contracts: Rc<CG>,
+        bitvmx_broker: Rc<BC>,
+        flow_id: FlowId,
+        trigger_data: OperatorTakeTriggerData,
+        step: Steps,
+    ) -> Self {
+        let mut store = crate::store::MockCoordinatorStoreApi::new();
+        store.expect_save_flow::<FlowContext>().returning(|_, _| Ok(()));
+        let store = Rc::new(store);
+
+        Self::new_for_test_with_store(contracts, bitvmx_broker, store, flow_id, trigger_data, step)
     }
 }
 

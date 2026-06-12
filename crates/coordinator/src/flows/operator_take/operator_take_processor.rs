@@ -30,7 +30,7 @@ use crate::flows::operator_take::operator_take_flow::{
 use crate::flows::operator_take::types::{
     OperatorTakeTriggerData, advance_funds_registered_from_event,
 };
-use crate::store::{CoordinatorStoreApi, StoreKey};
+use crate::store::{CoordinatorStoreApi, StoreKey, StorePrefix, restore_flows};
 use crate::types::{
     AdminRequest, EventStatus, FlowKind, OperatorTakeTriggeredEvent, PegoutRegisteredEvent,
     RetryTracker, RskPegManagerEvents, UserRequests,
@@ -38,7 +38,6 @@ use crate::types::{
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct AdvanceFundsProcessorState {
-    flows: HashMap<FlowId, FlowContext>,
     events_confirming: HashMap<String, ConfirmableEventWithDataSnapshot>,
     retries: RetryTracker<FlowId>,
     #[serde(default, deserialize_with = "deserialize_request_pegout_tx_hash_entries")]
@@ -105,7 +104,7 @@ where
     rt_sync: RuntimeSync,
     bitvmx_broker: Rc<BC>,
     global_context: GlobalContext,
-    flows: HashMap<FlowId, AdvanceFundsFlow<CG, BC>>,
+    flows: HashMap<FlowId, AdvanceFundsFlow<CG, BC, S>>,
     blockchain_view: BlockchainView,
     events_confirming: HashMap<String, ConfirmableEventWithData>,
     required_confirmations: u32,
@@ -125,7 +124,7 @@ impl<CG, BC, S> AdvanceFundsFlowProcessor<CG, BC, S>
 where
     CG: RskContractsGatewayApi,
     BC: common_broker::broker::BitVmxBrokerClientApi,
-    S: CoordinatorStoreApi,
+    S: CoordinatorStoreApi + 'static,
 {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
@@ -155,9 +154,28 @@ where
             request_pegout_tx_hashes: HashMap::new(),
             store: Rc::clone(store),
         };
+
+        let flow_factory = |saved_state: FlowContext| {
+            AdvanceFundsFlow::from_saved_state(
+                Rc::clone(&processor.contracts_gateway),
+                processor.rt_sync.clone(),
+                Rc::clone(&processor.bitvmx_broker),
+                processor.native_bridge_verifier.clone(),
+                processor.signaling.clone(),
+                Rc::clone(&processor.store),
+                saved_state,
+            )
+        };
+
+        let restored: HashMap<Uuid, AdvanceFundsFlow<CG, BC, S>> =
+            restore_flows(store.as_ref(), StorePrefix::OperatorTakeFlow, flow_factory)
+                .expect("Failed to load operator-take flows from store");
+        processor.flows = restored.into_values().map(|flow| (flow.flow_id(), flow)).collect();
+
         processor
             .restore_processor_state()
             .expect("Failed to load advance funds processor state from store");
+        processor.rearm_pending_retries();
         processor
     }
 }
@@ -175,6 +193,7 @@ where
     ) -> Self {
         let mut store = crate::store::MockCoordinatorStoreApi::new();
         store.expect_save_flow::<AdvanceFundsProcessorState>().returning(|_, _| Ok(()));
+        store.expect_delete_flow().returning(|_| Ok(()));
         let store = Rc::new(store);
 
         Self {
@@ -204,7 +223,6 @@ where
 {
     fn snapshot_processor_state(&self) -> AdvanceFundsProcessorState {
         AdvanceFundsProcessorState {
-            flows: self.flows.iter().map(|(id, flow)| (*id, flow.snapshot())).collect(),
             events_confirming: snapshot_confirmable_events(&self.events_confirming),
             retries: self.retries.clone(),
             request_pegout_tx_hashes: snapshot_request_pegout_tx_hashes(
@@ -225,24 +243,6 @@ where
     }
 
     fn apply_processor_state(&mut self, state: AdvanceFundsProcessorState) -> Result<()> {
-        self.flows = state
-            .flows
-            .into_iter()
-            .map(|(flow_id, flow_state)| {
-                (
-                    flow_id,
-                    AdvanceFundsFlow::from_saved_state(
-                        self.contracts_gateway.clone(),
-                        self.rt_sync.clone(),
-                        self.bitvmx_broker.clone(),
-                        self.native_bridge_verifier.clone(),
-                        self.signaling.clone(),
-                        flow_state,
-                    ),
-                )
-            })
-            .collect();
-
         let (blockchain_view, events_confirming) =
             restore_confirmable_events(state.events_confirming)?;
         self.events_confirming = events_confirming;
@@ -255,6 +255,20 @@ where
 
     fn persist_processor_state(&self) -> Result<()> {
         self.store.save_flow(&StoreKey::AdvanceFundsProcessorState, self.snapshot_processor_state())
+    }
+
+    fn rearm_pending_retries(&mut self) {
+        let to_retry: Vec<FlowId> = self
+            .flows
+            .values()
+            .filter(|flow| flow.pending_retry())
+            .map(AdvanceFundsFlow::flow_id)
+            .filter(|flow_id| self.retries.current_attempt(flow_id) == 0)
+            .collect();
+
+        for flow_id in to_retry {
+            self.schedule_retry(flow_id, 1, "re-arming retry for restored flow");
+        }
     }
 
     fn schedule_retry(&mut self, flow_id: FlowId, attempt: i16, reason: &str) {
@@ -318,7 +332,7 @@ where
         &mut self,
         committee_id: Uuid,
         slot_index: usize,
-    ) -> Result<Option<&mut AdvanceFundsFlow<CG, BC>>> {
+    ) -> Result<Option<&mut AdvanceFundsFlow<CG, BC, S>>> {
         let target = advance_funds_protocol_id(committee_id, slot_index);
         let mut matches =
             self.flows.values_mut().filter(|flow| flow.bitvmx_protocol_id() == target);
@@ -383,6 +397,7 @@ where
             self.bitvmx_broker.clone(),
             self.native_bridge_verifier.clone(),
             self.signaling.clone(),
+            Rc::clone(&self.store),
             flow_id,
             trigger_data,
         );
@@ -465,12 +480,12 @@ where
         &mut self,
         committee_id: u128,
         slot_id: u64,
-    ) -> Option<&mut AdvanceFundsFlow<CG, BC>> {
+    ) -> Option<&mut AdvanceFundsFlow<CG, BC, S>> {
         self.flows.values_mut().find(|flow| flow.matches_committee_slot(committee_id, slot_id))
     }
 
     fn cleanup_terminal_flow_state(&mut self) {
-        let terminal_flows: Vec<&AdvanceFundsFlow<CG, BC>> =
+        let terminal_flows: Vec<&AdvanceFundsFlow<CG, BC, S>> =
             self.flows.values().filter(|flow| flow.is_terminal()).collect();
 
         for flow in terminal_flows {
@@ -484,19 +499,20 @@ where
     fn cleanup_terminal_flows(&mut self) {
         self.cleanup_terminal_flow_state();
 
-        // Advance-funds flows are persisted as part of the processor snapshot,
-        // so terminal entries are dropped from memory before the next snapshot.
         let terminal_flow_ids: Vec<_> = self
             .flows
-            .iter()
-            .filter(|(_, flow)| flow.is_terminal())
-            .map(|(flow_id, _)| *flow_id)
+            .values()
+            .filter(|flow| flow.is_terminal())
+            .map(AdvanceFundsFlow::flow_id)
             .collect();
 
         for flow_id in terminal_flow_ids {
             debug!("Removing terminal advance funds flow {flow_id}");
-            self.flows.remove(&flow_id);
+            if let Err(err) = self.store.delete_flow(&StoreKey::OperatorTakeFlow(flow_id.value())) {
+                error!("Failed to remove operator-take flow {flow_id} from persistence: {err}");
+            }
         }
+        self.flows.retain(|_, flow| !flow.is_terminal());
     }
 
     fn process_confirmed_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
@@ -995,7 +1011,7 @@ mod tests {
 
     use super::*;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
-    use crate::store::{CoordinatorStore, TestStorePath};
+    use crate::store::{CoordinatorStore, CoordinatorStoreApi, TestStorePath};
 
     type MockBitVmxBroker =
         MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
@@ -1086,6 +1102,23 @@ mod tests {
         }
     }
 
+    fn saved_flow_state(
+        committee_id: Uuid,
+        slot_index: usize,
+        flow_id: FlowId,
+        step: Steps,
+        pending_retry: bool,
+    ) -> FlowContext {
+        let flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(test_contracts(false)),
+            Rc::new(MockBitVmxBroker::new()),
+            flow_id,
+            test_trigger_data(committee_id, slot_index),
+            step,
+        );
+        if pending_retry { flow.into_saved_state_pending_retry() } else { flow.into_saved_state() }
+    }
+
     #[test]
     fn request_pegout_tx_hashes_round_trip_through_store() {
         let store_path = TestStorePath::new();
@@ -1107,30 +1140,108 @@ mod tests {
     }
 
     #[test]
+    fn operator_take_flow_round_trip_through_store() {
+        let store_path = TestStorePath::new();
+        let store = Rc::new(store_path.open());
+        let committee_id = Uuid::new_v4();
+        let flow_id = FlowId::from_random();
+        let state =
+            saved_flow_state(committee_id, 4, flow_id, Steps::RegisterOrWaitRskAdvanceFunds, false);
+
+        store
+            .save_flow(&StoreKey::OperatorTakeFlow(flow_id.value()), state)
+            .expect("operator-take flow state should persist");
+
+        let restored = store_backed_processor(&store);
+        assert_eq!(
+            restored.flows.get(&flow_id).expect("flow should restore").current_step(),
+            Steps::RegisterOrWaitRskAdvanceFunds
+        );
+    }
+
+    #[test]
+    fn pending_retry_flow_rearms_retry_when_not_scheduled() {
+        let store_path = TestStorePath::new();
+        let store = Rc::new(store_path.open());
+        let committee_id = Uuid::new_v4();
+        let flow_id = FlowId::from_random();
+        let state =
+            saved_flow_state(committee_id, 4, flow_id, Steps::RegisterOrWaitRskAdvanceFunds, true);
+
+        store
+            .save_flow(&StoreKey::OperatorTakeFlow(flow_id.value()), state)
+            .expect("operator-take flow state should persist");
+
+        let restored = store_backed_processor(&store);
+        assert!(restored.retries.is_scheduled(&flow_id));
+        assert_eq!(restored.retries.current_attempt(&flow_id), 1);
+    }
+
+    #[test]
+    fn pending_retry_does_not_reset_restored_retry_attempt() {
+        let store_path = TestStorePath::new();
+        let store = Rc::new(store_path.open());
+        let committee_id = Uuid::new_v4();
+        let flow_id = FlowId::from_random();
+        let flow_state =
+            saved_flow_state(committee_id, 4, flow_id, Steps::RegisterOrWaitRskAdvanceFunds, true);
+        let mut processor_state = AdvanceFundsProcessorState {
+            events_confirming: HashMap::new(),
+            retries: RetryTracker::new(),
+            request_pegout_tx_hashes: Vec::new(),
+        };
+        processor_state.retries.schedule(flow_id, 3, 7);
+
+        store
+            .save_flow(&StoreKey::OperatorTakeFlow(flow_id.value()), flow_state)
+            .expect("operator-take flow state should persist");
+        store
+            .save_flow(&StoreKey::AdvanceFundsProcessorState, processor_state)
+            .expect("processor state should persist");
+
+        let restored = store_backed_processor(&store);
+        assert!(restored.retries.is_scheduled(&flow_id));
+        assert_eq!(restored.retries.current_attempt(&flow_id), 3);
+    }
+
+    #[test]
+    fn cleanup_terminal_flows_deletes_operator_take_flow_state() {
+        let store_path = TestStorePath::new();
+        let store = Rc::new(store_path.open());
+        let committee_id = Uuid::new_v4();
+        let flow_id = FlowId::from_random();
+        let state = saved_flow_state(committee_id, 4, flow_id, Steps::Failed, false);
+
+        store
+            .save_flow(&StoreKey::OperatorTakeFlow(flow_id.value()), state)
+            .expect("operator-take flow state should persist");
+        let mut processor = store_backed_processor(&store);
+        assert!(processor.flows.contains_key(&flow_id));
+
+        processor.cleanup_terminal_flows();
+
+        assert!(!processor.flows.contains_key(&flow_id));
+        let stored: Option<FlowContext> = store
+            .load_flow(&StoreKey::OperatorTakeFlow(flow_id.value()))
+            .expect("operator-take flow lookup should succeed");
+        assert!(stored.is_none());
+    }
+
+    #[test]
     fn processor_state_snapshot_restores_advance_funds_runtime_context() {
         let committee_id = Uuid::new_v4();
-        let slot_index = 4;
+        let slot_id = 4_u64;
         let flow_id = FlowId::from_random();
-        let trigger_data = test_trigger_data(committee_id, slot_index);
-
-        let flow = AdvanceFundsFlow::new_for_test(
-            Rc::new(test_contracts(false)),
-            Rc::new(MockBitVmxBroker::new()),
-            flow_id,
-            trigger_data,
-            Steps::RegisterOrWaitRskAdvanceFunds,
-        );
 
         let mut processor = AdvanceFundsFlowProcessor::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             GlobalContext::new(),
         );
-        processor.flows.insert(flow_id, flow);
         processor.retries.schedule(flow_id, 3, 7);
         processor
             .request_pegout_tx_hashes
-            .insert((CommitteeId::from(committee_id.as_u128()), slot_index as u64), "0xabc".into());
+            .insert((CommitteeId::from(committee_id.as_u128()), slot_id), "0xabc".into());
 
         let mut confirmable_event = ConfirmableEventWithData::new(
             "operator-take-triggered-test".to_string(),
@@ -1150,16 +1261,13 @@ mod tests {
         restored.apply_processor_state(snapshot).unwrap();
 
         assert_eq!(restored.events_confirming.len(), 1);
-        assert_eq!(
-            restored.flows.get(&flow_id).unwrap().current_step(),
-            Steps::RegisterOrWaitRskAdvanceFunds
-        );
+        assert!(restored.flows.is_empty());
         assert!(restored.retries.is_scheduled(&flow_id));
         assert_eq!(restored.retries.current_attempt(&flow_id), 3);
         assert_eq!(
             restored
                 .request_pegout_tx_hashes
-                .get(&(CommitteeId::from(committee_id.as_u128()), slot_index as u64)),
+                .get(&(CommitteeId::from(committee_id.as_u128()), slot_id)),
             Some(&"0xabc".to_string())
         );
     }

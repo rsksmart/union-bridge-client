@@ -24,6 +24,7 @@ pub enum StoreKey {
     PeginProcessorState,
     PegoutFlow(Uuid),
     PegoutProcessorState,
+    OperatorTakeFlow(Uuid),
     AdvanceFundsProcessorState,
 }
 
@@ -32,6 +33,7 @@ pub enum StorePrefix {
     SetupCommitteeFlow,
     PeginFlow,
     PegoutFlow,
+    OperatorTakeFlow,
 }
 
 impl StoreKey {
@@ -49,6 +51,9 @@ impl StoreKey {
                 format!("{}/{}", StorePrefix::PegoutFlow.value(), id)
             }
             StoreKey::PegoutProcessorState => "pegout_processor_state".to_string(),
+            StoreKey::OperatorTakeFlow(id) => {
+                format!("{}/{}", StorePrefix::OperatorTakeFlow.value(), id)
+            }
             StoreKey::AdvanceFundsProcessorState => "advance_funds_processor_state".to_string(),
         }
     }
@@ -60,6 +65,7 @@ impl StorePrefix {
             StorePrefix::SetupCommitteeFlow => "setup_committee_flows".to_string(),
             StorePrefix::PeginFlow => "pegin_flows".to_string(),
             StorePrefix::PegoutFlow => "pegout_flows".to_string(),
+            StorePrefix::OperatorTakeFlow => "operator_take_flows".to_string(),
         }
     }
 
@@ -81,6 +87,7 @@ impl StorePrefix {
             StorePrefix::SetupCommitteeFlow => StoreKey::SetupCommitteeFlow(flow_id),
             StorePrefix::PeginFlow => StoreKey::PeginFlow(flow_id),
             StorePrefix::PegoutFlow => StoreKey::PegoutFlow(flow_id),
+            StorePrefix::OperatorTakeFlow => StoreKey::OperatorTakeFlow(flow_id),
         }
     }
 }
