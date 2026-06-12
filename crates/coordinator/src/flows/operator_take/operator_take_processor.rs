@@ -54,14 +54,18 @@ struct RequestPegoutTxHashEntry {
 fn snapshot_request_pegout_tx_hashes(
     hashes: &HashMap<(CommitteeId, u64), String>,
 ) -> Vec<RequestPegoutTxHashEntry> {
-    hashes
+    let mut entries: Vec<_> = hashes
         .iter()
         .map(|((committee_id, slot_id), tx_hash)| RequestPegoutTxHashEntry {
             committee_id: Uuid::from_u128(**committee_id),
             slot_id: *slot_id,
             tx_hash: tx_hash.clone(),
         })
-        .collect()
+        .collect();
+    entries.sort_by(|left, right| {
+        left.committee_id.cmp(&right.committee_id).then_with(|| left.slot_id.cmp(&right.slot_id))
+    });
+    entries
 }
 
 fn restore_request_pegout_tx_hashes(
