@@ -40,5 +40,26 @@ export USER_BITCOIN_WIF="<user_wif_private_key>"
 # Member/Operator WIF for BitVMX operations
 export MEMBER_BITCOIN_WIF="<member_wif_private_key>"
 export BITCOIN_NETWORK=regtest
-# Bitcoind url
-export BITCOIND_URL="<to_set_in_local>"
+# Bitcoind connection URL. THE single source of the Bitcoin RPC credentials for everything:
+#   - BitVMX configs (patched as-is by scripts/setup-operators.sh),
+#   - the bundled bitcoind server + bring-up scripts (docker-compose / start-blockchains), and
+#   - host-side tooling (scripts/run-infra.sh, scripts/test-flows.sh).
+# The bring-up + host tooling resolve only the user:password from it via
+# docker/local-infra/bitcoind-rpc-env.sh, talking to 127.0.0.1:18443 (host-side tools use the regtest
+# default host/port; BitVMX and the wallet CLI honor a non-default host/port via their own URLs). Use
+# host.docker.internal in the URL so the in-container BitVMX clients can reach the host's bitcoind.
+# Point it at a bring-your-own bitcoind to switch (e.g. http://user:password@host.docker.internal:18443).
+export BITCOIND_URL="http://foo:rpcpassword@host.docker.internal:18443"
+# Bitcoind wallet name for host-side bitcoin-cli ops (not part of the URL). Override for a
+# bring-your-own bitcoind whose funded wallet differs.
+export BITCOIN_WALLET=mainwallet
+# Optional: bring your own blockchains. Point this at a published compose reference (an OCI artifact
+# such as oci://ghcr.io/org/stack:tag, or a local compose path) and
+# ./scripts/run-infra.sh --start-blockchains brings that stack up instead of the bundled chains. The
+# external stack runs its own bitcoind/Rootstock and block production; it needs no extra config if it
+# uses the regtest defaults (foo/rpcpassword, mainwallet) — otherwise set BITCOIND_URL + BITCOIN_WALLET
+# above to match. Leave unset to use the bundled stack.
+# Note: oci:// references need Docker Compose v2.32+, and on versions where the OCI-remote loader
+# is still experimental you must also `export COMPOSE_EXPERIMENTAL_OCI_REMOTE=1` — or update Docker
+# to a release where it's enabled by default. (Local compose-file paths don't need either.)
+# export BYO_BLOCKCHAINS_COMPOSE="oci://ghcr.io/org/your-stack:tag"

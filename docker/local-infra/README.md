@@ -23,11 +23,11 @@ Run this wrapper from the repository root when you want the quickest entry point
 background mining.
 
 ```text
-# Start all Docker infra (blockchains + bitvmx) + mining
-./scripts/run-infra.sh --start [--fresh] [--contracts-tag TAG] [--pull-contracts]
+# Start all Docker infra (blockchains + bitvmx) + mining  (--start is an accepted alias)
+./scripts/run-infra.sh --start-all [--fresh] [--contracts-tag TAG] [--pull-contracts]
 
-# Stop mining + all Docker infra
-./scripts/run-infra.sh --stop
+# Stop mining + all Docker infra  (--stop is an accepted alias)
+./scripts/run-infra.sh --stop-all
 
 # Start blockchains + background mining
 ./scripts/run-infra.sh --start-blockchains [--fresh] [--contracts-tag TAG] [--pull-contracts]
@@ -46,6 +46,101 @@ background mining.
 
 ``` 
 
+## Bring your own blockchains (external chains)
+
+You don't have to use the bundled bitcoind + Anvil/RSKj stack. To run the client, operators, and
+flow tests against chains you started yourself (any regtest bitcoind + any compatible
+Rootstock/Anvil node), point the tooling at them with environment variables — no code changes:
+
+| What | Variable(s) | Default / example |
+| --- | --- | --- |
+| Bitcoin RPC URL + creds | `BITCOIND_URL` | `http://foo:rpcpassword@host.docker.internal:18443` |
+| Bitcoin wallet name | `BITCOIN_WALLET` | `mainwallet` |
+| Published compose to launch (optional) | `BYO_BLOCKCHAINS_COMPOSE` | unset (use the bundled stack) |
+| Wallet CLI RPC | `WALLET_RPC_URL`, `WALLET_RPC_USER`, `WALLET_RPC_PASSWORD` | `http://127.0.0.1:18443/`, `foo`, `rpcpassword` (from `cli/bitcoin-wallet/config/regtest.toml`) |
+| Rootstock/Anvil RPC | `provider.rootstock.url` (config profile) | `ws://127.0.0.1:8545` |
+
+`BITCOIND_URL` is the single source of the Bitcoin RPC credentials for the bundled bitcoind server +
+bring-up scripts (`docker-compose` / `start-blockchains.sh`), the host-side tooling
+(`scripts/run-infra.sh`, `scripts/test-flows.sh`), and BitVMX: BitVMX connects with it as-is (via
+`scripts/setup-operators.sh`), and the bring-up + host tooling resolve the `user:password` from it via
+[`bitcoind-rpc-env.sh`](./bitcoind-rpc-env.sh), talking to `127.0.0.1:18443`. (Only the credentials are
+derived — host-side tools use the regtest default host/port; BitVMX honors a non-default host/port via
+its own full URL.) The chain `.env` files no longer carry credentials.
+
+The bitcoin-wallet CLI (which `scripts/test-flows.sh` uses to fund the user/member wallets via
+`mine_utxo`) takes its creds per environment from `cli/bitcoin-wallet/config/<env>.toml`, not from
+`BITCOIND_URL`. Local flows use `regtest.toml`, which bakes in `foo` / `rpcpassword` — so a local or BYO
+run needs no wallet-creds env at all. (Non-local environments — testnet, alphanet — supply their creds
+in that environment's config or via `WALLET_RPC_*`.)
+
+**A BYO stack on the regtest defaults — `foo` / `rpcpassword` creds and a `mainwallet` wallet — matches
+every default here, so you set nothing but `BYO_BLOCKCHAINS_COMPOSE` (or just start the node).** A node
+whose host, RPC creds, or funded wallet differ needs `BITCOIND_URL` (keep `host.docker.internal` so
+BitVMX can reach it) and/or `BITCOIN_WALLET` — and, because the bitcoin-wallet CLI reads its creds from
+`regtest.toml` (not `BITCOIND_URL`), non-default creds also need `WALLET_RPC_USER` / `WALLET_RPC_PASSWORD`
+(or a `regtest.toml` edit) so `mine_utxo` can fund.
+
+**Launching a published stack for you.** Set `BYO_BLOCKCHAINS_COMPOSE` to a compose reference (an OCI
+artifact such as `oci://ghcr.io/org/stack:tag`, or a local compose path) and `--start-blockchains`
+brings *that* stack up instead of the bundled chains: it runs `docker compose -f <ref> up -d` (project
+`byo-blockchains`), and `--stop-blockchains` brings it down. Because the external stack owns its own
+bitcoind wallet and block production, union skips its own wallet bootstrap + background mining in this
+mode. Leave the variable unset to start the chains yourself instead.
+
+> **`oci://` references are new/experimental in Docker Compose.** They require Docker Compose v2.32+,
+> and on versions where the OCI-remote loader is still gated you must also
+> `export COMPOSE_EXPERIMENTAL_OCI_REMOTE=1` before `--start-blockchains` — otherwise the `oci://` ref
+> isn't recognized. Updating Docker to a release where the loader is enabled by default also fixes it.
+> (A local compose-file path needs neither.)
+
+The BYO flow mirrors the bundled local flow, just with **you** (or `BYO_BLOCKCHAINS_COMPOSE`) providing
+the chains. End to end:
+
+1. **Get your chains running**, published on the host loopback at the expected ports: bitcoind RPC at
+   the `BITCOIND_URL` port (containers reach it via `host.docker.internal`, host tooling via
+   `127.0.0.1`), Rootstock/Anvil RPC at `:8545`. The bitcoind wallet (`BITCOIN_WALLET`) must be
+   loaded with mature funds, `txindex=1` enabled, and the chain must match the expected chain-id +
+   predeployed contracts. Either start them yourself,
+   or set `BYO_BLOCKCHAINS_COMPOSE` and run `./scripts/run-infra.sh --start-blockchains` to have union
+   launch the published compose.
+2. **Reuse the `local-anvil` profile** if your Anvil uses the same predeployed contracts — the
+   contract addresses live in that profile; a different deployment needs its own `[[contracts]]`.
+3. `./scripts/setup-operators.sh --ops 4` — generate the BitVMX operator artifacts. The current
+   `BITCOIND_URL` is **baked into** the generated `op_*.yaml` here (see the callout below).
+4. `./scripts/run-infra.sh --start-bitvmx` — start BitVMX. (If you set `BYO_BLOCKCHAINS_COMPOSE`, run
+   `--start-blockchains` first to launch your stack; if you started the chains yourself, `--start-bitvmx`
+   is the only `run-infra` step needed.) BitVMX reaches bitcoind purely over `host.docker.internal`, so
+   no shared docker network with your chains is required.
+5. `./scripts/run-clients.sh` — start the Union Bridge clients / coordinator.
+6. `bash scripts/test-flows.sh …` — runs a flow. It funds the user/member wallets itself via the
+   bitcoin-wallet CLI's `mine_utxo`, which draws from `BITCOIN_WALLET` **and registers the UTXO** (a
+   plain `sendtoaddress` won't — the wallet only spends UTXOs in its own DB). For a manual run
+   without `scripts/test-flows.sh`, fund them first:
+
+   ```bash
+   ./scripts/bitcoin-wallet.sh member mine_utxo <sats>
+   ./scripts/bitcoin-wallet.sh user mine_utxo <sats>
+   ```
+
+Steps 3, 5, and 6 are identical to the bundled flow — the only BYO delta is step 1 (you run the chains);
+creds/wallet need pointing only if your node differs from the regtest defaults. If your setup mines on
+its own schedule, flows that depend on deterministic block production (some `scripts/test-flows.sh`
+paths) rely on that cadence.
+
+> ⚠️ **Switching chains? Re-run setup AND restart BitVMX with `--fresh`.** Two pieces of state are
+> tied to the chain, and a plain restart fixes neither:
+>
+> - **The bitcoin URL** is patched into the BitVMX `op_*.yaml` at setup time — *not* read live. Re-run
+>   `./scripts/setup-operators.sh --ops 4` with the new `BITCOIND_URL` loaded, or BitVMX keeps using the
+>   old creds and fails with `HTTP 401`.
+> - **BitVMX's monitor/indexer DB** (the `db-bitvmx-*` volumes) holds the *old* chain's blocks. Start
+>   with `./scripts/run-infra.sh --start-bitvmx --fresh` (which does `down --volumes`), or you hit
+>   "Inconsistent blockchain state".
+>
+> `scripts/setup-operators.sh` regenerates the host configs but doesn't clear those volumes, and updating
+> `.envrc` + a plain restart clears neither — so on a chain switch you need both steps.
+
 ## Scripts
 
 - `start-blockchains.sh`: starts bitcoind (regtest) + Anvil for `local-anvil`, or bitcoind + RSKj + powpeg-node for `local-rskj`
@@ -54,7 +149,7 @@ background mining.
 
 Mining is coupled to the blockchain lifecycle in this wrapper:
 
-- `scripts/run-infra.sh --start`: starts blockchains, BitVMX, and background mining
+- `scripts/run-infra.sh --start-all`: starts blockchains, BitVMX, and background mining
 - `scripts/run-infra.sh --start-blockchains`: starts blockchains, ensures `mainwallet` has mature regtest funds, and starts background mining
 - `scripts/run-infra.sh --stop-blockchains`: stops background mining and blockchains
 - `scripts/run-infra.sh --stop-mining`: stops background mining only; run this if mining gets stuck
@@ -114,7 +209,7 @@ In another terminal:
 cast rpc eth_chainId --rpc-url http://127.0.0.1:8545
 ```
 
-`./scripts/run-infra.sh --start --fresh` can use the local image tag directly. If the
+`./scripts/run-infra.sh --start-all --fresh` can use the local image tag directly. If the
 selected image tag is not present locally, startup pulls it from GHCR and fails
 if the tag is not published. Use `--pull-contracts` to force a GHCR refresh.
 

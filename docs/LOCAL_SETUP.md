@@ -133,7 +133,8 @@ Configuration ownership is:
 | `KEY_STORE_PASSWORD` | shell or `.envrc`; written into generated `docker-service.env` during setup | local cargo client, setup helpers, Docker operator runtime | required when creating or unlocking member/user keystores |
 | `USER_BITCOIN_WIF` | shell or `.envrc` | user flows, wallet helpers, happy-path testing | required for user-facing Bitcoin operations |
 | `MEMBER_BITCOIN_WIF` | shell or `.envrc` | `./scripts/bitcoin-wallet.sh`, happy-path testing | required for member wallet operations in local happy-path setup and automated flow tests |
-| `BITCOIND_URL` | shell or `.envrc` | `./scripts/setup-operators.sh` while patching generated BitVMX configs | required before preparing operator artifacts for Docker-backed local flows |
+| `BITCOIND_URL` | shell or `.envrc` | `./scripts/setup-operators.sh` while patching generated BitVMX configs | required before preparing operator artifacts for Docker-backed local flows; the value is baked into the BitVMX `op_*.yaml` at setup (not read live), so **re-run `./scripts/setup-operators.sh` and restart BitVMX whenever you change it** |
+| `BYO_BLOCKCHAINS_COMPOSE` | shell or `.envrc` | `./scripts/run-infra.sh --start-blockchains` / `--start-all` (via `docker/local-infra/start-blockchains.sh`) | optional; a compose reference (e.g. `oci://ghcr.io/org/stack:tag` or a local path) to bring up your own published stack instead of the bundled chains. When set, union skips its own wallet bootstrap + mining; point `BITCOIND_URL` + `BITCOIN_WALLET` at the external node. Needs Docker Compose v2.32+ for `oci://` refs; on versions where the OCI-remote loader is still experimental, also `export COMPOSE_EXPERIMENTAL_OCI_REMOTE=1` (or update Docker) |
 | `SLOTS_PER_PACKAGE` | shell or `.envrc` | coordinator, BitVMX dispute setup, and `./scripts/operations.sh` | temporary workaround until sourced from contracts; optional; defaults to `100` |
 | `COMMITTEE_MEMBER_COUNT` | shell or `.envrc` | coordinator and `./scripts/operations.sh`; passed into `op-funding` calculations | temporary workaround until sourced from contracts; optional; defaults to `4` |
 | `COMMITTEE_PROVER_COUNT` | shell or `.envrc` | coordinator and `./scripts/operations.sh`; passed into `op-funding` calculations | temporary workaround until sourced from contracts; optional; defaults to `2` |
@@ -268,7 +269,7 @@ export COMMITTEE_PROVER_COUNT=2
 ./scripts/setup-operators.sh --ops 4
 
 # Start the local blockchain and BitVMX stack
-./scripts/run-infra.sh --start --fresh
+./scripts/run-infra.sh --start-all --fresh
 
 # Start the Rust client against the local stack
 ./scripts/run-clients.sh --fresh
@@ -368,7 +369,7 @@ bash scripts/test-flows.sh --committee
 bash scripts/test-flows.sh --pegin
 bash scripts/test-flows.sh --pegout
 bash scripts/test-flows.sh --operator-take
-./scripts/run-infra.sh --stop
+./scripts/run-infra.sh --stop-all
 ```
 
 `./scripts/run-infra.sh --start-blockchains` now bootstraps the regtest Bitcoin miner wallet once (101 blocks when needed)
@@ -388,7 +389,7 @@ Notes:
 - `bash scripts/test-flows.sh --pegin` runs only the pegin flow and reuses existing setup and committee state.
 - `bash scripts/test-flows.sh --pegout` runs only the pegout flow and reuses existing setup and committee state.
 - `bash scripts/test-flows.sh --operator-take` runs a pegout that forces the operator-take path, writes the selected operator address to `/tmp/FORCE_ADVANCE` in the active runtime, and reuses existing setup and committee state.
-- Use `./scripts/run-infra.sh --start --fresh` instead when you want the all-in-one stack, including BitVMX, from the outset.
+- Use `./scripts/run-infra.sh --start-all --fresh` instead when you want the all-in-one stack, including BitVMX, from the outset.
 
 The user flows now require explicit Bitcoin public keys in the request body. For manual testing, the same derivation
 used by `scripts/test-flows.sh` is:
@@ -440,8 +441,9 @@ Use the narrow docs for localized problems:
 Common local issues:
 
 - wrong keystore password: export the intended `KEY_STORE_PASSWORD`, then rerun `./scripts/setup-operators.sh --ops 4`
+- switching chains / changing `BITCOIND_URL` (e.g. bundled ↔ a bring-your-own node): two chain-tied states must be reset, so rerun `./scripts/setup-operators.sh --ops 4` (re-patches the URL into the BitVMX `op_*.yaml`, else `HTTP 401`) **and** start BitVMX with `./scripts/run-infra.sh --start-bitvmx --fresh` (wipes the `db-bitvmx-*` volumes, else "Inconsistent blockchain state"). A plain restart fixes neither.
 - stale local databases: use `./scripts/run-clients.sh --fresh`
-- BitVMX or blockchain containers out of sync: use `./scripts/run-infra.sh --start --fresh`
+- BitVMX or blockchain containers out of sync: use `./scripts/run-infra.sh --start-all --fresh`
 - git hooks not running on commit/push (you can commit/push without `fmt` / `sort` / `clippy` / branch-name /
   commit-message checks firing): see [Reinstalling hooks](#reinstalling-hooks) below.
 

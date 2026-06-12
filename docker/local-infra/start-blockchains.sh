@@ -49,6 +49,54 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# ─── Bring-your-own published compose ─────────────────────────────────────────
+# When BYO_BLOCKCHAINS_COMPOSE names a compose reference (an OCI artifact such as
+# oci://ghcr.io/org/stack:tag, or a local compose path), bring that up instead of the
+# bundled bitcoind + anvil/rskj stack and exit. The external stack owns its own chains,
+# wallet, and mining; union only talks to it over BITCOIND_URL. The bundled-only contract/chain
+# flags (--contracts-tag, --pull-contracts, --rskj-tag, --powpeg-tag) don't apply here and are
+# rejected so a stale tag can't look like it took effect; --env is parsed earlier but unused here.
+# Note: an oci:// ref needs Docker Compose v2.32+; on versions where the OCI-remote loader is
+# still experimental, also `export COMPOSE_EXPERIMENTAL_OCI_REMOTE=1` (or update Docker). A local
+# compose-file path needs neither.
+if [[ -n "${BYO_BLOCKCHAINS_COMPOSE:-}" ]]; then
+  byo_project="byo-blockchains"
+  byo_args=()
+  byo_fresh=false
+  for arg in "${REMAINING_ARGS[@]}"; do
+    case "$arg" in
+      --fresh) byo_fresh=true ;;
+      --contracts-tag|--contracts-tag=*|--rskj-tag|--rskj-tag=*|--powpeg-tag|--powpeg-tag=*|--pull-contracts)
+        echo "Error: ${arg%%=*} does not apply to bring-your-own blockchains (BYO_BLOCKCHAINS_COMPOSE is set); the external stack owns its contracts and chain images. Remove it and rerun." >&2
+        exit 1
+        ;;
+      *) byo_args+=("$arg") ;;
+    esac
+  done
+
+  byo_is_up=false
+  for arg in "${byo_args[@]}"; do
+    if [[ "$arg" == "up" ]]; then
+      byo_is_up=true
+      break
+    fi
+  done
+
+  # `up` from an oci:// remote compose prompts to confirm the interpolation variables;
+  # assume "yes" so CI / non-interactive runs don't hang. (down has no equivalent flag.)
+  if [[ "$byo_is_up" == true ]]; then
+    byo_args+=(--yes)
+  fi
+
+  if [[ "$byo_is_up" == true && "$byo_fresh" == true ]]; then
+    echo "Cleaning external blockchains stack (down --volumes)..."
+    docker compose -p "$byo_project" -f "$BYO_BLOCKCHAINS_COMPOSE" down --volumes --remove-orphans --timeout 5 || true
+  fi
+
+  echo "Bring-your-own blockchains: ${BYO_BLOCKCHAINS_COMPOSE} (compose project '${byo_project}')."
+  exec docker compose -p "$byo_project" -f "$BYO_BLOCKCHAINS_COMPOSE" "${byo_args[@]}"
+fi
+
 case "$ENVIRONMENT" in
   local-anvil)
     COMPOSE_FILE="${SCRIPT_DIR}/anvil/docker-compose.yaml"
@@ -79,6 +127,11 @@ if [[ ! -f "$ENV_PATH" ]]; then
 fi
 # shellcheck disable=SC1090
 source "$ENV_PATH"
+
+# Bitcoin RPC creds come from BITCOIND_URL (single source); the resolver exports the user and
+# password so docker compose, the bitcoind helpers, and the Rootstock-node script share them.
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/bitcoind-rpc-env.sh"
 
 # Forbid docker compose `build` invocations from the user — anvil injects --build
 # only when using the local-build contracts tag; rskj never needs it.
@@ -184,7 +237,10 @@ fi
 echo "Starting ${BITCOIND_CONTAINER}..."
 docker compose -p blockchains --env-file "$ENV_PATH" -f "$COMPOSE_FILE" up -d "${BITCOIND_CONTAINER}"
 wait_for_bitcoind_rpc 120
-create_bitcoin_wallet_if_needed mainwallet
+# Wallet name is read from the environment (export it in your .envrc to override);
+# defaults to mainwallet when unset. docker compose and the Rootstock-node script
+# inherit the exported value, so no re-export is needed here.
+create_bitcoin_wallet_if_needed "${BITCOIN_WALLET:-mainwallet}"
 
 # Export what the Rootstock-node script needs to know.
 export COMPOSE_FILE ENV_PATH ENVIRONMENT FRESH

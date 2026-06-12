@@ -59,15 +59,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# If invoked standalone, source the env file so BITCOIND_* / RSKJ_* are in scope.
-if [[ -z "${BITCOIND_USER:-}" ]]; then
-  if [[ ! -f "$ENV_PATH" ]]; then
-    echo "Error: env file not found at $ENV_PATH" >&2
-    exit 1
-  fi
-  # shellcheck disable=SC1090
-  source "$ENV_PATH"
+# Load the chain env (RSKj/powpeg tags, contracts path, …) for this script's own vars. The --rskj-tag
+# / --powpeg-tag args are held separately and applied after this, so sourcing doesn't clobber them.
+# Bitcoin RPC creds are not here — they come from BITCOIND_URL via the shared resolver (already in
+# scope when invoked by start-blockchains.sh; the resolver honors inherited values, so re-sourcing
+# is safe for standalone).
+if [[ ! -f "$ENV_PATH" ]]; then
+  echo "Error: env file not found at $ENV_PATH" >&2
+  exit 1
 fi
+# shellcheck disable=SC1090
+source "$ENV_PATH"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/../bitcoind-rpc-env.sh"
 
 validate_image_tag() {
   local name="$1"
@@ -191,9 +195,9 @@ mine_bitcoin_blocks() {
     return 0
   fi
 
-  address=$(docker exec bitcoind bitcoin-cli -regtest -rpcuser="${BITCOIND_USER}" -rpcpassword="${BITCOIND_PASSWORD}" -rpcwallet=mainwallet getnewaddress bootstrap bech32)
+  address=$(docker exec bitcoind bitcoin-cli -regtest -rpcuser="${BITCOIND_USER}" -rpcpassword="${BITCOIND_PASSWORD}" -rpcwallet="${BITCOIN_WALLET:-mainwallet}" getnewaddress bootstrap bech32)
   echo "Mining ${blocks} Bitcoin regtest block(s) to ${address}..."
-  docker exec bitcoind bitcoin-cli -regtest -rpcuser="${BITCOIND_USER}" -rpcpassword="${BITCOIND_PASSWORD}" -rpcwallet=mainwallet generatetoaddress "${blocks}" "${address}" >/dev/null
+  docker exec bitcoind bitcoin-cli -regtest -rpcuser="${BITCOIND_USER}" -rpcpassword="${BITCOIND_PASSWORD}" -rpcwallet="${BITCOIN_WALLET:-mainwallet}" generatetoaddress "${blocks}" "${address}" >/dev/null
 }
 
 extract_deployed_address() {

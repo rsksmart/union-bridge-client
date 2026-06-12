@@ -9,6 +9,12 @@
 cli/.env.*
 !cli/.env.sample
 
+# bitcoin-wallet network configs hold real node RPC creds and are gitignored.
+# Exceptions: regtest.toml (standard local creds) and the sample template stay tracked.
+cli/bitcoin-wallet/config/*.toml
+!cli/bitcoin-wallet/config/regtest.toml
+!cli/bitcoin-wallet/config/sample.toml
+
 # Build artifacts and runtime outputs
 **/target
 lcov.info

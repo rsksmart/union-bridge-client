@@ -1,9 +1,10 @@
 # Shared bitcoind regtest service, included by both anvil/docker-compose.yaml
 # and rskj/docker-compose.yaml via compose's `include:` directive.
 #
-# Variables interpolated here (BITCOIND_USER / BITCOIND_PASSWORD) are taken
-# from whichever chain's .env file is passed at the compose invocation. Both
-# chain env files define the same credentials.
+# BITCOIND_USER / BITCOIND_PASSWORD come from BITCOIND_URL (single source), resolved into the
+# environment by docker/local-infra/bitcoind-rpc-env.sh and inherited here. They fall back to
+# foo / rpcpassword so a standalone `docker compose` still works. BITCOIN_WALLET (default mainwallet)
+# is the one piece not carried in the URL.
 services:
   bitcoind:
     # Pinned to a digest so the bitcoind regtest behavior is reproducible even
@@ -20,19 +21,19 @@ services:
       - -printtoconsole
       - -rpcallowip=0.0.0.0/0
       - -rpcbind=0.0.0.0
-      - -rpcuser=${BITCOIND_USER}
-      - -rpcpassword=${BITCOIND_PASSWORD}
+      - -rpcuser=${BITCOIND_USER:-foo}
+      - -rpcpassword=${BITCOIND_PASSWORD:-rpcpassword}
       - -server=1
       - -txindex=1
       - -fallbackfee=0.0002
-      - -wallet=mainwallet
+      - -wallet=${BITCOIN_WALLET:-mainwallet}
     ports:
       - "18443:18443"
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "bitcoin-cli -regtest -rpcuser=${BITCOIND_USER} -rpcpassword=${BITCOIND_PASSWORD} getblockchaininfo > /dev/null",
+          "bitcoin-cli -regtest -rpcuser=${BITCOIND_USER:-foo} -rpcpassword=${BITCOIND_PASSWORD:-rpcpassword} getblockchaininfo > /dev/null",
         ]
       start_period: 10s
       interval: 10s

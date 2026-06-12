@@ -52,6 +52,12 @@ Configuration precedence is:
 Required RPC inputs can come from either source above. The wallet exits if `rpc_url`, `rpc_user`, or `rpc_password`
 are still missing after resolution.
 
+Each network's creds live in its own `config/<network>.toml`. `regtest.toml` ships the standard local creds
+(`foo`/`rpcpassword`) and is tracked; `testnet.toml` (and any other real-network config) carries real node creds
+and is gitignored. Copy `config/sample.toml` to `config/<network>.toml` and fill it in. Because each file is read
+only for its matching `--env`, testnet and regtest creds never collide — a parallel regtest session keeps using
+`regtest.toml`.
+
 | Variable | CLI flag | Description |
 | --- | --- | --- |
 | `WALLET_RPC_URL` | `--rpc-url` | Bitcoin RPC endpoint |

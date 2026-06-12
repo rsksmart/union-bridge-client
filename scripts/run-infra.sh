@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 
 # wrapper script for local infrastructure management
-# usage: ./scripts/run-infra.sh --start [--fresh] [--contracts-tag TAG] [--pull-contracts]
-#        ./scripts/run-infra.sh --stop
+# usage: ./scripts/run-infra.sh --start-all [--fresh] [--contracts-tag TAG] [--pull-contracts]
+#        ./scripts/run-infra.sh --stop-all
 #        ./scripts/run-infra.sh --start-blockchains [--fresh] [--contracts-tag TAG] [--pull-contracts]
 #        ./scripts/run-infra.sh --stop-blockchains
 #        ./scripts/run-infra.sh --stop-mining
 #        ./scripts/run-infra.sh --start-bitvmx [--fresh]
 #        ./scripts/run-infra.sh --stop-bitvmx
+# (--start / --stop are still accepted as aliases for --start-all / --stop-all.)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -63,8 +64,12 @@ MINE_PID_FILE="/tmp/union-bridge-${ENVIRONMENT}-mining.pids"
 # let duplicate miners accumulate and mine more than one block per interval. Scoped per
 # ENVIRONMENT so reaping one env's miners never touches the other env's.
 MINE_TAG="union-bridge-${ENVIRONMENT}-miner"
-BITCOIN_WALLET="mainwallet"
-BITCOIN_RPC_ARGS=(-regtest -rpcuser=foo -rpcpassword=rpcpassword -rpcwallet="${BITCOIN_WALLET}")
+# Bitcoin RPC target for host-side bitcoin-cli (mining, wallet bootstrap). Creds come from
+# BITCOIND_URL via the shared resolver (single source, also used by scripts/test-flows.sh); host + port
+# are the regtest default (127.0.0.1:18443). BITCOIN_WALLET is the one piece not carried in the URL.
+source docker/local-infra/bitcoind-rpc-env.sh
+BITCOIN_WALLET="${BITCOIN_WALLET:-mainwallet}"
+BITCOIN_RPC_ARGS=(-regtest -rpcuser="${BITCOIND_USER}" -rpcpassword="${BITCOIND_PASSWORD}" -rpcwallet="${BITCOIN_WALLET}")
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -372,6 +377,14 @@ start_blockchains() {
     fi
     blockchains_cmd+=("$@" up -d)
     docker/local-infra/start-blockchains.sh "${blockchains_cmd[@]}"
+
+    # A bring-your-own published compose (BYO_BLOCKCHAINS_COMPOSE) owns its own bitcoind
+    # wallet and block production, so skip union's wallet bootstrap + background mining.
+    if [[ -n "${BYO_BLOCKCHAINS_COMPOSE:-}" ]]; then
+        log "External blockchains up (${BYO_BLOCKCHAINS_COMPOSE}); skipping wallet bootstrap + mining (the external stack manages its own chains)"
+        return 0
+    fi
+
     bootstrap_bitcoin_wallet
     start_mining
 }
@@ -448,10 +461,10 @@ stop_all() {
 }
 
 case "${1:-}" in
-    --start)
+    --start-all|--start)
         start_all "$@"
         ;;
-    --stop)
+    --stop-all|--stop)
         stop_all
         ;;
     --start-blockchains)
@@ -470,12 +483,12 @@ case "${1:-}" in
         stop_bitvmx
         ;;
     *)
-        echo "Usage: $0 [--env local-anvil|local-rskj] {--start|--stop|--start-blockchains|--stop-blockchains|--stop-mining|--start-bitvmx|--stop-bitvmx}"
+        echo "Usage: $0 [--env local-anvil|local-rskj] {--start-all|--stop-all|--start-blockchains|--stop-blockchains|--stop-mining|--start-bitvmx|--stop-bitvmx}"
         echo ""
-        echo "Local Docker Infrastructure:"
-        echo "  --start [--fresh] [--contracts-tag TAG] [--pull-contracts] [--rskj-tag TAG] [--powpeg-tag TAG]"
-        echo "                                                       Start all blockchains + bitvmx + mining"
-        echo "  --stop                                               Stop mining + bitvmx + blockchains"
+        echo "Local Docker Infrastructure (--start / --stop are accepted aliases for --start-all / --stop-all):"
+        echo "  --start-all [--fresh] [--contracts-tag TAG] [--pull-contracts] [--rskj-tag TAG] [--powpeg-tag TAG]"
+        echo "                                                       Start all infra: blockchains + bitvmx + mining"
+        echo "  --stop-all                                           Stop mining + bitvmx + blockchains"
         echo "  --start-blockchains [--fresh] [--contracts-tag TAG] [--pull-contracts] [--rskj-tag TAG] [--powpeg-tag TAG]"
         echo "                                                       Start blockchains + mining"
         echo "  --stop-blockchains                                   Stop mining + blockchains"
@@ -490,6 +503,12 @@ case "${1:-}" in
         echo "  --pull-contracts                                     Pull predeployed Anvil image from registry even if it exists locally"
         echo "  --rskj-tag TAG                                       Official rsksmart/rskj tag for --env local-rskj"
         echo "  --powpeg-tag TAG                                     Official rsksmart/powpeg-node tag for --env local-rskj"
+        echo ""
+        echo "Bring your own blockchains:"
+        echo "  Set BYO_BLOCKCHAINS_COMPOSE to a compose reference (e.g. oci://ghcr.io/org/stack:tag or a"
+        echo "  local path) and --start-blockchains / --start-all bring that published stack up instead of the"
+        echo "  bundled chains; union skips its own wallet bootstrap + mining and just talks to it over"
+        echo "  BITCOIND_URL. --stop-blockchains / --stop-all bring the same compose down."
         exit 1
         ;;
 esac
