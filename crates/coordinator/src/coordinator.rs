@@ -185,6 +185,7 @@ impl<
                 bitvmx_broker.clone(),
                 global_context.clone(),
                 signaling,
+                &store_rc,
                 rsk_confirmations,
                 btc_status_retry_blocks,
                 native_bridge_verifier.clone(),

@@ -4,11 +4,12 @@ use bitcoin::key::Parity::Even;
 use bitcoin::secp256k1::XOnlyPublicKey;
 use common_bitvmx::bitvmx_types::AdvanceFundsRegistered;
 use common_core::types::{Address, CommitteeId, Hash256, TxIdParser};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::types::OperatorTakeTriggeredEvent;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct OperatorTakeTriggerData {
     pub(crate) pegout_txid: Hash256,
     pub(crate) pegout_id: Hash256,
