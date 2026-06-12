@@ -155,6 +155,9 @@ per-request URI parameters cannot inflate label cardinality.
 | `union_bitvmx_messages_received_total`            | counter |         | Any inbound BitVMX message (pong or event)                            |
 | `union_bitvmx_last_message_timestamp_seconds`     | gauge   |         | UNIX timestamp of the most recent inbound BitVMX message. Use `time() - <metric>` for age. |
 | `union_coordinator_events_processed_total`        | counter | `kind`  | `kind` ∈ {`user_request`, `bitvmx_event`, `rsk_event`, `block`}       |
+| `union_coordinator_processor_errors_total`        | counter | `kind`  | An `EventProcessor` (flow) returned an error while handling an event. Same `kind` set as above. Non-zero `rate` means a flow is failing. |
+| `union_coordinator_broker_transport_errors_total` | counter | `operation` | Recoverable broker transport errors that were logged-and-continued (not fatal). `operation` ∈ {`getting User request`, `getting BitVMX event`, `getting RSK event`, `getting block`, `sending user reply`}. Sustained `rate` signals broker/connectivity degradation. |
+| `union_coordinator_chain_height`                  | gauge   |         | RSK block number the coordinator last processed. Subtract from `union_indexer_height{indexer="block"}` to measure how far the coordinator lags the indexer. |
 | `union_flows_active`                              | gauge   | `type`  | Refreshed every 10 RSK blocks (see `ACTIVE_FLOWS_LOG_EVERY_N_BLOCKS`). `type` ∈ {`pegin`, `pegout`, `advance-funds`, `committee-setup`} |
 
 ### Block indexer
@@ -220,3 +223,14 @@ binaries.
   `sum by (type) (union_flows_active{type="pegout"})`
 - p95 user-API latency over the last 5 min:
   `histogram_quantile(0.95, sum by (le, path) (rate(http_request_duration_seconds_bucket{service="user-api"}[5m])))`
+- A flow is failing (any processor error in the last 5 min):
+  `sum by (kind) (rate(union_coordinator_processor_errors_total[5m])) > 0`
+- Broker connectivity degrading (recoverable transport errors):
+  `sum by (operation) (rate(union_coordinator_broker_transport_errors_total[5m])) > 0`
+- Coordinator falling behind the block indexer (lag in blocks):
+  `union_indexer_height{indexer="block"} - on() union_coordinator_chain_height`
+- Block and log indexers out of sync with each other:
+  `abs(union_indexer_height{indexer="block"} - on() union_indexer_height{indexer="log"})`
+- A service stalled (height flat / no events while the chain advances):
+  `rate(union_coordinator_events_processed_total{kind="block"}[5m]) == 0`
+  `rate(union_indexer_blocks_indexed_total[5m]) == 0`

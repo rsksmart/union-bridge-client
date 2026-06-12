@@ -292,6 +292,7 @@ impl<
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_user_request(&req) {
+                            metrics::counter!("union_coordinator_processor_errors_total", "kind" => "user_request").increment(1);
                             error!("Error processing User request {req:?}: {e:?}");
                         }
                     });
@@ -321,6 +322,7 @@ impl<
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_new_bitvmx_event(&event) {
+                            metrics::counter!("union_coordinator_processor_errors_total", "kind" => "bitvmx_event").increment(1);
                             error!("Error processing BitVMX event {event:?}: {e:?}");
                         }
                     });
@@ -338,6 +340,7 @@ impl<
                     // each processor decides if the event is relevant
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_new_rsk_event(&event) {
+                            metrics::counter!("union_coordinator_processor_errors_total", "kind" => "rsk_event").increment(1);
                             error!("Error processing Union Bridge event {event:?}: {e:?}");
                         }
                     });
@@ -351,9 +354,13 @@ impl<
                     Self::handle_runtime_broker_result(block_result, "getting block")?
                 {
                     metrics::counter!("union_coordinator_events_processed_total", "kind" => "block").increment(1);
+                    #[allow(clippy::cast_precision_loss)]
+                    metrics::gauge!("union_coordinator_chain_height")
+                        .set(block.number().value() as f64);
 
                     self.processors.iter_mut().for_each(|p| {
                         if let Err(e) = p.process_new_block(&block) {
+                            metrics::counter!("union_coordinator_processor_errors_total", "kind" => "block").increment(1);
                             error!("Error processing block {block:?}: {e:?}");
                         }
                     });
@@ -398,6 +405,7 @@ impl<
         match result {
             Ok(value) => Ok(value),
             Err(error) if Self::is_recoverable_broker_error(&error) => {
+                metrics::counter!("union_coordinator_broker_transport_errors_total", "operation" => operation).increment(1);
                 warn!(?error, operation, "Recoverable broker transport error; continuing");
                 Ok(None)
             }
@@ -489,6 +497,7 @@ impl<
                 warn!("Broker could not deliver user reply; dropping reply");
             }
             Err(error) if is_recoverable_transport_error(&error) => {
+                metrics::counter!("union_coordinator_broker_transport_errors_total", "operation" => "sending user reply").increment(1);
                 warn!(?error, "Recoverable broker error sending user reply; dropping reply");
             }
             Err(error) => return Err(error.into()),
