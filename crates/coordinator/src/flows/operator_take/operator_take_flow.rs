@@ -284,8 +284,8 @@ where
         }
     }
 
-    #[allow(clippy::too_many_lines)]
     pub(crate) fn start_step(&mut self, next_step: Steps) -> Result<StepOutcome> {
+        let previous_state = self.state.clone();
         let previous_step = self.state.step;
         self.state.step = next_step;
 
@@ -296,6 +296,16 @@ where
             format_step(next_step)
         );
 
+        let outcome = self.enter_step(next_step);
+        if outcome.is_err() {
+            self.state = previous_state;
+        }
+
+        outcome
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn enter_step(&mut self, next_step: Steps) -> Result<StepOutcome> {
         match next_step {
             Steps::WaitRskOperatorTakeTriggered => unreachable!(
                 "OperatorTakeTriggered is the initial step and should not be started explicitly"
@@ -983,7 +993,7 @@ mod tests {
     use bitcoin::transaction::Version;
     use bitcoin::{PublicKey, Transaction};
     use common_bitvmx::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
-    use common_broker::broker::MockBrokerClientApi;
+    use common_broker::broker::{BrokerError, MockBrokerClientApi};
     use common_core::types::{Address, CommitteeId, Hash256};
     use primitive_types::{H160, H256};
     use union_contracts::bindings::pegout_manager::PegoutManager::StreamPosition;
@@ -1062,6 +1072,32 @@ mod tests {
             .expect("non-selected operator should skip to waiting for on-chain registration");
 
         assert_eq!(flow.current_step(), Steps::RegisterOrWaitRskAdvanceFunds);
+    }
+
+    #[test]
+    fn selected_operator_rolls_back_step_when_entry_action_fails() {
+        let committee_id = Uuid::new_v4();
+        let flow_id = FlowId::from_random();
+        let trigger_data = test_trigger_data(committee_id, 0);
+
+        let mut contracts = MockRskContractsGatewayApi::new();
+        contracts.expect_my_address().return_const(Address::from(H160::from_low_u64_be(33)));
+
+        let mut broker = MockBitVmxBroker::new();
+        broker.expect_send().times(1).returning(|_| Err(BrokerError::disconnected()));
+
+        let mut flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(contracts),
+            Rc::new(broker),
+            flow_id,
+            trigger_data,
+            Steps::WaitRskOperatorTakeTriggered,
+        );
+
+        let result = flow.complete_step(StepData::OperatorTakeTriggered);
+
+        assert!(result.is_err(), "broker failure should surface as an error");
+        assert_eq!(flow.current_step(), Steps::WaitRskOperatorTakeTriggered);
     }
 
     #[test]
