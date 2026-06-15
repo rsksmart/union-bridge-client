@@ -23,6 +23,7 @@ use uuid::Uuid;
 
 use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
 use crate::flows::common::{COMM_KEY_INDEX, FlowId, Signaling};
+use crate::flows::pegout::pegout_processor::PEGOUT_ACCEPTED_NAME;
 
 /// Derive the pegout flow id from the `PegoutRequested` Rootstock tx hash.
 #[must_use]
@@ -656,6 +657,34 @@ where
             .ok_or_else(|| anyhow!("Expected user take tx_id not found"))?;
         self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetSPVProof(tx_id))?;
         Ok(())
+    }
+
+    /// Re-pull the one-time `pegout_accepted` variable from `BitVMX`.
+    ///
+    /// The push that advances `PrepareUserTakeSetup` is delivered once and is not
+    /// redelivered across a restart, so on recovery we query it explicitly. The
+    /// reply re-enters the existing `Variable` handler. Only the query is re-sent
+    /// — never the `Setup` that produced it, which `BitVMX` rejects for an
+    /// already-set-up protocol.
+    fn request_pegout_accepted_var(&self) -> Result<()> {
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetVar(
+            self.bitvmx_protocol_id().value(),
+            PEGOUT_ACCEPTED_NAME.to_string(),
+        ))
+    }
+
+    /// On recovery, re-issue the outbound `BitVMX` query for a step that is
+    /// blocked waiting on a one-time `BitVMX` push. `BitVMX` does not redeliver
+    /// these pushes across a restart, so without this the flow stalls forever.
+    /// Each step re-sends only an idempotent `Get*` query, not the mutating
+    /// request that originally triggered the push.
+    pub(crate) fn redrive_pending_bitvmx_request(&self) -> Result<()> {
+        match self.current_step() {
+            Steps::PrepareUserTakeSetup => self.request_pegout_accepted_var(),
+            Steps::GetCommInfoAuthoritativeCheckpoint => self.request_bitvmx_comm_info(),
+            Steps::RequestUserTakeSpvProof => self.request_spv_proof(),
+            _ => Ok(()),
+        }
     }
 
     pub(crate) fn is_terminal(&self) -> bool {

@@ -256,7 +256,7 @@ where
             self.apply_processor_state(state)?;
         }
 
-        self.reconstruct_runtime_state_from_flows();
+        self.reconstruct_runtime_state_from_flows()?;
         Ok(())
     }
 
@@ -282,7 +282,7 @@ where
         Ok(())
     }
 
-    fn reconstruct_runtime_state_from_flows(&mut self) {
+    fn reconstruct_runtime_state_from_flows(&mut self) -> Result<()> {
         for (flow_id, flow) in &self.pegout_flows {
             match flow.current_step() {
                 Steps::WaitUserTakeSignaturesReady
@@ -304,7 +304,13 @@ where
                 }
                 _ => {}
             }
+
+            // Steps blocked on a one-time BitVMX push are not re-armed by the
+            // match above; BitVMX does not redeliver those pushes across a
+            // restart, so re-issue the query that re-produces them.
+            flow.redrive_pending_bitvmx_request()?;
         }
+        Ok(())
     }
 
     fn persist_processor_state(&self) -> Result<()> {
@@ -1491,6 +1497,79 @@ mod tests {
 
         assert_eq!(restored.unconfirmed_register_pegout.get(&flow_id), Some(&0));
         assert!(restored.register_pegout_retry_scheduler.is_scheduled(&flow_id));
+    }
+
+    /// Regression test for the pegout recovery e2e hang: a flow restored at
+    /// `PrepareUserTakeSetup` must re-issue the `pegout_accepted` `GetVar` query.
+    /// The `BitVMX` push that advances this step is delivered once and is not
+    /// redelivered across a restart, so without the re-query the flow stalls
+    /// forever (observed: coordinators restarted in this step never completed).
+    #[test]
+    fn restore_redrives_pegout_accepted_query_for_prepare_user_take_setup() {
+        let store_path = TestStorePath::new();
+        let store = Rc::new(store_path.open());
+        let flow_id = flow_id_from_pegout_requested_tx_hash(TxHash::from(H256::from_low_u64_be(7)));
+        let state = State {
+            flow_id,
+            log_id: String::new(),
+            step: Steps::PrepareUserTakeSetup,
+            ctx: FlowContext {
+                pegout_requested: create_fake_pegout_requested(),
+                pegout_requested_tx_hash: TxHash::from(H256::from_low_u64_be(7)),
+                bitvmx_protocol_id: common_bitvmx::bitvmx_types::user_take_protocol_id(
+                    Uuid::nil(),
+                    0,
+                ),
+                my_p2p_address: None,
+                committee_output: None,
+                peg_out_accepted: None,
+                pegout_registered: None,
+                pegout_registered_tx: None,
+                spv_proof: None,
+                transaction_status: None,
+            },
+            created_at: None,
+        };
+        store
+            .save_flow(&StoreKey::PegoutFlow(flow_id.value()), state)
+            .expect("flow state should persist");
+
+        // The mock verifies on drop that exactly one matching GetVar was sent.
+        let mut broker = MockBitVmxBroker::new();
+        broker
+            .expect_send()
+            .withf(|msg| {
+                matches!(
+                    msg,
+                    IncomingBitVMXApiMessages::GetVar(_, key) if key.as_str() == PEGOUT_ACCEPTED_NAME
+                )
+            })
+            .times(1)
+            .returning(|_| Ok(true));
+
+        let restored: PegoutFlowProcessor<
+            MockRskContractsGatewayApi,
+            MockBitVmxBroker,
+            TestBtcSigSubFlow,
+            TestBtcSigFactory,
+            CoordinatorStore,
+        > = PegoutFlowProcessor::restore_or_new(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            RuntimeSync::new().expect("failed to create runtime sync"),
+            Rc::new(broker),
+            GlobalContext::new(),
+            &store,
+            Rc::new(Signaling::new("/tmp", "disabled")),
+            NativeBridgeVerifier::Dummy,
+            60,
+            1,
+            1,
+            1,
+            None,
+        )
+        .expect("processor should restore");
+
+        assert_eq!(restored.pegout_flows[&flow_id].current_step(), Steps::PrepareUserTakeSetup);
     }
 
     /// Regression test for the bug where a signature flow completing after
