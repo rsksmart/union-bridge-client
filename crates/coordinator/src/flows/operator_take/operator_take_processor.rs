@@ -4,7 +4,7 @@ use std::rc::Rc;
 use anyhow::{Context, Result, anyhow, bail};
 use common_bitvmx::bitvmx_types::{
     FundsAdvanceSPV, OPERATOR_TAKE_TX, OutgoingBitVMXApiMessages, UnionSPVNotification,
-    UnionTxType, VariableTypes, advance_funds_protocol_id,
+    UnionTxType, VariableTypes,
 };
 use common_core::types::{CommitteeId, Hash256, RskBlockAndUncles, TxIdParser};
 use common_runtime::runtime_sync::RuntimeSync;
@@ -197,6 +197,7 @@ where
     ) -> Self {
         let mut store = crate::store::MockCoordinatorStoreApi::new();
         store.expect_save_flow::<AdvanceFundsProcessorState>().returning(|_, _| Ok(()));
+        store.expect_save_flow::<FlowContext>().returning(|_, _| Ok(()));
         store.expect_delete_flow().returning(|_| Ok(()));
         let store = Rc::new(store);
 
@@ -323,28 +324,23 @@ where
         }
     }
 
-    /// Find a flow by `(committee_id, slot_index)` — the keys carried by
-    /// `BitVMX` `UnionSPVNotification`s. Returns the matching flow if any.
-    /// Matches on the cached `bitvmx_protocol_id`, which is derived from the
-    /// same `(committee_id, slot_index)` tuple at flow construction.
-    ///
-    /// Bails if more than one flow matches — this is an invariant violation
-    /// (two flows holding the same `BitVMX` protocol id can only arise from a
-    /// bug or an unhandled re-trigger scenario, and would otherwise lead to
-    /// nondeterministic dispatch).
     fn flow_by_committee_slot(
         &mut self,
         committee_id: Uuid,
         slot_index: usize,
     ) -> Result<Option<&mut AdvanceFundsFlow<CG, BC, S>>> {
-        let target = advance_funds_protocol_id(committee_id, slot_index);
-        let mut matches =
-            self.flows.values_mut().filter(|flow| flow.bitvmx_protocol_id() == target);
+        let Some(slot_id) = u64::try_from(slot_index).ok() else {
+            warn!("Ignoring BitVMX event with invalid slot_index {slot_index}");
+            return Ok(None);
+        };
+        let mut matches = self
+            .flows
+            .values_mut()
+            .filter(|flow| flow.matches_committee_slot(committee_id.as_u128(), slot_id));
         let first = matches.next();
         if matches.next().is_some() {
             bail!(
-                "Invariant violation: multiple advance-funds flows hold BitVMX protocol id \
-                 {target} for (committee {committee_id}, slot {slot_index}); refusing to route",
+                "Invariant violation: multiple advance-funds flows for (committee {committee_id}, slot {slot_index}); refusing to route",
             );
         }
         Ok(first)
@@ -383,6 +379,7 @@ where
         committee_id: u128,
         slot_id: u64,
         operator_take_txid: bitcoin::Txid,
+        block_number: common_core::types::BlockNumber,
     ) -> Option<FlowId> {
         self.flow_id_by_committee_slot_and_operator_take_txid(
             committee_id,
@@ -394,7 +391,7 @@ where
                 .values()
                 .find(|flow| {
                     flow.matches_committee_slot(committee_id, slot_id)
-                        && flow.can_complete_pegout_registered_without_txid()
+                        && flow.can_complete_pegout_registered_without_txid(block_number)
                 })
                 .map(AdvanceFundsFlow::flow_id)
         })
@@ -597,9 +594,12 @@ where
         let event_slot_id = pegout_registered.streamInfo.slotId;
         let event_txid = TxIdParser::fb_32_to_txid(pegout_registered.txid);
 
-        let Some(flow_id) =
-            self.flow_id_for_pegout_registered(event_committee_id, event_slot_id, event_txid)
-        else {
+        let Some(flow_id) = self.flow_id_for_pegout_registered(
+            event_committee_id,
+            event_slot_id,
+            event_txid,
+            event.block_number,
+        ) else {
             trace!(
                 "No advance funds flow found for PegoutRegistered with committee_id {event_committee_id} slot_id {event_slot_id} txid {event_txid}",
             );
@@ -812,7 +812,12 @@ where
                 let event_slot_id = e.inner.streamInfo.slotId;
                 let event_txid = TxIdParser::fb_32_to_txid(e.inner.txid);
                 if self
-                    .flow_id_for_pegout_registered(event_committee_id, event_slot_id, event_txid)
+                    .flow_id_for_pegout_registered(
+                        event_committee_id,
+                        event_slot_id,
+                        event_txid,
+                        e.block_number,
+                    )
                     .is_none()
                 {
                     trace!(
@@ -903,7 +908,11 @@ where
         Ok(())
     }
 
-    fn handle_advance_funds_spv(&mut self, spv_data: &FundsAdvanceSPV) -> Result<()> {
+    fn handle_advance_funds_spv(
+        &mut self,
+        program_id: Uuid,
+        spv_data: &FundsAdvanceSPV,
+    ) -> Result<()> {
         info!(
             "Received advance funds SPV - committee_id: {}, slot_index: {}, txid: {}",
             spv_data.committee_id, spv_data.slot_index, spv_data.txid
@@ -919,8 +928,10 @@ where
         let pegout_id: Hash256 = Hash256::from(H256::from(pegout_id_bytes));
 
         let Some(flow_id) = self.flows.values().find_map(|flow| {
-            (flow.matches_pegout(pegout_id) && flow.matches_advance_funds_spv(spv_data))
-                .then(|| flow.flow_id())
+            (flow.bitvmx_protocol_id().value() == program_id
+                && flow.matches_pegout(pegout_id)
+                && flow.matches_advance_funds_spv(spv_data))
+            .then(|| flow.flow_id())
         }) else {
             trace!("Ignoring funds_advance_spv for pegout_id {pegout_id} - no matching flow");
             return Ok(());
@@ -1124,7 +1135,7 @@ where
                             "Advance funds flow processor received funds_advance_spv variable from program_id: {program_id}",
                         );
                         let spv_data: FundsAdvanceSPV = serde_json::from_str(json_str)?;
-                        self.handle_advance_funds_spv(&spv_data)?;
+                        self.handle_advance_funds_spv(*program_id, &spv_data)?;
                     } else {
                         warn!("Received funds_advance_spv with unexpected type: {var_value:?}");
                     }
@@ -1222,9 +1233,7 @@ mod tests {
     use std::rc::Rc;
     use std::str::FromStr;
 
-    use alloy_primitives::{
-        Address as AlloyAddress, Bytes, FixedBytes, I256, U256, U256 as AlloyU256, Uint,
-    };
+    use alloy_primitives::{Bytes, FixedBytes, I256, U256, U256 as AlloyU256};
     use bitcoin::absolute::LockTime;
     use bitcoin::transaction::Version;
     use bitcoin::{OutPoint, PublicKey, ScriptBuf, Sequence, Transaction, TxIn, Witness};
@@ -1265,6 +1274,7 @@ mod tests {
             committee_id: CommitteeId::from(committee_id.as_u128()),
             slot_id: slot_index as u64,
             slot_index,
+            operator_take_triggered_block_number: Some(1.into()),
             request_pegout_tx_hash: None,
             user_pubkey: PublicKey::from_str(
                 "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
@@ -1335,7 +1345,7 @@ mod tests {
                 updatedAt: U256::ZERO,
                 expireAt: U256::from(1u64),
             },
-            block_number: 1.into(),
+            block_number: tx_hash_value.into(),
             block_hash: Hash256::from(H256::from_low_u64_be(100 + tx_hash_value)),
             removed: false,
             tx_hash: TxHash::from(H256::from_low_u64_be(tx_hash_value)),
@@ -1827,7 +1837,6 @@ mod tests {
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             GlobalContext::new(),
-            test_store(),
         );
         processor.flows.insert(flow_id, flow);
 
@@ -1903,7 +1912,6 @@ mod tests {
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             GlobalContext::new(),
-            test_store(),
         );
         processor.flows.insert(flow_id, flow);
 
@@ -1971,7 +1979,6 @@ mod tests {
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             GlobalContext::new(),
-            test_store(),
         );
         processor.flows.insert(flow_id, flow);
 
@@ -1986,6 +1993,43 @@ mod tests {
             .expect("PegoutRegistered should enter confirmation for non-selected path");
 
         assert_eq!(processor.events_confirming.len(), 1);
+    }
+
+    #[test]
+    fn stale_pegout_registered_before_retrigger_is_ignored_without_expected_txid() {
+        let committee_id = Uuid::new_v4();
+        let slot_index = 6;
+        let flow_id = FlowId::from_random();
+        let mut trigger_data = test_trigger_data(committee_id, slot_index);
+        trigger_data.operator_take_triggered_block_number = Some(10.into());
+
+        let flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(test_contracts(false)),
+            Rc::new(MockBitVmxBroker::new()),
+            flow_id,
+            trigger_data.clone(),
+            Steps::WaitBitVmxOperatorTakeSpv,
+        );
+
+        let mut processor = AdvanceFundsFlowProcessor::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+        );
+        processor.flows.insert(flow_id, flow);
+
+        let old_event = test_pegout_registered_event(
+            &trigger_data,
+            TxIdParser::txid_to_fb_32(test_spv_proof_with_version(8).tx.compute_txid()),
+            1,
+        );
+
+        processor
+            .process_confirmed_rsk_event(&RskPegManagerEvents::PegoutRegistered(old_event))
+            .expect("old PegoutRegistered should be ignored");
+
+        let flow = processor.flows.get(&flow_id).expect("flow should still exist");
+        assert_eq!(flow.current_step(), Steps::WaitBitVmxOperatorTakeSpv);
     }
 
     #[test]
@@ -2016,9 +2060,11 @@ mod tests {
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             GlobalContext::new(),
-            test_store(),
         );
         processor.flows.insert(flow_id, flow);
+        let program_id =
+            processor.flows.get(&flow_id).expect("flow should exist").bitvmx_protocol_id().value();
+        let stale_program_id = FlowId::from_random().value();
 
         let advance_funds_proof = test_spv_proof_spending(13, funding_utxo);
         let spv = common_bitvmx::bitvmx_types::FundsAdvanceSPV {
@@ -2032,7 +2078,7 @@ mod tests {
         // Before protocol setup (operator_take_txid unset) the SPV is ignored so
         // it cannot match a passive follower or a not-yet-set-up flow.
         processor
-            .handle_advance_funds_spv(&spv)
+            .handle_advance_funds_spv(program_id, &spv)
             .expect("advance-funds SPV without operator_take_txid should be ignored");
         let flow = processor.flows.get(&flow_id).expect("flow should still exist");
         assert_eq!(flow.current_step(), Steps::WaitBitVmxAdvanceFundsSpv);
@@ -2044,7 +2090,13 @@ mod tests {
             .set_operator_take_txid_for_test(operator_take_txid);
 
         processor
-            .handle_advance_funds_spv(&spv)
+            .handle_advance_funds_spv(stale_program_id, &spv)
+            .expect("stale-generation advance-funds SPV should be ignored");
+        let flow = processor.flows.get(&flow_id).expect("flow should still exist");
+        assert_eq!(flow.current_step(), Steps::WaitBitVmxAdvanceFundsSpv);
+
+        processor
+            .handle_advance_funds_spv(program_id, &spv)
             .expect("matching advance-funds SPV should advance");
         let flow = processor.flows.get(&flow_id).expect("flow should still exist");
         assert_eq!(flow.current_step(), Steps::RegisterOrWaitRskAdvanceFunds);
@@ -2078,7 +2130,6 @@ mod tests {
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             GlobalContext::new(),
-            test_store(),
         );
         processor.flows.insert(flow_id, flow);
 
@@ -2168,7 +2219,6 @@ mod tests {
             Rc::new(test_contracts(true)),
             Rc::new(broker),
             test_global_context(committee_id),
-            test_store(),
         );
 
         processor
@@ -2210,7 +2260,6 @@ mod tests {
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             GlobalContext::new(),
-            test_store(),
         );
         processor.flows.insert(flow_id, flow);
 
@@ -2254,7 +2303,6 @@ mod tests {
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             GlobalContext::new(),
-            test_store(),
         );
         processor.flows.insert(flow_id, flow);
 
@@ -2293,7 +2341,6 @@ mod tests {
             Rc::new(MockRskContractsGatewayApi::new()),
             Rc::new(MockBitVmxBroker::new()),
             GlobalContext::new(),
-            test_store(),
         );
         processor.flows.insert(flow_id, flow);
 
@@ -2330,7 +2377,6 @@ mod tests {
             Rc::new(test_contracts(true)),
             Rc::new(MockBitVmxBroker::new()),
             test_global_context(committee_id),
-            test_store(),
         );
         processor.flows.insert(flow_id, flow);
 

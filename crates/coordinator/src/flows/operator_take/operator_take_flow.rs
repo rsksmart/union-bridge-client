@@ -5,10 +5,10 @@ use bitcoin::{PublicKey, Txid};
 use common_bitvmx::bitvmx_types::{
     AdvanceFundsRegistered, AdvanceFundsRequest, BitVmxProtocolId, BtcTxSPVProof, CommsAddress,
     FundsAdvanceSPV, IncomingBitVMXApiMessages, OPERATOR_TAKE_TX, VariableTypes,
-    accept_pegin_protocol_id, advance_funds_protocol_id,
+    accept_pegin_protocol_id,
 };
 use common_broker::broker::BitVmxBrokerClientApi;
-use common_core::types::{Address, CommitteeId, Hash256, TxHash};
+use common_core::types::{Address, BlockNumber, CommitteeId, Hash256, TxHash};
 use common_runtime::runtime_sync::RuntimeSync;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -164,11 +164,9 @@ pub(crate) enum StepOutcome {
 pub(crate) struct FlowContext {
     flow_id: FlowId,
     /// Cached `BitVMX` protocol id for this advance-funds protocol instance.
-    /// Derived from `(committee_id, slot_index)` via `advance_funds_protocol_id`
-    /// at flow construction and reused on every `BitVMX`-bound message. Kept
-    /// distinct from `flow_id` because the `BitVMX` side keys protocols by
-    /// committee+slot, while the coordinator's `FlowId` is derived from the
-    /// canonical trigger tx hash.
+    /// New flows use the canonical trigger-derived `FlowId` so a same-slot
+    /// retrigger cannot consume stale variables from the previous generation.
+    /// Restored flows keep their persisted id.
     bitvmx_protocol_id: BitVmxProtocolId,
     step: Steps,
     trigger_data: OperatorTakeTriggerData,
@@ -218,8 +216,7 @@ where
         flow_id: FlowId,
         trigger_data: OperatorTakeTriggerData,
     ) -> Self {
-        let committee_uuid = Uuid::from_u128(*trigger_data.committee_id);
-        let bitvmx_protocol_id = advance_funds_protocol_id(committee_uuid, trigger_data.slot_index);
+        let bitvmx_protocol_id = BitVmxProtocolId::new(flow_id.value());
         Self {
             contracts,
             rt_sync,
@@ -940,8 +937,7 @@ where
         trigger_data: OperatorTakeTriggerData,
         step: Steps,
     ) -> Self {
-        let committee_uuid = Uuid::from_u128(*trigger_data.committee_id);
-        let bitvmx_protocol_id = advance_funds_protocol_id(committee_uuid, trigger_data.slot_index);
+        let bitvmx_protocol_id = BitVmxProtocolId::new(flow_id.value());
         Self {
             contracts,
             rt_sync: RuntimeSync::new().expect("Failed to create runtime sync for test flow"),
@@ -1054,10 +1050,19 @@ where
                 .is_some_and(|registered| tx_spends(spv_proof, registered.txid))
     }
 
-    pub(crate) fn can_complete_pegout_registered_without_txid(&self) -> bool {
+    pub(crate) fn can_complete_pegout_registered_without_txid(
+        &self,
+        event_block_number: BlockNumber,
+    ) -> bool {
+        let is_current_generation = self
+            .state
+            .trigger_data
+            .operator_take_triggered_block_number
+            .is_none_or(|trigger_block| event_block_number >= trigger_block);
         !self.was_selected_operator()
             && self.state.operator_take_txid.is_none()
             && self.state.step.is_valid_transition(Steps::RegisterOrWaitRskOperatorTake, false)
+            && is_current_generation
     }
 
     /// Snapshot used by `Coordinator::log_active_flows` for periodic
@@ -1161,6 +1166,7 @@ mod tests {
             committee_id: CommitteeId::from(committee_id.as_u128()),
             slot_id: slot_index as u64,
             slot_index,
+            operator_take_triggered_block_number: Some(1.into()),
             request_pegout_tx_hash: None,
             user_pubkey: PublicKey::from_str(
                 "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",

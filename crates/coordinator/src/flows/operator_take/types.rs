@@ -3,7 +3,7 @@ use bitcoin::PublicKey;
 use bitcoin::key::Parity::Even;
 use bitcoin::secp256k1::XOnlyPublicKey;
 use common_bitvmx::bitvmx_types::AdvanceFundsRegistered;
-use common_core::types::{Address, CommitteeId, Hash256, TxIdParser};
+use common_core::types::{Address, BlockNumber, CommitteeId, Hash256, TxIdParser};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -16,6 +16,8 @@ pub(crate) struct OperatorTakeTriggerData {
     pub(crate) committee_id: CommitteeId,
     pub(crate) slot_id: u64,
     pub(crate) slot_index: usize,
+    #[serde(default)]
+    pub(crate) operator_take_triggered_block_number: Option<BlockNumber>,
     pub(crate) request_pegout_tx_hash: Option<String>,
     pub(crate) user_pubkey: PublicKey,
     pub(crate) take_operator_address: Address,
@@ -44,6 +46,7 @@ impl OperatorTakeTriggerData {
             committee_id,
             slot_id,
             slot_index,
+            operator_take_triggered_block_number: Some(event.block_number),
             request_pegout_tx_hash,
             user_pubkey,
             take_operator_address,
