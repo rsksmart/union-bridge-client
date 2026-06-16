@@ -1029,14 +1029,16 @@ where
     }
 
     pub(crate) fn matches_advance_funds_spv(&self, spv_data: &FundsAdvanceSPV) -> bool {
+        // The advance-funds tx is funded from a committee funding UTXO, not from
+        // the operator-take tx, so it never spends `operator_take_txid`. Bind to
+        // the selected-operator flow that set up the protocol (operator_take_txid
+        // is set) and is waiting for the SPV; identity is committee + slot +
+        // pegout.
         spv_data.txid == spv_data.spv_proof.tx.compute_txid()
             && spv_data.committee_id == self.committee_id_uuid()
             && spv_data.slot_index == self.state.trigger_data.slot_index
             && spv_data.pegout_id == self.state.trigger_data.pegout_id.value().as_bytes().to_vec()
-            && self
-                .state
-                .operator_take_txid
-                .is_some_and(|txid| tx_spends(&spv_data.spv_proof, txid))
+            && self.state.operator_take_txid.is_some()
     }
 
     pub(crate) fn matches_reimbursement_kickoff_spv(
@@ -1138,7 +1140,7 @@ mod tests {
     use alloy_primitives::FixedBytes;
     use bitcoin::absolute::LockTime;
     use bitcoin::transaction::Version;
-    use bitcoin::{PublicKey, Transaction};
+    use bitcoin::{OutPoint, PublicKey, ScriptBuf, Sequence, Transaction, TxIn, Witness};
     use common_bitvmx::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
     use common_broker::broker::{BrokerError, MockBrokerClientApi};
     use common_core::types::{Address, CommitteeId, Hash256};
@@ -1474,6 +1476,100 @@ mod tests {
 
         assert_eq!(outcome, StepOutcome::NoOp);
         assert_eq!(flow.current_step(), Steps::RegisterOrWaitRskAdvanceFunds);
+    }
+
+    /// Build an advance-funds SPV whose tx spends `input_txid`, matching the
+    /// flow's committee/slot/pegout so only the txid relationship varies.
+    fn advance_funds_spv_for(
+        flow: &AdvanceFundsFlow<
+            MockRskContractsGatewayApi,
+            MockBitVmxBroker,
+            crate::store::MockCoordinatorStoreApi,
+        >,
+        input_txid: Txid,
+    ) -> FundsAdvanceSPV {
+        let tx = Transaction {
+            version: Version(2),
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint { txid: input_txid, vout: 2 },
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::MAX,
+                witness: Witness::new(),
+            }],
+            output: vec![],
+        };
+        let txid = tx.compute_txid();
+        FundsAdvanceSPV {
+            txid,
+            committee_id: flow.committee_id_uuid(),
+            slot_index: flow.state.trigger_data.slot_index,
+            pegout_id: flow.pegout_id().value().as_bytes().to_vec(),
+            spv_proof: BtcTxSPVProof {
+                block_hash: "00".repeat(32),
+                tx,
+                merkle_branch_path: "0".to_string(),
+                merkle_branch_hashes: vec![],
+            },
+        }
+    }
+
+    fn selected_operator_flow_waiting_for_spv(
+        committee_id: Uuid,
+    ) -> AdvanceFundsFlow<
+        MockRskContractsGatewayApi,
+        MockBitVmxBroker,
+        crate::store::MockCoordinatorStoreApi,
+    > {
+        let mut contracts = MockRskContractsGatewayApi::new();
+        // Match take_operator_address so was_selected_operator() returns true.
+        contracts.expect_my_address().return_const(Address::from(H160::from_low_u64_be(33)));
+        AdvanceFundsFlow::new_for_test(
+            Rc::new(contracts),
+            Rc::new(MockBitVmxBroker::new()),
+            FlowId::from_random(),
+            test_trigger_data(committee_id, 1),
+            Steps::WaitBitVmxAdvanceFundsSpv,
+        )
+    }
+
+    #[test]
+    fn matches_advance_funds_spv_when_tx_spends_funding_utxo() {
+        // Regression: the advance-funds tx is funded from a committee funding
+        // UTXO, never from the operator-take tx, so a tx_spends(operator_take_txid)
+        // guard dropped every legitimate SPV and stalled the selected operator at
+        // WaitBitVmxAdvanceFundsSpv. The SPV must match on committee/slot/pegout
+        // once the flow has set up the protocol (operator_take_txid is set).
+        let committee_id = Uuid::new_v4();
+        let mut flow = selected_operator_flow_waiting_for_spv(committee_id);
+
+        let operator_take_txid =
+            Txid::from_str("9da549dbd672185a9acdcb00f4f3b8c5bc3e4a2cb76c64f6cb7d201e3db661f6")
+                .expect("valid operator-take txid");
+        flow.set_operator_take_txid_for_test(operator_take_txid);
+
+        // Funding UTXO distinct from operator_take_txid, as on-chain.
+        let funding_utxo =
+            Txid::from_str("f2de83adad7c940af9abe18ca4870bcc8a6ea1776f25d3ad41f3518880c45791")
+                .expect("valid funding txid");
+        let spv = advance_funds_spv_for(&flow, funding_utxo);
+
+        assert!(flow.matches_advance_funds_spv(&spv));
+    }
+
+    #[test]
+    fn matches_advance_funds_spv_requires_operator_take_txid_set() {
+        // Watcher flows (and the selected operator before protocol setup) have no
+        // operator_take_txid; they must not consume the advance-funds SPV.
+        let committee_id = Uuid::new_v4();
+        let flow = selected_operator_flow_waiting_for_spv(committee_id);
+
+        let funding_utxo =
+            Txid::from_str("f2de83adad7c940af9abe18ca4870bcc8a6ea1776f25d3ad41f3518880c45791")
+                .expect("valid funding txid");
+        let spv = advance_funds_spv_for(&flow, funding_utxo);
+
+        assert!(!flow.matches_advance_funds_spv(&spv));
     }
 
     #[test]

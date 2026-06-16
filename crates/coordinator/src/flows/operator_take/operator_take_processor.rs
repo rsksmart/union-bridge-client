@@ -1989,22 +1989,28 @@ mod tests {
     }
 
     #[test]
-    fn advance_funds_spv_for_old_operator_take_txid_is_ignored() {
+    fn advance_funds_spv_routes_once_operator_take_txid_is_set() {
+        // The advance-funds tx is funded from a committee funding UTXO, never from
+        // the operator-take tx, so the SPV proof does not spend operator_take_txid.
+        // Routing binds on committee/slot/pegout and only requires the flow to have
+        // completed protocol setup (operator_take_txid is set); the spend target of
+        // the advance-funds tx is irrelevant.
         let committee_id = Uuid::new_v4();
         let slot_index = 6;
         let flow_id = FlowId::from_random();
         let trigger_data = test_trigger_data(committee_id, slot_index);
-        let expected_operator_take_txid = test_spv_proof_with_version(11).tx.compute_txid();
-        let stale_operator_take_txid = test_spv_proof_with_version(12).tx.compute_txid();
+        let operator_take_txid = test_spv_proof_with_version(11).tx.compute_txid();
+        // Funding UTXO the advance-funds tx actually spends, unrelated to the
+        // operator-take tx.
+        let funding_utxo = test_spv_proof_with_version(12).tx.compute_txid();
 
-        let mut flow = AdvanceFundsFlow::new_for_test(
+        let flow = AdvanceFundsFlow::new_for_test(
             Rc::new(test_contracts(false)),
             Rc::new(MockBitVmxBroker::new()),
             flow_id,
             trigger_data.clone(),
             Steps::WaitBitVmxAdvanceFundsSpv,
         );
-        flow.set_operator_take_txid_for_test(expected_operator_take_txid);
 
         let mut processor = AdvanceFundsFlowProcessor::new_for_test(
             Rc::new(MockRskContractsGatewayApi::new()),
@@ -2014,32 +2020,32 @@ mod tests {
         );
         processor.flows.insert(flow_id, flow);
 
-        let stale_spv = common_bitvmx::bitvmx_types::FundsAdvanceSPV {
-            txid: test_spv_proof_spending(13, stale_operator_take_txid).tx.compute_txid(),
+        let advance_funds_proof = test_spv_proof_spending(13, funding_utxo);
+        let spv = common_bitvmx::bitvmx_types::FundsAdvanceSPV {
+            txid: advance_funds_proof.tx.compute_txid(),
             committee_id,
             slot_index,
             pegout_id: trigger_data.pegout_id.value().as_bytes().to_vec(),
-            spv_proof: test_spv_proof_spending(13, stale_operator_take_txid),
+            spv_proof: advance_funds_proof,
         };
-        processor
-            .handle_advance_funds_spv(&stale_spv)
-            .expect("stale advance-funds SPV should be ignored");
 
+        // Before protocol setup (operator_take_txid unset) the SPV is ignored so
+        // it cannot match a passive follower or a not-yet-set-up flow.
+        processor
+            .handle_advance_funds_spv(&spv)
+            .expect("advance-funds SPV without operator_take_txid should be ignored");
         let flow = processor.flows.get(&flow_id).expect("flow should still exist");
         assert_eq!(flow.current_step(), Steps::WaitBitVmxAdvanceFundsSpv);
 
-        let correct_proof = test_spv_proof_spending(14, expected_operator_take_txid);
-        let correct_spv = common_bitvmx::bitvmx_types::FundsAdvanceSPV {
-            txid: correct_proof.tx.compute_txid(),
-            committee_id,
-            slot_index,
-            pegout_id: trigger_data.pegout_id.value().as_bytes().to_vec(),
-            spv_proof: correct_proof,
-        };
         processor
-            .handle_advance_funds_spv(&correct_spv)
-            .expect("matching advance-funds SPV should advance");
+            .flows
+            .get_mut(&flow_id)
+            .expect("flow should still exist")
+            .set_operator_take_txid_for_test(operator_take_txid);
 
+        processor
+            .handle_advance_funds_spv(&spv)
+            .expect("matching advance-funds SPV should advance");
         let flow = processor.flows.get(&flow_id).expect("flow should still exist");
         assert_eq!(flow.current_step(), Steps::RegisterOrWaitRskAdvanceFunds);
     }
