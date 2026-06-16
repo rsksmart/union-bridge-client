@@ -350,8 +350,7 @@ where
         Ok(first)
     }
 
-    /// Tear down an advance-funds flow declared dead by an admin operator.
-    fn fail_flow(&mut self, flow_id: FlowId, reason: &str) -> Result<()> {
+    fn mark_flow_failed(&mut self, flow_id: FlowId, reason: &str) -> Result<bool> {
         if let Some(flow) = self.flows.get_mut(&flow_id) {
             let ancestor_pegout_id = flow.ancestor_pegout_id();
             let _span = info_span!(
@@ -361,14 +360,66 @@ where
             )
             .entered();
             flow.mark_failed(reason)?;
-            warn!("Admin marked advance-funds flow {flow_id} as failed: {reason}");
-            // Cancel any pending retry explicitly
             self.retries.cancel(&flow_id);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Tear down an advance-funds flow declared dead by an admin operator.
+    fn fail_flow(&mut self, flow_id: FlowId, reason: &str) -> Result<()> {
+        if self.mark_flow_failed(flow_id, reason)? {
+            warn!("Admin marked advance-funds flow {flow_id} as failed: {reason}");
         } else {
             warn!("Admin requested fail for unknown advance-funds flow {flow_id}: {reason}");
         }
 
         self.cleanup_terminal_flows();
+
+        Ok(())
+    }
+
+    fn supersede_flows_for_operator_take(
+        &mut self,
+        trigger_data: &OperatorTakeTriggerData,
+        new_flow_id: FlowId,
+    ) -> Result<()> {
+        let request_key = (trigger_data.committee_id.clone(), trigger_data.slot_id);
+        let request_pegout_tx_hash = self.request_pegout_tx_hashes.get(&request_key).cloned();
+        let superseded_flows: Vec<_> = self
+            .flows
+            .values()
+            .filter(|flow| {
+                !flow.is_terminal()
+                    && flow.matches_committee_slot(*trigger_data.committee_id, trigger_data.slot_id)
+            })
+            .map(|flow| (flow.flow_id(), flow.take_operator_address()))
+            .collect();
+        let had_superseded_flows = !superseded_flows.is_empty();
+
+        for (old_flow_id, old_operator_address) in superseded_flows {
+            warn!(
+                old_flow_id = %old_flow_id,
+                new_flow_id = %new_flow_id,
+                old_operator_address = %old_operator_address,
+                new_operator_address = %trigger_data.take_operator_address,
+                committee_id = %trigger_data.committee_id,
+                slot_id = trigger_data.slot_id,
+                "Superseding existing advance funds flow for operator-take slot",
+            );
+            self.mark_flow_failed(
+                old_flow_id,
+                &format!("superseded by operator-take flow {new_flow_id}"),
+            )?;
+        }
+
+        if had_superseded_flows {
+            self.cleanup_terminal_flows();
+            if let Some(tx_hash) = request_pegout_tx_hash {
+                self.request_pegout_tx_hashes.insert(request_key, tx_hash);
+            }
+        }
 
         Ok(())
     }
@@ -394,6 +445,7 @@ where
         if self.flows.contains_key(&flow_id) {
             bail!("Advance funds flow {flow_id} already exists for committee {committee_id}");
         }
+        self.supersede_flows_for_operator_take(&trigger_data, flow_id)?;
 
         let flow = AdvanceFundsFlow::new(
             self.contracts_gateway.clone(),
@@ -452,15 +504,26 @@ where
         step_data: StepData,
         event_name: &str,
     ) -> Result<()> {
-        let Some(flow_id) = self
-            .flows
-            .values()
-            .find(|f| f.matches_pegout(pegout_id))
-            .map(AdvanceFundsFlow::flow_id)
-        else {
-            trace!("No flow found for {event_name} with pegout_id {pegout_id}");
-            return Ok(());
+        let flow_id = {
+            let Some(flow) = self.flows.values().find(|flow| flow.matches_pegout(pegout_id)) else {
+                trace!("No flow found for {event_name} with pegout_id {pegout_id}");
+                return Ok(());
+            };
+            if let StepData::AdvanceFundsConfirmed(data) = &step_data
+                && !flow.matches_operator_take_pubkey(&data.operator_pubkey)
+            {
+                warn!(
+                    event_name = event_name,
+                    pegout_id = %pegout_id,
+                    flow_id = %flow.flow_id(),
+                    received_operator_pubkey = ?data.operator_pubkey,
+                    "Ignoring event for superseded operator-take flow",
+                );
+                return Ok(());
+            }
+            flow.flow_id()
         };
+
         info!("{event_name} received for pegout_id {pegout_id}");
         self.complete_step(flow_id, step_data)
     }
@@ -997,19 +1060,20 @@ mod tests {
     use std::rc::Rc;
     use std::str::FromStr;
 
-    use alloy_primitives::{Bytes, FixedBytes, U256 as AlloyU256};
+    use alloy_primitives::{Bytes, FixedBytes, I256, U256, U256 as AlloyU256};
     use bitcoin::absolute::LockTime;
     use bitcoin::transaction::Version;
     use bitcoin::{PublicKey, Transaction};
     use common_bitvmx::bitvmx_types::{
         AdvanceFundsRegistered, BtcTxSPVProof, IncomingBitVMXApiMessages,
-        OutgoingBitVMXApiMessages, UnionSPVNotification, UnionTxType,
+        OutgoingBitVMXApiMessages, ParticipantRole, UnionSPVNotification, UnionTxType,
     };
     use common_broker::broker::MockBrokerClientApi;
     use common_core::types::{Address, BlockHash, BlockNumber, CommitteeId, Hash256, TxHash};
     use primitive_types::{H160, H256};
     use union_contracts::bindings::pegout_manager::PegoutManager::{
-        BitcoinSignatureData, BtcTransaction, PegoutRequested,
+        BitcoinSignatureData, BtcTransaction, OperatorTakeTriggered, PegoutRequested,
+        PegoutTempInfo, StreamPosition,
     };
     use uuid::Uuid;
 
@@ -1046,6 +1110,70 @@ mod tests {
                 "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
             )
             .expect("valid operator take pubkey"),
+        }
+    }
+
+    fn test_global_context(committee_id: Uuid) -> GlobalContext {
+        let global_context = GlobalContext::new();
+        global_context
+            .my_committees()
+            .add(CommitteeId::from(committee_id.as_u128()), ParticipantRole::Prover);
+        global_context
+    }
+
+    fn test_pubkey(seed: u8) -> PublicKey {
+        let secp = bitcoin::secp256k1::Secp256k1::new();
+        let secret_key =
+            bitcoin::secp256k1::SecretKey::from_slice(&[seed; 32]).expect("valid test secret key");
+        PublicKey::new(bitcoin::secp256k1::PublicKey::from_secret_key(&secp, &secret_key))
+    }
+
+    fn test_xonly_pubkey(seed: u8) -> FixedBytes<32> {
+        let pubkey = test_pubkey(seed);
+        FixedBytes::from_slice(&pubkey.inner.serialize()[1..])
+    }
+
+    fn test_alloy_address(value: u64) -> alloy_primitives::Address {
+        let mut bytes = [0u8; 20];
+        bytes[12..].copy_from_slice(&value.to_be_bytes());
+        alloy_primitives::Address::from(bytes)
+    }
+
+    fn test_operator_take_triggered_event(
+        committee_id: Uuid,
+        slot_index: usize,
+        take_operator_address: u64,
+        operator_key_seed: u8,
+        tx_hash_value: u64,
+    ) -> OperatorTakeTriggeredEvent {
+        OperatorTakeTriggeredEvent {
+            inner: OperatorTakeTriggered {
+                pegoutTxid: FixedBytes::from_slice(H256::from_low_u64_be(11).as_bytes()),
+                pegoutInfo: PegoutTempInfo {
+                    userPubKey: Bytes::from(test_pubkey(9).inner.serialize().to_vec()),
+                    createdAt: U256::ZERO,
+                    operatorTakeUpdatedAt: U256::ZERO,
+                    committeeId: committee_id.as_u128(),
+                    takeOperatorAddress: test_alloy_address(take_operator_address),
+                    operatorTakePubKey: test_xonly_pubkey(operator_key_seed),
+                    operatorDisputePubKey: FixedBytes::ZERO,
+                    pegoutId: FixedBytes::from_slice(H256::from_low_u64_be(22).as_bytes()),
+                    advanceFundsBlockNumber: I256::ZERO,
+                    reimbursementKickoffTxid: FixedBytes::ZERO,
+                },
+                streamPosition: StreamPosition {
+                    streamId: 0,
+                    packetNumber: 0,
+                    slotId: slot_index as u64,
+                    pegStatus: 0,
+                },
+                updatedAt: U256::ZERO,
+                expireAt: U256::from(1u64),
+            },
+            block_number: 1.into(),
+            block_hash: Hash256::from(H256::from_low_u64_be(100 + tx_hash_value)),
+            removed: false,
+            tx_hash: TxHash::from(H256::from_low_u64_be(tx_hash_value)),
         }
     }
 
@@ -1504,6 +1632,89 @@ mod tests {
 
     fn proof_txid() -> bitcoin::Txid {
         test_spv_proof().tx.compute_txid()
+    }
+
+    #[test]
+    fn second_operator_take_trigger_supersedes_existing_slot_flow() {
+        let committee_id = Uuid::new_v4();
+        let slot_index = 4;
+        let first_event = test_operator_take_triggered_event(committee_id, slot_index, 33, 1, 101);
+        let second_event = test_operator_take_triggered_event(committee_id, slot_index, 44, 2, 202);
+        let first_flow_id = flow_id_from_operator_take_triggered_tx_hash(first_event.tx_hash);
+        let second_flow_id = flow_id_from_operator_take_triggered_tx_hash(second_event.tx_hash);
+
+        let mut broker = MockBitVmxBroker::new();
+        broker.expect_send().times(1).returning(|_| Ok(true));
+
+        let mut processor = AdvanceFundsFlowProcessor::new_for_test(
+            Rc::new(test_contracts(true)),
+            Rc::new(broker),
+            test_global_context(committee_id),
+            test_store(),
+        );
+
+        processor
+            .create_flow_for_operator_take_triggered(&first_event)
+            .expect("first trigger should create a flow");
+        processor.retries.schedule(first_flow_id, 1, 1);
+
+        processor
+            .create_flow_for_operator_take_triggered(&second_event)
+            .expect("second trigger should supersede the first flow");
+
+        assert!(!processor.flows.contains_key(&first_flow_id), "old flow removed");
+        assert!(!processor.retries.is_scheduled(&first_flow_id), "old retry removed");
+        assert_eq!(processor.flows.len(), 1, "only the replacement flow remains");
+
+        let flow = processor.flows.get(&second_flow_id).expect("new flow should exist");
+        assert_eq!(flow.current_step(), Steps::RegisterOrWaitRskAdvanceFunds);
+    }
+
+    #[test]
+    fn advance_funds_registered_for_superseded_operator_is_ignored() {
+        let committee_id = Uuid::new_v4();
+        let slot_index = 4;
+        let flow_id = FlowId::from_random();
+        let trigger_data = test_trigger_data(committee_id, slot_index);
+
+        let mut flow_broker = MockBitVmxBroker::new();
+        flow_broker.expect_send().returning(|_| Ok(true));
+
+        let flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(test_contracts(false)),
+            Rc::new(flow_broker),
+            flow_id,
+            trigger_data.clone(),
+            Steps::RegisterOrWaitRskAdvanceFunds,
+        );
+
+        let mut processor = AdvanceFundsFlowProcessor::new_for_test(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+            test_store(),
+        );
+        processor.flows.insert(flow_id, flow);
+
+        let registered_data = AdvanceFundsRegistered {
+            committee_id,
+            slot_index,
+            txid: proof_txid(),
+            pegout_id: trigger_data.pegout_id.value().as_bytes().to_vec(),
+            operator_pubkey: test_pubkey(2),
+        };
+
+        processor
+            .complete_step_by_pegout_id(
+                trigger_data.pegout_id,
+                StepData::AdvanceFundsConfirmed(registered_data),
+                "AdvanceFundsRegistered",
+            )
+            .expect("stale confirmation should be ignored");
+
+        let flow = processor.flows.get(&flow_id).expect("flow should still exist");
+        assert_eq!(flow.current_step(), Steps::RegisterOrWaitRskAdvanceFunds);
+        assert!(!flow.has_advance_funds_registered());
     }
 
     #[test]

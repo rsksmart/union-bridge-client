@@ -8,7 +8,7 @@ use common_bitvmx::bitvmx_types::{
     accept_pegin_protocol_id, advance_funds_protocol_id,
 };
 use common_broker::broker::BitVmxBrokerClientApi;
-use common_core::types::{Hash256, TxHash};
+use common_core::types::{Address, Hash256, TxHash};
 use common_runtime::runtime_sync::RuntimeSync;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -970,6 +970,14 @@ where
 
     pub(crate) fn is_terminal(&self) -> bool {
         matches!(self.state.step, Steps::Done | Steps::Failed)
+    }
+
+    pub(crate) fn take_operator_address(&self) -> Address {
+        self.state.trigger_data.take_operator_address
+    }
+
+    pub(crate) fn matches_operator_take_pubkey(&self, operator_pubkey: &PublicKey) -> bool {
+        self.state.trigger_data.operator_take_pubkey == *operator_pubkey
     }
 
     /// Snapshot used by `Coordinator::log_active_flows` for periodic
