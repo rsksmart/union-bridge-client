@@ -37,7 +37,7 @@ impl OperatorTakeTriggerData {
         let user_pubkey = PublicKey::from_slice(inner.pegoutInfo.userPubKey.as_ref())?;
         let take_operator_address = Address::from(inner.pegoutInfo.takeOperatorAddress);
         let operator_take_pubkey =
-            xonly_to_compressed_pubkey(inner.pegoutInfo.operatorTakePubKey.as_ref())?;
+            operator_take_pubkey_from_xonly(inner.pegoutInfo.operatorTakePubKey.as_ref())?;
         Ok(Self {
             pegout_txid,
             pegout_id,
@@ -52,7 +52,7 @@ impl OperatorTakeTriggerData {
     }
 }
 
-fn xonly_to_compressed_pubkey(bytes: &[u8]) -> Result<PublicKey> {
+pub(crate) fn operator_take_pubkey_from_xonly(bytes: &[u8]) -> Result<PublicKey> {
     let xonly =
         XOnlyPublicKey::from_slice(bytes).context("Failed to parse x-only public key bytes")?;
     let secp_pubkey = xonly.public_key(Even);
@@ -71,7 +71,7 @@ pub(crate) fn advance_funds_registered_from_event(
         usize::try_from(event.streamInfo.slotId).context("Failed to convert slotId to usize")?;
     let txid = TxIdParser::fb_32_to_txid(event.txid);
     let pegout_id = event.pegoutId.as_slice().to_vec();
-    let operator_pubkey = xonly_to_compressed_pubkey(event.operatorTakePubKey.as_slice())?;
+    let operator_pubkey = operator_take_pubkey_from_xonly(event.operatorTakePubKey.as_slice())?;
 
     Ok(AdvanceFundsRegistered { committee_id, slot_index, txid, pegout_id, operator_pubkey })
 }

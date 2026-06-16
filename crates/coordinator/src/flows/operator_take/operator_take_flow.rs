@@ -8,7 +8,7 @@ use common_bitvmx::bitvmx_types::{
     accept_pegin_protocol_id, advance_funds_protocol_id,
 };
 use common_broker::broker::BitVmxBrokerClientApi;
-use common_core::types::{Address, Hash256, TxHash};
+use common_core::types::{Address, CommitteeId, Hash256, TxHash};
 use common_runtime::runtime_sync::RuntimeSync;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -541,6 +541,17 @@ where
             bail!("Invalid state transition from {current_step:?} with OperatorTakeSPV");
         }
         info!("Operator take SPV received for flow_id {}", self.state.flow_id);
+        let txid = spv_proof.tx.compute_txid();
+        if let Some(expected_txid) = self.state.operator_take_txid
+            && expected_txid != txid
+        {
+            debug!(
+                "Dropping stale OperatorTakeSPV at {current_step:?} for flow_id {}: expected txid {expected_txid}, got {txid}",
+                self.state.flow_id
+            );
+            return Ok(None);
+        }
+        self.state.operator_take_txid = Some(txid);
         if self.was_selected_operator() {
             self.state.operator_take_spv = Some(spv_proof);
         }
@@ -976,8 +987,24 @@ where
         self.state.trigger_data.take_operator_address
     }
 
+    pub(crate) fn pegout_id(&self) -> Hash256 {
+        self.state.trigger_data.pegout_id
+    }
+
+    pub(crate) fn committee_id(&self) -> CommitteeId {
+        self.state.trigger_data.committee_id.clone()
+    }
+
+    pub(crate) fn slot_id(&self) -> u64 {
+        self.state.trigger_data.slot_id
+    }
+
     pub(crate) fn matches_operator_take_pubkey(&self, operator_pubkey: &PublicKey) -> bool {
         self.state.trigger_data.operator_take_pubkey == *operator_pubkey
+    }
+
+    pub(crate) fn matches_operator_take_txid(&self, txid: Txid) -> bool {
+        self.state.operator_take_txid == Some(txid)
     }
 
     /// Snapshot used by `Coordinator::log_active_flows` for periodic
