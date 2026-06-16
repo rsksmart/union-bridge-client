@@ -23,6 +23,7 @@ use uuid::Uuid;
 
 use crate::flows::common::native_bridge_verifier::{NativeBridgeVerifier, invoke_contract_safe};
 use crate::flows::common::{COMM_KEY_INDEX, FlowId, Signaling};
+use crate::flows::pegout::pegout_processor::PEGOUT_ACCEPTED_NAME;
 
 /// Derive the pegout flow id from the `PegoutRequested` Rootstock tx hash.
 #[must_use]
@@ -227,6 +228,10 @@ where
         self.state.step = next_step;
 
         debug!("{} -> {}", format_step(previous_step), format_step(next_step));
+
+        if next_step == Steps::RegisterPegout {
+            self.persist_state()?;
+        }
 
         match next_step {
             Steps::WaitPegoutRequested => {
@@ -654,6 +659,34 @@ where
         Ok(())
     }
 
+    /// Re-pull the one-time `pegout_accepted` variable from `BitVMX`.
+    ///
+    /// The push that advances `PrepareUserTakeSetup` is delivered once and is not
+    /// redelivered across a restart, so on recovery we query it explicitly. The
+    /// reply re-enters the existing `Variable` handler. Only the query is re-sent
+    /// — never the `Setup` that produced it, which `BitVMX` rejects for an
+    /// already-set-up protocol.
+    fn request_pegout_accepted_var(&self) -> Result<()> {
+        self.send_bitvmx_msg(IncomingBitVMXApiMessages::GetVar(
+            self.bitvmx_protocol_id().value(),
+            PEGOUT_ACCEPTED_NAME.to_string(),
+        ))
+    }
+
+    /// On recovery, re-issue the outbound `BitVMX` query for a step that is
+    /// blocked waiting on a one-time `BitVMX` push. `BitVMX` does not redeliver
+    /// these pushes across a restart, so without this the flow stalls forever.
+    /// Each step re-sends only an idempotent `Get*` query, not the mutating
+    /// request that originally triggered the push.
+    pub(crate) fn redrive_pending_bitvmx_request(&self) -> Result<()> {
+        match self.current_step() {
+            Steps::PrepareUserTakeSetup => self.request_pegout_accepted_var(),
+            Steps::GetCommInfoAuthoritativeCheckpoint => self.request_bitvmx_comm_info(),
+            Steps::RequestUserTakeSpvProof => self.request_spv_proof(),
+            _ => Ok(()),
+        }
+    }
+
     pub(crate) fn is_terminal(&self) -> bool {
         matches!(self.state.step, Steps::Done | Steps::Failed)
     }
@@ -769,12 +802,14 @@ mod tests {
     use super::*;
     use crate::RUNTIME_ENV_LOCAL_ANVIL;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
-    use crate::store::MockCoordinatorStoreApi;
+    use crate::store::{CoordinatorStore, MockCoordinatorStoreApi, TestStorePath};
 
     type MockBitVmxBroker =
         MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
     type TestPegoutFlow =
         PegoutFlow<MockRskContractsGatewayApi, MockBitVmxBroker, MockCoordinatorStoreApi>;
+    type StoreBackedPegoutFlow =
+        PegoutFlow<MockRskContractsGatewayApi, MockBitVmxBroker, CoordinatorStore>;
 
     struct TempDir {
         path: std::path::PathBuf,
@@ -841,6 +876,21 @@ mod tests {
         }
     }
 
+    fn test_spv_proof() -> BtcTxSPVProof {
+        BtcTxSPVProof {
+            block_hash: "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+                .to_string(),
+            tx: bitcoin::Transaction {
+                version: bitcoin::transaction::Version(2),
+                lock_time: bitcoin::absolute::LockTime::ZERO,
+                input: vec![],
+                output: vec![],
+            },
+            merkle_branch_path: "0".to_string(),
+            merkle_branch_hashes: vec![],
+        }
+    }
+
     fn fake_pegout_registered_event(user_take_txid: Txid) -> PegoutRegisteredEvent {
         crate::types::EventWithBlock {
             inner: PegoutRegistered {
@@ -860,6 +910,72 @@ mod tests {
             removed: false,
             tx_hash: TxHash::from(H256::from_low_u64_be(22)),
         }
+    }
+
+    fn create_store_backed_flow(
+        state: State,
+        contracts: MockRskContractsGatewayApi,
+        store: Rc<CoordinatorStore>,
+    ) -> StoreBackedPegoutFlow {
+        PegoutFlow::from_saved_state(
+            Rc::new(contracts),
+            RuntimeSync::new().expect("runtime"),
+            Rc::new(MockBitVmxBroker::new()),
+            state,
+            store,
+            Rc::new(Signaling::new("/tmp", "disabled")),
+            NativeBridgeVerifier::Dummy,
+        )
+    }
+
+    #[test]
+    fn register_pegout_retry_state_is_persisted_before_missing_native_bridge_error() {
+        let store_path = TestStorePath::new();
+        let store = Rc::new(store_path.open());
+        let flow_id =
+            flow_id_from_pegout_requested_tx_hash(TxHash::from(H256::from_low_u64_be(99)));
+        let state = State {
+            flow_id,
+            log_id: String::new(),
+            step: Steps::RequestUserTakeSpvProof,
+            ctx: FlowContext {
+                pegout_requested: fake_pegout_requested().inner,
+                pegout_requested_tx_hash: TxHash::from(H256::from_low_u64_be(99)),
+                bitvmx_protocol_id: user_take_protocol_id(Uuid::nil(), 0),
+                my_p2p_address: None,
+                committee_output: None,
+                peg_out_accepted: Some(fake_pegout_accepted(test_txid([3u8; 32]))),
+                pegout_registered: None,
+                pegout_registered_tx: None,
+                spv_proof: None,
+                transaction_status: None,
+            },
+            created_at: None,
+        };
+        store
+            .save_flow(&StoreKey::PegoutFlow(flow_id.value()), state.clone())
+            .expect("initial pegout flow state should persist");
+
+        let mut contracts = MockRskContractsGatewayApi::new();
+        contracts.expect_register_pegout().times(1).returning(|_| {
+            Err(transaction_dispatcher::rsk_gateway::DomainErrors::MissingConfirmationsOnNativeBridge(
+                "not enough blocks".to_string(),
+            ))
+        });
+        let mut flow = create_store_backed_flow(state, contracts, Rc::clone(&store));
+
+        let result = flow.complete_step(&StepData::SpvProof(test_spv_proof()));
+        assert!(result.is_err(), "missing native bridge confirmations should surface");
+
+        let saved = store
+            .load_flow::<State>(&StoreKey::PegoutFlow(flow_id.value()))
+            .expect("saved pegout flow should load")
+            .expect("saved pegout flow should exist");
+        assert_eq!(saved.step, Steps::RegisterPegout);
+        assert!(
+            saved.ctx.spv_proof.is_some(),
+            "retry needs register-pegout SPV proof after restart"
+        );
     }
 
     fn completion_marker_path(root: &TempDir, flow_id: Uuid) -> std::path::PathBuf {

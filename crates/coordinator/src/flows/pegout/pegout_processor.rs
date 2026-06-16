@@ -10,17 +10,21 @@ use common_bitvmx::bitvmx_types::{
 use common_broker::broker::BitVmxBrokerClientApi;
 use common_core::types::{BlockNumber, CommitteeId, Hash256, RskBlockAndUncles, TxIdParser};
 use common_runtime::runtime_sync::RuntimeSync;
+use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, info_span, instrument, trace, warn};
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use union_contracts::bindings::pegout_manager::PegoutManager::{PegoutRegistered, PegoutRequested};
 use uuid::Uuid;
 
-use crate::blockchain_tracker::{BlockchainView, ConfirmableEventWithData};
+use crate::blockchain_tracker::{
+    BlockchainView, ConfirmableEventWithData, ConfirmableEventWithDataSnapshot,
+    restore_confirmable_events, snapshot_confirmable_events,
+};
 use crate::event_processor::EventProcessor;
 use crate::flows::btc_signature::btc_signature_lifecycle::BtcSignatureLifeCycle;
 use crate::flows::btc_signature::btc_signature_subflow::{
     BaseBtcSignatureSubFlow, BtcSignatureSubFlowApi, BtcSignatureSubFlowFactory,
-    BtcSignatureSubFlowFactoryApi, ParentSpan,
+    BtcSignatureSubFlowFactoryApi, BtcSignatureSubFlowSnapshot, ParentSpan,
 };
 use crate::flows::common::native_bridge_verifier::NativeBridgeVerifier;
 use crate::flows::common::{FlowId, GlobalContext, Signaling};
@@ -56,6 +60,17 @@ fn is_peg_status_completed(err: &anyhow::Error) -> bool {
 }
 
 pub(crate) const PEGOUT_ACCEPTED_NAME: &str = "pegout_accepted";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PegoutProcessorState {
+    events_confirming: HashMap<String, ConfirmableEventWithDataSnapshot>,
+    tx_status_scheduler: TickScheduler<FlowId>,
+    advance_funds_timeout_scheduler: TimeBasedScheduler<FlowId>,
+    flows_pending_timeout: HashSet<FlowId>,
+    unconfirmed_register_pegout: HashMap<FlowId, i16>,
+    register_pegout_retry_scheduler: TickScheduler<FlowId>,
+    signature_flows: HashMap<Uuid, BtcSignatureSubFlowSnapshot>,
+}
 
 /// Processor that manages multiple pegout flow state machines
 pub(crate) struct PegoutFlowProcessor<CG, BC, BSF, FactoryBSF, S>
@@ -201,6 +216,7 @@ where
             restore_flows(store.as_ref(), StorePrefix::PegoutFlow, flow_factory)?;
         processor.pegout_flows =
             restored.into_values().map(|flow| (flow.flow_id(), flow)).collect();
+        processor.restore_processor_state()?;
 
         Ok(processor)
     }
@@ -215,6 +231,90 @@ where
         self.pegout_flows
             .values_mut()
             .find(|flow| flow.bitvmx_protocol_id().value() == *protocol_id)
+    }
+
+    fn snapshot_processor_state(&self) -> PegoutProcessorState {
+        PegoutProcessorState {
+            events_confirming: snapshot_confirmable_events(&self.events_confirming),
+            tx_status_scheduler: self.tx_status_scheduler.clone(),
+            advance_funds_timeout_scheduler: self.advance_funds_timeout_scheduler.clone(),
+            flows_pending_timeout: self.flows_pending_timeout.clone(),
+            unconfirmed_register_pegout: self.unconfirmed_register_pegout.clone(),
+            register_pegout_retry_scheduler: self.register_pegout_retry_scheduler.clone(),
+            signature_flows: self
+                .signature_flows
+                .iter()
+                .map(|(id, flow)| (*id, flow.snapshot()))
+                .collect(),
+        }
+    }
+
+    fn restore_processor_state(&mut self) -> Result<()> {
+        if let Some(state) =
+            self.store.load_flow::<PegoutProcessorState>(&StoreKey::PegoutProcessorState)?
+        {
+            self.apply_processor_state(state)?;
+        }
+
+        self.reconstruct_runtime_state_from_flows()?;
+        Ok(())
+    }
+
+    fn apply_processor_state(&mut self, state: PegoutProcessorState) -> Result<()> {
+        let (blockchain_view, events_confirming) =
+            restore_confirmable_events(state.events_confirming)?;
+        self.events_confirming = events_confirming;
+        self.blockchain_view = blockchain_view;
+        self.tx_status_scheduler = state.tx_status_scheduler;
+        self.advance_funds_timeout_scheduler = state.advance_funds_timeout_scheduler;
+        self.flows_pending_timeout = state.flows_pending_timeout;
+        self.unconfirmed_register_pegout = state.unconfirmed_register_pegout;
+        self.register_pegout_retry_scheduler = state.register_pegout_retry_scheduler;
+        self.signature_flows = state
+            .signature_flows
+            .into_iter()
+            .map(|(id, snapshot)| {
+                self.btc_sig_subflow_factory
+                    .create_flow_from_snapshot(snapshot)
+                    .map(|flow| (id, flow))
+            })
+            .collect::<Result<HashMap<_, _>>>()?;
+        Ok(())
+    }
+
+    fn reconstruct_runtime_state_from_flows(&mut self) -> Result<()> {
+        for (flow_id, flow) in &self.pegout_flows {
+            match flow.current_step() {
+                Steps::WaitUserTakeSignaturesReady
+                    if !self.advance_funds_timeout_scheduler.is_scheduled(flow_id) =>
+                {
+                    self.flows_pending_timeout.insert(*flow_id);
+                }
+                Steps::ConfirmUserTakeTransaction
+                    if !self.tx_status_scheduler.is_scheduled(flow_id) =>
+                {
+                    self.tx_status_scheduler.schedule(*flow_id, self.btc_status_retry_blocks);
+                }
+                Steps::RegisterPegout => {
+                    self.unconfirmed_register_pegout.entry(*flow_id).or_insert(0);
+                    if !self.register_pegout_retry_scheduler.is_scheduled(flow_id) {
+                        self.register_pegout_retry_scheduler
+                            .schedule(*flow_id, self.btc_status_retry_blocks);
+                    }
+                }
+                _ => {}
+            }
+
+            // Steps blocked on a one-time BitVMX push are not re-armed by the
+            // match above; BitVMX does not redeliver those pushes across a
+            // restart, so re-issue the query that re-produces them.
+            flow.redrive_pending_bitvmx_request()?;
+        }
+        Ok(())
+    }
+
+    fn persist_processor_state(&self) -> Result<()> {
+        self.store.save_flow(&StoreKey::PegoutProcessorState, self.snapshot_processor_state())
     }
 
     /// Create a new flow for a `PegoutRequested` event
@@ -771,7 +871,7 @@ where
         {
             self.fail_flow(*flow_id, reason)?;
         }
-        Ok(())
+        self.persist_processor_state()
     }
 
     #[allow(clippy::too_many_lines)]
@@ -916,7 +1016,7 @@ where
                             attempt,
                             "Missing confirmations on native bridge, scheduling retry",
                         );
-                        return Ok(());
+                        return self.persist_processor_state();
                     }
                     if is_peg_status_completed(&err) {
                         info!(
@@ -935,7 +1035,7 @@ where
             }
         }
 
-        Ok(())
+        self.persist_processor_state()
     }
 
     fn process_new_rsk_event(&mut self, event: &RskPegManagerEvents) -> Result<()> {
@@ -948,7 +1048,7 @@ where
                 for (flow_id, sig_flow) in &mut self.signature_flows {
                     sig_flow.delegate_rsk_event(*flow_id, event)?;
                 }
-                return Ok(());
+                return self.persist_processor_state();
             }
             _ => {
                 //continue with the normal flow
@@ -965,7 +1065,8 @@ where
 
         // useful for testing purposes
         if self.required_confirmations == 0 {
-            return self.process_confirmed_rsk_event(event);
+            self.process_confirmed_rsk_event(event)?;
+            return self.persist_processor_state();
         }
 
         let (id, is_removal, block_num, managed_event) = match event {
@@ -1000,7 +1101,7 @@ where
             debug!("Waiting Rootstock confirmations for {id}");
         }
 
-        Ok(())
+        self.persist_processor_state()
     }
 
     fn process_new_block(&mut self, block: &RskBlockAndUncles) -> Result<()> {
@@ -1017,7 +1118,7 @@ where
         self.handle_register_pegout_retry_tick();
         self.process_block_confirmations(block)?;
 
-        Ok(())
+        self.persist_processor_state()
     }
 
     fn shutdown(&mut self) {
@@ -1048,9 +1149,11 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use alloy_primitives::{Bytes, FixedBytes, U256 as AlloyU256};
-    use bitcoin::Txid;
+    use bitcoin::absolute::LockTime;
+    use bitcoin::transaction::Version;
+    use bitcoin::{Transaction, Txid};
     use common_bitvmx::bitvmx_types::{
-        IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PegOutAccepted,
+        BtcTxSPVProof, IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PegOutAccepted,
     };
     use common_broker::broker::MockBrokerClientApi;
     use common_core::types::{BlockHash, TxHash, TxIdParser};
@@ -1065,7 +1168,7 @@ mod tests {
     use super::*;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
     use crate::flows::pegout::pegout_flow::{FlowContext, flow_id_from_pegout_requested_tx_hash};
-    use crate::store::MockCoordinatorStoreApi;
+    use crate::store::{CoordinatorStore, MockCoordinatorStoreApi, TestStorePath};
 
     type MockBitVmxBroker =
         MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
@@ -1108,6 +1211,7 @@ mod tests {
             let broker = Rc::new(broker);
             let mut store = MockCoordinatorStoreApi::new();
             store.expect_save_flow::<State>().returning(|_, _| Ok(()));
+            store.expect_save_flow::<PegoutProcessorState>().returning(|_, _| Ok(()));
             store.expect_delete_flow().returning(|_| Ok(()));
             let store = Rc::new(store);
             let rt_sync = RuntimeSync::new().unwrap();
@@ -1209,6 +1313,32 @@ mod tests {
         }
     }
 
+    fn store_backed_processor(
+        store: &Rc<CoordinatorStore>,
+    ) -> PegoutFlowProcessor<
+        MockRskContractsGatewayApi,
+        MockBitVmxBroker,
+        TestBtcSigSubFlow,
+        TestBtcSigFactory,
+        CoordinatorStore,
+    > {
+        PegoutFlowProcessor::restore_or_new(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            RuntimeSync::new().expect("failed to create runtime sync"),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+            store,
+            Rc::new(Signaling::new("/tmp", "disabled")),
+            NativeBridgeVerifier::Dummy,
+            60,
+            1,
+            1,
+            1,
+            None,
+        )
+        .expect("processor should restore")
+    }
+
     fn create_fake_pegout_requested() -> PegoutRequested {
         PegoutRequested {
             userPubKey: Bytes::from(vec![0x03; 33]),
@@ -1228,6 +1358,20 @@ mod tests {
 
     fn test_txid(bytes: [u8; 32]) -> Txid {
         TxIdParser::fb_32_to_txid(FixedBytes::from(bytes))
+    }
+
+    fn test_spv_proof() -> BtcTxSPVProof {
+        BtcTxSPVProof {
+            block_hash: "11".repeat(32),
+            tx: Transaction {
+                version: Version(2),
+                lock_time: LockTime::ZERO,
+                input: vec![],
+                output: vec![],
+            },
+            merkle_branch_path: "0".to_string(),
+            merkle_branch_hashes: vec![],
+        }
     }
 
     fn default_pub_nonce() -> PubNonce {
@@ -1265,6 +1409,167 @@ mod tests {
             removed: false,
             tx_hash: TxHash::from(H256::from_low_u64_be(52)),
         }
+    }
+
+    #[test]
+    fn processor_state_snapshot_restores_pegout_runtime_context() {
+        let mut harness = TestHarness::new();
+        let flow_id = flow_id_from_pegout_requested_tx_hash(TxHash::from(H256::random()));
+        let user_take_txid = test_txid([3u8; 32]);
+        let protocol_id = Uuid::new_v4();
+
+        let mut confirmable_event = ConfirmableEventWithData::new(
+            "pegout-registered-test".to_string(),
+            5,
+            harness.processor.blockchain_view.clone(),
+            RskPegManagerEvents::PegoutRegistered(fake_pegout_registered_event(user_take_txid)),
+        );
+        confirmable_event.start_confirming(BlockNumber::from(1)).unwrap();
+        harness.processor.events_confirming.insert(confirmable_event.id(), confirmable_event);
+        harness.processor.tx_status_scheduler.schedule(flow_id, 7);
+        harness.processor.advance_funds_timeout_scheduler.schedule(flow_id, 100, 600);
+        harness.processor.flows_pending_timeout.insert(flow_id);
+        harness.processor.unconfirmed_register_pegout.insert(flow_id, 2);
+        harness.processor.register_pegout_retry_scheduler.schedule(flow_id, 9);
+        harness
+            .processor
+            .signature_flows
+            .insert(protocol_id, harness.create_completed_sig_flow(protocol_id));
+
+        let snapshot = harness.processor.snapshot_processor_state();
+        let mut restored = TestHarness::new().processor;
+        restored.apply_processor_state(snapshot).unwrap();
+
+        let block_generator = FakeBlockGenerator::new(None, Arc::new(AtomicBool::new(false)), None);
+        let block = RskBlockAndUncles::new_no_uncles(
+            block_generator
+                .generate_block(BlockNumber::from(100), None)
+                .expect("failed to generate test block"),
+        );
+
+        assert_eq!(restored.events_confirming.len(), 1);
+        restored.blockchain_view.update(&block);
+        assert!(restored.events_confirming.values().next().unwrap().is_confirmed());
+        assert!(restored.tx_status_scheduler.is_scheduled(&flow_id));
+        assert!(restored.advance_funds_timeout_scheduler.is_scheduled(&flow_id));
+        assert!(restored.flows_pending_timeout.contains(&flow_id));
+        assert_eq!(restored.unconfirmed_register_pegout.get(&flow_id), Some(&2));
+        assert!(restored.register_pegout_retry_scheduler.is_scheduled(&flow_id));
+        assert!(restored.signature_flows.get(&protocol_id).unwrap().is_done());
+    }
+
+    #[test]
+    fn restore_processor_state_reconciles_stale_snapshot_with_register_pegout_retry() {
+        let store_path = TestStorePath::new();
+        let store = Rc::new(store_path.open());
+        let flow_id =
+            flow_id_from_pegout_requested_tx_hash(TxHash::from(H256::from_low_u64_be(99)));
+        let state = State {
+            flow_id,
+            log_id: String::new(),
+            step: Steps::RegisterPegout,
+            ctx: FlowContext {
+                pegout_requested: create_fake_pegout_requested(),
+                pegout_requested_tx_hash: TxHash::from(H256::from_low_u64_be(99)),
+                bitvmx_protocol_id: common_bitvmx::bitvmx_types::user_take_protocol_id(
+                    Uuid::nil(),
+                    0,
+                ),
+                my_p2p_address: None,
+                committee_output: None,
+                peg_out_accepted: Some(fake_pegout_accepted(test_txid([3u8; 32]))),
+                pegout_registered: None,
+                pegout_registered_tx: None,
+                spv_proof: Some(test_spv_proof()),
+                transaction_status: None,
+            },
+            created_at: None,
+        };
+        store
+            .save_flow(&StoreKey::PegoutFlow(flow_id.value()), state)
+            .expect("flow state should persist");
+        let stale_snapshot = TestHarness::new().processor.snapshot_processor_state();
+        store
+            .save_flow(&StoreKey::PegoutProcessorState, stale_snapshot)
+            .expect("processor snapshot should persist");
+
+        let restored = store_backed_processor(&store);
+
+        assert_eq!(restored.unconfirmed_register_pegout.get(&flow_id), Some(&0));
+        assert!(restored.register_pegout_retry_scheduler.is_scheduled(&flow_id));
+    }
+
+    /// Regression test for the pegout recovery e2e hang: a flow restored at
+    /// `PrepareUserTakeSetup` must re-issue the `pegout_accepted` `GetVar` query.
+    /// The `BitVMX` push that advances this step is delivered once and is not
+    /// redelivered across a restart, so without the re-query the flow stalls
+    /// forever (observed: coordinators restarted in this step never completed).
+    #[test]
+    fn restore_redrives_pegout_accepted_query_for_prepare_user_take_setup() {
+        let store_path = TestStorePath::new();
+        let store = Rc::new(store_path.open());
+        let flow_id = flow_id_from_pegout_requested_tx_hash(TxHash::from(H256::from_low_u64_be(7)));
+        let state = State {
+            flow_id,
+            log_id: String::new(),
+            step: Steps::PrepareUserTakeSetup,
+            ctx: FlowContext {
+                pegout_requested: create_fake_pegout_requested(),
+                pegout_requested_tx_hash: TxHash::from(H256::from_low_u64_be(7)),
+                bitvmx_protocol_id: common_bitvmx::bitvmx_types::user_take_protocol_id(
+                    Uuid::nil(),
+                    0,
+                ),
+                my_p2p_address: None,
+                committee_output: None,
+                peg_out_accepted: None,
+                pegout_registered: None,
+                pegout_registered_tx: None,
+                spv_proof: None,
+                transaction_status: None,
+            },
+            created_at: None,
+        };
+        store
+            .save_flow(&StoreKey::PegoutFlow(flow_id.value()), state)
+            .expect("flow state should persist");
+
+        // The mock verifies on drop that exactly one matching GetVar was sent.
+        let mut broker = MockBitVmxBroker::new();
+        broker
+            .expect_send()
+            .withf(|msg| {
+                matches!(
+                    msg,
+                    IncomingBitVMXApiMessages::GetVar(_, key) if key.as_str() == PEGOUT_ACCEPTED_NAME
+                )
+            })
+            .times(1)
+            .returning(|_| Ok(true));
+
+        let restored: PegoutFlowProcessor<
+            MockRskContractsGatewayApi,
+            MockBitVmxBroker,
+            TestBtcSigSubFlow,
+            TestBtcSigFactory,
+            CoordinatorStore,
+        > = PegoutFlowProcessor::restore_or_new(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            RuntimeSync::new().expect("failed to create runtime sync"),
+            Rc::new(broker),
+            GlobalContext::new(),
+            &store,
+            Rc::new(Signaling::new("/tmp", "disabled")),
+            NativeBridgeVerifier::Dummy,
+            60,
+            1,
+            1,
+            1,
+            None,
+        )
+        .expect("processor should restore");
+
+        assert_eq!(restored.pegout_flows[&flow_id].current_step(), Steps::PrepareUserTakeSetup);
     }
 
     /// Regression test for the bug where a signature flow completing after

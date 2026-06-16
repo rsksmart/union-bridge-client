@@ -21,8 +21,11 @@ pub enum StoreKey {
     GlobalContext,
     SetupCommitteeFlow(Uuid),
     PeginFlow(Uuid),
+    PeginProcessorState,
     PegoutFlow(Uuid),
+    PegoutProcessorState,
     OperatorTakeFlow(Uuid),
+    AdvanceFundsProcessorState,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -43,12 +46,15 @@ impl StoreKey {
             StoreKey::PeginFlow(id) => {
                 format!("{}/{}", StorePrefix::PeginFlow.value(), id)
             }
+            StoreKey::PeginProcessorState => "pegin_processor_state".to_string(),
             StoreKey::PegoutFlow(id) => {
                 format!("{}/{}", StorePrefix::PegoutFlow.value(), id)
             }
+            StoreKey::PegoutProcessorState => "pegout_processor_state".to_string(),
             StoreKey::OperatorTakeFlow(id) => {
                 format!("{}/{}", StorePrefix::OperatorTakeFlow.value(), id)
             }
+            StoreKey::AdvanceFundsProcessorState => "advance_funds_processor_state".to_string(),
         }
     }
 }
@@ -225,6 +231,32 @@ impl CoordinatorStoreApi for CoordinatorStore {
                 Ok((flow_id, state))
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+pub(crate) struct TestStorePath {
+    path: std::path::PathBuf,
+}
+
+#[cfg(test)]
+impl TestStorePath {
+    pub(crate) fn new() -> Self {
+        let path = std::env::temp_dir().join(format!("coordinator-store-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&path).expect("failed to create temporary coordinator store");
+        Self { path }
+    }
+
+    pub(crate) fn open(&self) -> CoordinatorStore {
+        CoordinatorStore::new(self.path.to_str().expect("temporary store path is not UTF-8"))
+            .expect("failed to open temporary coordinator store")
+    }
+}
+
+#[cfg(test)]
+impl Drop for TestStorePath {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
     }
 }
 

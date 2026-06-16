@@ -5,12 +5,13 @@ use common_core::types::{BlockNumber, Hash256};
 use common_runtime::runtime_sync::RuntimeSync;
 #[cfg(test)]
 use mockall::automock;
+use serde::{Deserialize, Serialize};
 use tracing::debug;
 use transaction_dispatcher::rsk_gateway::RskContractsGatewayApi;
 use transaction_dispatcher::types::{AddMemberNonceInput, AddMemberSignatureInput};
 use uuid::Uuid;
 
-use crate::blockchain_tracker::{BlockchainView, ConfirmableEvent};
+use crate::blockchain_tracker::{BlockchainView, ConfirmableEvent, ConfirmableEventStateSnapshot};
 use crate::types::RegisterSignaturesBitVmxData;
 
 #[cfg_attr(test, automock)]
@@ -36,6 +37,16 @@ pub(crate) trait BtcSignatureLifecycleApi {
     fn get_hash_to_sign(&self) -> Option<Hash256>;
 
     fn blockchain_view(&self) -> &BlockchainView;
+
+    fn snapshot(&self) -> BtcSignatureLifecycleSnapshot;
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct BtcSignatureLifecycleSnapshot {
+    flow_id: Uuid,
+    data: Option<RegisterSignaturesBitVmxData>,
+    nonce_step: Option<ConfirmableEventStateSnapshot>,
+    signature_step: Option<ConfirmableEventStateSnapshot>,
 }
 
 pub(crate) struct State {
@@ -70,6 +81,36 @@ where
             state: State { flow_id, data: None, nonce_step: None, signature_step: None },
             required_confirmations,
         }
+    }
+
+    pub(in crate::flows::btc_signature) fn from_snapshot(
+        contracts_gateway: Rc<CG>,
+        rt_sync: RuntimeSync,
+        snapshot: BtcSignatureLifecycleSnapshot,
+        required_confirmations: u32,
+    ) -> Result<Self> {
+        let blockchain_view = BlockchainView::new();
+        let nonce_step = snapshot
+            .nonce_step
+            .map(|step| ConfirmableEvent::from_state_snapshot(step, blockchain_view.clone()))
+            .transpose()?;
+        let signature_step = snapshot
+            .signature_step
+            .map(|step| ConfirmableEvent::from_state_snapshot(step, blockchain_view.clone()))
+            .transpose()?;
+
+        Ok(BtcSignatureLifeCycle {
+            contracts: contracts_gateway,
+            rt_sync,
+            blockchain_view,
+            state: State {
+                flow_id: snapshot.flow_id,
+                data: snapshot.data,
+                nonce_step,
+                signature_step,
+            },
+            required_confirmations,
+        })
     }
 
     #[cfg(test)]
@@ -281,6 +322,19 @@ where
 
     fn blockchain_view(&self) -> &BlockchainView {
         &self.blockchain_view
+    }
+
+    fn snapshot(&self) -> BtcSignatureLifecycleSnapshot {
+        BtcSignatureLifecycleSnapshot {
+            flow_id: self.state.flow_id,
+            data: self.state.data.clone(),
+            nonce_step: self.state.nonce_step.as_ref().map(ConfirmableEvent::state_snapshot),
+            signature_step: self
+                .state
+                .signature_step
+                .as_ref()
+                .map(ConfirmableEvent::state_snapshot),
+        }
     }
 }
 
