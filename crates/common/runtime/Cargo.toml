@@ -11,7 +11,7 @@ bitcoin = { workspace = true }
 chrono = { workspace = true }
 config = { workspace = true }
 serde = { workspace = true }
-signal-hook = "0.3.18"
+signal-hook = "0.4.4"
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "time"] }
 tracing = { workspace = true }
