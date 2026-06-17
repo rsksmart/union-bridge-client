@@ -120,15 +120,23 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         Ok(())
     }
 
-    fn warn_if_filled_db(&self) -> Result<()> {
+    fn init_for_best(&self, initial_block_node: &RskBlock) -> Result<()> {
         if let Some(db_best_block) = self.store.get_best_block().context("Checking DB state")? {
-            warn!(
-                "[initialize_for_best] Existing best block {} ({}) found in DB; start_from='best' ignores previous DB sync state and resets local tip to provider best",
+            info!(
+                "[initialize_for_best] Existing best block {} ({}) found in DB; start_from='best' will catch up to provider best from the persisted tip",
                 db_best_block.number(),
                 db_best_block.hash(),
             );
+            return self.startup_backward_sync();
         }
-        Ok(())
+
+        info!(
+            "[initialize_for_best] New instance: initializing DB with best block {} ({})",
+            initial_block_node.number(),
+            initial_block_node.hash()
+        );
+
+        self.save_as_best_block(initial_block_node).context("Initialising DB for best")
     }
 
     fn start_block_subscription(&self) -> Result<()> {
@@ -209,7 +217,9 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 // once save_as_best_block is called, the block won't be re-queried again (unless reorgs)
                 let uncles = self.process_uncle_blocks(&new_block).context("On Backward Sync")?;
                 // consumer should be resilient to re-notifications
-                self.notify_block(new_block.clone(), uncles);
+                if !self.notify_block(new_block.clone(), uncles).context("On Block subscription")? {
+                    break;
+                }
                 self.save_as_best_block(&new_block).context("On Block subscription")?;
             } else if needs_catch_up {
                 info!(
@@ -235,13 +245,18 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         Ok(())
     }
 
-    fn notify_block(&self, block: RskBlock, uncles: Vec<RskBlock>) {
+    fn notify_block(&self, block: RskBlock, uncles: Vec<RskBlock>) -> Result<bool> {
         #[allow(clippy::collapsible_if)]
         if let Some(channel) = &self.new_block_sender {
             if let Err(e) = channel.send(RskBlockAndUncles::new(block, uncles)) {
                 error!("[notify_block] Failed to send best block through channel: {e:?}");
+                if self.is_running() {
+                    bail!("[notify_block] Failed to send best block through channel: {e:?}");
+                }
+                return Ok(false);
             }
         }
+        Ok(true)
     }
 
     fn backward_sync(&self, starting_block: &RskBlock) -> Result<()> {
@@ -294,6 +309,8 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     new_block.number(),
                     new_block.hash()
                 );
+                let uncles = self.process_uncle_blocks(&new_block).context("On Backward Sync")?;
+                blocks_to_notify.push((new_block.clone(), uncles));
             } else {
                 info!(
                     "[block_backward_sync] Completed at block {} ({})",
@@ -303,13 +320,20 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
                 // we are complete, so we remove the checkpoint if any
                 self.store.reset_back_sync_checkpoint().context("On Backward Sync")?;
+                // notify the consumer about the new chain in ascending order
+                let mut all_blocks_notified = true;
+                for (block, uncles) in blocks_to_notify.into_iter().rev() {
+                    if !self.notify_block(block, uncles).context("On Backward Sync")? {
+                        all_blocks_notified = false;
+                        break;
+                    }
+                }
+                if !all_blocks_notified {
+                    break;
+                }
+
                 // it represents also the connection point to achieve full sync
                 self.store.set_best_block(starting_block).context("On Backward Sync")?;
-
-                // notify the consumer about the new chain in ascending order
-                for (block, uncles) in blocks_to_notify.into_iter().rev() {
-                    self.notify_block(block, uncles);
-                }
 
                 break;
             }
@@ -327,7 +351,9 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 break;
             }
 
-            if self.initial_block_hash == new_block.hash() || new_block.number() == 0 {
+            let reached_initial_block = self.start_from == IndexerStartFrom::Hash
+                && self.initial_block_hash == new_block.hash();
+            if reached_initial_block || new_block.number() == 0 {
                 error!("[block_backward_sync] Reached genesis or starting block, aborting...");
                 break;
             }
@@ -475,9 +501,8 @@ impl<P: RskProvider, S: BlockStore> RskIndexer<P, S> for BlockIndexer<P, S> {
 
         match self.start_from {
             IndexerStartFrom::Best => {
-                info!("[run] start_from='best': skipping startup backward sync");
-                self.warn_if_filled_db()?;
-                self.save_as_best_block(&initial_block).context("Initialising DB for best")?;
+                info!("[run] start_from='best': initializing from provider best");
+                self.init_for_best(&initial_block)?;
             }
             IndexerStartFrom::Hash => {
                 info!("[run] start_from='hash': running startup backward sync");
@@ -492,10 +517,14 @@ impl<P: RskProvider, S: BlockStore> RskIndexer<P, S> for BlockIndexer<P, S> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
+
     use common_dev::rsk_block_generator::{
-        get_first_default_rsk_block, get_second_default_rsk_block, get_third_default_rsk_block,
+        FakeBlockGenerator, get_first_default_rsk_block, get_second_default_rsk_block,
+        get_third_default_rsk_block,
     };
-    use common_rsk::rsk_provider::MockRskProvider;
+    use common_rsk::rsk_provider::{MockRskProvider, MockRskSubscription};
     use mockall::predicate::eq;
 
     use super::*;
@@ -676,28 +705,206 @@ mod tests {
     }
 
     #[test]
-    fn run_with_start_from_best_skips_startup_backward_sync() {
+    fn backward_sync_with_start_from_best_connects_below_initial_best() {
+        let generator = FakeBlockGenerator::new(None, Arc::new(AtomicBool::new(false)), None);
+        let connected_block =
+            generator.generate_block(100.into(), None).expect("failed to generate block 100");
+        let middle_block =
+            generator.generate_block(101.into(), None).expect("failed to generate block 101");
+        let starting_block =
+            generator.generate_block(102.into(), None).expect("failed to generate block 102");
+
+        let mut provider = MockRskProvider::new();
+        let middle_block_for_provider = middle_block.clone();
+        let connected_block_for_provider = connected_block.clone();
+        provider.expect_get_block_by_number().times(2).returning(move |block_num| {
+            if block_num == middle_block_for_provider.number() {
+                Ok(Some(middle_block_for_provider.clone()))
+            } else if block_num == connected_block_for_provider.number() {
+                Ok(Some(connected_block_for_provider.clone()))
+            } else {
+                Ok(None)
+            }
+        });
+        provider.expect_get_uncle_by_hash_and_index().never();
+
+        let mut store = MockBlockStore::new();
+        let store_best_block = connected_block.clone();
+        store
+            .expect_get_best_block()
+            .times(1)
+            .returning(move || Ok(Some(store_best_block.clone())));
+
+        let connected_block_for_store = connected_block.clone();
+        store.expect_get_canonical_block().times(3).returning(move |block_num| {
+            if block_num == connected_block_for_store.number() {
+                Ok(Some(connected_block_for_store.clone()))
+            } else {
+                Ok(None)
+            }
+        });
+
+        store.expect_save_block().times(2).returning(|_| Ok(()));
+        store.expect_set_canonical_block().times(2).returning(|_| Ok(()));
+        store.expect_reset_back_sync_checkpoint().times(1).returning(|| Ok(()));
+        store
+            .expect_set_best_block()
+            .with(eq(starting_block.clone()))
+            .times(1)
+            .returning(|_| Ok(()));
+        store.expect_set_back_sync_checkpoint().never();
+
+        let idx = BlockIndexer {
+            rsk_provider: provider,
+            new_block_sender: None,
+            store,
+            start_from: IndexerStartFrom::Best,
+            initial_block_hash: starting_block.hash(),
+            shutdown_flag: ShutdownFlag::init(),
+        };
+
+        let result = idx.backward_sync(&starting_block);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn listen_blocks_does_not_advance_best_when_notifier_channel_is_closed() {
+        let local_best = get_first_default_rsk_block();
+        let new_block = get_second_default_rsk_block();
+
+        let mut provider = MockRskProvider::new();
+        provider.expect_get_uncle_by_hash_and_index().never();
+
+        let mut store = MockBlockStore::new();
+        let local_best_for_store = local_best.clone();
+        store
+            .expect_get_best_block()
+            .times(1)
+            .returning(move || Ok(Some(local_best_for_store.clone())));
+        store.expect_save_block().never();
+        store.expect_set_canonical_block().never();
+        store.expect_set_best_block().never();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        drop(rx);
+
+        let mut subscription = MockRskSubscription::<RskBlock>::new();
+        subscription.expect_next().times(1).returning(move || Ok(new_block.clone()));
+
+        let idx = BlockIndexer {
+            rsk_provider: provider,
+            new_block_sender: Some(tx),
+            store,
+            start_from: IndexerStartFrom::Best,
+            initial_block_hash: local_best.hash(),
+            shutdown_flag: ShutdownFlag::init(),
+        };
+
+        let result = idx.listen_blocks(&mut subscription);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn backward_sync_renotifies_known_blocks_above_best_before_advancing_best() {
+        let generator = FakeBlockGenerator::new(None, Arc::new(AtomicBool::new(false)), None);
+        let connected_block =
+            generator.generate_block(100.into(), None).expect("failed to generate block 100");
+        let middle_block =
+            generator.generate_block(101.into(), None).expect("failed to generate block 101");
+        let starting_block =
+            generator.generate_block(102.into(), None).expect("failed to generate block 102");
+
+        let mut provider = MockRskProvider::new();
+        let middle_block_for_provider = middle_block.clone();
+        let connected_block_for_provider = connected_block.clone();
+        provider.expect_get_block_by_number().times(2).returning(move |block_num| {
+            if block_num == middle_block_for_provider.number() {
+                Ok(Some(middle_block_for_provider.clone()))
+            } else if block_num == connected_block_for_provider.number() {
+                Ok(Some(connected_block_for_provider.clone()))
+            } else {
+                Ok(None)
+            }
+        });
+        provider.expect_get_uncle_by_hash_and_index().never();
+
+        let mut store = MockBlockStore::new();
+        let store_best_block = connected_block.clone();
+        store
+            .expect_get_best_block()
+            .times(1)
+            .returning(move || Ok(Some(store_best_block.clone())));
+
+        let starting_block_for_store = starting_block.clone();
+        let middle_block_for_store = middle_block.clone();
+        let connected_block_for_store = connected_block.clone();
+        store.expect_get_canonical_block().times(3).returning(move |block_num| {
+            if block_num == starting_block_for_store.number() {
+                Ok(Some(starting_block_for_store.clone()))
+            } else if block_num == middle_block_for_store.number() {
+                Ok(Some(middle_block_for_store.clone()))
+            } else if block_num == connected_block_for_store.number() {
+                Ok(Some(connected_block_for_store.clone()))
+            } else {
+                Ok(None)
+            }
+        });
+
+        store.expect_save_block().never();
+        store.expect_set_canonical_block().never();
+        store.expect_reset_back_sync_checkpoint().times(1).returning(|| Ok(()));
+        store
+            .expect_set_best_block()
+            .with(eq(starting_block.clone()))
+            .times(1)
+            .returning(|_| Ok(()));
+        store.expect_set_back_sync_checkpoint().never();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let idx = BlockIndexer {
+            rsk_provider: provider,
+            new_block_sender: Some(tx),
+            store,
+            start_from: IndexerStartFrom::Best,
+            initial_block_hash: starting_block.hash(),
+            shutdown_flag: ShutdownFlag::init(),
+        };
+
+        let result = idx.backward_sync(&starting_block);
+        assert!(result.is_ok());
+
+        let notified: Vec<_> = rx.try_iter().collect();
+        assert_eq!(notified.len(), 2);
+        assert_eq!(notified[0].block(), &middle_block);
+        assert_eq!(notified[1].block(), &starting_block);
+    }
+
+    #[test]
+    fn run_with_start_from_best_existing_db_does_not_reset_to_provider_best() {
         let initial_block = get_second_default_rsk_block();
         let initial_hash = initial_block.hash();
         let db_best_block = get_first_default_rsk_block();
 
         let mut provider = MockRskProvider::new();
+        let initial_block_for_hash = initial_block.clone();
         provider
             .expect_get_block_by_hash()
             .with(eq(initial_hash))
             .times(1)
-            .returning(move |_| Ok(Some(initial_block.clone())));
-        provider.expect_get_best_block().never();
+            .returning(move |_| Ok(Some(initial_block_for_hash.clone())));
+        provider.expect_get_best_block().times(1).returning(move || Ok(initial_block.clone()));
         provider.expect_get_block_by_number().never();
+        provider.expect_subscribe_blocks().never();
 
         let mut store = MockBlockStore::new();
-        store.expect_get_best_block().times(1).returning(move || Ok(Some(db_best_block.clone())));
-        store.expect_get_back_sync_checkpoint().never();
+        store.expect_get_best_block().times(2).returning(move || Ok(Some(db_best_block.clone())));
+        store.expect_get_back_sync_checkpoint().times(1).returning(|| Ok(None));
         store.expect_get_canonical_block().never();
         store.expect_set_back_sync_checkpoint().never();
-        store.expect_save_block().times(1).returning(|_| Ok(()));
-        store.expect_set_canonical_block().times(1).returning(|_| Ok(()));
-        store.expect_set_best_block().times(1).returning(|_| Ok(()));
+        store.expect_save_block().never();
+        store.expect_set_canonical_block().never();
+        store.expect_set_best_block().never();
+        store.expect_reset_back_sync_checkpoint().never();
 
         let shutdown_flag = ShutdownFlag::init();
         shutdown_flag.set();

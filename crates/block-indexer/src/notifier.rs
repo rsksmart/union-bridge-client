@@ -34,6 +34,17 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
         }
     }
 
+    pub fn new_with_consumer(
+        indexer_receiver: mpsc::Receiver<RskBlockAndUncles>,
+        msg_broker: BS,
+        shutdown_flag: ShutdownFlag,
+        consumer: Identifier,
+    ) -> Self {
+        let mut notifier = Self::new(indexer_receiver, msg_broker, shutdown_flag);
+        notifier.consumers.insert(consumer);
+        notifier
+    }
+
     #[cfg(test)]
     pub fn new_for_tests(
         indexer_receiver: mpsc::Receiver<RskBlockAndUncles>,
@@ -157,6 +168,39 @@ mod tests {
 
     fn make_test_identifier(id: u8) -> Identifier {
         Identifier::new(format!("test_pubkey_hash_{id}"), id)
+    }
+
+    #[test]
+    fn test_run_new_block_received_with_initial_consumer() {
+        let client_id = make_test_identifier(1);
+
+        let (tx, rx) = mpsc::channel();
+        let shutdown_flag = ShutdownFlag::init();
+
+        let expected_block = get_first_default_rsk_block();
+
+        let mut mock_broker = MockBrokerServerApi::new();
+        mock_broker.expect_try_recv().returning(|| Ok(None));
+        expect_send_block(&client_id, &expected_block, &[], &mut mock_broker);
+
+        let mut notifier =
+            Notifier::new_with_consumer(rx, mock_broker, shutdown_flag.clone(), client_id);
+        notifier.check_period = Duration::from_millis(1);
+
+        let handle_external_events = handle_external_events(
+            tx,
+            shutdown_flag,
+            vec![RskBlockAndUncles::new_no_uncles(expected_block.clone())],
+        );
+
+        let result = notifier.run();
+
+        handle_external_events.join().expect("Failed to join shutdown handle");
+
+        if let Err(e) = &result {
+            eprintln!("Error: {e:?}");
+            panic!("Run failed: {e:?}");
+        }
     }
 
     #[test]

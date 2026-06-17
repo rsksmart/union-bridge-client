@@ -86,7 +86,12 @@ fn main() -> Result<()> {
     )
     .context("Failed to create BrokerServer")?;
 
-    let mut notifier = Notifier::new(rx, broker_server, shutdown_flag.clone());
+    let mut notifier = Notifier::new_with_consumer(
+        rx,
+        broker_server,
+        shutdown_flag.clone(),
+        coordinator_identifier,
+    );
 
     let shutdown_flag_notifier = shutdown_flag.clone();
     std::thread::spawn(move || {
