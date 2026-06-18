@@ -5,11 +5,10 @@ use std::sync::mpsc;
 use anyhow::{Context, Result, ensure};
 use block_indexer::config::{Config, Logger};
 use block_indexer::indexer::BlockIndexer;
-use block_indexer::notifier::Notifier;
+use block_indexer::notifier::{BlockNotification, Notifier};
 use block_indexer::store::CachedBlockStore;
 use clap::{Arg, Command};
 use common_broker::broker::{BrokerServer, Identifier, broker_queue_storage_path};
-use common_core::types::RskBlockAndUncles;
 use common_rsk::alloy_rsk_provider::rpc::AlloyProvider;
 use common_rsk::rsk_indexer::RskIndexer;
 use common_runtime::shutdown_flag::ShutdownFlag;
@@ -51,7 +50,7 @@ fn main() -> Result<()> {
     let alloy_provider = AlloyProvider::new(&config.provider.rootstock.url, shutdown_flag.clone())
         .expect("Failed to create AlloyProvider (unrecoverable)");
 
-    let (tx, rx): (mpsc::Sender<RskBlockAndUncles>, mpsc::Receiver<RskBlockAndUncles>) =
+    let (tx, rx): (mpsc::Sender<BlockNotification>, mpsc::Receiver<BlockNotification>) =
         mpsc::channel();
 
     let store_path = &format!("{}/blocks", config.indexer.storage.path);
@@ -86,7 +85,12 @@ fn main() -> Result<()> {
     )
     .context("Failed to create BrokerServer")?;
 
-    let mut notifier = Notifier::new(rx, broker_server, shutdown_flag.clone());
+    let mut notifier = Notifier::new_with_consumer(
+        rx,
+        broker_server,
+        shutdown_flag.clone(),
+        coordinator_identifier,
+    );
 
     let shutdown_flag_notifier = shutdown_flag.clone();
     std::thread::spawn(move || {
