@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use anyhow::{Context, Result, anyhow, bail};
-use bitcoin::{PublicKey, Txid};
+use bitcoin::{PublicKey, Transaction, Txid};
 use common_bitvmx::bitvmx_types::{
     AdvanceFundsRegistered, AdvanceFundsRequest, BitVmxProtocolId, BtcTxSPVProof, CommsAddress,
     FundsAdvanceSPV, IncomingBitVMXApiMessages, OPERATOR_TAKE_TX, VariableTypes,
@@ -134,7 +134,7 @@ pub(crate) enum StepData {
     AdvanceFundsSPV(FundsAdvanceSPV),
     AdvanceFundsConfirmed(AdvanceFundsRegistered),
     ReimbursementKickoffSPV(BtcTxSPVProof),
-    ReimbursementKickoffConfirmed,
+    ReimbursementKickoffConfirmed(Txid),
     OperatorTakeSPV(BtcTxSPVProof),
     PegoutRegistered(PegoutRegistered),
     /// Generic retry kick from the processor's `RetryTracker`. The flow's
@@ -176,6 +176,8 @@ pub(crate) struct FlowContext {
     operator_take_txid: Option<Txid>,
     advance_funds_spv: Option<FundsAdvanceSPV>,
     advance_funds_registered: Option<AdvanceFundsRegistered>,
+    #[serde(default)]
+    reimbursement_kickoff_txid: Option<Txid>,
     reimbursement_kickoff_spv: Option<BtcTxSPVProof>,
     operator_take_spv: Option<BtcTxSPVProof>,
     accept_pegin_pid: Option<Uuid>,
@@ -235,6 +237,7 @@ where
                 operator_take_txid: None,
                 advance_funds_spv: None,
                 advance_funds_registered: None,
+                reimbursement_kickoff_txid: None,
                 reimbursement_kickoff_spv: None,
                 operator_take_spv: None,
                 accept_pegin_pid: None,
@@ -378,8 +381,8 @@ where
             StepData::ReimbursementKickoffSPV(spv_proof) => {
                 self.on_reimbursement_kickoff_spv(current_step, spv_proof)?
             }
-            StepData::ReimbursementKickoffConfirmed => {
-                self.on_reimbursement_kickoff_confirmed(current_step)?
+            StepData::ReimbursementKickoffConfirmed(txid) => {
+                self.on_reimbursement_kickoff_confirmed(current_step, txid)?
             }
             StepData::OperatorTakeSPV(spv_proof) => {
                 self.on_operator_take_spv(current_step, spv_proof)?
@@ -425,6 +428,19 @@ where
         tx_name: &str,
         txid: Txid,
     ) -> Result<Option<Steps>> {
+        if !self.was_selected_operator() && current_step == Steps::WaitBitVmxOperatorTakeSpv {
+            let expected_tx_name = self.operator_take_transaction_name()?;
+            if tx_name != expected_tx_name {
+                debug!(
+                    "Ignoring non-selected OperatorTakeTransactionInfo for flow_id {}: got {tx_name}, expected {expected_tx_name}",
+                    self.state.flow_id
+                );
+                return Ok(None);
+            }
+            self.state.operator_take_txid = Some(txid);
+            return Ok(Some(Steps::WaitBitVmxOperatorTakeSpv));
+        }
+
         if current_step != Steps::RequestBitVmxOperatorTakeTransactionInfo {
             bail!(
                 "Invalid state transition from {current_step:?} with OperatorTakeTransactionInfo"
@@ -514,7 +530,11 @@ where
         Ok(Some(Steps::RegisterOrWaitRskReimbursementKickoff))
     }
 
-    fn on_reimbursement_kickoff_confirmed(&mut self, current_step: Steps) -> Result<Option<Steps>> {
+    fn on_reimbursement_kickoff_confirmed(
+        &mut self,
+        current_step: Steps,
+        txid: Txid,
+    ) -> Result<Option<Steps>> {
         if !current_step.is_valid_transition(
             Steps::RegisterOrWaitRskReimbursementKickoff,
             self.was_selected_operator(),
@@ -523,10 +543,12 @@ where
                 "Invalid state transition from {current_step:?} with ReimbursementKickoffConfirmed"
             );
         }
-        // Both paths converge on the operator-take wait step. Non-selected
-        // members complete from the RSK PegoutRegistered event because BitVMX
-        // TransactionInfo replies are keyed only by accept_pegin pid/name and
-        // cannot distinguish a replaced operator-take flow.
+        self.state.reimbursement_kickoff_txid = Some(txid);
+        if !self.was_selected_operator() {
+            self.enter_request_transaction_info()?;
+        } else if self.state.operator_take_spv.is_some() {
+            return Ok(Some(Steps::RegisterOrWaitRskOperatorTake));
+        }
         Ok(Some(Steps::WaitBitVmxOperatorTakeSpv))
     }
 
@@ -535,20 +557,6 @@ where
         current_step: Steps,
         spv_proof: BtcTxSPVProof,
     ) -> Result<Option<Steps>> {
-        // BitVMX re-emits SPVs on every block-confirmation update (at-least-once); absorb late duplicates here. One-shot events don't need this.
-        if current_step.is_past(Steps::WaitBitVmxOperatorTakeSpv) {
-            debug!(
-                "Dropping stale OperatorTakeSPV at {current_step:?} for flow_id {}",
-                self.state.flow_id
-            );
-            return Ok(None);
-        }
-        if !current_step
-            .is_valid_transition(Steps::WaitBitVmxOperatorTakeSpv, self.was_selected_operator())
-        {
-            bail!("Invalid state transition from {current_step:?} with OperatorTakeSPV");
-        }
-        info!("Operator take SPV received for flow_id {}", self.state.flow_id);
         let txid = spv_proof.tx.compute_txid();
         if let Some(expected_txid) = self.state.operator_take_txid
             && expected_txid != txid
@@ -559,6 +567,29 @@ where
             );
             return Ok(None);
         }
+        // BitVMX re-emits SPVs on every block-confirmation update (at-least-once); absorb late duplicates here. One-shot events don't need this.
+        if current_step.is_past(Steps::WaitBitVmxOperatorTakeSpv) {
+            debug!(
+                "Dropping stale OperatorTakeSPV at {current_step:?} for flow_id {}",
+                self.state.flow_id
+            );
+            return Ok(None);
+        }
+        if self.was_selected_operator()
+            && current_step.pos() < Steps::WaitBitVmxOperatorTakeSpv.pos()
+        {
+            debug!(
+                "Dropping early OperatorTakeSPV at {current_step:?} for flow_id {}",
+                self.state.flow_id
+            );
+            return Ok(None);
+        }
+        if !current_step
+            .is_valid_transition(Steps::WaitBitVmxOperatorTakeSpv, self.was_selected_operator())
+        {
+            bail!("Invalid state transition from {current_step:?} with OperatorTakeSPV");
+        }
+        info!("Operator take SPV received for flow_id {}", self.state.flow_id);
         self.state.operator_take_txid = Some(txid);
         if self.was_selected_operator() {
             self.state.operator_take_spv = Some(spv_proof);
@@ -882,6 +913,21 @@ where
             && self.state.accept_pegin_pid == Some(*program_id)
     }
 
+    pub(crate) fn matches_current_reimbursement_kickoff_transaction_info(
+        &self,
+        program_id: &Uuid,
+        transaction: &Transaction,
+    ) -> bool {
+        !self.was_selected_operator()
+            && self.state.step == Steps::WaitBitVmxOperatorTakeSpv
+            && self.state.operator_take_txid.is_none()
+            && self.state.accept_pegin_pid == Some(*program_id)
+            && self
+                .state
+                .reimbursement_kickoff_txid
+                .is_some_and(|txid| transaction_spends(transaction, txid))
+    }
+
     fn enter_write_completion_marker(&self) -> Result<()> {
         let payload = json!({
             "ancestor_pegout_id": self.ancestor_pegout_id(),
@@ -956,6 +1002,7 @@ where
                 operator_take_txid: None,
                 advance_funds_spv: None,
                 advance_funds_registered: None,
+                reimbursement_kickoff_txid: None,
                 reimbursement_kickoff_spv: None,
                 operator_take_spv: None,
                 accept_pegin_pid: None,
@@ -984,6 +1031,11 @@ where
     #[cfg(test)]
     pub(crate) fn has_advance_funds_registered(&self) -> bool {
         self.state.advance_funds_registered.is_some()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_operator_take_spv(&self) -> bool {
+        self.state.operator_take_spv.is_some()
     }
 
     #[cfg(test)]
@@ -1024,6 +1076,23 @@ where
         self.state.operator_take_txid == Some(txid)
     }
 
+    pub(crate) fn cache_early_operator_take_spv(
+        &mut self,
+        spv_proof: BtcTxSPVProof,
+    ) -> Result<bool> {
+        let txid = spv_proof.tx.compute_txid();
+        if !self.was_selected_operator()
+            || self.state.step.pos() >= Steps::WaitBitVmxOperatorTakeSpv.pos()
+            || self.state.operator_take_txid != Some(txid)
+        {
+            return Ok(false);
+        }
+
+        self.state.operator_take_spv = Some(spv_proof);
+        self.persist_state()?;
+        Ok(true)
+    }
+
     pub(crate) fn matches_advance_funds_spv(&self, spv_data: &FundsAdvanceSPV) -> bool {
         // The advance-funds tx is funded from a committee funding UTXO, not from
         // the operator-take tx, so it never spends `operator_take_txid`. Bind to
@@ -1043,11 +1112,8 @@ where
         spv_proof: &BtcTxSPVProof,
     ) -> bool {
         notification_txid == spv_proof.tx.compute_txid()
-            && self
-                .state
-                .advance_funds_registered
-                .as_ref()
-                .is_some_and(|registered| tx_spends(spv_proof, registered.txid))
+            && self.state.step == Steps::SetVarBitVmxAdvanceFundsRegistered
+            && self.state.advance_funds_registered.is_some()
     }
 
     pub(crate) fn can_complete_pegout_registered_without_txid(
@@ -1093,8 +1159,8 @@ where
     }
 }
 
-fn tx_spends(spv_proof: &BtcTxSPVProof, txid: Txid) -> bool {
-    spv_proof.tx.input.iter().any(|input| input.previous_output.txid == txid)
+fn transaction_spends(transaction: &Transaction, txid: Txid) -> bool {
+    transaction.input.iter().any(|input| input.previous_output.txid == txid)
 }
 
 #[cfg(test)]
@@ -1202,6 +1268,17 @@ mod tests {
             merkle_branch_path: "0".to_string(),
             merkle_branch_hashes: vec![],
         }
+    }
+
+    fn test_spv_proof_spending(txid: Txid) -> BtcTxSPVProof {
+        let mut proof = test_spv_proof_value();
+        proof.tx.input.push(TxIn {
+            previous_output: OutPoint { txid, vout: 0 },
+            script_sig: ScriptBuf::new(),
+            sequence: Sequence::MAX,
+            witness: Witness::new(),
+        });
+        proof
     }
 
     #[test]
@@ -1579,6 +1656,41 @@ mod tests {
     }
 
     #[test]
+    fn reimbursement_kickoff_spv_does_not_need_to_spend_advance_funds_txid() {
+        let committee_id = Uuid::new_v4();
+        let flow_id = FlowId::from_random();
+        let trigger_data = test_trigger_data(committee_id, 0);
+        let mut contracts = MockRskContractsGatewayApi::new();
+        contracts.expect_my_address().return_const(Address::from(H160::from_low_u64_be(33)));
+        let mut flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(contracts),
+            Rc::new(MockBitVmxBroker::new()),
+            flow_id,
+            trigger_data.clone(),
+            Steps::SetVarBitVmxAdvanceFundsRegistered,
+        );
+
+        let advance_funds_txid =
+            Txid::from_str("a53c0e1ab7117534b4d01948615c94e09aaa14b9a6cf8e9f013d9fd7181dd8e5")
+                .expect("valid advance-funds txid");
+        flow.set_advance_funds_registered_for_test(AdvanceFundsRegistered {
+            committee_id,
+            slot_index: 0,
+            txid: advance_funds_txid,
+            pegout_id: trigger_data.pegout_id.value().as_bytes().to_vec(),
+            operator_pubkey: trigger_data.operator_take_pubkey,
+        });
+
+        let bitvmx_parent_txid =
+            Txid::from_str("76bd82ffdda8b12c72565f17b7b4b23b090e96e82d89027e2c287161270625c1")
+                .expect("valid BitVMX parent txid");
+        let proof = test_spv_proof_spending(bitvmx_parent_txid);
+
+        assert!(flow.matches_reimbursement_kickoff_spv(proof.tx.compute_txid(), &proof));
+        assert!(!flow.matches_reimbursement_kickoff_spv(advance_funds_txid, &proof));
+    }
+
+    #[test]
     fn stale_reimbursement_kickoff_spv_after_handler_is_noop() {
         // Same at-least-once semantics: stale ReimbursementKickoffSPV at a
         // post-handler step is NoOp.
@@ -1631,6 +1743,31 @@ mod tests {
     }
 
     #[test]
+    fn selected_operator_take_spv_before_handler_is_noop() {
+        let committee_id = Uuid::new_v4();
+        let flow_id = FlowId::from_random();
+        let trigger_data = test_trigger_data(committee_id, 0);
+        let mut contracts = MockRskContractsGatewayApi::new();
+        contracts.expect_my_address().return_const(Address::from(H160::from_low_u64_be(33)));
+        let mut flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(contracts),
+            Rc::new(MockBitVmxBroker::new()),
+            flow_id,
+            trigger_data,
+            Steps::SetVarBitVmxAdvanceFundsRegistered,
+        );
+        let spv = test_spv_proof_value();
+        flow.set_operator_take_txid_for_test(spv.tx.compute_txid());
+
+        let outcome = flow
+            .complete_step(StepData::OperatorTakeSPV(spv))
+            .expect("early selected OperatorTakeSPV should drop silently");
+
+        assert_eq!(outcome, StepOutcome::NoOp);
+        assert_eq!(flow.current_step(), Steps::SetVarBitVmxAdvanceFundsRegistered);
+    }
+
+    #[test]
     fn late_one_shot_event_still_surfaces_as_error() {
         // Negative case for the at-least-once whitelist: non-whitelisted events
         // arriving late must still surface as Err. The stale-NoOp policy is
@@ -1650,7 +1787,9 @@ mod tests {
 
         // ReimbursementKickoffConfirmed is a one-shot RSK event, not on the
         // at-least-once whitelist. Late arrival at Done must error.
-        let result = flow.complete_step(StepData::ReimbursementKickoffConfirmed);
+        let result = flow.complete_step(StepData::ReimbursementKickoffConfirmed(
+            test_spv_proof_value().tx.compute_txid(),
+        ));
 
         assert!(result.is_err(), "late one-shot event should surface as error");
         assert_eq!(flow.current_step(), Steps::Done);
