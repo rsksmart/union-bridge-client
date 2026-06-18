@@ -1,7 +1,9 @@
 use std::sync::mpsc;
+use std::sync::mpsc::RecvTimeoutError;
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
-use common_core::types::{BlockHash, BlockNumber, RskBlock, RskBlockAndUncles};
+use common_core::types::{BlockHash, BlockNumber, RskBlock};
 use common_rsk::rsk_indexer::RskIndexer;
 use common_rsk::rsk_provider::{
     RskProvider, RskSubscription, RskSubscriptionError, resolve_initial_block,
@@ -10,12 +12,15 @@ use common_runtime::config::{IndexerConfig, IndexerStartFrom};
 use common_runtime::shutdown_flag::ShutdownFlag;
 use tracing::{debug, error, info, instrument, warn};
 
+use crate::notifier::BlockNotification;
 use crate::store::BlockStore;
+
+const BLOCK_DELIVERY_ACK_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct BlockIndexer<P: RskProvider, S: BlockStore> {
     store: S,
     rsk_provider: P,
-    new_block_sender: Option<mpsc::Sender<RskBlockAndUncles>>,
+    new_block_sender: Option<mpsc::Sender<BlockNotification>>,
     start_from: IndexerStartFrom,
     initial_block_hash: BlockHash,
     shutdown_flag: ShutdownFlag,
@@ -30,7 +35,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
     pub fn new_with_notifier(
         store: S,
         provider: P,
-        new_block_sender: mpsc::Sender<RskBlockAndUncles>,
+        new_block_sender: mpsc::Sender<BlockNotification>,
         indexer_config: &IndexerConfig,
         shutdown_flag: ShutdownFlag,
     ) -> Result<Self> {
@@ -248,12 +253,44 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
     fn notify_block(&self, block: RskBlock, uncles: Vec<RskBlock>) -> Result<bool> {
         #[allow(clippy::collapsible_if)]
         if let Some(channel) = &self.new_block_sender {
-            if let Err(e) = channel.send(RskBlockAndUncles::new(block, uncles)) {
+            let (delivery_ack_tx, delivery_ack_rx) = mpsc::channel();
+            let notification = BlockNotification::new(
+                common_core::types::RskBlockAndUncles::new(block, uncles),
+                delivery_ack_tx,
+            );
+            if let Err(e) = channel.send(notification) {
                 error!("[notify_block] Failed to send best block through channel: {e:?}");
                 if self.is_running() {
                     bail!("[notify_block] Failed to send best block through channel: {e:?}");
                 }
                 return Ok(false);
+            }
+
+            match delivery_ack_rx.recv_timeout(BLOCK_DELIVERY_ACK_TIMEOUT) {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => {
+                    error!("[notify_block] Block delivery failed: {error:#}");
+                    if self.is_running() {
+                        bail!("[notify_block] Block delivery failed: {error:#}");
+                    }
+                    return Ok(false);
+                }
+                Err(RecvTimeoutError::Timeout) => {
+                    error!("[notify_block] Timed out waiting for block delivery acknowledgement");
+                    if self.is_running() {
+                        bail!(
+                            "[notify_block] Timed out waiting for block delivery acknowledgement"
+                        );
+                    }
+                    return Ok(false);
+                }
+                Err(RecvTimeoutError::Disconnected) => {
+                    error!("[notify_block] Block delivery acknowledgement channel disconnected");
+                    if self.is_running() {
+                        bail!("[notify_block] Block delivery acknowledgement channel disconnected");
+                    }
+                    return Ok(false);
+                }
             }
         }
         Ok(true)
@@ -519,7 +556,10 @@ impl<P: RskProvider, S: BlockStore> RskIndexer<P, S> for BlockIndexer<P, S> {
 mod tests {
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
+    use std::thread;
 
+    use common_broker::broker::{BrokerError, Identifier, MockBrokerServerApi};
+    use common_core::types::RskBlockAndUncles;
     use common_dev::rsk_block_generator::{
         FakeBlockGenerator, get_first_default_rsk_block, get_second_default_rsk_block,
         get_third_default_rsk_block,
@@ -528,6 +568,7 @@ mod tests {
     use mockall::predicate::eq;
 
     use super::*;
+    use crate::notifier::{BlockNotification, FromServer, Notifier, ToServer};
     use crate::store::MockBlockStore;
 
     #[test]
@@ -805,6 +846,55 @@ mod tests {
     }
 
     #[test]
+    fn listen_blocks_does_not_advance_best_when_broker_delivery_fails() {
+        let local_best = get_first_default_rsk_block();
+        let new_block = get_second_default_rsk_block();
+
+        let mut provider = MockRskProvider::new();
+        provider.expect_get_uncle_by_hash_and_index().never();
+
+        let mut store = MockBlockStore::new();
+        let local_best_for_store = local_best.clone();
+        store
+            .expect_get_best_block()
+            .times(1)
+            .returning(move || Ok(Some(local_best_for_store.clone())));
+        store.expect_save_block().never();
+        store.expect_set_canonical_block().never();
+        store.expect_set_best_block().never();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let shutdown_flag = ShutdownFlag::init();
+        let coordinator_id = Identifier::new("coordinator".to_string(), 1);
+
+        let mut mock_broker = MockBrokerServerApi::<ToServer, FromServer>::new();
+        mock_broker.expect_try_recv().returning(|| Ok(None));
+        mock_broker.expect_send().times(1).returning(|_, _| Err(BrokerError::disconnected()));
+
+        let mut notifier =
+            Notifier::new_with_consumer(rx, mock_broker, shutdown_flag.clone(), coordinator_id);
+        let notifier_handle = thread::spawn(move || notifier.run());
+
+        let mut subscription = MockRskSubscription::<RskBlock>::new();
+        subscription.expect_next().times(1).returning(move || Ok(new_block.clone()));
+
+        let idx = BlockIndexer {
+            rsk_provider: provider,
+            new_block_sender: Some(tx),
+            store,
+            start_from: IndexerStartFrom::Best,
+            initial_block_hash: local_best.hash(),
+            shutdown_flag: shutdown_flag.clone(),
+        };
+
+        let result = idx.listen_blocks(&mut subscription);
+        shutdown_flag.set();
+
+        assert!(result.is_err());
+        assert!(notifier_handle.join().expect("notifier thread panicked").is_err());
+    }
+
+    #[test]
     fn backward_sync_renotifies_known_blocks_above_best_before_advancing_best() {
         let generator = FakeBlockGenerator::new(None, Arc::new(AtomicBool::new(false)), None);
         let connected_block =
@@ -861,6 +951,7 @@ mod tests {
         store.expect_set_back_sync_checkpoint().never();
 
         let (tx, rx) = std::sync::mpsc::channel();
+        let ack_handle = collect_and_ack_blocks(rx, 2);
         let idx = BlockIndexer {
             rsk_provider: provider,
             new_block_sender: Some(tx),
@@ -873,10 +964,107 @@ mod tests {
         let result = idx.backward_sync(&starting_block);
         assert!(result.is_ok());
 
-        let notified: Vec<_> = rx.try_iter().collect();
+        let notified = ack_handle.join().expect("ack thread panicked");
         assert_eq!(notified.len(), 2);
         assert_eq!(notified[0].block(), &middle_block);
         assert_eq!(notified[1].block(), &starting_block);
+    }
+
+    #[test]
+    fn backward_sync_does_not_advance_best_when_broker_delivery_fails() {
+        let generator = FakeBlockGenerator::new(None, Arc::new(AtomicBool::new(false)), None);
+        let connected_block =
+            generator.generate_block(100.into(), None).expect("failed to generate block 100");
+        let middle_block =
+            generator.generate_block(101.into(), None).expect("failed to generate block 101");
+        let starting_block =
+            generator.generate_block(102.into(), None).expect("failed to generate block 102");
+
+        let mut provider = MockRskProvider::new();
+        let middle_block_for_provider = middle_block.clone();
+        let connected_block_for_provider = connected_block.clone();
+        provider.expect_get_block_by_number().times(2).returning(move |block_num| {
+            if block_num == middle_block_for_provider.number() {
+                Ok(Some(middle_block_for_provider.clone()))
+            } else if block_num == connected_block_for_provider.number() {
+                Ok(Some(connected_block_for_provider.clone()))
+            } else {
+                Ok(None)
+            }
+        });
+        provider.expect_get_uncle_by_hash_and_index().never();
+
+        let mut store = MockBlockStore::new();
+        let store_best_block = connected_block.clone();
+        store
+            .expect_get_best_block()
+            .times(1)
+            .returning(move || Ok(Some(store_best_block.clone())));
+
+        let starting_block_for_store = starting_block.clone();
+        let middle_block_for_store = middle_block.clone();
+        let connected_block_for_store = connected_block.clone();
+        store.expect_get_canonical_block().times(3).returning(move |block_num| {
+            if block_num == starting_block_for_store.number() {
+                Ok(Some(starting_block_for_store.clone()))
+            } else if block_num == middle_block_for_store.number() {
+                Ok(Some(middle_block_for_store.clone()))
+            } else if block_num == connected_block_for_store.number() {
+                Ok(Some(connected_block_for_store.clone()))
+            } else {
+                Ok(None)
+            }
+        });
+
+        store.expect_save_block().never();
+        store.expect_set_canonical_block().never();
+        store.expect_reset_back_sync_checkpoint().times(1).returning(|| Ok(()));
+        store.expect_set_best_block().never();
+        store.expect_set_back_sync_checkpoint().never();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let shutdown_flag = ShutdownFlag::init();
+        let coordinator_id = Identifier::new("coordinator".to_string(), 1);
+
+        let mut mock_broker = MockBrokerServerApi::<ToServer, FromServer>::new();
+        mock_broker.expect_try_recv().returning(|| Ok(None));
+        mock_broker.expect_send().times(1).returning(|_, _| Err(BrokerError::disconnected()));
+
+        let mut notifier =
+            Notifier::new_with_consumer(rx, mock_broker, shutdown_flag.clone(), coordinator_id);
+        let notifier_handle = thread::spawn(move || notifier.run());
+
+        let idx = BlockIndexer {
+            rsk_provider: provider,
+            new_block_sender: Some(tx),
+            store,
+            start_from: IndexerStartFrom::Best,
+            initial_block_hash: starting_block.hash(),
+            shutdown_flag: shutdown_flag.clone(),
+        };
+
+        let result = idx.backward_sync(&starting_block);
+        shutdown_flag.set();
+
+        assert!(result.is_err());
+        assert!(notifier_handle.join().expect("notifier thread panicked").is_err());
+    }
+
+    fn collect_and_ack_blocks(
+        rx: std::sync::mpsc::Receiver<BlockNotification>,
+        expected_blocks: usize,
+    ) -> thread::JoinHandle<Vec<RskBlockAndUncles>> {
+        thread::spawn(move || {
+            let mut blocks = Vec::with_capacity(expected_blocks);
+            for block_index in 0..expected_blocks {
+                let notification = rx
+                    .recv_timeout(std::time::Duration::from_secs(1))
+                    .unwrap_or_else(|_| panic!("expected block notification {block_index}"));
+                blocks.push(notification.block().clone());
+                notification.acknowledge(Ok(()));
+            }
+            blocks
+        })
     }
 
     #[test]

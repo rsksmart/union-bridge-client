@@ -11,8 +11,34 @@ use common_core::types::RskBlockAndUncles;
 use common_runtime::shutdown_flag::ShutdownFlag;
 use tracing::{info, instrument, trace, warn};
 
+pub struct BlockNotification {
+    block: RskBlockAndUncles,
+    delivery_ack: mpsc::Sender<Result<()>>,
+}
+
+impl BlockNotification {
+    #[must_use]
+    pub(crate) fn new(block: RskBlockAndUncles, delivery_ack: mpsc::Sender<Result<()>>) -> Self {
+        Self { block, delivery_ack }
+    }
+
+    #[must_use]
+    pub(crate) fn block(&self) -> &RskBlockAndUncles {
+        &self.block
+    }
+
+    fn into_parts(self) -> (RskBlockAndUncles, mpsc::Sender<Result<()>>) {
+        (self.block, self.delivery_ack)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn acknowledge(self, result: Result<()>) {
+        let _ = self.delivery_ack.send(result);
+    }
+}
+
 pub struct Notifier<BS: UnionBrokerServerApi> {
-    new_block_channel: mpsc::Receiver<RskBlockAndUncles>,
+    new_block_channel: mpsc::Receiver<BlockNotification>,
     msg_broker: BS,
     check_period: Duration,
     consumers: HashSet<Identifier>,
@@ -21,7 +47,7 @@ pub struct Notifier<BS: UnionBrokerServerApi> {
 
 impl<BS: UnionBrokerServerApi> Notifier<BS> {
     pub fn new(
-        indexer_receiver: mpsc::Receiver<RskBlockAndUncles>,
+        indexer_receiver: mpsc::Receiver<BlockNotification>,
         msg_broker: BS,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
@@ -35,7 +61,7 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
     }
 
     pub fn new_with_consumer(
-        indexer_receiver: mpsc::Receiver<RskBlockAndUncles>,
+        indexer_receiver: mpsc::Receiver<BlockNotification>,
         msg_broker: BS,
         shutdown_flag: ShutdownFlag,
         consumer: Identifier,
@@ -47,7 +73,7 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
 
     #[cfg(test)]
     pub fn new_for_tests(
-        indexer_receiver: mpsc::Receiver<RskBlockAndUncles>,
+        indexer_receiver: mpsc::Receiver<BlockNotification>,
         msg_broker: BS,
         shutdown_flag: ShutdownFlag,
     ) -> Self {
@@ -110,11 +136,11 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
         Ok(())
     }
 
-    fn wait_for_block(&mut self, timeout: Duration) -> Result<Option<RskBlockAndUncles>> {
+    fn wait_for_block(&mut self, timeout: Duration) -> Result<Option<BlockNotification>> {
         match self.new_block_channel.recv_timeout(timeout) {
-            Ok(block) => {
-                trace!("New block received by notifier {block:?}");
-                Ok(Some(block))
+            Ok(notification) => {
+                trace!("New block received by notifier {:?}", notification.block());
+                Ok(Some(notification))
             }
             Err(RecvTimeoutError::Timeout) => {
                 trace!("No new block within {timeout:?} timeout");
@@ -130,9 +156,22 @@ impl<BS: UnionBrokerServerApi> Notifier<BS> {
         }
     }
 
-    fn notify_consumers(&mut self, new_block: RskBlockAndUncles) -> Result<()> {
+    fn notify_consumers(&mut self, notification: BlockNotification) -> Result<()> {
+        let (block, delivery_ack) = notification.into_parts();
+        let result = self.deliver_to_consumers(block);
+        let ack_result = match result.as_ref() {
+            Ok(()) => Ok(()),
+            Err(error) => Err(anyhow!("{error:#}")),
+        };
+        let _ = delivery_ack.send(ack_result);
+
+        result
+    }
+
+    fn deliver_to_consumers(&mut self, new_block: RskBlockAndUncles) -> Result<()> {
         let hash = new_block.hash();
         let number = new_block.number();
+
         let response = FromServer::Block(new_block);
 
         for c_id in &self.consumers {
@@ -327,7 +366,7 @@ mod tests {
         assert_eq!(1, notifier.consumers.len());
 
         notifier
-            .notify_consumers(RskBlockAndUncles::new_no_uncles(expected_block))
+            .notify_consumers(block_notification(RskBlockAndUncles::new_no_uncles(expected_block)))
             .expect("duplicate subscription should notify once");
     }
 
@@ -463,7 +502,7 @@ mod tests {
     }
 
     fn handle_external_events(
-        tx: Sender<RskBlockAndUncles>,
+        tx: Sender<BlockNotification>,
         shutdown_flag: ShutdownFlag,
         blocks: Vec<RskBlockAndUncles>,
     ) -> JoinHandle<()> {
@@ -472,7 +511,7 @@ mod tests {
             sleep(Duration::from_millis(10));
 
             for block in blocks {
-                tx.send(block).expect("Failed to send block");
+                tx.send(block_notification(block)).expect("Failed to send block");
             }
 
             // give time for messages to be processed
@@ -480,5 +519,10 @@ mod tests {
 
             shutdown_flag.set();
         })
+    }
+
+    fn block_notification(block: RskBlockAndUncles) -> BlockNotification {
+        let (delivery_ack, _delivery_ack_rx) = mpsc::channel();
+        BlockNotification::new(block, delivery_ack)
     }
 }
