@@ -33,10 +33,17 @@ services:
     environment:
       - UB__BLOCK_INDEXER__COORDINATOR__CLIENT_ID
       - UB__BLOCK_INDEXER__COORDINATOR__PUBKEY_HASH
+      - CLIENT_OP
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
       - union-network
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://host.docker.internal:3100/loki/api/v1/push"
+        env: "CLIENT_OP"
+        keep-file: "true"
 
   log-indexer:
     extends:
@@ -47,10 +54,17 @@ services:
     environment:
       - UB__LOG_INDEXER__COORDINATOR__CLIENT_ID
       - UB__LOG_INDEXER__COORDINATOR__PUBKEY_HASH
+      - CLIENT_OP
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
       - union-network
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://host.docker.internal:3100/loki/api/v1/push"
+        env: "CLIENT_OP"
+        keep-file: "true"
 
   user-api:
     extends:
@@ -61,12 +75,19 @@ services:
     environment:
       - UB__USER_API__COORDINATOR__CLIENT_ID
       - UB__USER_API__COORDINATOR__PUBKEY_HASH
+      - CLIENT_OP
     ports:
       - "${USER_API_PORT:-40001}:40001"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
       - union-network
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://host.docker.internal:3100/loki/api/v1/push"
+        env: "CLIENT_OP"
+        keep-file: "true"
 
   coordinator:
     extends:
@@ -82,6 +103,7 @@ services:
       - UB__COORDINATOR__LOGS__PUBKEY_HASH
       - UB__COORDINATOR__USER__PUBKEY_HASH
       - UB__COORDINATOR__BITVMX__PUBKEY_HASH
+      - CLIENT_OP
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -89,6 +111,12 @@ services:
         condition: service_healthy
     networks:
       union-network:
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://host.docker.internal:3100/loki/api/v1/push"
+        env: "CLIENT_OP"
+        keep-file: "true"
 
 # ================================
 # Networks and Volumes

@@ -17,6 +17,12 @@ services:
       start_period: 10s
     volumes:
       - db-bitvmx:/tmp
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://host.docker.internal:3100/loki/api/v1/push"
+        env: "CLIENT_OP"
+        keep-file: "true"
 
 volumes:
   db-bitvmx:
