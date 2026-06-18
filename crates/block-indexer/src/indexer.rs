@@ -341,7 +341,9 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 
             let is_missing = store_block.is_none();
             let is_reorg = store_block.is_some_and(|sb| sb.hash() != new_block.hash());
-            let reached_connection_height = new_block.number() <= store_best_block.number();
+            let reached_connection_block = new_block.number() < store_best_block.number()
+                || (new_block.number() == store_best_block.number()
+                    && new_block.hash() == store_best_block.hash());
 
             if is_missing || is_reorg {
                 info!(
@@ -356,7 +358,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 // consumer should be resilient to re-notifications
                 blocks_to_notify.push((new_block.clone(), uncles));
                 self.save_as_canonical(&new_block).context("On Backward Sync")?;
-            } else if !reached_connection_height {
+            } else if !reached_connection_block {
                 debug!(
                     "[block_backward_sync] Skipping known block {} ({}) while checking if fully connected",
                     new_block.number(),
@@ -977,6 +979,98 @@ mod tests {
         let notified = ack_handle.join().expect("ack thread panicked");
         assert_eq!(notified.len(), 2);
         assert_eq!(notified[0].block(), &middle_block);
+        assert_eq!(notified[1].block(), &starting_block);
+    }
+
+    #[test]
+    fn backward_sync_renotifies_reorged_best_height_before_advancing_best() {
+        let connected_block = get_first_default_rsk_block();
+        let old_best_block = get_second_default_rsk_block();
+        let raw_starting_block = get_third_default_rsk_block();
+        let starting_block = RskBlock::new(
+            raw_starting_block.number(),
+            raw_starting_block.hash(),
+            raw_starting_block.parent_hash(),
+            raw_starting_block.timestamp(),
+            raw_starting_block.difficulty(),
+            raw_starting_block.total_difficulty(),
+            raw_starting_block.pow(),
+            vec![],
+        );
+        let reorged_best_height_block = RskBlock::new(
+            old_best_block.number(),
+            starting_block.hash(),
+            connected_block.hash(),
+            old_best_block.timestamp(),
+            old_best_block.difficulty(),
+            old_best_block.total_difficulty(),
+            old_best_block.pow(),
+            vec![],
+        );
+
+        let mut provider = MockRskProvider::new();
+        let reorged_best_height_block_for_provider = reorged_best_height_block.clone();
+        let connected_block_for_provider = connected_block.clone();
+        provider.expect_get_block_by_number().times(2).returning(move |block_num| {
+            if block_num == reorged_best_height_block_for_provider.number() {
+                Ok(Some(reorged_best_height_block_for_provider.clone()))
+            } else if block_num == connected_block_for_provider.number() {
+                Ok(Some(connected_block_for_provider.clone()))
+            } else {
+                Ok(None)
+            }
+        });
+        provider.expect_get_uncle_by_hash_and_index().never();
+
+        let mut store = MockBlockStore::new();
+        let store_best_block = old_best_block.clone();
+        store
+            .expect_get_best_block()
+            .times(1)
+            .returning(move || Ok(Some(store_best_block.clone())));
+
+        let starting_block_for_store = starting_block.clone();
+        let reorged_best_height_block_for_store = reorged_best_height_block.clone();
+        let connected_block_for_store = connected_block.clone();
+        store.expect_get_canonical_block().times(3).returning(move |block_num| {
+            if block_num == starting_block_for_store.number() {
+                Ok(Some(starting_block_for_store.clone()))
+            } else if block_num == reorged_best_height_block_for_store.number() {
+                Ok(Some(reorged_best_height_block_for_store.clone()))
+            } else if block_num == connected_block_for_store.number() {
+                Ok(Some(connected_block_for_store.clone()))
+            } else {
+                Ok(None)
+            }
+        });
+
+        store.expect_save_block().never();
+        store.expect_set_canonical_block().never();
+        store.expect_reset_back_sync_checkpoint().times(1).returning(|| Ok(()));
+        store
+            .expect_set_best_block()
+            .with(eq(starting_block.clone()))
+            .times(1)
+            .returning(|_| Ok(()));
+        store.expect_set_back_sync_checkpoint().never();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let ack_handle = collect_and_ack_blocks(rx, 2);
+        let idx = BlockIndexer {
+            rsk_provider: provider,
+            new_block_sender: Some(tx),
+            store,
+            start_from: IndexerStartFrom::Best,
+            initial_block_hash: starting_block.hash(),
+            shutdown_flag: ShutdownFlag::init(),
+        };
+
+        let result = idx.backward_sync(&starting_block);
+        assert!(result.is_ok());
+
+        let notified = ack_handle.join().expect("ack thread panicked");
+        assert_eq!(notified.len(), 2);
+        assert_eq!(notified[0].block(), &reorged_best_height_block);
         assert_eq!(notified[1].block(), &starting_block);
     }
 
