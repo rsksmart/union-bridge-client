@@ -1,6 +1,6 @@
 use std::sync::mpsc;
 use std::sync::mpsc::RecvTimeoutError;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use common_core::types::{BlockHash, BlockNumber, RskBlock};
@@ -16,6 +16,7 @@ use crate::notifier::BlockNotification;
 use crate::store::BlockStore;
 
 const BLOCK_DELIVERY_ACK_TIMEOUT: Duration = Duration::from_secs(30);
+const BLOCK_DELIVERY_ACK_CHECK_PERIOD: Duration = Duration::from_millis(100);
 
 pub struct BlockIndexer<P: RskProvider, S: BlockStore> {
     store: S,
@@ -125,7 +126,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
         Ok(())
     }
 
-    fn init_for_best(&self, initial_block_node: &RskBlock) -> Result<()> {
+    fn init_for_best(&self) -> Result<()> {
         if let Some(db_best_block) = self.store.get_best_block().context("Checking DB state")? {
             info!(
                 "[initialize_for_best] Existing best block {} ({}) found in DB; start_from='best' will catch up to provider best from the persisted tip",
@@ -135,13 +136,14 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             return self.startup_backward_sync();
         }
 
+        let initial_block_node = self.get_initial_block(&self.rsk_provider);
         info!(
             "[initialize_for_best] New instance: initializing DB with best block {} ({})",
             initial_block_node.number(),
             initial_block_node.hash()
         );
 
-        self.save_as_best_block(initial_block_node).context("Initialising DB for best")
+        self.save_as_best_block(&initial_block_node).context("Initialising DB for best")
     }
 
     fn start_block_subscription(&self) -> Result<()> {
@@ -220,10 +222,11 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 );
                 // order matters: 1) process uncles, 2) notify, 3) save as the best block
                 // once save_as_best_block is called, the block won't be re-queried again (unless reorgs)
-                let uncles = self.process_uncle_blocks(&new_block).context("On Backward Sync")?;
+                let uncles =
+                    self.process_uncle_blocks(&new_block).context("On Block subscription")?;
                 // consumer should be resilient to re-notifications
                 if !self.notify_block(new_block.clone(), uncles).context("On Block subscription")? {
-                    break;
+                    return Ok(());
                 }
                 self.save_as_best_block(&new_block).context("On Block subscription")?;
             } else if needs_catch_up {
@@ -251,7 +254,6 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
     }
 
     fn notify_block(&self, block: RskBlock, uncles: Vec<RskBlock>) -> Result<bool> {
-        #[allow(clippy::collapsible_if)]
         if let Some(channel) = &self.new_block_sender {
             let (delivery_ack_tx, delivery_ack_rx) = mpsc::channel();
             let notification = BlockNotification::new(
@@ -266,8 +268,21 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 return Ok(false);
             }
 
-            match delivery_ack_rx.recv_timeout(BLOCK_DELIVERY_ACK_TIMEOUT) {
-                Ok(Ok(())) => {}
+            if !self.wait_for_block_delivery_ack(&delivery_ack_rx)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    fn wait_for_block_delivery_ack(
+        &self,
+        delivery_ack_rx: &mpsc::Receiver<Result<()>>,
+    ) -> Result<bool> {
+        let start = Instant::now();
+        loop {
+            match delivery_ack_rx.recv_timeout(BLOCK_DELIVERY_ACK_CHECK_PERIOD) {
+                Ok(Ok(())) => return Ok(true),
                 Ok(Err(error)) => {
                     error!("[notify_block] Block delivery failed: {error:#}");
                     if self.is_running() {
@@ -275,7 +290,8 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     }
                     return Ok(false);
                 }
-                Err(RecvTimeoutError::Timeout) => {
+                Err(RecvTimeoutError::Timeout) if !self.is_running() => return Ok(false),
+                Err(RecvTimeoutError::Timeout) if start.elapsed() >= BLOCK_DELIVERY_ACK_TIMEOUT => {
                     error!("[notify_block] Timed out waiting for block delivery acknowledgement");
                     if self.is_running() {
                         bail!(
@@ -284,6 +300,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     }
                     return Ok(false);
                 }
+                Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => {
                     error!("[notify_block] Block delivery acknowledgement channel disconnected");
                     if self.is_running() {
@@ -293,7 +310,6 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 }
             }
         }
-        Ok(true)
     }
 
     fn backward_sync(&self, starting_block: &RskBlock) -> Result<()> {
@@ -338,7 +354,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 // once save_as_canonical is called, the block won't be re-queried again (unless reorgs)
                 let uncles = self.process_uncle_blocks(&new_block).context("On Backward Sync")?;
                 // consumer should be resilient to re-notifications
-                blocks_to_notify.push((new_block.clone(), uncles.clone()));
+                blocks_to_notify.push((new_block.clone(), uncles));
                 self.save_as_canonical(&new_block).context("On Backward Sync")?;
             } else if !reached_connection_height {
                 debug!(
@@ -358,15 +374,10 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 // we are complete, so we remove the checkpoint if any
                 self.store.reset_back_sync_checkpoint().context("On Backward Sync")?;
                 // notify the consumer about the new chain in ascending order
-                let mut all_blocks_notified = true;
                 for (block, uncles) in blocks_to_notify.into_iter().rev() {
                     if !self.notify_block(block, uncles).context("On Backward Sync")? {
-                        all_blocks_notified = false;
-                        break;
+                        return Ok(());
                     }
-                }
-                if !all_blocks_notified {
-                    break;
                 }
 
                 // it represents also the connection point to achieve full sync
@@ -534,15 +545,14 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
 impl<P: RskProvider, S: BlockStore> RskIndexer<P, S> for BlockIndexer<P, S> {
     #[instrument(skip_all)]
     fn run(&self) -> Result<()> {
-        let initial_block = self.get_initial_block(&self.rsk_provider);
-
         match self.start_from {
             IndexerStartFrom::Best => {
                 info!("[run] start_from='best': initializing from provider best");
-                self.init_for_best(&initial_block)?;
+                self.init_for_best()?;
             }
             IndexerStartFrom::Hash => {
                 info!("[run] start_from='hash': running startup backward sync");
+                let initial_block = self.get_initial_block(&self.rsk_provider);
                 self.init_db_if_required(&initial_block)?;
                 self.startup_backward_sync()?;
             }
@@ -1074,12 +1084,7 @@ mod tests {
         let db_best_block = get_first_default_rsk_block();
 
         let mut provider = MockRskProvider::new();
-        let initial_block_for_hash = initial_block.clone();
-        provider
-            .expect_get_block_by_hash()
-            .with(eq(initial_hash))
-            .times(1)
-            .returning(move |_| Ok(Some(initial_block_for_hash.clone())));
+        provider.expect_get_block_by_hash().never();
         provider.expect_get_best_block().times(1).returning(move || Ok(initial_block.clone()));
         provider.expect_get_block_by_number().never();
         provider.expect_subscribe_blocks().never();
