@@ -96,7 +96,7 @@ mod tests {
         assert!(config.user_api_config.monitoring.enabled);
         assert_eq!(
             config.user_api_config.monitoring.bind_addr,
-            "0.0.0.0:9102".parse().expect("valid bind_addr")
+            "0.0.0.0:9202".parse().expect("valid bind_addr")
         );
     }
 }

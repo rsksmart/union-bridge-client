@@ -122,7 +122,7 @@ mod tests {
         assert!(config.log_indexer_config.monitoring.enabled);
         assert_eq!(
             config.log_indexer_config.monitoring.bind_addr,
-            "0.0.0.0:9104".parse().expect("valid bind_addr")
+            "0.0.0.0:9204".parse().expect("valid bind_addr")
         );
     }
 

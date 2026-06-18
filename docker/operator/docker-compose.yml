@@ -33,6 +33,10 @@ services:
     environment:
       - UB__BLOCK_INDEXER__COORDINATOR__CLIENT_ID
       - UB__BLOCK_INDEXER__COORDINATOR__PUBKEY_HASH
+    # Publish the Prometheus /metrics port. Per-operator host port (set by
+    # setup-operators.sh) -> fixed in-container port from base.toml.
+    ports:
+      - "${BLOCK_INDEXER_METRICS_PORT:-9203}:9203"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -47,6 +51,8 @@ services:
     environment:
       - UB__LOG_INDEXER__COORDINATOR__CLIENT_ID
       - UB__LOG_INDEXER__COORDINATOR__PUBKEY_HASH
+    ports:
+      - "${LOG_INDEXER_METRICS_PORT:-9204}:9204"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -63,6 +69,7 @@ services:
       - UB__USER_API__COORDINATOR__PUBKEY_HASH
     ports:
       - "${USER_API_PORT:-40001}:40001"
+      - "${USER_API_METRICS_PORT:-9202}:9202"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -82,6 +89,8 @@ services:
       - UB__COORDINATOR__LOGS__PUBKEY_HASH
       - UB__COORDINATOR__USER__PUBKEY_HASH
       - UB__COORDINATOR__BITVMX__PUBKEY_HASH
+    ports:
+      - "${COORDINATOR_METRICS_PORT:-9201}:9201"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

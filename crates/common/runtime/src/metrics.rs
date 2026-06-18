@@ -178,17 +178,17 @@ mod tests {
     fn monitoring_config_parses_with_explicit_enabled() {
         let cfg: MonitoringConfig = serde_json::from_value(serde_json::json!({
             "enabled": false,
-            "bind_addr": "127.0.0.1:9101",
+            "bind_addr": "127.0.0.1:9201",
         }))
         .expect("parse monitoring config");
         assert!(!cfg.enabled);
-        assert_eq!(cfg.bind_addr, "127.0.0.1:9101".parse().unwrap());
+        assert_eq!(cfg.bind_addr, "127.0.0.1:9201".parse().unwrap());
     }
 
     #[test]
     fn monitoring_config_defaults_enabled_to_true() {
         let cfg: MonitoringConfig = serde_json::from_value(serde_json::json!({
-            "bind_addr": "0.0.0.0:9101",
+            "bind_addr": "0.0.0.0:9201",
         }))
         .expect("parse monitoring config");
         assert!(cfg.enabled);

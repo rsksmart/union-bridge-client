@@ -277,7 +277,7 @@ mod tests {
         assert!(config.coordinator.monitoring.enabled);
         assert_eq!(
             config.coordinator.monitoring.bind_addr,
-            "0.0.0.0:9101".parse().expect("valid bind_addr")
+            "0.0.0.0:9201".parse().expect("valid bind_addr")
         );
         assert_eq!("regtest", config.bitcoin_network);
         assert_eq!(10, config.contracts.len());
@@ -323,7 +323,7 @@ mod tests {
                 "check_period_secs": 1,
                 "bitvmx_not_responding_threshold_secs": 30,
                 "bitvmx_ping_after_silence_secs": 15,
-                "monitoring": { "bind_addr": "0.0.0.0:9101" }
+                "monitoring": { "bind_addr": "0.0.0.0:9201" }
             }
         }));
 

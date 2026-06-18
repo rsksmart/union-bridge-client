@@ -13,10 +13,10 @@ only covers what the services expose and how to scrape them.
 
 | Service        | Bind address (base.toml) | Config key                                  |
 |----------------|--------------------------|---------------------------------------------|
-| coordinator    | `0.0.0.0:9101`           | `coordinator.monitoring.bind_addr`          |
-| user-api       | `0.0.0.0:9102`           | `user_api.monitoring.bind_addr`             |
-| block-indexer  | `0.0.0.0:9103`           | `block_indexer.monitoring.bind_addr`        |
-| log-indexer    | `0.0.0.0:9104`           | `log_indexer.monitoring.bind_addr`          |
+| coordinator    | `0.0.0.0:9201`           | `coordinator.monitoring.bind_addr`          |
+| user-api       | `0.0.0.0:9202`           | `user_api.monitoring.bind_addr`             |
+| block-indexer  | `0.0.0.0:9203`           | `block_indexer.monitoring.bind_addr`        |
+| log-indexer    | `0.0.0.0:9204`           | `log_indexer.monitoring.bind_addr`          |
 
 `user-api`'s `/metrics` endpoint lives on a **separate** port from the public
 API (40001) so operators can firewall it from external traffic. The public API
@@ -31,6 +31,28 @@ Override per environment via TOML or the `UB__` env-var hierarchy. Example:
 
 ```bash
 UB__COORDINATOR__MONITORING__BIND_ADDR=127.0.0.1:19101 cli/run.sh coordinator
+```
+
+## Multi-operator port layout
+
+`scripts/setup-operators.sh` can run several operators on one host. To avoid host
+port collisions, each operator gets its own block of metrics ports offset by 10:
+`base + (operator_index - 1) * 10`. Inside every operator's container the service
+still binds the fixed `base.toml` port; only the **host** port is unique, so the
+`docker-compose.yml` mapping is `host:container` = `<per-operator-port>:<base-port>`
+(e.g. `9221:9201`).
+
+Scrape each operator on its **host** port:
+
+| Service       | op_1 | op_2 | op_3 | In-container (fixed) |
+|---------------|------|------|------|----------------------|
+| coordinator   | 9201 | 9211 | 9221 | 9201                 |
+| user-api      | 9202 | 9212 | 9222 | 9202                 |
+| block-indexer | 9203 | 9213 | 9223 | 9203                 |
+| log-indexer   | 9204 | 9214 | 9224 | 9204                 |
+
+```bash
+curl -s http://localhost:9221/metrics   # op_3 coordinator (host port 9221)
 ```
 
 ## Global labels
@@ -50,10 +72,10 @@ if you're hitting a remote box, and keep in mind that `bind_addr` defaults to
 ### 1. Smoke-test the endpoint is up
 
 ```bash
-curl -sf http://localhost:9101/metrics > /dev/null && echo "coordinator OK"
-curl -sf http://localhost:9102/metrics > /dev/null && echo "user-api OK"
-curl -sf http://localhost:9103/metrics > /dev/null && echo "block-indexer OK"
-curl -sf http://localhost:9104/metrics > /dev/null && echo "log-indexer OK"
+curl -sf http://localhost:9201/metrics > /dev/null && echo "coordinator OK"
+curl -sf http://localhost:9202/metrics > /dev/null && echo "user-api OK"
+curl -sf http://localhost:9203/metrics > /dev/null && echo "block-indexer OK"
+curl -sf http://localhost:9204/metrics > /dev/null && echo "log-indexer OK"
 ```
 
 `-f` makes curl exit non-zero on HTTP errors so you can chain it with `&&` in a
@@ -67,13 +89,13 @@ its config and that the bind port isn't already taken.
 
 ```bash
 # BitVMX liveness and last-message age (coordinator):
-curl -s http://localhost:9101/metrics | grep -E '^union_bitvmx_(liveness|last_message)'
+curl -s http://localhost:9201/metrics | grep -E '^union_bitvmx_(liveness|last_message)'
 
 # Block indexer tip height:
-curl -s http://localhost:9103/metrics | grep '^union_indexer_height'
+curl -s http://localhost:9203/metrics | grep '^union_indexer_height'
 
 # user-api RED metrics for the pegin endpoint:
-curl -s http://localhost:9102/metrics | grep 'path="/user/pegin-address"'
+curl -s http://localhost:9202/metrics | grep 'path="/user/pegin-address"'
 ```
 
 Each non-comment line looks like:
@@ -93,7 +115,7 @@ For counters that increment as flows progress, `watch` makes the change
 obvious:
 
 ```bash
-watch -n 1 'curl -s http://localhost:9101/metrics | grep -E "^union_coordinator_events_processed_total"'
+watch -n 1 'curl -s http://localhost:9201/metrics | grep -E "^union_coordinator_events_processed_total"'
 ```
 
 You should see the per-`kind` counters tick up as RSK blocks arrive and the
@@ -101,20 +123,27 @@ coordinator polls its monitors.
 
 ### 4. From inside the operator docker network
 
-When services are running via `docker/operator/docker-compose.yml`, the
-metrics ports are not published by default. Either add a port mapping
-(`-p 9101:9101`) or hit them from a sidecar container on the same network:
+When services run via `docker/operator/docker-compose.yml`, each metrics port is
+published to the host (see the per-operator layout above), so you can scrape it
+straight from the host:
+
+```bash
+curl -s http://localhost:9201/metrics | head -20   # coordinator, op_1
+```
+
+To hit the in-container port directly instead (the fixed `base.toml` port), exec
+into the container:
 
 ```bash
 docker compose -f docker/operator/docker-compose.yml exec coordinator \
-    curl -s http://localhost:9101/metrics | head -20
+    curl -s http://localhost:9201/metrics | head -20
 ```
 
 (Replace `curl` with `wget -qO-` if the image doesn't ship curl.)
 
 ### 5. Browser
 
-Pasting `http://localhost:9101/metrics` into a browser also works — the response
+Pasting `http://localhost:9201/metrics` into a browser also works — the response
 is `Content-Type: text/plain`, so the browser will render it as-is. Useful for a
 quick eyeball; not useful for filtering.
 
@@ -125,7 +154,7 @@ If you suspect a malformed metric (e.g. after adding new instrumentation),
 can lint a captured snapshot:
 
 ```bash
-curl -s http://localhost:9101/metrics > /tmp/coordinator.prom
+curl -s http://localhost:9201/metrics > /tmp/coordinator.prom
 promtool check metrics < /tmp/coordinator.prom
 ```
 
@@ -202,15 +231,35 @@ scrape_configs:
     scrape_interval: 15s
     static_configs:
       - targets:
-          - operator-host:9101  # coordinator
-          - operator-host:9102  # user-api
-          - operator-host:9103  # block-indexer
-          - operator-host:9104  # log-indexer
+          - operator-host:9201  # coordinator
+          - operator-host:9202  # user-api
+          - operator-host:9203  # block-indexer
+          - operator-host:9204  # log-indexer
 ```
 
-If you run multiple operators, lift the per-host suffixes into a file SD or
-service-discovery source and rely on the `service` global label to distinguish
-binaries.
+### Multiple operators on one host
+
+`setup-operators.sh` publishes each operator's metrics on the same host with
+ports offset by 10 (see the multi-operator layout above). The global `service`
+label distinguishes the four binaries but **not** the operators — every
+operator's coordinator emits `service="coordinator"` — so attach an `operator`
+label per target group:
+
+```yaml
+scrape_configs:
+  - job_name: union-bridge
+    scrape_interval: 15s
+    static_configs:
+      - targets: [operator-host:9201, operator-host:9202, operator-host:9203, operator-host:9204]
+        labels: { operator: op_1 }
+      - targets: [operator-host:9211, operator-host:9212, operator-host:9213, operator-host:9214]
+        labels: { operator: op_2 }
+      - targets: [operator-host:9221, operator-host:9222, operator-host:9223, operator-host:9224]
+        labels: { operator: op_3 }
+```
+
+For more than a handful of operators, lift these groups into a file SD or
+service-discovery source rather than hand-maintaining the list.
 
 ## Useful PromQL
 

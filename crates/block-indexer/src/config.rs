@@ -94,7 +94,7 @@ mod tests {
         assert!(config.block_indexer_config.monitoring.enabled);
         assert_eq!(
             config.block_indexer_config.monitoring.bind_addr,
-            "0.0.0.0:9103".parse().expect("valid bind_addr")
+            "0.0.0.0:9203".parse().expect("valid bind_addr")
         );
     }
 
