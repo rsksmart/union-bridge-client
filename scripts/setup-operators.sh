@@ -615,6 +615,7 @@ write_operator_compose_env_file() {
   cat > "${env_file_path}" <<EOF
 CLIENT_OP=op_${op_num}
 KEYSTORE_DIR=$(operator_root_path "${op_num}")/union-client/keystore
+LOG_DIR=$(operator_root_path "${op_num}")/logs
 BITVMX_CONFIG_DIR=$(operator_bitvmx_config_dir "${op_num}")
 BLOCK_INDEXER_BROKER_PEM_PATH=$(broker_pem_path "block-indexer" "${op_num}")
 LOG_INDEXER_BROKER_PEM_PATH=$(broker_pem_path "log-indexer" "${op_num}")

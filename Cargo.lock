@@ -2186,7 +2186,6 @@ dependencies = [
  "anyhow",
  "axum",
  "bitcoin",
- "chrono",
  "config",
  "metrics",
  "metrics-exporter-prometheus",

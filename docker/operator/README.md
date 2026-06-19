@@ -46,9 +46,10 @@ The generated files include:
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/docker-service.env`
 - `${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/keystore/{member,user}`
 
-`docker-compose.env` includes `KEYSTORE_DIR=${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/keystore`.
-`start-operators.sh` loads that file automatically, so local operator runs do not need you to export `KEYSTORE_DIR`
-by hand.
+`docker-compose.env` includes `KEYSTORE_DIR=${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/union-client/keystore` and
+`LOG_DIR=${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/logs` (the host directory used only when logs are persisted via
+`start-operators.sh --logs`). `start-operators.sh` loads that file automatically, so local operator runs do not need you
+to export `KEYSTORE_DIR` or `LOG_DIR` by hand.
 
 The setup flow also patches the generated local BitVMX YAMLs with the current `BITCOIND_URL`, the keystore password,
 and the required broker pubkey hashes. `KEY_STORE_PASSWORD` is written into each operator's `docker-service.env`
@@ -99,6 +100,7 @@ bash start-operators.sh up -d
 bash start-operators.sh --op 3 up -d
 bash start-operators.sh --ops 6 up -d
 bash start-operators.sh --fresh up -d
+bash start-operators.sh --logs up -d
 bash start-operators.sh --env-file /path/to/docker-anvil.env up -d
 
 bash start-operators.sh logs -f
@@ -108,6 +110,13 @@ bash start-operators.sh down
 
 `--fresh` removes Docker volumes and databases for the operator stack but does not rotate Rootstock keys, because the
 keystores come from the host `op_N/union-client/keystore/` directory prepared by `scripts/setup-operators.sh`.
+
+`--logs` layers [`docker-compose.logs.yml`](docker-compose.logs.yml) on top of the stack to persist each service's logs
+to host files under `${LOG_DIR}` (set per operator by `scripts/setup-operators.sh` to
+`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/logs/`, default `./logs`), while keeping stdout unchanged. Without
+`--logs` the stack logs only to stdout, exactly as before. Override the host directory by exporting `LOG_DIR` or editing
+the operator's `docker-compose.env`. See the [Logging Guide](../../docs/LOGGING.md#docker-persisting-logs-to-host-files-opt-in)
+for details and caveats (the `bitvmx-client` file is appended, not rotated).
 
 Compose selection is derived from the effective operator count:
 
@@ -174,3 +183,5 @@ or prompts for required secrets.
 - [`docker-compose.all.yml`](docker-compose.all.yml): shared multi-operator flow
 - [`docker-compose.one.yml`](docker-compose.one.yml): single-operator-per-host flow with host-network-ready runtime
   artifacts
+- [`docker-compose.logs.yml`](docker-compose.logs.yml): opt-in overlay (via `--logs`) that persists each service's logs
+  to host files under `${LOG_DIR}`
