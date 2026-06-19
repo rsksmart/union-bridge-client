@@ -8,7 +8,6 @@ edition = "2024"
 [dependencies]
 anyhow = { workspace = true }
 bitcoin = { workspace = true }
-chrono = { workspace = true }
 config = { workspace = true }
 serde = { workspace = true }
 signal-hook = "0.4.4"

@@ -161,13 +161,66 @@ A log file is always written. The directory is resolved in this order:
 
 File naming:
 
-- With `CLIENT_ID` set (multi-operator launcher):
-  `<crate_name>-<CLIENT_ID>.log` — stable name per operator, since the parent
-  directory is already per-execution (`logs/YYMMDD/HHMMSS/`).
-- Otherwise: `<crate_name>-<YYYYMMDD_HHMMSS>.log`.
+- With `CLIENT_ID` set (multi-operator launcher): `<crate_name>-<CLIENT_ID>.log`.
+  Several operators share one per-execution directory (`logs/YYMMDD/HHMMSS/`), so
+  the id keeps their files from colliding.
+- Otherwise (e.g. Docker operators, each with its own log directory): a plain,
+  predictable `<crate_name>.log`. It is opened in append mode, so it accumulates
+  across restarts.
 
 The file writer is non-blocking; the `LogGuard` returned from `init_logger`
 owns the worker thread. Drop it on shutdown to flush.
+
+## Docker: persisting logs to host files (opt-in)
+
+By default the Docker stacks log **only to stdout** (visible via
+`docker compose logs`); the per-crate file described above is still written, but
+inside the container, so it is lost when the container is removed. To also
+persist the files onto the host, layer the opt-in override that bind-mounts the
+container's `/app/logs` onto a host directory. The base compose files are left
+untouched, so without the override the behavior is exactly as before.
+
+**Operators** (`docker/operator/`) — pass `--logs` to the launcher:
+
+```bash
+./start-operators.sh --logs up -d        # stdout + host files
+./start-operators.sh up -d               # stdout only (unchanged default)
+```
+
+Files land in `${LOG_DIR}`, which `scripts/setup-operators.sh` sets per operator
+to `~/.union_bridge/op_N/logs/` (default `./logs` when unset):
+
+```
+~/.union_bridge/op_1/logs/coordinator.log
+~/.union_bridge/op_1/logs/block-indexer.log
+~/.union_bridge/op_1/logs/log-indexer.log
+~/.union_bridge/op_1/logs/user-api.log
+~/.union_bridge/op_1/logs/bitvmx-client.log
+```
+
+Override the host directory with `LOG_DIR` (shell env, or the operator's
+`docker-compose.env`):
+
+```bash
+LOG_DIR=/var/log/union/op_1 ./start-operators.sh --op 1 --logs up -d
+```
+
+**bitvmx (standalone `rust-bitvmx-client`)** — add the override file:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.logs.yml up -d
+# → ./volumes/logs/bitvmx-client-<op>.log
+```
+
+Mechanics and caveats:
+
+- The override file is `docker-compose.logs.yml` (present in both repos). It only
+  adds the `/app/logs` bind mount; the union-client services already write their
+  tracing file there, so nothing else changes for them.
+- `bitvmx-client` logs only to stdout, so the override wraps `run.sh` with `tee`
+  to write the file while still emitting to stdout. That file uses `tee -a`
+  (appended across restarts, **not** rotated), and `docker stop` may wait for the
+  stop grace period because PID 1 becomes the wrapping shell.
 
 ## Environment variables — summary
 

@@ -14,6 +14,8 @@ NUM_OPERATORS=""
 OPERATOR_ARG=""
 AUTO_CONFIRM=false
 FRESH=false
+WITH_LOGS=false
+LOGS_OVERRIDE_FILE="docker-compose.logs.yml"
 BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
 DEFAULT_ENV_FILE="${SCRIPT_DIR}/docker-anvil.env"
 ENV_FILE="${DEFAULT_ENV_FILE}"
@@ -32,6 +34,7 @@ print_help() {
   echo "  --help                   Display this help message"
   echo "  --fresh                  Tear down operators (and volumes) before running the command"
   echo "  --yes, -y                Automatic yes to fresh confirmation prompt"
+  echo "  --logs                   Also persist each service's logs to host files under \${LOG_DIR} (default ./logs)"
   echo ""
   echo "Examples:"
   echo "  $0 up -d"
@@ -109,6 +112,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --fresh)
       FRESH=true
+      shift
+      ;;
+    --logs)
+      WITH_LOGS=true
       shift
       ;;
     --yes|-y)
@@ -251,6 +258,14 @@ run_compose_stack() {
     -p "${project_name}"
     -f docker-compose.yml
     -f "${compose_override}"
+  )
+
+  # Opt-in: layer the log-to-file override so logs are also written to host files.
+  if [[ "${WITH_LOGS}" == true ]]; then
+    compose_cmd+=(-f "${LOGS_OVERRIDE_FILE}")
+  fi
+
+  compose_cmd+=(
     --env-file "${ENV_FILE}"
     --env-file "${compose_env_file_path}"
     --env-file "${runtime_env_file_path}"

@@ -2184,7 +2184,6 @@ version = "0.5.0"
 dependencies = [
  "anyhow",
  "bitcoin",
- "chrono",
  "config",
  "serde",
  "signal-hook 0.4.4",
