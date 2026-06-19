@@ -10,7 +10,7 @@
 # container), and bitvmx-client logs only to stdout.
 #
 # All services in one operator stack share the same per-operator host directory;
-# filenames differ per service (e.g. coordinator-*.log, bitvmx-client-op_N.log).
+# filenames differ per service (e.g. coordinator.log, bitvmx-client.log).
 #####################################################################################################################################
 
 services:
