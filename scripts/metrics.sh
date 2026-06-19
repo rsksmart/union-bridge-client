@@ -81,9 +81,16 @@ sum_counter() {
     '
 }
 
+# Render a satoshi amount as its BTC equivalent (8 decimals).
+sats_to_btc() {
+    awk -v s="$1" 'BEGIN { printf "%.8f", s / 100000000 }'
+}
+
 print_coordinator_summary() {
     local body="$1"
-    local liveness pings timeouts last_msg_ts events_total flows_pegin flows_pegout flows_advance flows_committee
+    local liveness pings timeouts last_msg_ts events_total
+    local flows_pegin flows_pegout flows_advance flows_committee
+    local done_pegin done_pegout done_advance done_committee pegin_sats pegout_sats
     liveness=$(extract "$body" "union_bitvmx_liveness")
     pings=$(extract "$body" "union_bitvmx_pings_sent_total")
     timeouts=$(extract "$body" "union_bitvmx_ping_timeouts_total")
@@ -93,6 +100,12 @@ print_coordinator_summary() {
     flows_pegout=$(extract "$body" 'union_flows_active\{[^}]*type="pegout"[^}]*\}')
     flows_advance=$(extract "$body" 'union_flows_active\{[^}]*type="advance-funds"[^}]*\}')
     flows_committee=$(extract "$body" 'union_flows_active\{[^}]*type="committee-setup"[^}]*\}')
+    done_pegin=$(extract "$body" 'union_flows_completed_total\{[^}]*type="pegin"[^}]*\}' '%.0f')
+    done_pegout=$(extract "$body" 'union_flows_completed_total\{[^}]*type="pegout"[^}]*\}' '%.0f')
+    done_advance=$(extract "$body" 'union_flows_completed_total\{[^}]*type="advance-funds"[^}]*\}' '%.0f')
+    done_committee=$(extract "$body" 'union_flows_completed_total\{[^}]*type="committee-setup"[^}]*\}' '%.0f')
+    pegin_sats=$(sum_counter "$body" "union_pegin_amount_sats_total")
+    pegout_sats=$(sum_counter "$body" "union_pegout_amount_sats_total")
 
     local liveness_label="${liveness}"
     case "$liveness" in
@@ -115,6 +128,10 @@ print_coordinator_summary() {
     printf '  Events processed total  : %s\n' "$events_total"
     printf '  Active flows            : pegin=%s pegout=%s advance-funds=%s committee-setup=%s\n' \
         "$flows_pegin" "$flows_pegout" "$flows_advance" "$flows_committee"
+    printf '  Completed flows         : pegin=%s pegout=%s advance-funds=%s committee-setup=%s\n' \
+        "$done_pegin" "$done_pegout" "$done_advance" "$done_committee"
+    printf '  BTC pegged in           : %s sats (%s BTC)\n' "$pegin_sats" "$(sats_to_btc "$pegin_sats")"
+    printf '  BTC pegged out          : %s sats (%s BTC)\n' "$pegout_sats" "$(sats_to_btc "$pegout_sats")"
 }
 
 print_user_api_summary() {

@@ -55,6 +55,11 @@ fn main() -> Result<()> {
     )
     .context("Failed to start Prometheus metrics endpoint")?;
 
+    // Seed activity counters at zero so log-indexer is visible (and
+    // `rate()`-correct) from startup, before the first log arrives.
+    metrics::counter!("union_log_indexer_logs_indexed_total").increment(0);
+    metrics::counter!("union_log_indexer_unmanaged_contract_logs_total").increment(0);
+
     let alloy_provider = AlloyProvider::new(&config.provider.rootstock.url, shutdown_flag.clone())
         .expect("Failed to create AlloyProvider (unrecoverable)");
 

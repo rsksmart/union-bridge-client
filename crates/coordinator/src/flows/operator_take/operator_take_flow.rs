@@ -340,7 +340,11 @@ where
                     self.state.flow_id
                 );
             }
-            Steps::Done => self.enter_write_completion_marker()?,
+            Steps::Done => {
+                self.enter_write_completion_marker()?;
+                metrics::counter!("union_flows_completed_total", "type" => "advance-funds")
+                    .increment(1);
+            }
             Steps::Failed => info!("AdvanceFundsFlow {}: Failed", self.state.flow_id),
         }
 

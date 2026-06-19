@@ -51,10 +51,17 @@ const fn default_enabled() -> bool {
 /// Returns an error if a global recorder was already installed (typically only
 /// happens when called twice in the same process, e.g. in tests).
 pub fn init_prometheus_recorder(service: &str) -> Result<PrometheusHandle> {
-    PrometheusBuilder::new()
+    let handle = PrometheusBuilder::new()
         .add_global_label("service", service)
         .install_recorder()
-        .context("install prometheus recorder")
+        .context("install prometheus recorder")?;
+    // Seed a build-info sample so the service is visible in Prometheus from
+    // startup, before it emits any activity-driven metric. Otherwise idle
+    // services (user-api with no requests, log-indexer with no logs) export
+    // zero samples and look unreachable in any view keyed on the `service`
+    // label. `version` is the workspace build version (all crates share it).
+    metrics::gauge!("union_build_info", "version" => env!("CARGO_PKG_VERSION")).set(1.0);
+    Ok(handle)
 }
 
 /// Build the axum router that serves `GET /metrics`.

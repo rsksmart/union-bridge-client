@@ -1625,6 +1625,12 @@ where
             }
             Steps::Done => {
                 self.write_completion_marker()?;
+                // Only the genuine setup path sets `committee_ready_req`; the
+                // not-selected early exit also reaches Done but is not a setup.
+                if self.ctx().committee_ready_req.is_some() {
+                    metrics::counter!("union_flows_completed_total", "type" => "committee-setup")
+                        .increment(1);
+                }
                 info!("CommitteeSetupFlow Done");
             }
             Steps::Failed => {

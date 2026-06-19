@@ -281,6 +281,10 @@ where
             Steps::Done => {
                 if self.state.ctx.pegout_registered_tx.is_some() {
                     self.write_completion_marker()?;
+                    metrics::counter!("union_flows_completed_total", "type" => "pegout")
+                        .increment(1);
+                    metrics::counter!("union_pegout_amount_sats_total")
+                        .increment(self.state.ctx.pegout_requested.amount);
                     info!("Done");
                 }
             }

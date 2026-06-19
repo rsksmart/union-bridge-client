@@ -62,6 +62,25 @@ Every sample carries a `service` label set by the binary at startup
 Prometheus instance distinguish metrics that share a name across services
 (`union_indexer_height`, `http_requests_total`, etc.).
 
+## Service visibility (`union_build_info`)
+
+Every service emits `union_build_info{version} 1` as soon as it installs its
+recorder, before any activity-driven metric. Without it, an idle service that
+has emitted nothing (user-api with no requests, log-indexer with no logs) would
+export zero samples, so any query keyed on the `service` label finds no series
+and the service looks unreachable. The flow counters and the log-indexer
+activity counters are likewise seeded at `0` at startup so they read as `0`
+(not "no data") and `rate()`/`increase()` are correct across the first
+increment.
+
+> **Reachability vs. `service`.** Prometheus's synthetic `up` metric is labelled
+> by the scrape config (`job`, `instance`, and any `static_configs` labels), not
+> by the `service` global label — global labels only decorate samples the
+> service itself emits. Detect whether a target is down with `up` by
+> `instance`/`job`, not `up{service="..."}` (which never matches). Use
+> `union_build_info{service="..."}` when you want to confirm a specific service
+> is exporting.
+
 ## Checking metrics manually
 
 Before wiring a full Prometheus instance, you can verify each service is
@@ -188,6 +207,9 @@ per-request URI parameters cannot inflate label cardinality.
 | `union_coordinator_broker_transport_errors_total` | counter | `operation` | Recoverable broker transport errors that were logged-and-continued (not fatal). `operation` ∈ {`getting User request`, `getting BitVMX event`, `getting RSK event`, `getting block`, `sending user reply`}. Sustained `rate` signals broker/connectivity degradation. |
 | `union_coordinator_chain_height`                  | gauge   |         | RSK block number the coordinator last processed. Subtract from `union_indexer_height{indexer="block"}` to measure how far the coordinator lags the indexer. |
 | `union_flows_active`                              | gauge   | `type`  | Refreshed every 10 RSK blocks (see `ACTIVE_FLOWS_LOG_EVERY_N_BLOCKS`). `type` ∈ {`pegin`, `pegout`, `advance-funds`, `committee-setup`} |
+| `union_flows_completed_total`                     | counter | `type`  | Flows that reached their successful terminal state. Same `type` set as `union_flows_active`. `pegout` counts only user-take completions (the operator-take fallback is counted under `advance-funds`); `committee-setup` counts only operators actually selected into the committee. Increments exactly once per completion (entry actions are not replayed on restart). |
+| `union_pegin_amount_sats_total`                   | counter |         | Total BTC pegged **in**, in satoshis, accumulated as each pegin completes. Increment by the deposit's BTC output value. |
+| `union_pegout_amount_sats_total`                  | counter |         | Total BTC pegged **out**, in satoshis, accumulated as each user-take pegout completes. Increment by the `PegoutRequested` amount. |
 
 ### Block indexer
 
@@ -272,6 +294,10 @@ service-discovery source rather than hand-maintaining the list.
   `max_over_time(union_indexer_height{indexer="block"}[5m]) - union_indexer_height{indexer="block"}`
 - Active pegouts by step:
   `sum by (type) (union_flows_active{type="pegout"})`
+- Pegin/pegout completion rate per hour:
+  `sum by (type) (rate(union_flows_completed_total[1h]))`
+- Net BTC flow (sats pegged in minus out) over the last day:
+  `increase(union_pegin_amount_sats_total[1d]) - increase(union_pegout_amount_sats_total[1d])`
 - p95 user-API latency over the last 5 min:
   `histogram_quantile(0.95, sum by (le, path) (rate(http_request_duration_seconds_bucket{service="user-api"}[5m])))`
 - A flow is failing (any processor error in the last 5 min):

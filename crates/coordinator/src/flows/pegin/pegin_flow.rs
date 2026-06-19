@@ -15,7 +15,7 @@ use common_core::types::{CommitteeId, TxIdParser};
 use common_runtime::runtime_sync::RuntimeSync;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 use transaction_dispatcher::rsk_gateway::{DomainErrors, RskContractsGatewayApi};
 use transaction_dispatcher::types::{
     GetCommitteeInput, GetCommitteeOutput, GetCommunicationDataInput, GetMemberPublicKeysInput,
@@ -354,6 +354,11 @@ where
             Steps::Done => {
                 self.send_pegin_accepted_to_bitvmx()?;
                 self.write_completion_marker()?;
+                metrics::counter!("union_flows_completed_total", "type" => "pegin").increment(1);
+                match self.extract_pegin_amount() {
+                    Ok(sats) => metrics::counter!("union_pegin_amount_sats_total").increment(sats),
+                    Err(e) => warn!("Pegin completed but BTC amount unavailable for metric: {e:#}"),
+                }
                 info!("Done");
             }
             Steps::Failed => {
