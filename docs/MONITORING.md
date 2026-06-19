@@ -211,9 +211,11 @@ per-request URI parameters cannot inflate label cardinality.
 
 ### Process / runtime
 
-The Prometheus exporter publishes the standard process gauges and counters
-automatically (e.g. `process_cpu_seconds_total`, `process_resident_memory_bytes`,
-`process_open_fds`). No code changes are needed to opt in.
+Process-level metrics such as `process_cpu_seconds_total`,
+`process_resident_memory_bytes` and `process_open_fds` are **not** exported yet.
+`metrics-exporter-prometheus` only renders the samples emitted through the
+`metrics` facade; adding the standard process gauges would require wiring in a
+process collector (e.g. the `metrics-process` crate).
 
 ## Cardinality policy
 

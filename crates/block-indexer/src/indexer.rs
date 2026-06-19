@@ -176,7 +176,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                 }
                 Err(RskSubscriptionError::Unexpected(err)) => {
                     metrics::counter!("union_indexer_subscription_errors_total", "indexer" => "block", "kind" => "unexpected").increment(1);
-                    bail!("[subscribe_blocks] Unknown error on block subs, quiting: {err:?}");
+                    bail!("[subscribe_blocks] Unknown error on block subs, quitting: {err:?}");
                 }
             };
 

@@ -59,8 +59,9 @@ pub fn init_prometheus_recorder(service: &str) -> Result<PrometheusHandle> {
 
 /// Build the axum router that serves `GET /metrics`.
 ///
-/// Exposed separately from [`serve_metrics`] so user-api can mount it onto its
-/// existing HTTP server instead of opening a second listener.
+/// Exposed separately from [`serve_metrics`] as a reusable router so a binary
+/// that already owns an axum server can embed `/metrics` instead of opening a
+/// second listener.
 pub fn metrics_router(handle: PrometheusHandle) -> Router {
     Router::new().route(
         "/metrics",
@@ -143,7 +144,7 @@ pub fn install_and_spawn(
 /// parameters cannot blow up label cardinality. Requests that don't match any
 /// route are reported as `unknown`.
 pub async fn track_http_metrics(req: Request, next: Next) -> Response {
-    let method = req.method().clone();
+    let method = req.method().to_string();
     let path =
         req.extensions().get::<MatchedPath>().map_or("unknown", MatchedPath::as_str).to_owned();
     let start = Instant::now();
@@ -155,14 +156,14 @@ pub async fn track_http_metrics(req: Request, next: Next) -> Response {
 
     metrics::counter!(
         "http_requests_total",
-        "method" => method.to_string(),
+        "method" => method.clone(),
         "path" => path.clone(),
         "status" => status,
     )
     .increment(1);
     metrics::histogram!(
         "http_request_duration_seconds",
-        "method" => method.to_string(),
+        "method" => method,
         "path" => path,
     )
     .record(elapsed);
