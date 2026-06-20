@@ -517,6 +517,10 @@ where
         Ok(())
     }
 
+    fn record_completion_metrics() {
+        metrics::counter!("union_flows_completed_total", "type" => "committee-setup").increment(1);
+    }
+
     fn validate_state_serialization(state: &State) -> Result<()> {
         let mut buf = Vec::new();
         let serializer = &mut serde_json::Serializer::new(&mut buf);
@@ -1625,12 +1629,6 @@ where
             }
             Steps::Done => {
                 self.write_completion_marker()?;
-                // Only the genuine setup path sets `committee_ready_req`; the
-                // not-selected early exit also reaches Done but is not a setup.
-                if self.ctx().committee_ready_req.is_some() {
-                    metrics::counter!("union_flows_completed_total", "type" => "committee-setup")
-                        .increment(1);
-                }
                 info!("CommitteeSetupFlow Done");
             }
             Steps::Failed => {
@@ -1640,6 +1638,11 @@ where
 
         // Persist state after successful step completion
         self.persist_state()?;
+        // Only the genuine setup path sets `committee_ready_req`; the
+        // not-selected early exit also reaches Done but is not a setup.
+        if next_step == Steps::Done && self.ctx().committee_ready_req.is_some() {
+            Self::record_completion_metrics();
+        }
         debug!("State persisted after step {next_step:?}");
         Ok(())
     }
@@ -2484,6 +2487,7 @@ mod tests {
         Address as CommonAddress, BlockHash, BlockNumber, CommitteeId, StreamId, TxHash,
     };
     use common_runtime::runtime_sync::RuntimeSync;
+    use metrics_util::debugging::DebuggingRecorder;
     use mockall::predicate::function;
     use primitive_types::{H160, H256};
     use union_contracts::bindings::committee_registry::CommitteeRegistry::{
@@ -2497,6 +2501,7 @@ mod tests {
     use crate::flows::committee::dispute_channel_setup::DisputeChannelSetupRequest;
     use crate::flows::common::GlobalContext;
     use crate::store::{MockCoordinatorStoreApi, StoreKey};
+    use crate::test_metrics;
     use crate::types::{EventWithBlock, MemberOfCommittee, Utxo as UserUtxo};
     use crate::user_requests::ApplyToStream;
 
@@ -2829,6 +2834,57 @@ mod tests {
         );
 
         (flow, dispute_agg_req_id, fixture.ready_event)
+    }
+
+    #[test]
+    fn done_does_not_emit_completion_metric_when_persist_fails() {
+        let fixture = two_member_committee_fixture();
+
+        let mut contracts = MockRskContractsGatewayApi::new();
+        contracts.expect_my_address().return_const(fixture.my_address);
+
+        let mut store = MockCoordinatorStoreApi::new();
+        store.expect_save_flow::<State>().times(1).returning(|_, _| Err(anyhow!("persist failed")));
+
+        let ctx = FlowContext {
+            user_input: Some(test_apply_to_stream(55)),
+            committee_data: Some(fixture.committee_data),
+            committee_ready_req: Some(fixture.ready_event),
+            ..Default::default()
+        };
+        let mut flow = SetupCommitteeFlow::from_saved_state(
+            Rc::new(contracts),
+            RuntimeSync::new().expect("runtime"),
+            Rc::new(MockBitVmxBroker::new()),
+            GlobalContext::new(),
+            State {
+                flow_id: FlowId::from_random(),
+                log_id: String::new(),
+                step: Steps::DepositAggregatedKey,
+                ctx,
+                created_at: None,
+            },
+            Network::Regtest,
+            Rc::new(store),
+            String::new(),
+            1,
+            Rc::new(Signaling::new("/tmp", "disabled")),
+        );
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+
+        let result = metrics::with_local_recorder(&recorder, || flow.start_step(Steps::Done));
+
+        assert!(result.is_err(), "persist failure should surface");
+        let metrics = test_metrics::snapshot(&snapshotter);
+        assert_eq!(
+            test_metrics::counter_value(
+                &metrics,
+                "union_flows_completed_total",
+                &[("type", "committee-setup")]
+            ),
+            0
+        );
     }
 
     fn dispute_core_variable_payloads() -> (String, String) {

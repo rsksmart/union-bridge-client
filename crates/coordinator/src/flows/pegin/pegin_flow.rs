@@ -276,10 +276,19 @@ where
         self.store.save_flow(&StoreKey::PeginFlow(self.state.flow_id.value()), self.state.clone())
     }
 
+    fn record_completion_metrics(&self) {
+        metrics::counter!("union_flows_completed_total", "type" => "pegin").increment(1);
+        match self.extract_pegin_amount() {
+            Ok(sats) => metrics::counter!("union_pegin_amount_sats_total").increment(sats),
+            Err(e) => warn!("Pegin completed but BTC amount unavailable for metric: {e:#}"),
+        }
+    }
+
     /// Start the next step and log the transition
     pub(crate) fn start_step(&mut self, next_step: Steps) -> Result<()> {
         let previous_step = self.state.ctx.step;
         self.state.ctx.step = next_step;
+        let record_completion_metrics = next_step == Steps::Done;
 
         debug!("{} -> {}", format_step(previous_step), format_step(next_step));
 
@@ -354,11 +363,6 @@ where
             Steps::Done => {
                 self.send_pegin_accepted_to_bitvmx()?;
                 self.write_completion_marker()?;
-                metrics::counter!("union_flows_completed_total", "type" => "pegin").increment(1);
-                match self.extract_pegin_amount() {
-                    Ok(sats) => metrics::counter!("union_pegin_amount_sats_total").increment(sats),
-                    Err(e) => warn!("Pegin completed but BTC amount unavailable for metric: {e:#}"),
-                }
                 info!("Done");
             }
             Steps::Failed => {
@@ -370,6 +374,9 @@ where
         // another step synchronously and persist that newer state.
         if self.state.ctx.step == next_step {
             self.persist_state()?;
+            if record_completion_metrics {
+                self.record_completion_metrics();
+            }
         }
 
         Ok(())
@@ -1103,13 +1110,14 @@ mod tests {
     use bitcoin::absolute::LockTime;
     use bitcoin::hashes::Hash;
     use bitcoin::transaction::Version;
-    use bitcoin::{Transaction, Txid};
+    use bitcoin::{Amount, ScriptBuf, Transaction, TxOut, Txid};
     use common_bitvmx::bitvmx_types::{
         IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages, PeginAcceptedMessage,
     };
     use common_broker::broker::MockBrokerClientApi;
     use common_core::types::Address as CommonAddress;
     use common_runtime::runtime_sync::RuntimeSync;
+    use metrics_util::debugging::DebuggingRecorder;
     use mockall::predicate::*;
     use musig2::PubNonce;
     use musig2::secp::MaybeScalar;
@@ -1121,6 +1129,7 @@ mod tests {
 
     use super::*;
     use crate::store::{CoordinatorStore, MockCoordinatorStoreApi, TestStorePath};
+    use crate::test_metrics;
 
     type MockPeginFlow = PeginFlow<
         crate::coordinator::tests::MockRskContractsGatewayApi,
@@ -1299,6 +1308,59 @@ mod tests {
             std::rc::Rc::new(crate::flows::common::Signaling::new("/tmp", "disabled")),
             NativeBridgeVerifier::Dummy,
         )
+    }
+
+    #[test]
+    fn done_does_not_emit_completion_or_amount_metrics_when_persist_fails() {
+        let flow_id = flow_id_from_request_pegin_txid(test_txid([9u8; 32]));
+        let mut ctx = create_default_flow_context(flow_id, Steps::AcceptPegin, None);
+        let mut spv_proof = test_spv_proof();
+        spv_proof
+            .tx
+            .output
+            .push(TxOut { value: Amount::from_sat(42), script_pubkey: ScriptBuf::new() });
+        ctx.request_pegin_spv_proof = Some(spv_proof);
+        ctx.pegin_accepted = Some(default_pegin_accepted_event(test_txid([8u8; 32])));
+
+        let mut mock_contracts = crate::coordinator::tests::MockRskContractsGatewayApi::new();
+        mock_contracts.expect_my_address().returning(|| test_address([1u8; 20]));
+
+        let mut mock_broker =
+            MockBrokerClientApi::<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>::new();
+        mock_broker.expect_send().times(1).returning(|_| Ok(true));
+
+        let mut mock_store = MockCoordinatorStoreApi::new();
+        mock_store
+            .expect_save_flow::<State>()
+            .times(1)
+            .returning(|_, _| Err(anyhow::anyhow!("persist failed")));
+
+        let state = State { flow_id: ctx.flow_id, log_id: String::new(), ctx, created_at: None };
+        let mut flow = PeginFlow::from_saved_state(
+            std::rc::Rc::new(mock_contracts),
+            RuntimeSync::new().expect("Failed to create runtime sync"),
+            std::rc::Rc::new(mock_broker),
+            state,
+            std::rc::Rc::new(mock_store),
+            std::rc::Rc::new(crate::flows::common::Signaling::new("/tmp", "disabled")),
+            NativeBridgeVerifier::Dummy,
+        );
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+
+        let result = metrics::with_local_recorder(&recorder, || flow.start_step(Steps::Done));
+
+        assert!(result.is_err(), "persist failure should surface");
+        let metrics = test_metrics::snapshot(&snapshotter);
+        assert_eq!(
+            test_metrics::counter_value(
+                &metrics,
+                "union_flows_completed_total",
+                &[("type", "pegin")]
+            ),
+            0
+        );
+        assert_eq!(test_metrics::counter_value(&metrics, "union_pegin_amount_sats_total", &[]), 0);
     }
 
     #[test]

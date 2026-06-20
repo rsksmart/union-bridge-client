@@ -42,6 +42,7 @@ uuid = { workspace = true }
 
 [dev-dependencies]
 common-dev = { path = "../common/dev" }
+metrics-util = { workspace = true }
 mockall = { workspace = true }
 
 [lints]

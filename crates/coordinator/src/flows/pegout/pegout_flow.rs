@@ -223,9 +223,17 @@ where
         self.store.save_flow(&StoreKey::PegoutFlow(self.state.flow_id.value()), self.state.clone())
     }
 
+    fn record_completion_metrics(&self) {
+        metrics::counter!("union_flows_completed_total", "type" => "pegout").increment(1);
+        metrics::counter!("union_pegout_amount_sats_total")
+            .increment(self.state.ctx.pegout_requested.amount);
+    }
+
     pub(crate) fn start_step(&mut self, next_step: Steps) -> Result<()> {
         let previous_step = self.state.step;
         self.state.step = next_step;
+        let record_completion_metrics =
+            next_step == Steps::Done && self.state.ctx.pegout_registered_tx.is_some();
 
         debug!("{} -> {}", format_step(previous_step), format_step(next_step));
 
@@ -281,10 +289,6 @@ where
             Steps::Done => {
                 if self.state.ctx.pegout_registered_tx.is_some() {
                     self.write_completion_marker()?;
-                    metrics::counter!("union_flows_completed_total", "type" => "pegout")
-                        .increment(1);
-                    metrics::counter!("union_pegout_amount_sats_total")
-                        .increment(self.state.ctx.pegout_requested.amount);
                     info!("Done");
                 }
             }
@@ -294,6 +298,9 @@ where
         }
 
         self.persist_state()?;
+        if record_completion_metrics {
+            self.record_completion_metrics();
+        }
 
         Ok(())
     }
@@ -794,6 +801,7 @@ mod tests {
     use common_broker::broker::MockBrokerClientApi;
     use common_core::types::{BlockHash, BlockNumber, TxHash, TxIdParser};
     use common_runtime::runtime_sync::RuntimeSync;
+    use metrics_util::debugging::DebuggingRecorder;
     use mockall::predicate::function;
     use musig2::PubNonce;
     use musig2::secp::MaybeScalar;
@@ -804,9 +812,9 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
-    use crate::RUNTIME_ENV_LOCAL_ANVIL;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
     use crate::store::{CoordinatorStore, MockCoordinatorStoreApi, TestStorePath};
+    use crate::{RUNTIME_ENV_LOCAL_ANVIL, test_metrics};
 
     type MockBitVmxBroker =
         MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
@@ -1087,6 +1095,67 @@ mod tests {
             marker["payload"]["registered_txid"].as_str(),
             Some(event.tx_hash.to_string().as_str())
         );
+    }
+
+    #[test]
+    fn done_does_not_emit_completion_or_amount_metrics_when_persist_fails() {
+        let pegout_requested_tx_hash = TxHash::from(H256::from_low_u64_be(99));
+        let flow_id = flow_id_from_pegout_requested_tx_hash(pegout_requested_tx_hash);
+        let protocol_id = user_take_protocol_id(Uuid::nil(), 0);
+        let registered_txid = test_txid([3u8; 32]);
+
+        let mut broker = MockBitVmxBroker::new();
+        broker.expect_send().times(0);
+
+        let mut store = MockCoordinatorStoreApi::new();
+        store
+            .expect_save_flow::<State>()
+            .times(1)
+            .returning(|_, _| Err(anyhow::anyhow!("persist failed")));
+
+        let ctx = FlowContext {
+            pegout_requested: fake_pegout_requested().inner,
+            pegout_requested_tx_hash,
+            bitvmx_protocol_id: protocol_id,
+            my_p2p_address: None,
+            committee_output: None,
+            peg_out_accepted: Some(fake_pegout_accepted(registered_txid)),
+            spv_proof: None,
+            pegout_registered: None,
+            pegout_registered_tx: Some(registered_txid.to_string()),
+            transaction_status: None,
+        };
+        let mut flow = PegoutFlow::from_saved_state(
+            Rc::new(MockRskContractsGatewayApi::new()),
+            RuntimeSync::new().expect("runtime"),
+            Rc::new(broker),
+            State {
+                flow_id,
+                log_id: String::new(),
+                step: Steps::RegisterPegout,
+                ctx,
+                created_at: None,
+            },
+            Rc::new(store),
+            Rc::new(Signaling::new("/tmp", "disabled")),
+            NativeBridgeVerifier::Dummy,
+        );
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+
+        let result = metrics::with_local_recorder(&recorder, || flow.start_step(Steps::Done));
+
+        assert!(result.is_err(), "persist failure should surface");
+        let metrics = test_metrics::snapshot(&snapshotter);
+        assert_eq!(
+            test_metrics::counter_value(
+                &metrics,
+                "union_flows_completed_total",
+                &[("type", "pegout")]
+            ),
+            0
+        );
+        assert_eq!(test_metrics::counter_value(&metrics, "union_pegout_amount_sats_total", &[]), 0);
     }
 
     #[test]
