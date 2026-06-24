@@ -29,6 +29,14 @@ services:
     # is unambiguous.
     entrypoint: [ "/bin/sh", "-c" ]
     command: [ "./run.sh 2>&1 | tee -a /app/logs/bitvmx-client.log" ]
+    # The base healthcheck is `pgrep -f bitvmx-client`. Because the command above
+    # wraps run.sh in `sh -c "... | tee .../bitvmx-client.log"`, the wrapper's full
+    # command line contains "bitvmx-client", so `-f` would match the shell/tee and
+    # report healthy even after the real binary exits (and satisfy
+    # depends_on: service_healthy before it is up). Match the process name exactly
+    # so only the bitvmx-client binary counts.
+    healthcheck:
+      test: [ "CMD-SHELL", "pgrep -x bitvmx-client" ]
     volumes:
       - ${BITVMX_CONFIG_DIR}:/app/config
       - db-bitvmx:/tmp

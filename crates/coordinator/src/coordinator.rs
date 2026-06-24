@@ -426,11 +426,11 @@ impl<
         if let Some(ping) = bitvmx_ping
             && ping.elapsed() > self.bitvmx_not_responding_threshold
         {
+            metrics::counter!("union_bitvmx_ping_timeouts_total").increment(1);
             if *bitvmx_liveness != BitvmxLiveness::NotResponding {
                 error!("BitVMX is not responding: ping timed out after {:?}", ping.elapsed());
                 *bitvmx_liveness = BitvmxLiveness::NotResponding;
                 metrics::gauge!("union_bitvmx_liveness").set(LIVENESS_NOT_RESPONDING);
-                metrics::counter!("union_bitvmx_ping_timeouts_total").increment(1);
             }
             *bitvmx_ping = None;
         }

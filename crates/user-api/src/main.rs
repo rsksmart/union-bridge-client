@@ -78,10 +78,19 @@ async fn main() -> Result<()> {
     if monitoring.enabled {
         let handle = common_runtime::metrics::init_prometheus_recorder("user-api")
             .context("Failed to install Prometheus recorder")?;
-        let addr = monitoring.bind_addr;
+        // Bind before spawning so a port conflict fails startup instead of being
+        // logged-and-ignored on the serving task.
+        let listener = std::net::TcpListener::bind(monitoring.bind_addr).with_context(|| {
+            format!("Failed to bind Prometheus /metrics endpoint on {}", monitoring.bind_addr)
+        })?;
+        listener
+            .set_nonblocking(true)
+            .context("Failed to set Prometheus /metrics listener non-blocking")?;
         let shutdown = shutdown_flag.clone();
         tokio::spawn(async move {
-            if let Err(err) = common_runtime::metrics::serve_metrics(addr, handle, shutdown).await {
+            if let Err(err) =
+                common_runtime::metrics::serve_metrics(listener, handle, shutdown).await
+            {
                 error!("Prometheus /metrics server terminated with error: {err:?}");
             }
         });

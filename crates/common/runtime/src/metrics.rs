@@ -79,24 +79,27 @@ pub fn metrics_router(handle: PrometheusHandle) -> Router {
     )
 }
 
-/// Run a dedicated HTTP server exposing `/metrics`.
+/// Run a dedicated HTTP server exposing `/metrics` on an already-bound listener.
 ///
-/// The server shuts down gracefully when `shutdown_flag` is set. Use this from
-/// binaries that don't already own an axum server (coordinator, indexers).
+/// The caller binds the listener (see [`install_and_spawn`]) so a bind failure
+/// surfaces at startup and aborts it, rather than being logged-and-ignored on
+/// this serving task. The server shuts down gracefully when `shutdown_flag` is
+/// set. Use this from binaries that don't already own an axum server
+/// (coordinator, indexers).
 ///
 /// # Errors
 ///
-/// Returns an error if the bind fails or the underlying axum server errors out.
-#[instrument(skip_all, fields(addr = %bind_addr))]
+/// Returns an error if the listener cannot be adopted by the tokio runtime or
+/// the underlying axum server errors out.
+#[instrument(skip_all)]
 pub async fn serve_metrics(
-    bind_addr: SocketAddr,
+    listener: std::net::TcpListener,
     handle: PrometheusHandle,
     shutdown_flag: ShutdownFlag,
 ) -> Result<()> {
-    let listener = TcpListener::bind(bind_addr)
-        .await
-        .with_context(|| format!("bind prometheus /metrics endpoint on {bind_addr}"))?;
-    info!("Prometheus /metrics endpoint listening on {bind_addr}");
+    let listener = TcpListener::from_std(listener).context("adopt prometheus /metrics listener")?;
+    let addr = listener.local_addr().context("read prometheus /metrics listener address")?;
+    info!("Prometheus /metrics endpoint listening on {addr}");
 
     axum::serve(listener, metrics_router(handle))
         .with_graceful_shutdown(shutdown_flag.wait_for())
@@ -113,8 +116,8 @@ pub async fn serve_metrics(
 ///
 /// # Errors
 ///
-/// Returns an error if the recorder cannot be installed or the OS thread cannot
-/// be spawned.
+/// Returns an error if the recorder cannot be installed, the `/metrics` address
+/// cannot be bound, or the OS thread cannot be spawned.
 pub fn install_and_spawn(
     config: &MonitoringConfig,
     service: &'static str,
@@ -125,7 +128,12 @@ pub fn install_and_spawn(
         return Ok(None);
     }
     let handle = init_prometheus_recorder(service)?;
-    let bind_addr = config.bind_addr;
+    // Bind on the calling thread so a port conflict or bad bind_addr fails
+    // startup here (propagated via `?`) instead of being logged-and-ignored on
+    // the detached metrics thread. The bound listener is handed to the runtime.
+    let listener = std::net::TcpListener::bind(config.bind_addr)
+        .with_context(|| format!("bind prometheus /metrics endpoint on {}", config.bind_addr))?;
+    listener.set_nonblocking(true).context("set prometheus /metrics listener non-blocking")?;
     let join = thread::Builder::new()
         .name(format!("{service}-metrics"))
         .spawn(move || {
@@ -136,7 +144,7 @@ pub fn install_and_spawn(
                     return;
                 }
             };
-            if let Err(err) = rt.block_on(serve_metrics(bind_addr, handle, shutdown_flag)) {
+            if let Err(err) = rt.block_on(serve_metrics(listener, handle, shutdown_flag)) {
                 error!("Prometheus /metrics server terminated with error: {err:?}");
             }
         })
