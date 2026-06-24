@@ -171,24 +171,19 @@ File naming:
 The file writer is non-blocking; the `LogGuard` returned from `init_logger`
 owns the worker thread. Drop it on shutdown to flush.
 
-## Docker: persisting logs to host files (opt-in)
+## Docker: persisting logs to host files
 
-By default the Docker stacks log **only to stdout** (visible via
-`docker compose logs`); the per-crate file described above is still written, but
-inside the container, so it is lost when the container is removed. To also
-persist the files onto the host, layer the opt-in override that bind-mounts the
-container's `/app/logs` onto a host directory. The base compose files are left
-untouched, so without the override the behavior is exactly as before.
+The per-crate file described above is written inside the container, so it is lost
+when the container is removed unless `/app/logs` is bind-mounted onto a host
+directory. How this is enabled differs per stack.
 
-**Operators** (`docker/operator/`) — pass `--logs` to the launcher:
-
-```bash
-./start-operators.sh --logs up -d        # stdout + host files
-./start-operators.sh up -d               # stdout only (unchanged default)
-```
-
-Files land in `${LOG_DIR}`, which `scripts/setup-operators.sh` sets per operator
-to `~/.union_bridge/op_N/logs/` (default `./logs` when unset):
+**Operators** (`docker/operator/`) — **on by default.** Every service in the base
+`docker/operator/docker-compose.yml` mounts `/app/logs` to a host directory that
+defaults to a per-operator path derived from `CLIENT_OP`:
+`${BASE_STORAGE_PATH:-$HOME}/.union_bridge/op_N/logs/` (the same path
+`scripts/setup-operators.sh` records as `LOG_DIR`). Deriving it from `CLIENT_OP`
+means it works even for operators whose `docker-compose.env` predates `LOG_DIR`.
+Files land there:
 
 ```
 ~/.union_bridge/op_1/logs/coordinator.log
@@ -202,10 +197,19 @@ Override the host directory with `LOG_DIR` (shell env, or the operator's
 `docker-compose.env`):
 
 ```bash
-LOG_DIR=/var/log/union/op_1 ./start-operators.sh --op 1 --logs up -d
+LOG_DIR=/var/log/union/op_1 ./start-operators.sh --op 1 up -d
 ```
 
-**bitvmx (standalone `rust-bitvmx-client`)** — add the override file:
+Pass `--no-logs` to skip host files. It sets `LOG_DIR=uc-logs`, so `/app/logs`
+lands in the `uc-logs` Docker volume; the services still log to stdout and write
+the file inside the container — it just no longer lands on the host.
+
+```bash
+./start-operators.sh up -d               # stdout + host files (default)
+./start-operators.sh --no-logs up -d     # stdout only on host; /app/logs in the uc-logs volume
+```
+
+**bitvmx (standalone `rust-bitvmx-client`)** — opt-in override file in that repo:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.logs.yml up -d
@@ -214,13 +218,15 @@ docker compose -f docker-compose.yml -f docker-compose.logs.yml up -d
 
 Mechanics and caveats:
 
-- The override file is `docker-compose.logs.yml` (present in both repos). It only
-  adds the `/app/logs` bind mount; the union-client services already write their
-  tracing file there, so nothing else changes for them.
-- `bitvmx-client` logs only to stdout, so the override wraps `run.sh` with `tee`
-  to write the file while still emitting to stdout. That file uses `tee -a`
+- For operators the persistence lives in the base `docker/operator/docker-compose.yml`:
+  every service mounts `/app/logs`, and the union-client services already write
+  their tracing file there, so nothing else changes for them.
+- `bitvmx-client` logs only to stdout, so the operator compose wraps `run.sh` with
+  `tee` to write the file while still emitting to stdout. That file uses `tee -a`
   (appended across restarts, **not** rotated), and `docker stop` may wait for the
   stop grace period because PID 1 becomes the wrapping shell.
+- The standalone `rust-bitvmx-client` repo keeps its own opt-in
+  `docker-compose.logs.yml` overlay for the same effect.
 
 ## Environment variables — summary
 

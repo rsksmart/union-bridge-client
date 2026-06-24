@@ -14,9 +14,10 @@ NUM_OPERATORS=""
 OPERATOR_ARG=""
 AUTO_CONFIRM=false
 FRESH=false
-WITH_LOGS=false
-LOGS_OVERRIDE_FILE="docker-compose.logs.yml"
-BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
+NO_LOGS=false
+# Exported so the compose *log-volume default (${BASE_STORAGE_PATH:-$HOME}/...)
+# resolves to the same per-operator host path setup-operators.sh uses.
+export BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
 DEFAULT_ENV_FILE="${SCRIPT_DIR}/docker-anvil.env"
 ENV_FILE="${DEFAULT_ENV_FILE}"
 
@@ -34,7 +35,7 @@ print_help() {
   echo "  --help                   Display this help message"
   echo "  --fresh                  Tear down operators (and volumes) before running the command"
   echo "  --yes, -y                Automatic yes to fresh confirmation prompt"
-  echo "  --logs                   Also persist each service's logs to host files under \${LOG_DIR} (default ./logs)"
+  echo "  --no-logs                Do not persist service logs to host files (logs go to the uc-logs docker volume instead)"
   echo ""
   echo "Examples:"
   echo "  $0 up -d"
@@ -114,8 +115,8 @@ while [[ $# -gt 0 ]]; do
       FRESH=true
       shift
       ;;
-    --logs)
-      WITH_LOGS=true
+    --no-logs)
+      NO_LOGS=true
       shift
       ;;
     --yes|-y)
@@ -128,6 +129,14 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# Logs persist to host files by default: the compose *log-volume mount derives a
+# per-operator host path from CLIENT_OP. --no-logs overrides LOG_DIR with the
+# uc-logs Docker volume name instead, so /app/logs lands in that volume (no host
+# files). A shell value takes precedence over any --env-file LOG_DIR.
+if [[ "${NO_LOGS}" == true ]]; then
+  export LOG_DIR="uc-logs"
+fi
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "Error: missing env file ${ENV_FILE}" >&2
@@ -259,11 +268,6 @@ run_compose_stack() {
     -f docker-compose.yml
     -f "${compose_override}"
   )
-
-  # Opt-in: layer the log-to-file override so logs are also written to host files.
-  if [[ "${WITH_LOGS}" == true ]]; then
-    compose_cmd+=(-f "${LOGS_OVERRIDE_FILE}")
-  fi
 
   compose_cmd+=(
     --env-file "${ENV_FILE}"

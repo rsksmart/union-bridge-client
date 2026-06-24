@@ -2,6 +2,16 @@
 # INTEGRATED DOCKER COMPOSE: BitVMX + Union Bridge Client
 #####################################################################################################################################
 
+# Host directory each service persists its /app/logs into. By default it derives
+# a per-operator path from CLIENT_OP (the operator id, e.g. op_1), so logs land
+# on the host by default — even for operators whose docker-compose.env predates
+# LOG_DIR. Precedence: an explicit LOG_DIR (shell env or docker-compose.env) wins;
+# otherwise ${BASE_STORAGE_PATH:-$HOME}/.union_bridge/<op>/logs (matching
+# setup-operators.sh). start-operators.sh --no-logs sets LOG_DIR=uc-logs to send
+# /app/logs to a Docker volume instead (no host files; the services still log to
+# stdout and write inside the container).
+x-log-volume: &log-volume "${LOG_DIR:-${BASE_STORAGE_PATH:-${HOME}}/.union_bridge/${CLIENT_OP}/logs}:/app/logs"
+
 services:
   # ================================
   # BitVMX Services
@@ -11,10 +21,19 @@ services:
       RUST_LOG: info,bitvmx_client=debug,bitcoin_coordinator=info,bitcoin_indexer=warn,bitcoincore_rpc=warn,hyper=warn,hyper_util=warn,tarpc=warn,bitvmx_bitcoin_rpc=info,bitvmx_transaction_monitor=info
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # Wrap run.sh in a shell so its stdout/stderr is also tee'd to a file under
+    # /app/logs while still emitted to the container's stdout (docker logs).
+    # Unlike the union-client services, bitvmx-client does not write to /app/logs
+    # on its own. Where /app/logs lands is decided by the *log-volume mount below
+    # (see the header note); each operator's path is unique, so a plain filename
+    # is unambiguous.
+    entrypoint: [ "/bin/sh", "-c" ]
+    command: [ "./run.sh 2>&1 | tee -a /app/logs/bitvmx-client.log" ]
     volumes:
       - ${BITVMX_CONFIG_DIR}:/app/config
       - db-bitvmx:/tmp
       - ${RESOURCES_DIR:-../../resources}:/app/resources:ro
+      - *log-volume
     extends:
       file: ../bitvmx-client/docker-compose.yml
       service: bitvmx-client
@@ -24,12 +43,17 @@ services:
   # ================================
   # Operator-specific broker mounts and runtime env vars live here instead of
   # ../build/docker-compose.yml so the base compose remains build-safe.
+  #
+  # Every service mounts *log-volume (see the header note) so logs persist to
+  # host files by default. The union-client services already write tracing output
+  # to /app/logs (UB_LOG_DIR=/app/logs); this just decides where /app/logs lives.
   block-indexer:
     extends:
       file: ../build/docker-compose.yml
       service: block-indexer
     volumes:
       - ${BLOCK_INDEXER_BROKER_PEM_PATH}:/app/broker.pem:ro
+      - *log-volume
     environment:
       - UB__BLOCK_INDEXER__COORDINATOR__CLIENT_ID
       - UB__BLOCK_INDEXER__COORDINATOR__PUBKEY_HASH
@@ -48,6 +72,7 @@ services:
       service: log-indexer
     volumes:
       - ${LOG_INDEXER_BROKER_PEM_PATH}:/app/broker.pem:ro
+      - *log-volume
     environment:
       - UB__LOG_INDEXER__COORDINATOR__CLIENT_ID
       - UB__LOG_INDEXER__COORDINATOR__PUBKEY_HASH
@@ -64,6 +89,7 @@ services:
       service: user-api
     volumes:
       - ${USER_API_BROKER_PEM_PATH}:/app/broker.pem:ro
+      - *log-volume
     environment:
       - UB__USER_API__COORDINATOR__CLIENT_ID
       - UB__USER_API__COORDINATOR__PUBKEY_HASH
@@ -81,6 +107,7 @@ services:
       service: coordinator
     volumes:
       - ${COORDINATOR_BROKER_PEM_PATH}:/app/broker.pem:ro
+      - *log-volume
     environment:
       - UB__COORDINATOR__BROKER__CLIENT_ID
       - UB__COORDINATOR__BITVMX__HOST=${BITVMX_HOST:-dummy-bitvmx-host}
@@ -113,3 +140,6 @@ volumes:
   db-log-broker:
   db-coordinator:
   db-bitvmx:
+  # Target for /app/logs when LOG_DIR=uc-logs (start-operators.sh --no-logs);
+  # keeps logs off the host while the services still write normally.
+  uc-logs:
