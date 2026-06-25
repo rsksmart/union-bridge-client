@@ -146,6 +146,21 @@ fn main() -> Result<()> {
 
     let shutdown_flag = ShutdownFlag::init();
 
+    let _metrics_thread = common_runtime::metrics::install_and_spawn(
+        &config.coordinator.monitoring,
+        "coordinator",
+        shutdown_flag.clone(),
+    )
+    .context("Failed to start Prometheus metrics endpoint")?;
+
+    // Seed flow counters at zero so they are present (and `rate()`-correct)
+    // from startup, before the first flow completes (see docs/MONITORING.md).
+    for kind in ["pegin", "pegout", "advance-funds", "committee-setup"] {
+        metrics::counter!("union_flows_completed_total", "type" => kind).increment(0);
+    }
+    metrics::counter!("union_pegin_amount_sats_total").increment(0);
+    metrics::counter!("union_pegout_amount_sats_total").increment(0);
+
     let rt_sync = RuntimeSync::new().context("Failed to create runtime sync")?;
 
     let keystore_password = secrecy::SecretString::from(

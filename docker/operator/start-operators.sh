@@ -14,7 +14,10 @@ NUM_OPERATORS=""
 OPERATOR_ARG=""
 AUTO_CONFIRM=false
 FRESH=false
-BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
+NO_LOGS=false
+# Exported so the compose *log-volume default (${BASE_STORAGE_PATH:-$HOME}/...)
+# resolves to the same per-operator host path setup-operators.sh uses.
+export BASE_STORAGE_PATH="${BASE_STORAGE_PATH:-$HOME}"
 DEFAULT_ENV_FILE="${SCRIPT_DIR}/docker-anvil.env"
 ENV_FILE="${DEFAULT_ENV_FILE}"
 
@@ -32,6 +35,7 @@ print_help() {
   echo "  --help                   Display this help message"
   echo "  --fresh                  Tear down operators (and volumes) before running the command"
   echo "  --yes, -y                Automatic yes to fresh confirmation prompt"
+  echo "  --no-logs                Do not persist service logs to host files (logs go to the uc-logs docker volume instead)"
   echo ""
   echo "Examples:"
   echo "  $0 up -d"
@@ -111,6 +115,10 @@ while [[ $# -gt 0 ]]; do
       FRESH=true
       shift
       ;;
+    --no-logs)
+      NO_LOGS=true
+      shift
+      ;;
     --yes|-y)
       AUTO_CONFIRM=true
       shift
@@ -121,6 +129,14 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# Logs persist to host files by default: the compose *log-volume mount derives a
+# per-operator host path from CLIENT_OP. --no-logs overrides LOG_DIR with the
+# uc-logs Docker volume name instead, so /app/logs lands in that volume (no host
+# files). A shell value takes precedence over any --env-file LOG_DIR.
+if [[ "${NO_LOGS}" == true ]]; then
+  export LOG_DIR="uc-logs"
+fi
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "Error: missing env file ${ENV_FILE}" >&2
@@ -251,6 +267,9 @@ run_compose_stack() {
     -p "${project_name}"
     -f docker-compose.yml
     -f "${compose_override}"
+  )
+
+  compose_cmd+=(
     --env-file "${ENV_FILE}"
     --env-file "${compose_env_file_path}"
     --env-file "${runtime_env_file_path}"

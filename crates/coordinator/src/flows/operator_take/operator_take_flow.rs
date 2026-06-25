@@ -262,6 +262,10 @@ where
             .save_flow(&StoreKey::OperatorTakeFlow(self.state.flow_id.value()), self.state.clone())
     }
 
+    fn record_completion_metrics() {
+        metrics::counter!("union_flows_completed_total", "type" => "advance-funds").increment(1);
+    }
+
     pub(crate) fn pending_retry(&self) -> bool {
         self.state.pending_retry
     }
@@ -270,6 +274,7 @@ where
         let previous_state = self.state.clone();
         let previous_step = self.state.step;
         self.state.step = next_step;
+        let record_completion_metrics = next_step == Steps::Done;
 
         debug!(
             "AdvanceFundsFlow {}: {} -> {}",
@@ -282,6 +287,9 @@ where
             Ok(outcome) => {
                 self.state.pending_retry = matches!(outcome, StepOutcome::Retry { .. });
                 self.persist_state()?;
+                if record_completion_metrics {
+                    Self::record_completion_metrics();
+                }
                 Ok(outcome)
             }
             Err(err) => {
@@ -340,7 +348,9 @@ where
                     self.state.flow_id
                 );
             }
-            Steps::Done => self.enter_write_completion_marker()?,
+            Steps::Done => {
+                self.enter_write_completion_marker()?;
+            }
             Steps::Failed => info!("AdvanceFundsFlow {}: Failed", self.state.flow_id),
         }
 
@@ -1052,12 +1062,15 @@ mod tests {
     use common_bitvmx::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
     use common_broker::broker::{BrokerError, MockBrokerClientApi};
     use common_core::types::{Address, CommitteeId, Hash256};
+    use metrics_util::debugging::DebuggingRecorder;
     use primitive_types::{H160, H256};
     use union_contracts::bindings::pegout_manager::PegoutManager::StreamPosition;
     use uuid::Uuid;
 
     use super::*;
     use crate::coordinator::tests::MockRskContractsGatewayApi;
+    use crate::store::MockCoordinatorStoreApi;
+    use crate::test_metrics;
 
     type MockBitVmxBroker =
         MockBrokerClientApi<IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages>;
@@ -1155,6 +1168,46 @@ mod tests {
 
         assert!(result.is_err(), "broker failure should surface as an error");
         assert_eq!(flow.current_step(), Steps::WaitRskOperatorTakeTriggered);
+    }
+
+    #[test]
+    fn done_does_not_emit_completion_metric_when_persist_fails() {
+        let committee_id = Uuid::new_v4();
+        let flow_id = FlowId::from_random();
+        let trigger_data = test_trigger_data(committee_id, 0);
+
+        let mut contracts = MockRskContractsGatewayApi::new();
+        contracts.expect_my_address().return_const(Address::from(H160::from_low_u64_be(44)));
+
+        let mut store = MockCoordinatorStoreApi::new();
+        store
+            .expect_save_flow::<FlowContext>()
+            .times(1)
+            .returning(|_, _| Err(anyhow::anyhow!("persist failed")));
+
+        let mut flow = AdvanceFundsFlow::new_for_test_with_store(
+            Rc::new(contracts),
+            Rc::new(MockBitVmxBroker::new()),
+            Rc::new(store),
+            flow_id,
+            trigger_data,
+            Steps::RegisterOrWaitRskOperatorTake,
+        );
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+
+        let result = metrics::with_local_recorder(&recorder, || flow.start_step(Steps::Done));
+
+        assert!(result.is_err(), "persist failure should surface");
+        let metrics = test_metrics::snapshot(&snapshotter);
+        assert_eq!(
+            test_metrics::counter_value(
+                &metrics,
+                "union_flows_completed_total",
+                &[("type", "advance-funds")]
+            ),
+            0
+        );
     }
 
     #[test]

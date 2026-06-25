@@ -5,6 +5,7 @@ use common_runtime::config::{
     CommonConfig, ContractConfig, IndexerConfig, KeyStoreConfig, NotifierConfig, ProviderConfig,
 };
 use common_runtime::errors::ConfigError;
+use common_runtime::metrics::MonitoringConfig;
 use serde::Deserialize;
 
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
@@ -27,6 +28,7 @@ pub struct LogIndexerConfig {
     pub notifier: NotifierConfig,
     pub coordinator: CoordinatorConfig,
     pub broker_key_path: String,
+    pub monitoring: MonitoringConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -116,6 +118,11 @@ mod tests {
                 .log_indexer_config
                 .broker_key_path
                 .ends_with("/.union_bridge/op_1/union-client/broker/log-indexer.pem")
+        );
+        assert!(config.log_indexer_config.monitoring.enabled);
+        assert_eq!(
+            config.log_indexer_config.monitoring.bind_addr,
+            "0.0.0.0:9204".parse().expect("valid bind_addr")
         );
     }
 

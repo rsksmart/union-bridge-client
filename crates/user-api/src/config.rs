@@ -1,5 +1,6 @@
 use common_runtime::config::{CommonConfig, KeyStoreConfig};
 use common_runtime::errors::ConfigError;
+use common_runtime::metrics::MonitoringConfig;
 use serde::Deserialize;
 
 const CARGO_PKG_NAME: &str = env!("CARGO_PKG_NAME");
@@ -20,6 +21,7 @@ pub struct UserApiConfig {
     pub broker_key_path: String,
     pub notifier: NotifierConfig,
     pub http: HttpConfig,
+    pub monitoring: MonitoringConfig,
     /// Bearer token required by `POST /admin/fail-flow`. When unset/empty the endpoint returns 401.
     #[serde(default)]
     pub admin_token: Option<String>,
@@ -91,5 +93,10 @@ mod tests {
         );
         assert_eq!(30001, config.user_api_config.notifier.port);
         assert_eq!(40001, config.user_api_config.http.port);
+        assert!(config.user_api_config.monitoring.enabled);
+        assert_eq!(
+            config.user_api_config.monitoring.bind_addr,
+            "0.0.0.0:9202".parse().expect("valid bind_addr")
+        );
     }
 }

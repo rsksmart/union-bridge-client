@@ -8,6 +8,8 @@ mod flows;
 pub mod force_flags;
 pub mod monitor;
 pub mod store;
+#[cfg(test)]
+mod test_metrics;
 mod types;
 mod user_requests;
 

@@ -18,6 +18,7 @@ common-core = { path = "../common/core" }
 common-rsk = { path = "../common/rsk" }
 common-runtime = { path = "../common/runtime" }
 lru = "0.18"
+metrics = { workspace = true }
 mockall = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

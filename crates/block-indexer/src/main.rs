@@ -48,6 +48,17 @@ fn main() -> Result<()> {
 
     let shutdown_flag = ShutdownFlag::init();
 
+    let _metrics_thread = common_runtime::metrics::install_and_spawn(
+        &config.block_indexer_config.monitoring,
+        "block-indexer",
+        shutdown_flag.clone(),
+    )
+    .context("Failed to start Prometheus metrics endpoint")?;
+
+    // Seed activity counter at zero so block-indexer is visible (and
+    // `rate()`-correct) from startup, before the first block arrives.
+    metrics::counter!("union_indexer_blocks_indexed_total").increment(0);
+
     let alloy_provider = AlloyProvider::new(&config.provider.rootstock.url, shutdown_flag.clone())
         .expect("Failed to create AlloyProvider (unrecoverable)");
 

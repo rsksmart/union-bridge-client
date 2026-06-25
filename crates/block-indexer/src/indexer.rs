@@ -155,6 +155,7 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             let new_block = match rsk_block_subscription.next() {
                 Ok(block) => block,
                 Err(RskSubscriptionError::ClosedConnection) => {
+                    metrics::counter!("union_indexer_subscription_errors_total", "indexer" => "block", "kind" => "closed").increment(1);
                     if self.is_running() {
                         bail!("Provider closed unexpectedly!");
                     }
@@ -162,17 +163,20 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
                     break;
                 }
                 Err(RskSubscriptionError::Transient(err)) => {
+                    metrics::counter!("union_indexer_subscription_errors_total", "indexer" => "block", "kind" => "transient").increment(1);
                     error!("[subscribe_blocks] Ignoring problematic block: {err:?}");
                     continue;
                 }
                 Err(RskSubscriptionError::Lagged(err)) => {
+                    metrics::counter!("union_indexer_subscription_errors_total", "indexer" => "block", "kind" => "lagged").increment(1);
                     error!(
                         "[subscribe_blocks] Subscription lagged, a backward_sync will be needed: {err:?}"
                     );
                     continue;
                 }
                 Err(RskSubscriptionError::Unexpected(err)) => {
-                    bail!("[subscribe_blocks] Unknown error on block subs, quiting: {err:?}");
+                    metrics::counter!("union_indexer_subscription_errors_total", "indexer" => "block", "kind" => "unexpected").increment(1);
+                    bail!("[subscribe_blocks] Unknown error on block subs, quitting: {err:?}");
                 }
             };
 
@@ -236,9 +240,15 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
     }
 
     fn notify_block(&self, block: RskBlock, uncles: Vec<RskBlock>) {
+        #[allow(clippy::cast_precision_loss)]
+        metrics::gauge!("union_indexer_height", "indexer" => "block", "network" => "rsk")
+            .set(block.number().value() as f64);
+        metrics::counter!("union_indexer_blocks_indexed_total").increment(1);
         #[allow(clippy::collapsible_if)]
         if let Some(channel) = &self.new_block_sender {
             if let Err(e) = channel.send(RskBlockAndUncles::new(block, uncles)) {
+                metrics::counter!("union_indexer_notify_errors_total", "indexer" => "block")
+                    .increment(1);
                 error!("[notify_block] Failed to send best block through channel: {e:?}");
             }
         }
@@ -276,6 +286,10 @@ impl<P: RskProvider, S: BlockStore> BlockIndexer<P, S> {
             let reached_connection_height = new_block.number() <= store_best_block.number();
 
             if is_missing || is_reorg {
+                if is_reorg {
+                    metrics::counter!("union_indexer_reorgs_total", "indexer" => "block")
+                        .increment(1);
+                }
                 info!(
                     "[block_backward_sync] {} block {} ({})...",
                     if is_reorg { "Replacing" } else { "Creating" },

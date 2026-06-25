@@ -69,9 +69,10 @@ impl CommonConfig {
     ///   (relative to the current working directory).
     ///
     /// **Operator identification**: when `CLIENT_ID` is set (injected per-operator by the
-    /// cli/run launcher), the file name becomes `<crate_name>-<CLIENT_ID>.log` so the
-    /// per-operator log file is stable. Otherwise the file falls back to
-    /// `<crate_name>-<timestamp>.log`.
+    /// cli/run launcher, where several operators share one per-execution directory), the
+    /// file name becomes `<crate_name>-<CLIENT_ID>.log` so the per-operator files don't
+    /// collide. Otherwise the file is a plain, predictable `<crate_name>.log` (each Docker
+    /// operator has its own log directory).
     ///
     /// **Log level**: controlled by `RUST_LOG`. When unset, defaults to `DEFAULT_FILTER` —
     /// `debug` for service code, `warn` for noisy third-party crates.
@@ -104,13 +105,9 @@ impl CommonConfig {
             std::env::var(ENVIRONMENT_ENV_VAR).ok().as_deref(),
         );
 
-        // With CLIENT_ID set, the parent directory is already per-execution
-        // (logs/YYMMDD/HHMMSS/) and the launcher expects stable per-operator filenames,
-        // so no timestamp suffix.
         std::fs::create_dir_all(&log_dir)
             .with_context(|| format!("Failed to create log directory: {log_dir}"))?;
-        let file_name =
-            Self::build_log_file_name(crate_name, client_id.as_deref(), &chrono::Local::now());
+        let file_name = Self::build_log_file_name(crate_name, client_id.as_deref());
         println!("Logging to file: {log_dir}/{file_name}");
         let (file_writer, guard) =
             tracing_appender::non_blocking(tracing_appender::rolling::never(&log_dir, file_name));
@@ -193,17 +190,15 @@ impl CommonConfig {
         }
     }
 
-    /// Builds the log file name. With `CLIENT_ID` (operator launcher), the
-    /// parent directory is already per-execution so we use a stable
-    /// `<crate>-<id>.log` name; otherwise we append a timestamp.
-    fn build_log_file_name(
-        crate_name: &str,
-        client_id: Option<&str>,
-        now: &chrono::DateTime<chrono::Local>,
-    ) -> String {
+    /// Builds the log file name. With `CLIENT_ID` (operator launcher), several
+    /// operators share one per-execution directory, so the id keeps their files
+    /// from colliding (`<crate>-<id>.log`). Otherwise the name is a plain,
+    /// predictable `<crate>.log` (each Docker operator has its own directory).
+    /// The plain file is opened in append mode, so it accumulates across restarts.
+    fn build_log_file_name(crate_name: &str, client_id: Option<&str>) -> String {
         match client_id.filter(|s| !s.is_empty()) {
             Some(id) => format!("{crate_name}-{id}.log"),
-            None => format!("{crate_name}-{}.log", now.format("%Y%m%d_%H%M%S")),
+            None => format!("{crate_name}.log"),
         }
     }
 }
@@ -306,31 +301,21 @@ mod tests {
 
     #[test]
     fn test_build_log_file_name_with_client_id_uses_stable_name() {
-        let now = chrono::Local::now();
         assert_eq!(
             "block-indexer-3.log",
-            CommonConfig::build_log_file_name("block-indexer", Some("3"), &now)
+            CommonConfig::build_log_file_name("block-indexer", Some("3"))
         );
     }
 
     #[test]
-    fn test_build_log_file_name_without_client_id_includes_timestamp() {
-        let now = chrono::DateTime::parse_from_rfc3339("2026-05-21T12:34:56Z")
-            .unwrap()
-            .with_timezone(&chrono::Local);
-        let formatted = now.format("%Y%m%d_%H%M%S").to_string();
-        let expected = format!("coordinator-{formatted}.log");
-        assert_eq!(expected, CommonConfig::build_log_file_name("coordinator", None, &now));
+    fn test_build_log_file_name_without_client_id_uses_plain_name() {
+        // No CLIENT_ID (e.g. Docker operators) → predictable, suffix-free name.
+        assert_eq!("coordinator.log", CommonConfig::build_log_file_name("coordinator", None));
     }
 
     #[test]
     fn test_build_log_file_name_empty_client_id_treated_as_none() {
-        let now = chrono::DateTime::parse_from_rfc3339("2026-05-21T12:34:56Z")
-            .unwrap()
-            .with_timezone(&chrono::Local);
-        let formatted = now.format("%Y%m%d_%H%M%S").to_string();
-        let expected = format!("user-api-{formatted}.log");
-        // Empty CLIENT_ID should fall through to the timestamped path.
-        assert_eq!(expected, CommonConfig::build_log_file_name("user-api", Some(""), &now));
+        // Empty CLIENT_ID should fall through to the plain-name path.
+        assert_eq!("user-api.log", CommonConfig::build_log_file_name("user-api", Some("")));
     }
 }
