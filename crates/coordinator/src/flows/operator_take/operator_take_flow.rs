@@ -1,14 +1,14 @@
 use std::rc::Rc;
 
 use anyhow::{Context, Result, anyhow, bail};
-use bitcoin::{PublicKey, Txid};
+use bitcoin::{PublicKey, Transaction, Txid};
 use common_bitvmx::bitvmx_types::{
     AdvanceFundsRegistered, AdvanceFundsRequest, BitVmxProtocolId, BtcTxSPVProof, CommsAddress,
     FundsAdvanceSPV, IncomingBitVMXApiMessages, OPERATOR_TAKE_TX, VariableTypes,
-    accept_pegin_protocol_id, advance_funds_protocol_id,
+    accept_pegin_protocol_id,
 };
 use common_broker::broker::BitVmxBrokerClientApi;
-use common_core::types::{Hash256, TxHash};
+use common_core::types::{Address, BlockNumber, CommitteeId, Hash256, TxHash};
 use common_runtime::runtime_sync::RuntimeSync;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -127,11 +127,14 @@ pub(crate) enum StepData {
     OperatorTakeTriggered,
     CommInfo(CommsAddress),
     SetupCompleted,
-    OperatorTakeTransactionInfo(Txid),
+    OperatorTakeTransactionInfo {
+        tx_name: String,
+        txid: Txid,
+    },
     AdvanceFundsSPV(FundsAdvanceSPV),
     AdvanceFundsConfirmed(AdvanceFundsRegistered),
     ReimbursementKickoffSPV(BtcTxSPVProof),
-    ReimbursementKickoffConfirmed,
+    ReimbursementKickoffConfirmed(Txid),
     OperatorTakeSPV(BtcTxSPVProof),
     PegoutRegistered(PegoutRegistered),
     /// Generic retry kick from the processor's `RetryTracker`. The flow's
@@ -161,11 +164,9 @@ pub(crate) enum StepOutcome {
 pub(crate) struct FlowContext {
     flow_id: FlowId,
     /// Cached `BitVMX` protocol id for this advance-funds protocol instance.
-    /// Derived from `(committee_id, slot_index)` via `advance_funds_protocol_id`
-    /// at flow construction and reused on every `BitVMX`-bound message. Kept
-    /// distinct from `flow_id` because the `BitVMX` side keys protocols by
-    /// committee+slot, while the coordinator's `FlowId` is derived from the
-    /// canonical trigger tx hash.
+    /// New flows use the canonical trigger-derived `FlowId` so a same-slot
+    /// retrigger cannot consume stale variables from the previous generation.
+    /// Restored flows keep their persisted id.
     bitvmx_protocol_id: BitVmxProtocolId,
     step: Steps,
     trigger_data: OperatorTakeTriggerData,
@@ -175,6 +176,8 @@ pub(crate) struct FlowContext {
     operator_take_txid: Option<Txid>,
     advance_funds_spv: Option<FundsAdvanceSPV>,
     advance_funds_registered: Option<AdvanceFundsRegistered>,
+    #[serde(default)]
+    reimbursement_kickoff_txid: Option<Txid>,
     reimbursement_kickoff_spv: Option<BtcTxSPVProof>,
     operator_take_spv: Option<BtcTxSPVProof>,
     accept_pegin_pid: Option<Uuid>,
@@ -215,8 +218,7 @@ where
         flow_id: FlowId,
         trigger_data: OperatorTakeTriggerData,
     ) -> Self {
-        let committee_uuid = Uuid::from_u128(*trigger_data.committee_id);
-        let bitvmx_protocol_id = advance_funds_protocol_id(committee_uuid, trigger_data.slot_index);
+        let bitvmx_protocol_id = BitVmxProtocolId::new(flow_id.value());
         Self {
             contracts,
             rt_sync,
@@ -235,6 +237,7 @@ where
                 operator_take_txid: None,
                 advance_funds_spv: None,
                 advance_funds_registered: None,
+                reimbursement_kickoff_txid: None,
                 reimbursement_kickoff_spv: None,
                 operator_take_spv: None,
                 accept_pegin_pid: None,
@@ -376,8 +379,8 @@ where
             StepData::OperatorTakeTriggered => self.on_operator_take_triggered(current_step)?,
             StepData::CommInfo(comm_info) => self.on_comm_info(current_step, comm_info)?,
             StepData::SetupCompleted => self.on_setup_completed(current_step)?,
-            StepData::OperatorTakeTransactionInfo(txid) => {
-                self.on_operator_take_transaction_info(current_step, txid)?
+            StepData::OperatorTakeTransactionInfo { tx_name, txid } => {
+                self.on_operator_take_transaction_info(current_step, &tx_name, txid)?
             }
             StepData::AdvanceFundsSPV(spv_data) => {
                 self.on_advance_funds_spv(current_step, spv_data)?
@@ -388,8 +391,8 @@ where
             StepData::ReimbursementKickoffSPV(spv_proof) => {
                 self.on_reimbursement_kickoff_spv(current_step, spv_proof)?
             }
-            StepData::ReimbursementKickoffConfirmed => {
-                self.on_reimbursement_kickoff_confirmed(current_step)?
+            StepData::ReimbursementKickoffConfirmed(txid) => {
+                self.on_reimbursement_kickoff_confirmed(current_step, txid)?
             }
             StepData::OperatorTakeSPV(spv_proof) => {
                 self.on_operator_take_spv(current_step, spv_proof)?
@@ -432,11 +435,31 @@ where
     fn on_operator_take_transaction_info(
         &mut self,
         current_step: Steps,
+        tx_name: &str,
         txid: Txid,
     ) -> Result<Option<Steps>> {
+        if !self.was_selected_operator() && current_step == Steps::WaitBitVmxOperatorTakeSpv {
+            let expected_tx_name = self.operator_take_transaction_name()?;
+            if tx_name != expected_tx_name {
+                debug!(
+                    "Ignoring non-selected OperatorTakeTransactionInfo for flow_id {}: got {tx_name}, expected {expected_tx_name}",
+                    self.state.flow_id
+                );
+                return Ok(None);
+            }
+            self.state.operator_take_txid = Some(txid);
+            return Ok(Some(Steps::WaitBitVmxOperatorTakeSpv));
+        }
+
         if current_step != Steps::RequestBitVmxOperatorTakeTransactionInfo {
             bail!(
                 "Invalid state transition from {current_step:?} with OperatorTakeTransactionInfo"
+            );
+        }
+        let expected_tx_name = self.operator_take_transaction_name()?;
+        if tx_name != expected_tx_name {
+            bail!(
+                "Unexpected OperatorTakeTransactionInfo: got {tx_name}, expected {expected_tx_name}"
             );
         }
         self.state.operator_take_txid = Some(txid);
@@ -517,7 +540,11 @@ where
         Ok(Some(Steps::RegisterOrWaitRskReimbursementKickoff))
     }
 
-    fn on_reimbursement_kickoff_confirmed(&mut self, current_step: Steps) -> Result<Option<Steps>> {
+    fn on_reimbursement_kickoff_confirmed(
+        &mut self,
+        current_step: Steps,
+        txid: Txid,
+    ) -> Result<Option<Steps>> {
         if !current_step.is_valid_transition(
             Steps::RegisterOrWaitRskReimbursementKickoff,
             self.was_selected_operator(),
@@ -526,9 +553,12 @@ where
                 "Invalid state transition from {current_step:?} with ReimbursementKickoffConfirmed"
             );
         }
-        // Both paths converge on the operator-take SPV wait step: each
-        // operator's accept_pegin observes the BTC OPERATOR_TAKE_TX and emits
-        // the SPV.
+        self.state.reimbursement_kickoff_txid = Some(txid);
+        if !self.was_selected_operator() {
+            self.enter_request_transaction_info()?;
+        } else if self.state.operator_take_spv.is_some() {
+            return Ok(Some(Steps::RegisterOrWaitRskOperatorTake));
+        }
         Ok(Some(Steps::WaitBitVmxOperatorTakeSpv))
     }
 
@@ -537,10 +567,29 @@ where
         current_step: Steps,
         spv_proof: BtcTxSPVProof,
     ) -> Result<Option<Steps>> {
+        let txid = spv_proof.tx.compute_txid();
+        if let Some(expected_txid) = self.state.operator_take_txid
+            && expected_txid != txid
+        {
+            debug!(
+                "Dropping stale OperatorTakeSPV at {current_step:?} for flow_id {}: expected txid {expected_txid}, got {txid}",
+                self.state.flow_id
+            );
+            return Ok(None);
+        }
         // BitVMX re-emits SPVs on every block-confirmation update (at-least-once); absorb late duplicates here. One-shot events don't need this.
         if current_step.is_past(Steps::WaitBitVmxOperatorTakeSpv) {
             debug!(
                 "Dropping stale OperatorTakeSPV at {current_step:?} for flow_id {}",
+                self.state.flow_id
+            );
+            return Ok(None);
+        }
+        if self.was_selected_operator()
+            && current_step.pos() < Steps::WaitBitVmxOperatorTakeSpv.pos()
+        {
+            debug!(
+                "Dropping early OperatorTakeSPV at {current_step:?} for flow_id {}",
                 self.state.flow_id
             );
             return Ok(None);
@@ -551,6 +600,7 @@ where
             bail!("Invalid state transition from {current_step:?} with OperatorTakeSPV");
         }
         info!("Operator take SPV received for flow_id {}", self.state.flow_id);
+        self.state.operator_take_txid = Some(txid);
         if self.was_selected_operator() {
             self.state.operator_take_spv = Some(spv_proof);
         }
@@ -865,12 +915,27 @@ where
         self.state.step == Steps::GetBitVmxCommInfo
     }
 
-    /// True when this flow is at the operator-take txid request step and its
+    /// True when this flow is waiting for an operator-take txid reply and its
     /// captured `accept_pegin_pid` matches `program_id`. The step check guards
     /// against late replies arriving after the flow advanced.
     pub(crate) fn matches_accept_pegin_pid(&self, program_id: &Uuid) -> bool {
         self.state.step == Steps::RequestBitVmxOperatorTakeTransactionInfo
             && self.state.accept_pegin_pid == Some(*program_id)
+    }
+
+    pub(crate) fn matches_current_reimbursement_kickoff_transaction_info(
+        &self,
+        program_id: &Uuid,
+        transaction: &Transaction,
+    ) -> bool {
+        !self.was_selected_operator()
+            && self.state.step == Steps::WaitBitVmxOperatorTakeSpv
+            && self.state.operator_take_txid.is_none()
+            && self.state.accept_pegin_pid == Some(*program_id)
+            && self
+                .state
+                .reimbursement_kickoff_txid
+                .is_some_and(|txid| transaction_spends(transaction, txid))
     }
 
     fn enter_write_completion_marker(&self) -> Result<()> {
@@ -928,8 +993,7 @@ where
         trigger_data: OperatorTakeTriggerData,
         step: Steps,
     ) -> Self {
-        let committee_uuid = Uuid::from_u128(*trigger_data.committee_id);
-        let bitvmx_protocol_id = advance_funds_protocol_id(committee_uuid, trigger_data.slot_index);
+        let bitvmx_protocol_id = BitVmxProtocolId::new(flow_id.value());
         Self {
             contracts,
             rt_sync: RuntimeSync::new().expect("Failed to create runtime sync for test flow"),
@@ -948,6 +1012,7 @@ where
                 operator_take_txid: None,
                 advance_funds_spv: None,
                 advance_funds_registered: None,
+                reimbursement_kickoff_txid: None,
                 reimbursement_kickoff_spv: None,
                 operator_take_spv: None,
                 accept_pegin_pid: None,
@@ -978,8 +1043,102 @@ where
         self.state.advance_funds_registered.is_some()
     }
 
+    #[cfg(test)]
+    pub(crate) fn has_operator_take_spv(&self) -> bool {
+        self.state.operator_take_spv.is_some()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_operator_take_txid_for_test(&mut self, txid: Txid) {
+        self.state.operator_take_txid = Some(txid);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_advance_funds_registered_for_test(&mut self, data: AdvanceFundsRegistered) {
+        self.state.advance_funds_registered = Some(data);
+    }
+
     pub(crate) fn is_terminal(&self) -> bool {
         matches!(self.state.step, Steps::Done | Steps::Failed)
+    }
+
+    pub(crate) fn take_operator_address(&self) -> Address {
+        self.state.trigger_data.take_operator_address
+    }
+
+    pub(crate) fn pegout_id(&self) -> Hash256 {
+        self.state.trigger_data.pegout_id
+    }
+
+    pub(crate) fn committee_id(&self) -> CommitteeId {
+        self.state.trigger_data.committee_id.clone()
+    }
+
+    pub(crate) fn slot_id(&self) -> u64 {
+        self.state.trigger_data.slot_id
+    }
+
+    pub(crate) fn matches_operator_take_pubkey(&self, operator_pubkey: &PublicKey) -> bool {
+        self.state.trigger_data.operator_take_pubkey == *operator_pubkey
+    }
+
+    pub(crate) fn matches_operator_take_txid(&self, txid: Txid) -> bool {
+        self.state.operator_take_txid == Some(txid)
+    }
+
+    pub(crate) fn cache_early_operator_take_spv(
+        &mut self,
+        spv_proof: BtcTxSPVProof,
+    ) -> Result<bool> {
+        let txid = spv_proof.tx.compute_txid();
+        if !self.was_selected_operator()
+            || self.state.step.pos() >= Steps::WaitBitVmxOperatorTakeSpv.pos()
+            || self.state.operator_take_txid != Some(txid)
+        {
+            return Ok(false);
+        }
+
+        self.state.operator_take_spv = Some(spv_proof);
+        self.persist_state()?;
+        Ok(true)
+    }
+
+    pub(crate) fn matches_advance_funds_spv(&self, spv_data: &FundsAdvanceSPV) -> bool {
+        // The advance-funds tx is funded from a committee funding UTXO, not from
+        // the operator-take tx, so it never spends `operator_take_txid`. Bind to
+        // the selected-operator flow that set up the protocol (operator_take_txid
+        // is set) and is waiting for the SPV; identity is committee + slot +
+        // pegout.
+        spv_data.txid == spv_data.spv_proof.tx.compute_txid()
+            && spv_data.committee_id == self.committee_id_uuid()
+            && spv_data.slot_index == self.state.trigger_data.slot_index
+            && spv_data.pegout_id == self.state.trigger_data.pegout_id.value().as_bytes().to_vec()
+            && self.state.operator_take_txid.is_some()
+    }
+
+    pub(crate) fn matches_reimbursement_kickoff_spv(
+        &self,
+        notification_txid: Txid,
+        spv_proof: &BtcTxSPVProof,
+    ) -> bool {
+        notification_txid == spv_proof.tx.compute_txid()
+            && self.state.step == Steps::SetVarBitVmxAdvanceFundsRegistered
+            && self.state.advance_funds_registered.is_some()
+    }
+
+    pub(crate) fn can_complete_pegout_registered_without_txid(
+        &self,
+        event_block_number: BlockNumber,
+    ) -> bool {
+        let is_current_generation = self
+            .state
+            .trigger_data
+            .operator_take_triggered_block_number
+            .is_none_or(|trigger_block| event_block_number >= trigger_block);
+        !self.was_selected_operator()
+            && self.state.operator_take_txid.is_none()
+            && self.state.step.is_valid_transition(Steps::RegisterOrWaitRskOperatorTake, false)
+            && is_current_generation
     }
 
     /// Snapshot used by `Coordinator::log_active_flows` for periodic
@@ -1008,6 +1167,10 @@ where
         *self.state.trigger_data.committee_id == committee_id
             && self.state.trigger_data.slot_id == slot_id
     }
+}
+
+fn transaction_spends(transaction: &Transaction, txid: Txid) -> bool {
+    transaction.input.iter().any(|input| input.previous_output.txid == txid)
 }
 
 #[cfg(test)]
@@ -1058,7 +1221,7 @@ mod tests {
     use alloy_primitives::FixedBytes;
     use bitcoin::absolute::LockTime;
     use bitcoin::transaction::Version;
-    use bitcoin::{PublicKey, Transaction};
+    use bitcoin::{OutPoint, PublicKey, ScriptBuf, Sequence, Transaction, TxIn, Witness};
     use common_bitvmx::bitvmx_types::{IncomingBitVMXApiMessages, OutgoingBitVMXApiMessages};
     use common_broker::broker::{BrokerError, MockBrokerClientApi};
     use common_core::types::{Address, CommitteeId, Hash256};
@@ -1082,6 +1245,7 @@ mod tests {
             committee_id: CommitteeId::from(committee_id.as_u128()),
             slot_id: slot_index as u64,
             slot_index,
+            operator_take_triggered_block_number: Some(1.into()),
             request_pegout_tx_hash: None,
             user_pubkey: PublicKey::from_str(
                 "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
@@ -1117,6 +1281,17 @@ mod tests {
             merkle_branch_path: "0".to_string(),
             merkle_branch_hashes: vec![],
         }
+    }
+
+    fn test_spv_proof_spending(txid: Txid) -> BtcTxSPVProof {
+        let mut proof = test_spv_proof_value();
+        proof.tx.input.push(TxIn {
+            previous_output: OutPoint { txid, vout: 0 },
+            script_sig: ScriptBuf::new(),
+            sequence: Sequence::MAX,
+            witness: Witness::new(),
+        });
+        proof
     }
 
     #[test]
@@ -1439,6 +1614,135 @@ mod tests {
         assert_eq!(flow.current_step(), Steps::RegisterOrWaitRskAdvanceFunds);
     }
 
+    /// Build an advance-funds SPV whose tx spends `input_txid`, matching the
+    /// flow's committee/slot/pegout so only the txid relationship varies.
+    fn advance_funds_spv_for(
+        flow: &AdvanceFundsFlow<
+            MockRskContractsGatewayApi,
+            MockBitVmxBroker,
+            crate::store::MockCoordinatorStoreApi,
+        >,
+        input_txid: Txid,
+    ) -> FundsAdvanceSPV {
+        let tx = Transaction {
+            version: Version(2),
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint { txid: input_txid, vout: 2 },
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::MAX,
+                witness: Witness::new(),
+            }],
+            output: vec![],
+        };
+        let txid = tx.compute_txid();
+        FundsAdvanceSPV {
+            txid,
+            committee_id: flow.committee_id_uuid(),
+            slot_index: flow.state.trigger_data.slot_index,
+            pegout_id: flow.pegout_id().value().as_bytes().to_vec(),
+            spv_proof: BtcTxSPVProof {
+                block_hash: "00".repeat(32),
+                tx,
+                merkle_branch_path: "0".to_string(),
+                merkle_branch_hashes: vec![],
+            },
+        }
+    }
+
+    fn selected_operator_flow_waiting_for_spv(
+        committee_id: Uuid,
+    ) -> AdvanceFundsFlow<
+        MockRskContractsGatewayApi,
+        MockBitVmxBroker,
+        crate::store::MockCoordinatorStoreApi,
+    > {
+        let mut contracts = MockRskContractsGatewayApi::new();
+        // Match take_operator_address so was_selected_operator() returns true.
+        contracts.expect_my_address().return_const(Address::from(H160::from_low_u64_be(33)));
+        AdvanceFundsFlow::new_for_test(
+            Rc::new(contracts),
+            Rc::new(MockBitVmxBroker::new()),
+            FlowId::from_random(),
+            test_trigger_data(committee_id, 1),
+            Steps::WaitBitVmxAdvanceFundsSpv,
+        )
+    }
+
+    #[test]
+    fn matches_advance_funds_spv_when_tx_spends_funding_utxo() {
+        // Regression: the advance-funds tx is funded from a committee funding
+        // UTXO, never from the operator-take tx, so a tx_spends(operator_take_txid)
+        // guard dropped every legitimate SPV and stalled the selected operator at
+        // WaitBitVmxAdvanceFundsSpv. The SPV must match on committee/slot/pegout
+        // once the flow has set up the protocol (operator_take_txid is set).
+        let committee_id = Uuid::new_v4();
+        let mut flow = selected_operator_flow_waiting_for_spv(committee_id);
+
+        let operator_take_txid =
+            Txid::from_str("9da549dbd672185a9acdcb00f4f3b8c5bc3e4a2cb76c64f6cb7d201e3db661f6")
+                .expect("valid operator-take txid");
+        flow.set_operator_take_txid_for_test(operator_take_txid);
+
+        // Funding UTXO distinct from operator_take_txid, as on-chain.
+        let funding_utxo =
+            Txid::from_str("f2de83adad7c940af9abe18ca4870bcc8a6ea1776f25d3ad41f3518880c45791")
+                .expect("valid funding txid");
+        let spv = advance_funds_spv_for(&flow, funding_utxo);
+
+        assert!(flow.matches_advance_funds_spv(&spv));
+    }
+
+    #[test]
+    fn matches_advance_funds_spv_requires_operator_take_txid_set() {
+        // Watcher flows (and the selected operator before protocol setup) have no
+        // operator_take_txid; they must not consume the advance-funds SPV.
+        let committee_id = Uuid::new_v4();
+        let flow = selected_operator_flow_waiting_for_spv(committee_id);
+
+        let funding_utxo =
+            Txid::from_str("f2de83adad7c940af9abe18ca4870bcc8a6ea1776f25d3ad41f3518880c45791")
+                .expect("valid funding txid");
+        let spv = advance_funds_spv_for(&flow, funding_utxo);
+
+        assert!(!flow.matches_advance_funds_spv(&spv));
+    }
+
+    #[test]
+    fn reimbursement_kickoff_spv_does_not_need_to_spend_advance_funds_txid() {
+        let committee_id = Uuid::new_v4();
+        let flow_id = FlowId::from_random();
+        let trigger_data = test_trigger_data(committee_id, 0);
+        let mut contracts = MockRskContractsGatewayApi::new();
+        contracts.expect_my_address().return_const(Address::from(H160::from_low_u64_be(33)));
+        let mut flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(contracts),
+            Rc::new(MockBitVmxBroker::new()),
+            flow_id,
+            trigger_data.clone(),
+            Steps::SetVarBitVmxAdvanceFundsRegistered,
+        );
+
+        let advance_funds_txid =
+            Txid::from_str("a53c0e1ab7117534b4d01948615c94e09aaa14b9a6cf8e9f013d9fd7181dd8e5")
+                .expect("valid advance-funds txid");
+        flow.set_advance_funds_registered_for_test(AdvanceFundsRegistered {
+            committee_id,
+            slot_index: 0,
+            txid: advance_funds_txid,
+            pegout_id: trigger_data.pegout_id.value().as_bytes().to_vec(),
+            operator_pubkey: trigger_data.operator_take_pubkey,
+        });
+
+        let bitvmx_parent_txid =
+            Txid::from_str("76bd82ffdda8b12c72565f17b7b4b23b090e96e82d89027e2c287161270625c1")
+                .expect("valid BitVMX parent txid");
+        let proof = test_spv_proof_spending(bitvmx_parent_txid);
+
+        assert!(flow.matches_reimbursement_kickoff_spv(proof.tx.compute_txid(), &proof));
+        assert!(!flow.matches_reimbursement_kickoff_spv(advance_funds_txid, &proof));
+    }
+
     #[test]
     fn stale_reimbursement_kickoff_spv_after_handler_is_noop() {
         // Same at-least-once semantics: stale ReimbursementKickoffSPV at a
@@ -1492,6 +1796,31 @@ mod tests {
     }
 
     #[test]
+    fn selected_operator_take_spv_before_handler_is_noop() {
+        let committee_id = Uuid::new_v4();
+        let flow_id = FlowId::from_random();
+        let trigger_data = test_trigger_data(committee_id, 0);
+        let mut contracts = MockRskContractsGatewayApi::new();
+        contracts.expect_my_address().return_const(Address::from(H160::from_low_u64_be(33)));
+        let mut flow = AdvanceFundsFlow::new_for_test(
+            Rc::new(contracts),
+            Rc::new(MockBitVmxBroker::new()),
+            flow_id,
+            trigger_data,
+            Steps::SetVarBitVmxAdvanceFundsRegistered,
+        );
+        let spv = test_spv_proof_value();
+        flow.set_operator_take_txid_for_test(spv.tx.compute_txid());
+
+        let outcome = flow
+            .complete_step(StepData::OperatorTakeSPV(spv))
+            .expect("early selected OperatorTakeSPV should drop silently");
+
+        assert_eq!(outcome, StepOutcome::NoOp);
+        assert_eq!(flow.current_step(), Steps::SetVarBitVmxAdvanceFundsRegistered);
+    }
+
+    #[test]
     fn late_one_shot_event_still_surfaces_as_error() {
         // Negative case for the at-least-once whitelist: non-whitelisted events
         // arriving late must still surface as Err. The stale-NoOp policy is
@@ -1511,7 +1840,9 @@ mod tests {
 
         // ReimbursementKickoffConfirmed is a one-shot RSK event, not on the
         // at-least-once whitelist. Late arrival at Done must error.
-        let result = flow.complete_step(StepData::ReimbursementKickoffConfirmed);
+        let result = flow.complete_step(StepData::ReimbursementKickoffConfirmed(
+            test_spv_proof_value().tx.compute_txid(),
+        ));
 
         assert!(result.is_err(), "late one-shot event should surface as error");
         assert_eq!(flow.current_step(), Steps::Done);
