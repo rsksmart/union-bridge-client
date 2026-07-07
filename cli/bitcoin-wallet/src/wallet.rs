@@ -450,6 +450,10 @@ impl Wallet {
         self.sats_per_byte = sats;
     }
 
+    pub fn set_enabler_amount(&mut self, amount: u64) {
+        self.enabler_amount = amount;
+    }
+
     pub fn utxos(&self) -> &[Utxo] {
         &self.utxos
     }

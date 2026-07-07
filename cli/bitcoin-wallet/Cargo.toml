@@ -19,11 +19,9 @@ secrecy = { workspace = true }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 storage-backend = { package = "rust-bitvmx-storage-backend", git = "https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git", rev = "16a01bfe316266bdac080828e260cd191fcb3cde" }
+tempfile = "3.16.0"
 tokio = { version = "1.47.1", features = ["sync"] }
 toml = "0.8.23"
-
-[dev-dependencies]
-tempfile = "3.16.0"
 
 [lints]
 workspace = true

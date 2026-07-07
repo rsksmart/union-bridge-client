@@ -21,12 +21,27 @@ use secrecy::ExposeSecret;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use ub_wallet::bitcoin::utils::find_vout_for_address;
+use ub_wallet::build_pegin::{BuildPeginRequest, build_pegin};
 use ub_wallet::cli::{CliOpts, WalletMode, setup_editor};
 use ub_wallet::config::Config;
 use ub_wallet::wallet::{CreatedTransaction, Wallet, network_name};
 
 fn main() -> Result<()> {
     let opts = CliOpts::parse();
+
+    // Non-interactive `build_pegin` helper: read a JSON request from stdin, build and sign a
+    // pegin transaction in a throwaway store, print the JSON response, and exit. It never
+    // constructs the config-based wallet or touches RPC.
+    if opts.command.first().map(String::as_str) == Some("build_pegin") {
+        let input = std::io::read_to_string(std::io::stdin())
+            .context("reading build_pegin request from stdin")?;
+        let req = serde_json::from_str::<BuildPeginRequest>(&input)
+            .context("parsing build_pegin request JSON")?;
+        let resp = build_pegin(req)?;
+        println!("{}", serde_json::to_string(&resp)?);
+        return Ok(());
+    }
+
     let (config, config_path) = Config::load(&opts)?;
 
     if let Some(path) = config_path.as_ref() {

@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 pub mod bitcoin;
+pub mod build_pegin;
 pub mod cli;
 pub mod config;
 pub mod pending_tx_store;
