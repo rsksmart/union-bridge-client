@@ -19,7 +19,7 @@ common-runtime = { path = "../runtime", optional = true }
 hex = { workspace = true }
 mockall = { workspace = true, optional = true }
 primitive-types = { workspace = true }
-sha3 = "0.11.0"
+sha3 = "0.12.0"
 tracing = { workspace = true }
 
 # cargo-husky installs the git hooks from `.cargo-husky/hooks/` the first time this
