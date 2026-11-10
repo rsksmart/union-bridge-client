@@ -133,9 +133,9 @@ jobs:
                 repo: 'union_bridge_e2e_framework',
                 workflow_id: 'e2e-smoke.yml',
                 ref: e2eDispatchRef,
-                // client_repo names this repository, so the E2E run builds this client instead of
-                // following the E2E repo's smoke-target.json (UBC-1192).
                 inputs: {
+                  // Name this repository: the E2E's default client comes from its smoke-target.json
+                  // and may be another repository.
                   client_repo: `${context.repo.owner}/${context.repo.repo}`,
                   client_ref: clientRef,
                   pr_head_sha: prHeadSha
