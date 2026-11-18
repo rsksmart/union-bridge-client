@@ -134,6 +134,9 @@ jobs:
                 workflow_id: 'e2e-smoke.yml',
                 ref: e2eDispatchRef,
                 inputs: {
+                  // Name this repository: the E2E's default client comes from its smoke-target.json
+                  // and may be another repository.
+                  client_repo: `${context.repo.owner}/${context.repo.repo}`,
                   client_ref: clientRef,
                   pr_head_sha: prHeadSha
                 }
