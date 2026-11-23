@@ -17,6 +17,10 @@ Important: draft PRs do not run the job. The workflow file gates execution with:
 - `workflow_dispatch`, or
 - `pull_request.draft == false`
 
+Dependabot PRs run the smoke like any other PR and get an `e2e-smoke-tests` status. Their runs receive Dependabot
+secrets instead of Actions secrets, so `E2E_FRAMEWORK_GITHUB_TOKEN` must be stored under both (see Setup). If the
+Dependabot copy is missing, the job sets the status to `error` and says so instead of attempting the dispatch.
+
 ## Refs
 
 | Ref | PR run | Manual run |
@@ -38,7 +42,8 @@ If a non-trusted actor tries to set either one, the workflow fails and sets the 
 ## Setup
 
 1. In `union-bridge-client`, configure `E2E_FRAMEWORK_GITHUB_TOKEN`. For cross-repo dispatch this is typically a GitHub
-   Personal Access Token (PAT) with `repo` and `workflow` access to `union_bridge_e2e_framework`.
+   Personal Access Token (PAT) with `repo` and `workflow` access to `union_bridge_e2e_framework`. Store it as a
+   **Dependabot** secret too (Settings → Secrets and variables → Dependabot), so Dependabot PRs can dispatch the smoke.
 2. Optionally require the `e2e-smoke-tests` status check in branch protection for `main`.
 3. In `union_bridge_e2e_framework`, configure the secrets required by that pipeline:
    - `USER_BITCOIN_WIF`

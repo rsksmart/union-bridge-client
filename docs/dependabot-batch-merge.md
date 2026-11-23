@@ -49,6 +49,11 @@ crates that must bump together) — reject and move on.
 Resolve `Cargo.lock` conflicts by **regenerating** (`cargo update -p <crate> --precise <ver>`), never by
 hand-merging lines — a line-merged lockfile can look clean but be invalid.
 
+**E2E smoke.** Each Dependabot PR runs `e2e-smoke-tests.yml` and carries an `e2e-smoke-tests` status from the
+external E2E framework (see [`.github/E2E-TESTS-SETUP.md`](../.github/E2E-TESTS-SETUP.md)). Treat it like any other
+check in step 4: a red or `error` status keeps the PR out of **Ready**. It covers each PR on its own, not the stacked
+combination — the local happy-path above is still what validates the batch.
+
 ## 3. Pick the merge mechanism — discover, don't assume
 
 Read the repo's branch protection / rulesets and resolve the merge method to propose:

@@ -31,7 +31,9 @@ jobs:
     permissions:
       contents: read
       statuses: write
-    # Only run if PR is not a draft (or manual dispatch)
+    # Only run if PR is not a draft (or manual dispatch). Dependabot PRs run too (UBC-1198): their
+    # runs read Dependabot secrets, not Actions secrets, so E2E_FRAMEWORK_GITHUB_TOKEN must be stored
+    # under both.
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
 
     steps:
@@ -46,9 +48,33 @@ jobs:
           E2E_REF: ${{ inputs.e2e_ref }}
           PR_HEAD_SHA: ${{ inputs.pr_head_sha || github.event.pull_request.head.sha || github.sha }}
           TRUSTED_TEAM_SLUG: ${{ vars.E2E_TRUSTED_TEAM_SLUG }}
+          DISPATCH_TOKEN_SET: ${{ secrets.E2E_FRAMEWORK_GITHUB_TOKEN != '' }}
         with:
+          # GITHUB_TOKEN cannot dispatch a workflow in another repository (404); the fallback only
+          # lets the script below write the error status when the secret is missing.
           github-token: ${{ secrets.E2E_FRAMEWORK_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
+            if (process.env.DISPATCH_TOKEN_SET !== 'true') {
+              // Dependabot runs read Dependabot secrets, so a missing Dependabot copy lands here too.
+              const msg = context.actor === 'dependabot[bot]'
+                ? 'E2E smoke not dispatched: store E2E_FRAMEWORK_GITHUB_TOKEN as a Dependabot secret too.'
+                : 'E2E smoke not dispatched: secret E2E_FRAMEWORK_GITHUB_TOKEN is not set.';
+              const sha = process.env.PR_HEAD_SHA || '';
+              if (sha) {
+                await octokit.rest.repos.createCommitStatus({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  sha,
+                  state: 'error',
+                  target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                  description: msg.slice(0, 140),
+                  context: 'e2e-smoke-tests'
+                });
+              }
+              core.setFailed(msg);
+              return;
+            }
+
             const pr = context.payload.pull_request;
             const labels = pr ? (pr.labels || []).map(l => l.name) : [];
             const labelE2eRef = (labels.find(l => l.startsWith('e2e-ref:'))?.replace(/^e2e-ref:/, '') || '').trim();

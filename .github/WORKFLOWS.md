@@ -63,7 +63,8 @@ This file is the narrow reference for the workflow files currently tracked under
   - pull requests against `main`
   - actions: `opened`, `synchronize`, `reopened`, `ready_for_review`
   - `workflow_dispatch`
-- Important runtime rule: draft PRs do not execute the job
+- Important runtime rule: draft PRs do not execute the job; Dependabot PRs do, using the Dependabot copy of
+  `E2E_FRAMEWORK_GITHUB_TOKEN`
 - Setup and cross-repo secret ownership: see the [E2E Test Setup Guide](./E2E-TESTS-SETUP.md)
 
 ## Local Testing with `act`
@@ -95,7 +96,8 @@ Adjust `.actrc` to match your local Docker/runner preferences before relying on 
 ## Secrets and Auth Notes
 
 - `E2E_FRAMEWORK_GITHUB_TOKEN`: token used by `e2e-smoke-tests.yml` to dispatch the external E2E workflow. In practice
-  this is usually a PAT with access to `union_bridge_e2e_framework` and its workflows.
+  this is usually a PAT with access to `union_bridge_e2e_framework` and its workflows. Dependabot runs cannot read
+  Actions secrets, so it is also stored as a Dependabot secret; that is what lets Dependabot PRs run the smoke.
 - Local `act` runs can still diverge from GitHub-hosted runs, especially when private-repo access or cross-repo
   dispatch is involved.
 
@@ -103,4 +105,6 @@ Adjust `.actrc` to match your local Docker/runner preferences before relying on 
 
 - `docker-release.yml` did not start: confirm the pushed tag matches the `v*` pattern used by the workflow
 - missing `e2e-smoke-tests` status on a PR: confirm the PR targets `main` and is not draft
+- `e2e-smoke-tests` is `error` with "store E2E_FRAMEWORK_GITHUB_TOKEN as a Dependabot secret too": the Dependabot copy
+  of the secret is missing or empty
 - `docker-release.yml` images are built for `linux/amd64` only; this workflow does not currently publish ARM variants
