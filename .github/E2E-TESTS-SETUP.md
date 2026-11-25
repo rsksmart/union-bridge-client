@@ -47,7 +47,8 @@ If a non-trusted actor tries to set either one, the workflow fails and sets the 
 On a Dependabot PR, a PR label `e2e-ref:<ref>` ends in `error` whenever Dependabot triggers the run (its own pushes and
 rebases): the actor is `dependabot[bot]`, which is not in the trusted team. To test a Dependabot PR against another E2E
 ref, a trusted maintainer runs the workflow manually **from `main`** (never from the Dependabot branch, whose bumped
-actions would run with the dispatch secrets) with `e2e_ref`, `client_ref` and `pr_head_sha` set to the PR head SHA.
+actions would run with the dispatch secrets), with `e2e_ref` set to the E2E framework branch or tag, and `client_ref`
+and `pr_head_sha` both set to the Dependabot PR's head SHA.
 
 ## Setup
 
