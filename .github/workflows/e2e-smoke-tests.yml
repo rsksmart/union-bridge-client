@@ -33,8 +33,13 @@ jobs:
       statuses: write
     # Only run if PR is not a draft (or manual dispatch). Dependabot PRs run too (UBC-1198): their
     # runs read Dependabot secrets, not Actions secrets, so E2E_FRAMEWORK_GITHUB_TOKEN must be stored
-    # under both.
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
+    # under both. Dependabot github-actions PRs are skipped and get no e2e-smoke-tests status: they
+    # may bump github-script, the action this job runs with the PAT, so unreviewed action code would
+    # hold that token. Cargo and docker bumps still run.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.draft == false &&
+       !startsWith(github.head_ref, 'dependabot/github_actions/'))
 
     steps:
       - name: Call E2E Framework Workflow
@@ -56,9 +61,10 @@ jobs:
           script: |
             if (process.env.DISPATCH_TOKEN_SET !== 'true') {
               // Dependabot runs read Dependabot secrets, so a missing Dependabot copy lands here too.
-              const msg = context.actor === 'dependabot[bot]'
-                ? 'E2E smoke not dispatched: store E2E_FRAMEWORK_GITHUB_TOKEN as a Dependabot secret too.'
-                : 'E2E smoke not dispatched: secret E2E_FRAMEWORK_GITHUB_TOKEN is not set.';
+              // The message names both causes: re-runs keep the original actor, so the actor does
+              // not reliably tell which secret set the run got.
+              const msg =
+                'E2E smoke not dispatched: E2E_FRAMEWORK_GITHUB_TOKEN is empty. On a Dependabot run it must also be a Dependabot secret.';
               const sha = process.env.PR_HEAD_SHA || '';
               if (sha) {
                 await octokit.rest.repos.createCommitStatus({

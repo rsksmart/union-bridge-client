@@ -49,10 +49,12 @@ crates that must bump together) — reject and move on.
 Resolve `Cargo.lock` conflicts by **regenerating** (`cargo update -p <crate> --precise <ver>`), never by
 hand-merging lines — a line-merged lockfile can look clean but be invalid.
 
-**E2E smoke.** Each Dependabot PR runs `e2e-smoke-tests.yml` and carries an `e2e-smoke-tests` status (see
-[`.github/E2E-TESTS-SETUP.md`](../.github/E2E-TESTS-SETUP.md)). In step 4, treat it as required even when branch
+**E2E smoke.** Each Dependabot cargo or docker PR runs `e2e-smoke-tests.yml` and carries an `e2e-smoke-tests` status
+(see [`.github/E2E-TESTS-SETUP.md`](../.github/E2E-TESTS-SETUP.md)). In step 4, treat it as required even when branch
 protection does not require it: a red or `error` status puts the PR in **Check**, not **Ready**. It covers each PR on
-its own, not the stacked combination — the local happy-path above is still what validates the batch.
+its own, not the stacked combination — the local happy-path above is still what validates the batch. GitHub Actions
+PRs get **no** `e2e-smoke-tests` status by design (the job skips them so a bumped action never runs with the dispatch
+secrets): a missing status there is not a failure.
 
 ## 3. Pick the merge mechanism — discover, don't assume
 
@@ -67,8 +69,8 @@ If the queue/protection pins one merge method, use it; if several are allowed
 
 ## 4. Propose, then wait for the human
 
-Reconcile against the live **required** checks (ignore non-required ones), plus `e2e-smoke-tests` (step 2). Present three
-buckets and ask — *"if you're ok, I'll run these:"* — and **state the merge method** you
+Reconcile against the live **required** checks (ignore non-required ones), plus `e2e-smoke-tests`
+for cargo and docker PRs (step 2). Present three buckets and ask — *"if you're ok, I'll run these:"* — and **state the merge method** you
 resolved in step 3 (e.g. "add to the merge queue (squash)") so it's confirmed too.
 
 - **Ready** — required checks green and validated locally → approve + merge via that method
