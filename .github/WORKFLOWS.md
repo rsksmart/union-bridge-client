@@ -63,9 +63,10 @@ This file is the narrow reference for the workflow files currently tracked under
   - pull requests against `main`
   - actions: `opened`, `synchronize`, `reopened`, `ready_for_review`
   - `workflow_dispatch`
-- Important runtime rule: draft PRs do not execute the job. Dependabot cargo and docker PRs do, using the Dependabot
-  copy of `E2E_FRAMEWORK_GITHUB_TOKEN`; Dependabot github-actions PRs (branch `dependabot/github_actions/…`) do not,
-  so a bumped action never runs with the token
+- Important runtime rule: draft PRs do not execute the job. Of Dependabot's own PRs, only root-workspace cargo PRs
+  do, using the Dependabot copy of `E2E_FRAMEWORK_GITHUB_TOKEN`. Dependabot's github-actions, docker, cli-workspace
+  and zkp-guest PRs are skipped, so Dependabot's own github-actions PRs never run a bumped action with the token; a
+  human branch carrying such a bump still does (see the [E2E Test Setup Guide](./E2E-TESTS-SETUP.md))
 - Setup and cross-repo secret ownership: see the [E2E Test Setup Guide](./E2E-TESTS-SETUP.md)
 
 ## Local Testing with `act`
@@ -105,8 +106,8 @@ Adjust `.actrc` to match your local Docker/runner preferences before relying on 
 ## Troubleshooting
 
 - `docker-release.yml` did not start: confirm the pushed tag matches the `v*` pattern used by the workflow
-- missing `e2e-smoke-tests` status on a PR: confirm the PR targets `main` and is not draft. A Dependabot
-  github-actions PR never gets the status, by design
+- missing `e2e-smoke-tests` status on a PR: confirm the PR targets `main` and is not draft. Dependabot
+  github-actions, docker, cli-workspace and zkp-guest PRs never get the status, by design
 - `e2e-smoke-tests` is `error` with "E2E_FRAMEWORK_GITHUB_TOKEN is empty": the secret is missing for that run; on a
   Dependabot PR, check the Dependabot copy first
 - `docker-release.yml` images are built for `linux/amd64` only; this workflow does not currently publish ARM variants
