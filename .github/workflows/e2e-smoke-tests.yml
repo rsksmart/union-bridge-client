@@ -31,8 +31,26 @@ jobs:
     permissions:
       contents: read
       statuses: write
-    # Only run if PR is not a draft (or manual dispatch)
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
+    # Only run if PR is not a draft (or manual dispatch). Of Dependabot's own PRs, only root-workspace
+    # cargo bumps run (UBC-1198): the E2E builds only this repository's root workspace (excluding
+    # check-fork), with its own builder and runtime images, and pulls pinned chain images. So a
+    # docker, cli-workspace or zkp-guest bump would not be built by the smoke it starts. Every other
+    # Dependabot branch (github-actions, docker, dependabot/cargo/cli/, the guest under either path,
+    # any ecosystem added later) is skipped and gets no e2e-smoke-tests status. A github-actions bump
+    # may change github-script, the action this job runs with the PAT; for the same reason a manual
+    # dispatch from a dependabot/ ref is skipped. The PR clause checks event_name itself: on a
+    # dispatch, github.event.pull_request.draft is null and `null == false` is true.
+    # Dependabot runs read Dependabot secrets, not Actions secrets, so E2E_FRAMEWORK_GITHUB_TOKEN
+    # must be stored under both.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && !startsWith(github.ref_name, 'dependabot/')) ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.draft == false &&
+       (!startsWith(github.head_ref, 'dependabot/') ||
+        (startsWith(github.head_ref, 'dependabot/cargo/') &&
+         !startsWith(github.head_ref, 'dependabot/cargo/cli/') &&
+         !startsWith(github.head_ref, 'dependabot/cargo/zkp/guest/') &&
+         !startsWith(github.head_ref, 'dependabot/cargo/crates/check-fork/zkp/guest/'))))
 
     steps:
       - name: Call E2E Framework Workflow
@@ -46,9 +64,34 @@ jobs:
           E2E_REF: ${{ inputs.e2e_ref }}
           PR_HEAD_SHA: ${{ inputs.pr_head_sha || github.event.pull_request.head.sha || github.sha }}
           TRUSTED_TEAM_SLUG: ${{ vars.E2E_TRUSTED_TEAM_SLUG }}
+          DISPATCH_TOKEN_SET: ${{ secrets.E2E_FRAMEWORK_GITHUB_TOKEN != '' }}
         with:
+          # GITHUB_TOKEN cannot dispatch a workflow in another repository (404); the fallback only
+          # lets the script below write the error status when the secret is missing.
           github-token: ${{ secrets.E2E_FRAMEWORK_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
+            if (process.env.DISPATCH_TOKEN_SET !== 'true') {
+              // Dependabot runs read Dependabot secrets, so a missing Dependabot copy lands here too.
+              // One message covers both causes; GitHub applies the Dependabot restrictions when
+              // github.actor is dependabot[bot], re-runs included.
+              const msg =
+                'E2E smoke not dispatched: E2E_FRAMEWORK_GITHUB_TOKEN is empty. On a Dependabot run it must also be a Dependabot secret.';
+              const sha = process.env.PR_HEAD_SHA || '';
+              if (sha) {
+                await octokit.rest.repos.createCommitStatus({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  sha,
+                  state: 'error',
+                  target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                  description: msg.slice(0, 140),
+                  context: 'e2e-smoke-tests'
+                });
+              }
+              core.setFailed(msg);
+              return;
+            }
+
             const pr = context.payload.pull_request;
             const labels = pr ? (pr.labels || []).map(l => l.name) : [];
             const labelE2eRef = (labels.find(l => l.startsWith('e2e-ref:'))?.replace(/^e2e-ref:/, '') || '').trim();

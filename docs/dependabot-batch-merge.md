@@ -17,7 +17,7 @@ Process a backlog of open Dependabot PRs in one pass. Trigger: **"follow the dep
 | --- | --- | --- |
 | Rust dep | `Cargo.toml` / `Cargo.lock` | reproduce the required CI checks, then the happy-path (step 2) |
 | Docker image | a `Dockerfile` (in `docker/build` or `docker/local-infra`) | build the changed image + run the flow that uses it (step 2) |
-| GitHub Actions | `.github/workflows/*` or `.github/actions/*` | confirm the bump only (e.g. pinned SHA matches its tag); no build |
+| GitHub Actions | `.github/workflows/*` or `.github/actions/*` | confirm the bump only (e.g. pinned SHA matches its tag); no build. Do this **before** pushing any branch that carries the bump: a human branch runs `e2e-smoke-tests.yml` with its secrets |
 
 ## 2. Validate locally
 
@@ -49,6 +49,14 @@ crates that must bump together) — reject and move on.
 Resolve `Cargo.lock` conflicts by **regenerating** (`cargo update -p <crate> --precise <ver>`), never by
 hand-merging lines — a line-merged lockfile can look clean but be invalid.
 
+**E2E smoke.** Each Dependabot root-workspace cargo PR runs `e2e-smoke-tests.yml` and carries an `e2e-smoke-tests`
+status (see [`.github/E2E-TESTS-SETUP.md`](../.github/E2E-TESTS-SETUP.md)). In step 4, treat it as required even when
+branch protection does not require it: a red or `error` status puts the PR in **Check**, not **Ready**. It covers each
+PR on its own, not the stacked combination — the local happy-path above is still what validates the batch. Docker,
+`cli`-workspace, zkp-guest and GitHub Actions PRs get **no** `e2e-smoke-tests` status by design (the E2E would not
+build what they change, or the bumped action would run with the dispatch secrets): a missing status there is not a
+failure, and the local validation above is their gate.
+
 ## 3. Pick the merge mechanism — discover, don't assume
 
 Read the repo's branch protection / rulesets and resolve the merge method to propose:
@@ -62,8 +70,9 @@ If the queue/protection pins one merge method, use it; if several are allowed
 
 ## 4. Propose, then wait for the human
 
-Reconcile against the live **required** checks (ignore non-required ones). Present three
-buckets and ask — *"if you're ok, I'll run these:"* — and **state the merge method** you
+Reconcile against the live **required** checks (ignore non-required ones), plus `e2e-smoke-tests`
+for root-workspace cargo PRs (step 2). A `pending` `e2e-smoke-tests` means the run (about 30 minutes) has not finished:
+wait for it, or put the PR in **Check** and say so. Present three buckets and ask — *"if you're ok, I'll run these:"* — and **state the merge method** you
 resolved in step 3 (e.g. "add to the merge queue (squash)") so it's confirmed too.
 
 - **Ready** — required checks green and validated locally → approve + merge via that method
